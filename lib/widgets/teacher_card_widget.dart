@@ -1,0 +1,131 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/material.dart';
+import 'package:your_app/screens/teacher_profile_screen.dart';
+import 'package:url_launcher/url_launcher.dart';
+
+class TeacherCardWidget extends StatelessWidget {
+  final String teacherId;
+  final String name;
+  final String subject;
+  final String profileImageUrl;
+  final double latitude;
+  final double longitude;
+  final int studentCount;
+  final VoidCallback onMyTeacherPressed;
+
+  const TeacherCardWidget({
+    super.key,
+    required this.teacherId,
+    required this.name,
+    required this.subject,
+    required this.profileImageUrl,
+    required this.latitude,
+    required this.longitude,
+    required this.studentCount,
+    required this.onMyTeacherPressed,
+  });
+
+  void _openMap() async {
+    final url = 'https://www.google.com/maps/search/?api=1&query=$latitude,$longitude';
+    if (await canLaunchUrl(Uri.parse(url))) {
+      await launchUrl(Uri.parse(url));
+    }
+  }
+
+  void _openFullImage(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (_) => Dialog(
+        backgroundColor: Colors.transparent,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: Image.network(profileImageUrl, fit: BoxFit.cover),
+        ),
+      ),
+    );
+  }
+
+  void _navigateToProfile(BuildContext context) {
+    Navigator.of(context).push(
+      PageRouteBuilder(
+        transitionDuration: const Duration(milliseconds: 400),
+        pageBuilder: (_, __, ___) => TeacherProfileScreen(teacherId: teacherId),
+        transitionsBuilder: (_, animation, __, child) => FadeTransition(
+          opacity: animation,
+          child: child,
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () => _navigateToProfile(context),
+      child: Card(
+        margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        elevation: 4,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Student count
+              Text(
+                '$studentCount Students',
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+              ),
+              const SizedBox(height: 6),
+
+              Row(
+                children: [
+                  GestureDetector(
+                    onTap: () => _openFullImage(context),
+                    child: Hero(
+                      tag: 'profile_$teacherId',
+                      child: CircleAvatar(
+                        radius: 30,
+                        backgroundImage: NetworkImage(profileImageUrl),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+                        const SizedBox(height: 4),
+                        Text(subject, style: const TextStyle(color: Colors.grey)),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  IconButton(
+                    icon: const Icon(Icons.map, color: Colors.blueAccent),
+                    onPressed: _openMap,
+                    tooltip: 'View on Map',
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Center(
+                child: ElevatedButton.icon(
+                  onPressed: onMyTeacherPressed,
+                  icon: const Icon(Icons.person_add_alt_1),
+                  label: const Text('My Teacher'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green,
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
