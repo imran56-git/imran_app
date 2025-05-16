@@ -22,6 +22,15 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
     }
   }
 
+final FlutterSoundRecorder _recorder = FlutterSoundRecorder();
+bool _isRecording = false;
+String? _recordedFilePath;
+
+Future<void> _initRecorder() async {
+  await Permission.microphone.request();
+  await _recorder.openRecorder();
+}
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
