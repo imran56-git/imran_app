@@ -61,3 +61,9 @@ This privacy policy may change. Any updates will be shared within the app or via
 If you have questions or complaints about our privacy policy, please reach out to:
 Email: iliasmondal8900@gmail.com
 Developer: Md Imran Mondal
+
+Legal Notice for Cloning & Copyright Infringement
+
+The concept, design, name, user interface, and all content of the "Find Your Best Teacher Today" app are original intellectual property owned by Md Imran Mondal. Any unauthorized copying, reproduction, modification, or distribution of this app, its features, or its branding—partially or in full—will be treated as a violation of copyright and intellectual property laws under applicable national and international legal frameworks.
+
+Strict legal action will be taken against individuals or entities attempting to create clone apps or impersonate this platform on any app marketplace or digital medium. All such violations will be reported to Google Play and other authorities, and legal proceedings may be initiated without further notice.
