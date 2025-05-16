@@ -5,7 +5,6 @@ class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final GoogleSignIn _googleSignIn = GoogleSignIn();
 
-  // রেজিস্টার ইউজার (নতুন অ্যাকাউন্ট তৈরি)
   Future<UserCredential> registerWithEmail(String email, String password) async {
     return await _auth.createUserWithEmailAndPassword(
       email: email,
@@ -13,7 +12,6 @@ class AuthService {
     );
   }
 
-  // লগইন ইউজার
   Future<UserCredential> loginWithEmail(String email, String password) async {
     return await _auth.signInWithEmailAndPassword(
       email: email,
@@ -21,13 +19,11 @@ class AuthService {
     );
   }
 
-  // ইউজার লগআউট
   Future<void> signOut() async {
     await _auth.signOut();
     await _googleSignIn.signOut(); // Google sign out
   }
 
-  // কারেন্ট ইউজার রিটার্ন
   User? get currentUser => _auth.currentUser;
 
   // Google Sign-In
