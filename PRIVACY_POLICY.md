@@ -44,6 +44,8 @@ Emoji Picker & Audio Recorder Libraries – For enhanced chat experience
 
 These services may collect anonymized usage data according to their own privacy policies.
 
+Currently, this app relies on certain third-party services (such as Firebase, Google Maps, etc.) to manage features and store user data. However, we plan to transition to our own dedicated servers and data management systems in the future to ensure more secure and controlled handling of user information.
+
 5. Data Sharing & Security
 Your personal data is never sold. We only share necessary information with trusted services mentioned above to operate the app. All data is encrypted and securely stored.
 
