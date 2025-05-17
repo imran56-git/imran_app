@@ -1,7 +1,7 @@
 Privacy Policy – Find Your Best Teacher Today
 
 Developer: Md Imran Mondal
-Contact Email: iliasmondal8900@gmail.com
+Contact Email: findyourbestteachertoday@gmail.com
 Effective Date: TBD (To Be Determined)
 
 
@@ -59,7 +59,7 @@ This privacy policy may change. Any updates will be shared within the app or via
 
 9. Contact Us
 If you have questions or complaints about our privacy policy, please reach out to:
-Email: iliasmondal8900@gmail.com
+Email: findyourbestteachertoday@gmail.com
 Developer: Md Imran Mondal
 
 Legal Notice for Cloning & Copyright Infringement
