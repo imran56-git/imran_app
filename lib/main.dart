@@ -6,6 +6,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 
 import 'firebase_options.dart'; // Firebase console থেকে ডাউনলোড করা
 import 'routes/app_routes.dart'; // তোমার রুটিং ফাইল
+import 'screens/splash_screen.dart';
 
 // Firebase background notification handler
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
