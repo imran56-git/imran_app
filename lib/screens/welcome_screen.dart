@@ -31,10 +31,17 @@ class _WelcomeScreenState extends State<WelcomeScreen> with SingleTickerProvider
   }
 
   void _navigateToNextScreen() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Proceeding to next screen...')),
+  ScaffoldMessenger.of(context).showSnackBar(
+    const SnackBar(content: Text('Proceeding to next screen...')),
+  );
+
+  Future.delayed(const Duration(seconds: 1), () {
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(builder: (_) => const MainApp()),
     );
-  }
+  });
+}
 
   @override
   Widget build(BuildContext context) {
