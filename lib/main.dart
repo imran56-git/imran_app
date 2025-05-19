@@ -25,6 +25,11 @@ void main() async {
   runApp(const FindYourBestTeacherTodayApp());
 }
 
+runApp(GetMaterialApp(
+  debugShowCheckedModeBanner: false,
+  home: const SplashScreen(),
+));
+
 class FindYourBestTeacherTodayApp extends StatefulWidget {
   const FindYourBestTeacherTodayApp({super.key});
 
