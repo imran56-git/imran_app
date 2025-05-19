@@ -22,9 +22,6 @@ void main() async {
 
   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
-  runApp(const FindYourBestTeacherTodayApp());
-}
-
 runApp(GetMaterialApp(
   debugShowCheckedModeBanner: false,
   home: const SplashScreen(),
