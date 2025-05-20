@@ -387,12 +387,6 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
                       ),
                       child: const Text("Save Changes"),
                     ),
-                ],
-              ),
-            ),
-    );
-  }
-}
 // Just after the last ElevatedButton in your current widget tree, add this:
 const SizedBox(height: 32),
 const Divider(),
