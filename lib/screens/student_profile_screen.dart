@@ -393,3 +393,85 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
     );
   }
 }
+// Just after the last ElevatedButton in your current widget tree, add this:
+const SizedBox(height: 32),
+const Divider(),
+const Text(
+  "Recent Chats with Teachers",
+  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+),
+const SizedBox(height: 12),
+StreamBuilder<QuerySnapshot>(
+  stream: FirebaseFirestore.instance
+      .collection('chats')
+      .where('participants', arrayContains: _auth.currentUser!.uid)
+      .orderBy('lastMessageTime', descending: true)
+      .snapshots(),
+  builder: (context, snapshot) {
+    if (snapshot.connectionState == ConnectionState.waiting) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+      return const Text("No recent chats found.");
+    }
+
+    final chatDocs = snapshot.data!.docs;
+
+    return ListView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: chatDocs.length,
+      itemBuilder: (context, index) {
+        final chat = chatDocs[index];
+        final teacherId = (chat['participants'] as List)
+            .firstWhere((id) => id != _auth.currentUser!.uid);
+
+        return FutureBuilder<DocumentSnapshot>(
+          future: FirebaseFirestore.instance.collection('teachers').doc(teacherId).get(),
+          builder: (context, teacherSnapshot) {
+            if (!teacherSnapshot.hasData || !teacherSnapshot.data!.exists) {
+              return const SizedBox();
+            }
+
+            final teacher = teacherSnapshot.data!;
+            final teacherName = teacher['name'] ?? 'Unknown';
+            final teacherImage = teacher['profileImageUrl'];
+            final lastMessage = chat['lastMessage'] ?? '';
+            final timestamp = (chat['lastMessageTime'] as Timestamp).toDate();
+
+            return ListTile(
+              leading: CircleAvatar(
+                backgroundImage: teacherImage != null
+                    ? NetworkImage(teacherImage)
+                    : const AssetImage("assets/images/default_avatar.png") as ImageProvider,
+              ),
+              title: Text(teacherName),
+              subtitle: Text(
+                lastMessage,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              trailing: Text(
+                "${timestamp.hour}:${timestamp.minute.toString().padLeft(2, '0')}",
+                style: const TextStyle(fontSize: 12),
+              ),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => ChatScreen(
+                      receiverId: teacherId,
+                      receiverName: teacherName,
+                      receiverImage: teacherImage,
+                    ),
+                  ),
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+  },
+),
