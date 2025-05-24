@@ -356,18 +356,7 @@ const SizedBox(height: 16),
 
 // Follow Button (student side only)
 ElevatedButton.icon(
-  onPressed: toggleFollow,final List<LatLng>? pickedLocations = await Navigator.push(
-  context,
-  MaterialPageRoute(
-    builder: (context) => LocationPickerScreen(),
-  ),
-);
-
-if (pickedLocations != null) {
-  setState(() {
-    teacherLocations = pickedLocations;
-  });
-}
+  onPressed: toggleFollow,
   icon: Icon(
     isFollowing ? Icons.person_remove : Icons.person_add,
     color: Colors.white,
