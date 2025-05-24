@@ -468,3 +468,22 @@ ElevatedButton.icon(
   },
 ),
 const SizedBox(height: 24),
+
+ElevatedButton.icon(
+  icon: const Icon(Icons.schedule),
+  label: const Text("Fee Reminder"),
+  style: ElevatedButton.styleFrom(
+    backgroundColor: Colors.teal,
+    padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 24),
+    textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+  ),
+  onPressed: () {
+    final teacherId = FirebaseAuth.instance.currentUser!.uid;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => StudentFeeReminderScreen(teacherId: teacherId),
+      ),
+    );
+  },
+),
