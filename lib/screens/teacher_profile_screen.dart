@@ -138,11 +138,6 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
 
   List<String> selectedSubjects = [];
 
-  @override
-  void initState() {
-    super.initState();
-    fetchTeacherData();
-  }
 bool isFollowing = false;
 
 @override
