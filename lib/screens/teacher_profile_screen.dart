@@ -167,8 +167,8 @@ void toggleFollow() async {
     await docRef.delete();
   } else {
     await docRef.set({
-      'studentId': currentStudentId,
-      'teacherId': teacherId,
+      late String teacherId;
+late String currentStudentId;
       'timestamp': FieldValue.serverTimestamp(),
     });
   }
