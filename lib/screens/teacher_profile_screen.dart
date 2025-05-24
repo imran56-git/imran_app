@@ -432,10 +432,28 @@ ElevatedButton.icon(
                       ),
                       const SizedBox(height: 8),
                       Wrap(
-                        spacing: 8
-                        
-                        const SizedBox(height: 20),
-                        
+  spacing: 8,
+  runSpacing: 8,
+  children: allSubjects.map((subject) {
+    return FilterChip(
+      label: Text(subject),
+      selected: selectedSubjects.contains(subject),
+      onSelected: isEditing
+          ? (bool selected) {
+              setState(() {
+                if (selected) {
+                  selectedSubjects.add(subject);
+                } else {
+                  selectedSubjects.remove(subject);
+                }
+              });
+            }
+          : null,
+    );
+  }).toList(),
+),
+const SizedBox(height: 20),
+
 ElevatedButton.icon(
   icon: const Icon(Icons.videocam),
   label: const Text("Go Live"),
