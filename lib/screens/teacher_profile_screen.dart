@@ -371,11 +371,23 @@ ElevatedButton.icon(
     textStyle: TextStyle(fontSize: 16),
   ),
 ),
-                      buildField('Name', _nameController),
-                      buildField('Phone', _phoneController),
-                      buildField('Location', _locationController),
-                      buildField('Class', _classController),
-                      buildField('Bio', _bioController, maxLines: 3),
+                      Padding(
+  padding: const EdgeInsets.all(16),
+  child: Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      buildField('Name', _nameController),
+      const SizedBox(height: 12),
+      buildField('Phone', _phoneController),
+      const SizedBox(height: 12),
+      buildField('Location', _locationController),
+      const SizedBox(height: 12),
+      buildField('Class', _classController),
+      const SizedBox(height: 12),
+      buildField('Bio', _bioController, maxLines: 3),
+    ],
+  ),
+),
 
                       Row(
                         children: [
