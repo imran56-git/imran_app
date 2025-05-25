@@ -253,35 +253,6 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
     );
   }
 
-const SizedBox(height: 20),
-
-ElevatedButton.icon(
-  icon: Icon(Icons.upload_file, color: Colors.white),
-  label: Text(
-    "Upload Payment Confirmation",
-    style: TextStyle(color: Colors.white),
-  ),
-  style: ElevatedButton.styleFrom(
-    backgroundColor: Colors.deepPurple,
-    padding: EdgeInsets.symmetric(vertical: 14, horizontal: 24),
-    textStyle: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-    shape: RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(12),
-    ),
-    elevation: 4,
-    shadowColor: Colors.black54,
-  ),
-  onPressed: () {
-    final teacherId = 'TARGET_TEACHER_ID'; // এখানে টিচারের ID বসাও (dynamic/pass from model)
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => UploadPaymentConfirmationScreen(teacherId: teacherId),
-      ),
-    );
-  },
-),
-
   @override
   Widget build(BuildContext context) {
     final imageUrl = studentData?['profileImageUrl'];
