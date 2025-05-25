@@ -501,3 +501,15 @@ ElevatedButton.icon(
     );
   },
 ),
+
+ElevatedButton(
+  onPressed: () {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => EditUpiScreen(teacherId: teacherId),
+      ),
+    );
+  },
+  child: Text("Edit UPI ID"),
+),
