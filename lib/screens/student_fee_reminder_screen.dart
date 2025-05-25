@@ -65,3 +65,17 @@ trailing: Row(
     ),
   ],
 ),
+IconButton(
+  icon: Icon(Icons.history),
+  onPressed: () {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PaymentHistoryScreen(
+          teacherId: teacherId,
+          studentId: student.id,
+        ),
+      ),
+    );
+  },
+),
