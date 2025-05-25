@@ -387,6 +387,38 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
                       ),
                       child: const Text("Save Changes"),
                     ),
+
+if (!isEditing)
+  Padding(
+    padding: const EdgeInsets.only(top: 20.0),
+    child: ElevatedButton.icon(
+      icon: const Icon(Icons.upload_file, color: Colors.white),
+      label: const Text(
+        "Upload Payment Confirmation",
+        style: TextStyle(color: Colors.white),
+      ),
+      style: ElevatedButton.styleFrom(
+        backgroundColor: Colors.deepPurple,
+        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 24),
+        textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+        elevation: 4,
+        shadowColor: Colors.black54,
+      ),
+      onPressed: () {
+        final teacherId = studentData?['connectedTeacherId'] ?? 'demo_teacher_id'; // তোমার Firestore-এ যেখানে টিচার আইডি থাকে
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => UploadPaymentConfirmationScreen(teacherId: teacherId),
+          ),
+        );
+      },
+    ),
+  ),
+
 // Just after the last ElevatedButton in your current widget tree, add this:
 const SizedBox(height: 32),
 const Divider(),
