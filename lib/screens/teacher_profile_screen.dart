@@ -513,3 +513,17 @@ ElevatedButton(
   },
   child: Text("Edit UPI ID"),
 ),
+
+ElevatedButton.icon(
+  icon: Icon(Icons.receipt_long),
+  label: Text("Payment Confirmations"),
+  onPressed: () {
+    final teacherId = FirebaseAuth.instance.currentUser!.uid;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PaymentConfirmationListScreen(teacherId: teacherId),
+      ),
+    );
+  },
+),
