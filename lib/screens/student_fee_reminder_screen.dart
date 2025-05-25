@@ -32,24 +32,35 @@ class StudentFeeReminderScreen extends StatelessWidget {
               return ListTile(
                 title: Text(student['name']),
                 subtitle: Text("Amount: ${student['feeAmount']} | Day: ${student['reminderDay']}"),
-                trailing: IconButton(
-                  icon: Icon(Icons.edit),
-                  onPressed: () {
-                    showDialog(
-                      context: context,
-                      builder: (_) => SetReminderDialog(
-                        teacherId: teacherId,
-                        studentId: student.id,
-                        existingData: student,
-                      ),
-                    );
-                  },
-                ),
-              );
-            },
-          );
-        },
-      ),
-    );
-  }
-}
+trailing: Row(
+  mainAxisSize: MainAxisSize.min,
+  children: [
+    IconButton(
+      icon: Icon(Icons.payment),
+      onPressed: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => AddPaymentScreen(
+              teacherId: teacherId,
+              studentId: student.id,
+            ),
+          ),
+        );
+      },
+    ),
+    IconButton(
+      icon: Icon(Icons.edit),
+      onPressed: () {
+        showDialog(
+          context: context,
+          builder: (_) => SetReminderDialog(
+            teacherId: teacherId,
+            studentId: student.id,
+            existingData: student,
+          ),
+        );
+      },
+    ),
+  ],
+),
