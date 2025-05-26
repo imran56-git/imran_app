@@ -1,7 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-
+import 'package:firebase_storage/firebase_storage.dart';
 import '../services/auth_service.dart';
 import '../services/firestore_service.dart';
 import '../services/location_service.dart';
@@ -19,9 +19,12 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
   final _passwordController = TextEditingController();
   final _phoneController = TextEditingController();
   final _locationController = TextEditingController();
+  final _qualificationController = TextEditingController();
   List<String> _selectedSubjects = [];
   String? _currentLocation;
   File? _profileImage;
+  File? _qualificationCertificate;
+  File? _idProofImage;
   String? _gender;
   bool _isLoading = false;
 
@@ -29,11 +32,9 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
     'Math', 'English', 'Physics', 'Chemistry', 'Biology', 'History', 'Geography'
   ];
 
-  Future<void> _pickImage() async {
+  Future<void> _pickImage(Function(File) onPicked) async {
     final picked = await ImagePicker().pickImage(source: ImageSource.gallery);
-    if (picked != null) {
-      setState(() => _profileImage = File(picked.path));
-    }
+    if (picked != null) onPicked(File(picked.path));
   }
 
   Future<void> _fetchCurrentLocation() async {
@@ -53,8 +54,11 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
     final password = _passwordController.text.trim();
     final phone = _phoneController.text.trim();
     final location = _locationController.text.trim();
+    final qualification = _qualificationController.text.trim();
 
-    if (name.isEmpty || email.isEmpty || password.isEmpty || phone.isEmpty || location.isEmpty || _gender == null || _profileImage == null || _selectedSubjects.isEmpty || _currentLocation == null) {
+    if (name.isEmpty || email.isEmpty || password.isEmpty || phone.isEmpty || location.isEmpty ||
+        qualification.isEmpty || _gender == null || _profileImage == null || _selectedSubjects.isEmpty ||
+        _currentLocation == null || _qualificationCertificate == null || _idProofImage == null) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Please fill all fields')));
       return;
     }
@@ -65,6 +69,19 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
       final userCredential = await AuthService().registerWithEmail(email, password);
       final uid = userCredential.user!.uid;
 
+      // Upload Images
+      final profileRef = FirebaseStorage.instance.ref().child('profile_images/$uid.jpg');
+      await profileRef.putFile(_profileImage!);
+      final profileUrl = await profileRef.getDownloadURL();
+
+      final certRef = FirebaseStorage.instance.ref().child('qualification_certificates/$uid.jpg');
+      await certRef.putFile(_qualificationCertificate!);
+      final certUrl = await certRef.getDownloadURL();
+
+      final idProofRef = FirebaseStorage.instance.ref().child('id_proofs/$uid.jpg');
+      await idProofRef.putFile(_idProofImage!);
+      final idProofUrl = await idProofRef.getDownloadURL();
+
       await FirestoreService().saveTeacherData(uid, {
         'uid': uid,
         'name': name,
@@ -74,7 +91,12 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
         'currentLocation': _currentLocation,
         'gender': _gender,
         'subjects': _selectedSubjects,
+        'qualification': qualification,
+        'profileImageUrl': profileUrl,
+        'qualificationCertificateUrl': certUrl,
+        'idProofUrl': idProofUrl,
         'createdAt': DateTime.now(),
+        'role': 'teacher',
       });
 
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Registration Successful')));
@@ -101,6 +123,15 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
     );
   }
 
+  Widget _buildImageRow(String label, File? file, VoidCallback onTap) {
+    return Row(
+      children: [
+        Expanded(child: Text(file != null ? '$label Selected' : 'No $label selected')),
+        IconButton(icon: const Icon(Icons.upload_file), onPressed: onTap),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -110,7 +141,7 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
         child: Column(
           children: [
             GestureDetector(
-              onTap: _pickImage,
+              onTap: () => _pickImage((file) => setState(() => _profileImage = file)),
               child: CircleAvatar(
                 radius: 50,
                 backgroundImage: _profileImage != null ? FileImage(_profileImage!) : null,
@@ -123,6 +154,7 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
             TextField(controller: _passwordController, obscureText: true, decoration: const InputDecoration(labelText: 'Password')),
             TextField(controller: _phoneController, decoration: const InputDecoration(labelText: 'Phone Number')),
             TextField(controller: _locationController, decoration: const InputDecoration(labelText: 'Teaching Location')),
+            TextField(controller: _qualificationController, decoration: const InputDecoration(labelText: 'Qualification')),
             const SizedBox(height: 12),
             Row(
               children: [
@@ -143,6 +175,9 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
             const SizedBox(height: 12),
             const Text('Select Subjects:', style: TextStyle(fontWeight: FontWeight.bold)),
             ..._allSubjects.map(_buildSubjectCheckbox).toList(),
+            const SizedBox(height: 12),
+            _buildImageRow('Qualification Certificate', _qualificationCertificate, () => _pickImage((file) => setState(() => _qualificationCertificate = file))),
+            _buildImageRow('ID Proof', _idProofImage, () => _pickImage((file) => setState(() => _idProofImage = file))),
             const SizedBox(height: 16),
             _isLoading
                 ? const CircularProgressIndicator()
