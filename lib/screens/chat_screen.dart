@@ -394,35 +394,37 @@ ElevatedButton(
 ),
 
     return Column(
-      children: [
-        Expanded(
-          child: ListView(
-            padding: const EdgeInsets.all(12),
-            children: snapshot.data!.docs.map((message) {
-              final messageId = message.id;
-              final data = message.data() as Map<String, dynamic>;
-              return MessageBubble(
-                message: data['message'],
-                isMe: data['senderId'] == currentUserId,
-                timestamp: data['timestamp'],
-              );
-            }).toList(),
-          ),
+  children: [
+    Expanded(
+      child: ListView(
+        padding: const EdgeInsets.all(12),
+        children: snapshot.data!.docs.map((message) {
+          final messageId = message.id;
+          final data = message.data() as Map<String, dynamic>;
+          return MessageBubble(
+            message: data['message'],
+            isMe: data['senderId'] == currentUserId,
+            messageId: messageId,
+            currentUserId: currentUserId,
+            onEdit: _showEditDialog,
+            timestamp: data['timestamp'],
+          );
+        }).toList(),
+      ),
+    ),
+    if (_isEmojiVisible)
+      SizedBox(
+        height: 250,
+        child: EmojiPicker(
+          onEmojiSelected: (category, emoji) {
+            _messageController.text += emoji.emoji;
+          },
+          config: const Config(columns: 7, emojiSizeMax: 28),
         ),
-        if (_isEmojiVisible)
-          SizedBox(
-            height: 250,
-            child: EmojiPicker(
-              onEmojiSelected: (category, emoji) {
-                _messageController.text += emoji.emoji;
-              },
-              config: const Config(columns: 7, emojiSizeMax: 28),
-            ),
-          ),
-      ],
-    );
-  },
-),
+      ),
+  ],
+);
+
               children: snapshot.data!.docs.map((message) {
   final messageId = message.id;
   final data = message.data() as Map<String, dynamic>;
