@@ -30,6 +30,11 @@ final AudioPlayer _audioPlayer = AudioPlayer();
   void _showEditDialog(BuildContext context, String messageId, String oldMessage) {
   TextEditingController _editController = TextEditingController(text: oldMessage);
 
+void _sendMessage(String text) async {
+  if (text.trim().isEmpty) return;
+  // rest of the logic
+}
+
   showDialog(
     context: context,
     builder: (context) => AlertDialog(
