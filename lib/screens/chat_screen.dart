@@ -425,16 +425,19 @@ ElevatedButton(
   ],
 );
 
-              children: snapshot.data!.docs.map((message) {
+             children: snapshot.data!.docs.map((message) {
   final messageId = message.id;
   final data = message.data() as Map<String, dynamic>;
   return MessageBubble(
     message: data['message'],
     isMe: data['senderId'] == currentUserId,
+    messageId: messageId,
+    currentUserId: currentUserId,
+    onEdit: _showEditDialog,  
     timestamp: data['timestamp'],
   );
-  
 }).toList(),
+  
           if (_isEmojiVisible)
             SizedBox(
               height: 250,
