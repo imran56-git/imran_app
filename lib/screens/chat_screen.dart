@@ -89,9 +89,10 @@ final AudioPlayer _audioPlayer = AudioPlayer();
     await _recorder.openRecorder();
   }
 
-  void _sendMessage() async {
-  final text = _messageController.text.trim();
-  if (text.isEmpty) return;
+  void _sendMessage(String text) async {
+  if (text.trim().isEmpty) return;
+  // rest of the logic
+}
 
   final isUserBlocked = await isBlocked(currentUserId, widget.receiverId);
   if (isUserBlocked) {
