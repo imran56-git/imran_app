@@ -1,5 +1,3 @@
-// File: student_home_screen.dart
-
 import 'package:flutter/material.dart';
 import 'package:find_your_best_teacher_today/screens/student_profile_screen.dart';
 import 'package:find_your_best_teacher_today/screens/teacher_search_screen.dart';
