@@ -10,6 +10,7 @@ import '../models/teacher_model.dart'; // Future use if needed
 import '../services/chat_service.dart'; // Future use if needed
 import 'package:your_app/services/voice_message_handler.dart';
 import 'package:just_audio/just_audio.dart';
+import '../widgets/message_bubble.dart';
 
 class ChatScreen extends StatefulWidget {
   final String teacherName;
