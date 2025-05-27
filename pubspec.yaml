@@ -28,6 +28,8 @@ dependencies:
   file_picker: ^6.1.1
   jitsi_meet_wrapper: ^0.1.2
   uuid: ^4.0.0
+  url_launcher: ^6.3.0 
+  font_awesome_flutter: ^10.7.0
 
 dev_dependencies:
   flutter_test:
