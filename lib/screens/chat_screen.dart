@@ -58,13 +58,6 @@ final AudioPlayer _audioPlayer = AudioPlayer();
   );
 }
 
-@override
-void dispose() {
-  _voiceHandler.dispose();
-  _audioPlayer.dispose();
-  super.dispose();
-}
-
   final List<Widget> messages = [];
   final ImagePicker _picker = ImagePicker();
   final FlutterSoundRecorder _recorder = FlutterSoundRecorder();
