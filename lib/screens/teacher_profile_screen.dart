@@ -297,15 +297,26 @@ if (pickedLocations != null) {
                     children: [
                       GestureDetector(
                         onTap: isEditing ? pickImage : null,
-                        child: CircleAvatar(
-                          radius: 60,
-                          backgroundImage: _selectedImage != null
-                              ? FileImage(_selectedImage!)
-                              : photoUrl != null
-                                  ? NetworkImage(photoUrl)
-                                  : const AssetImage('assets/images/default_avatar.png')
-                                      as ImageProvider,
-                        ),
+                        Stack(
+  alignment: Alignment.bottomRight,
+  children: [
+    CircleAvatar(
+      radius: 60,
+      backgroundImage: _selectedImage != null
+          ? FileImage(_selectedImage!)
+          : photoUrl != null
+              ? NetworkImage(photoUrl)
+              : const AssetImage('assets/images/default_avatar.png') as ImageProvider,
+    ),
+    if (teacherData?['currentBadge'] != null &&
+        teacherData!['currentBadge'].toString().isNotEmpty)
+      Positioned(
+        bottom: 0,
+        right: 0,
+        child: BadgeWidget(badgeCode: teacherData!['currentBadge']),
+      ),
+  ],
+),
                       ),
                       const SizedBox(height: 16),
 
