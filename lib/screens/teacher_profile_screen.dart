@@ -319,6 +319,20 @@ if (pickedLocations != null) {
 ),
                       ),
                       const SizedBox(height: 16),
+          Row(
+  mainAxisAlignment: MainAxisAlignment.center,
+  children: [
+    Text(
+      teacherData?['name'] ?? '',
+      style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+    ),
+    const SizedBox(width: 6),
+    if (teacherData?['currentBadge'] != null &&
+        teacherData!['currentBadge'].toString().isNotEmpty)
+      BadgeWidget(badgeCode: teacherData!['currentBadge'], size: 24),
+  ],
+),
+const SizedBox(height: 16),
 
 Align(
   alignment: Alignment.centerLeft,
