@@ -297,7 +297,7 @@ if (pickedLocations != null) {
                     children: [
                       GestureDetector(
                         onTap: isEditing ? pickImage : null,
-                        Stack(
+                        child:Stack(
   alignment: Alignment.bottomRight,
   children: [
     CircleAvatar(
