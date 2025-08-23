@@ -13,7 +13,6 @@ class TeacherModel {
     required this.isTyping,
   });
 
-  // Firestore থেকে ডেটা রিড করার জন্য
   factory TeacherModel.fromMap(Map<String, dynamic> map, String docId) {
     return TeacherModel(
       id: docId,
