@@ -1,52 +1,52 @@
-Privacy Policy – Find Your Best Teacher Today
-Developer: Md Imran Mondal
-Contact Email: findyourbestteachertoday@gmail.com
-Effective Date: To Be Updated
-Introduction
-Welcome to “Find Your Best Teacher Today”.
-This application connects students with teachers based on subjects and location. We value your privacy and are committed to protecting your personal information while using our services.
-Information We Collect
-We may collect the following types of information to provide and improve our services:
-Personal Information
-Name
-Email address
-Profile details provided by the user
-Location Information
-Location data used to help students find nearby teachers
-Location access is used only while the app is in use
-Messages & Communication
-Messages exchanged between students and teachers within the app
-Shared images or voice messages (if used by the user)
-Device Information
-Device type and operating system version
-App usage data to improve performance and user experience
-How We Use Your Information
-We use the collected information to:
-Display relevant teachers based on subject and location
-Enable communication between students and teachers
-Improve app functionality and user experience
-Send important notifications related to app activity
-Third-Party Services
-This app uses trusted third-party services to operate essential features:
-Firebase (Google) – Authentication, Firestore database, Cloud Messaging
-Google Maps & Location APIs – To show maps and nearby teachers
-Firebase Cloud Storage – To store profile images and shared media
-These services may collect limited data as required for their functionality and operate under their own privacy policies.
-Data Sharing & Security
-We do not sell or rent user data to third parties
-Data is shared only with the services required to operate app features
-We use industry-standard security practices and Firebase security tools to protect user data
-User Rights
+# Privacy Policy - Find Your Best Teacher Today
+
+**Effective Date:** March 31, 2026
+**Developer:** Md Imran Mondal
+**Contact Email:** findyourbestteachertoday@gmail.com
+
+---
+
+### 1. Introduction
+Welcome to **Find Your Best Teacher Today**. We value your privacy and are committed to protecting your personal information. This application connects students with teachers based on subjects and location. By using our app, you agree to the terms outlined in this policy.
+
+### 2. Information We Collect
+To provide our services effectively, we collect the following types of information:
+* **Personal Information:** Name, email address, and profile details provided during registration.
+* **Location Information:** We access your device's location to help find nearby teachers. This is used only while the app is active.
+* **Communication Data:** Messages, images, or voice notes exchanged between users within the app's chat system.
+* **Device Information:** Device type, OS version, and app usage data to improve performance.
+
+### 3. How We Use Your Information
+We use the collected data to:
+* Display relevant teachers based on your subject needs and location.
+* Enable secure communication between students and teachers.
+* Improve app functionality and provide a better user experience.
+* Send important notifications regarding account or app activity.
+
+### 4. Third-Party Services
+We use trusted third-party services to power essential features:
+* **Google Firebase:** For authentication, Firestore database, and Cloud Messaging.
+* **Google Maps API:** To provide location-based search and map features.
+* **Firebase Cloud Storage:** To store profile images and shared media files.
+* *Note: These services operate under their own privacy policies.*
+
+### 5. Data Sharing & Security
+* We **do not** sell, rent, or share your personal data with third parties for marketing.
+* Data is protected using industry-standard security practices and Firebase security tools.
+* Data is only shared with the essential services required to operate the app.
+
+### 6. User Rights
 Users have full control over their data:
-You may view or update your profile information at any time
-You may request deletion of your account and associated data by contacting us via email
-Children’s Privacy
-This app is not intended for children under the age of 13.
-We do not knowingly collect personal information from children.
-Policy Updates
-This Privacy Policy may be updated from time to time.
-Any changes will be communicated through the app or updated on this page.
-Contact Us
-If you have any questions or concerns regarding this Privacy Policy, please contact:
-Email: findyourbestteachertoday@gmail.com
-Developer: Md Imran Mondal
+* You can update your profile information at any time within the app.
+* You may request the permanent deletion of your account and data by emailing us at the address provided below.
+
+### 7. Children’s Privacy
+This app is not intended for children under the age of 13. We do not knowingly collect personal information from children. If discovered, such data will be deleted immediately.
+
+### 8. Policy Updates
+We may update this Privacy Policy from time to time. Any significant changes will be communicated through the app or updated on this page.
+
+### 9. Contact Us
+If you have any questions or concerns, please contact:
+* **Developer:** Md Imran Mondal
+* **Email:** findyourbestteachertoday@gmail.com
