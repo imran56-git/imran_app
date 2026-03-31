@@ -13,7 +13,13 @@ exports.sendNotification = functions.firestore
     const messageText = messageData.text || "You received a new message";
     const senderName = messageData.senderName || "Someone";
 
-    const payload = {
+    // Check if token exists before sending
+    if (!receiverToken) {
+      console.log("No receiver token found, skipping...");
+      return null;
+    }
+
+    const message = {
       notification: {
         title: `Message from ${senderName}`,
         body: messageText,
@@ -22,7 +28,8 @@ exports.sendNotification = functions.firestore
     };
 
     try {
-      const response = await admin.messaging().send(payload);
+      // Corrected method for v1 API
+      const response = await admin.messaging().send(message);
       console.log("Notification sent successfully:", response);
       return null;
     } catch (error) {
