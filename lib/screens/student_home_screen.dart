@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-// তোমার প্রোজেক্টের সঠিক পাথ অনুযায়ী ইম্পোর্টগুলো চেক করে নিও
 import 'chat_home_screen.dart';
 import 'teacher_search_screen.dart';
 import 'student_profile_screen.dart';
@@ -12,76 +11,86 @@ class StudentHomeScreen extends StatefulWidget {
 }
 
 class _StudentHomeScreenState extends State<StudentHomeScreen> {
-  // ১. তোমার আগের সেই _selectedIndex এবং টাইটেল লিস্ট যা তুমি শুরুতে লিখেছিলে
-  int _selectedIndex = 1; // ডিফল্ট হিসেবে সার্চ স্ক্রিন রাখা হয়েছে
+  // 1. Core State Variables
+  int _selectedIndex = 1; // Defaulting to Search Screen for better UX
 
+  // 2. Titles list as per your original requirement
   final List<String> _titles = [
     "Chats",
     "Search Teachers",
     "My Profile",
   ];
 
-  // ২. তোমার সেই অরিজিনাল _onTabTapped মেথড যা তুমি চেয়েছিলে
-  void _onTabTapped(int index) {
-    setState(() {
-      _selectedIndex = index;
-    });
-  }
-
-  // ৩. স্ক্রিন লিস্ট (IndexedStack এর জন্য এখানে রাখা হয়েছে যাতে ডেটা হারিয়ে না যায়)
+  // 3. Screens list wrapped in a list for IndexedStack
   final List<Widget> _screens = [
     const ChatHomeScreen(),
     const TeacherSearchScreen(),
     const StudentProfileScreen(),
   ];
 
+  // 4. Your original Tab Tapping logic with setState
+  void _onTabTapped(int index) {
+    setState(() {
+      _selectedIndex = index;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF8F9FD),
       
-      // appBar এ তোমার অরিজিনাল টাইটেল লজিক রাখা হয়েছে
+      // AppBar with dynamic title switching logic
       appBar: AppBar(
         title: Text(
           _titles[_selectedIndex],
-          style: const TextStyle(fontWeight: FontWeight.bold),
+          style: const TextStyle(
+            fontWeight: FontWeight.bold,
+            letterSpacing: 0.5,
+          ),
         ),
         centerTitle: true,
         elevation: 0,
         backgroundColor: Colors.white,
-        foregroundColor: Colors.deepPurple,
-        // প্রোফাইল ট্যাবে গেলে সেটিংস আইকন দেখানোর বাড়তি ফিচার
+        foregroundColor: Colors.deepPurple[800],
         actions: [
-          if (_selectedIndex == 2)
+          if (_selectedIndex == 2) // Action button specifically for Profile tab
             IconButton(
-              icon: const Icon(Icons.settings),
+              icon: const Icon(Icons.settings_outlined),
               onPressed: () {
-                // Settings Action
+                // Settings navigation logic goes here
               },
             ),
         ],
       ),
 
-      // body তে IndexedStack ব্যবহার করা হয়েছে যাতে সার্চ রেজাল্ট বা চ্যাট হিস্ট্রি মুছে না যায়
+      // IndexedStack ensures that search results or chat states are preserved
       body: IndexedStack(
         index: _selectedIndex,
         children: _screens,
       ),
 
-      // BottomNavigationBar এ তোমার সব ফিচার এবং আইকন স্টাইল
+      // Professional Bottom Navigation Bar
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
           boxShadow: [
-            BoxShadow(color: Colors.black12, blurRadius: 10),
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 15,
+              offset: const Offset(0, -2),
+            ),
           ],
         ),
         child: BottomNavigationBar(
           currentIndex: _selectedIndex,
-          onTap: _onTabTapped, // তোমার সেই অরিজিনাল ফাংশন কল
-          selectedItemColor: Colors.deepPurple,
-          unselectedItemColor: Colors.grey,
-          showUnselectedLabels: true,
+          onTap: _onTabTapped, // Calling your original method
+          selectedItemColor: Colors.deepPurple[700],
+          unselectedItemColor: Colors.grey[500],
+          selectedFontSize: 12,
+          unselectedFontSize: 12,
           type: BottomNavigationBarType.fixed,
+          showSelectedLabels: true,
+          showUnselectedLabels: true,
           items: const [
             BottomNavigationBarItem(
               icon: Icon(Icons.chat_bubble_outline),
