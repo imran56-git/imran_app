@@ -6,51 +6,83 @@ import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 
 class VoiceMessageHandler {
-  FlutterSoundRecorder _recorder = FlutterSoundRecorder();
+  final FlutterSoundRecorder _recorder = FlutterSoundRecorder();
   bool _isRecorderInitialized = false;
-  String? _recordedFilePath;
 
+  /// Initializes the recorder and handles microphone permissions.
   Future<void> initRecorder() async {
-    final micStatus = await Permission.microphone.request();
-    if (micStatus != PermissionStatus.granted) {
-      throw Exception('Microphone permission not granted');
+    try {
+      final micStatus = await Permission.microphone.request();
+      if (micStatus != PermissionStatus.granted) {
+        return Future.error('Microphone permission not granted');
+      }
+      
+      await _recorder.openRecorder();
+      _isRecorderInitialized = true;
+    } catch (e) {
+      return Future.error('Recorder initialization failed: $e');
     }
-    await _recorder.openRecorder();
-    _isRecorderInitialized = true;
   }
 
+  /// Starts the audio recording session with a unique UUID filename.
   Future<void> startRecording() async {
-    if (!_isRecorderInitialized) await initRecorder();
+    if (!_isRecorderInitialized) {
+      await initRecorder();
+    }
 
-    final tempDir = await getTemporaryDirectory();
-    final filePath = '${tempDir.path}/${const Uuid().v4()}.aac';
-    _recordedFilePath = filePath;
-
-    await _recorder.startRecorder(toFile: filePath);
+    try {
+      final tempDir = await getTemporaryDirectory();
+      // Maintaining your original UUID logic for unique file paths
+      final filePath = '${tempDir.path}/${const Uuid().v4()}.aac';
+      
+      await _recorder.startRecorder(
+        toFile: filePath,
+        codec: Codec.aacADTS,
+      );
+    } catch (e) {
+      return Future.error('Recording start failed: $e');
+    }
   }
 
+  /// Stops recording and uploads the file to Firebase Storage under the specific Chat ID.
   Future<String?> stopAndUploadRecording(String chatId) async {
-    if (!_isRecorderInitialized) return null;
+    // Safety check to ensure recorder is active before stopping
+    if (!_isRecorderInitialized || !_recorder.isRecording) return null;
 
-    final path = await _recorder.stopRecorder();
-    if (path == null) return null;
+    try {
+      final path = await _recorder.stopRecorder();
+      if (path == null) return null;
 
-    final file = File(path);
-    final fileName = '${DateTime.now().millisecondsSinceEpoch}.aac';
+      final file = File(path);
+      if (!await file.exists()) return null;
 
-    final ref = FirebaseStorage.instance
-        .ref()
-        .child('voice_messages')
-        .child(chatId)
-        .child(fileName);
+      // Professional file naming: Timestamp based (from your original code)
+      final fileName = '${DateTime.now().millisecondsSinceEpoch}.aac';
+      
+      final ref = FirebaseStorage.instance
+          .ref()
+          .child('voice_messages')
+          .child(chatId)
+          .child(fileName);
 
-    await ref.putFile(file);
-    final url = await ref.getDownloadURL();
+      // Uploading with specific audio metadata for better compatibility
+      final uploadTask = await ref.putFile(
+        file,
+        SettableMetadata(contentType: 'audio/aac'),
+      );
 
-    return url;
+      return await uploadTask.ref.getDownloadURL();
+    } catch (e) {
+      // Internal logging for debugging
+      print('Firebase Upload Error: $e');
+      return null;
+    }
   }
 
+  /// Disposes the recorder to prevent memory leaks.
   void dispose() {
-    _recorder.closeRecorder();
+    if (_isRecorderInitialized) {
+      _recorder.closeRecorder();
+    }
   }
 }
