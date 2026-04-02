@@ -38,9 +38,24 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
 
   String get targetUID => widget.teacherId ?? _auth.currentUser?.uid ?? "";
 
-  final List<String> allSubjects = [
-    'Mathematics', 'Physics', 'Chemistry', 'Biology', 'Computer Science',
-    'English', 'Bengali', 'Hindi', 'History', 'Geography', 'Web Development'
+    final List<String> allSubjects = [
+    // Science
+    'Mathematics', 'Physics', 'Chemistry', 'Biology', 'Computer Science', 
+    'Higher Math', 'General Science', 'Statistics',
+    
+    // Arts & Languages
+    'English', 'Bengali', 'Hindi', 'Arabic', 'History', 'Geography', 
+    'Political Science', 'Economics', 'Philosophy', 'Sociology', 'Sanskrit',
+    
+    // Commerce
+    'Accounting', 'Business Studies', 'Finance', 'Marketing',
+    
+    // Tech & Skills
+    'Web Development', 'App Development (Flutter)', 'Graphics Design', 
+    'Digital Marketing', 'Video Editing', 'Python Programming', 'C/C++',
+    
+    // Others
+    'Music', 'Drawing', 'Physical Education', 'General Knowledge'
   ];
 
   @override
