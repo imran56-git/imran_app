@@ -31,7 +31,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
   final TextEditingController _classController = TextEditingController();
   final TextEditingController _bioController = TextEditingController();
   final TextEditingController _subjectSearchController = TextEditingController();
-  
+
   String? gender;
   List<String> selectedSubjects = [];
   List<dynamic> teacherLocations = []; 
@@ -114,7 +114,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
         'gender': gender,
         'profileImageUrl': imageUrl,
         'subjects': selectedSubjects,
-        'locations': teacherLocations, // একাধিক লোকেশন সেভ করার ফিচার
+        'locations': teacherLocations,
       });
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Profile Updated!')));
       setState(() => isEditing = false);
@@ -180,12 +180,27 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
   }
 
   Widget _buildNameWithBadge() {
+    bool isVerified = teacherData?['isVerified'] ?? false;
+    bool hasSpecialBadge = teacherData?['hasSpecialBadge'] ?? false;
+
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         Text(_nameController.text, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-        // এখানে তোমার BadgeWidget থাকলে আনকমেন্ট করো
-        // if (teacherData?['currentBadge'] != null) BadgeWidget(badgeCode: teacherData!['currentBadge']),
+        if (isVerified)
+          const Padding(
+            padding: EdgeInsets.only(left: 5),
+            child: Icon(Icons.check_circle, color: Colors.blue, size: 20),
+          ),
+        if (hasSpecialBadge)
+          Padding(
+            padding: const EdgeInsets.only(left: 5),
+            child: Image.asset(
+              'assets/images/special_badge.png',
+              height: 25,
+              width: 25,
+            ),
+          ),
       ],
     );
   }
@@ -267,20 +282,27 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
     return Column(
       children: [
         const Padding(padding: EdgeInsets.symmetric(vertical: 10), child: Divider()),
-        _toolTile(Icons.videocam, "Go Live", Colors.red, () { /* Navigator.push logic */ }),
-        _toolTile(Icons.schedule, "Fee Reminder", Colors.teal, () { /* Navigator.push logic */ }),
-        _toolTile(Icons.payment, "Edit UPI ID", Colors.orange, () { /* Navigator.push logic */ }),
-        _toolTile(Icons.receipt_long, "Payment Confirmations", Colors.indigo, () { /* Navigator.push logic */ }),
+        _toolTile(Icons.videocam, "Go Live", Colors.red, () {}),
+        _toolTile(Icons.schedule, "Fee Reminder", Colors.teal, () {}),
+        _toolTile(Icons.payment, "Edit UPI ID", Colors.orange, () {}),
+        _toolTile(Icons.receipt_long, "Payment Confirmations", Colors.indigo, () {}),
       ],
     );
   }
 
   Widget _infoTile(String label, String value, IconData icon) {
-    return ListTile(leading: Icon(icon, color: Colors.blueAccent), title: Text(label, style: const TextStyle(fontSize: 12, color: Colors.grey)), subtitle: Text(value.isEmpty ? "N/A" : value, style: const TextStyle(fontSize: 16, color: Colors.black)));
+    return ListTile(
+      leading: Icon(icon, color: Colors.blueAccent), 
+      title: Text(label, style: const TextStyle(fontSize: 12, color: Colors.grey)), 
+      subtitle: Text(value.isEmpty ? "N/A" : value, style: const TextStyle(fontSize: 16, color: Colors.black))
+    );
   }
 
   Widget _editField(String label, TextEditingController controller, {int maxLines = 1}) {
-    return Padding(padding: const EdgeInsets.only(bottom: 10), child: TextField(controller: controller, maxLines: maxLines, decoration: InputDecoration(labelText: label, border: const OutlineInputBorder())));
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10), 
+      child: TextField(controller: controller, maxLines: maxLines, decoration: InputDecoration(labelText: label, border: const OutlineInputBorder()))
+    );
   }
 
   Widget _toolTile(IconData icon, String label, Color color, VoidCallback onTap) {
