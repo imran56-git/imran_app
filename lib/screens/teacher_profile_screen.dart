@@ -4,7 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import '../utils/image_utils.dart'; // Standard helper for compression
+import '../utils/image_utils.dart';
 
 class TeacherProfileScreen extends StatefulWidget {
   final String? teacherId;
@@ -41,13 +41,8 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
 
   final List<String> allSubjects = [
     'Mathematics', 'Physics', 'Chemistry', 'Biology', 'Computer Science', 
-    'Higher Math', 'General Science', 'Statistics',
-    'English', 'Bengali', 'Hindi', 'Arabic', 'History', 'Geography', 
-    'Political Science', 'Economics', 'Philosophy', 'Sociology', 'Sanskrit',
-    'Accounting', 'Business Studies', 'Finance', 'Marketing',
-    'Web Development', 'App Development (Flutter)', 'Graphics Design', 
-    'Digital Marketing', 'Video Editing', 'Python Programming', 'C/C++',
-    'Music', 'Drawing', 'Physical Education', 'General Knowledge'
+    'English', 'Bengali', 'Arabic', 'Accounting', 'Business Studies', 
+    'App Development (Flutter)', 'Graphics Design', 'Music', 'Drawing'
   ];
 
   @override
@@ -71,16 +66,16 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
           _bioController.text = teacherData?['bio'] ?? '';
           gender = teacherData?['gender'];
           selectedSubjects = List<String>.from(teacherData?['subjects'] ?? []);
-          teacherLocations = teacherData?['locations'] ?? [];
+          teacherLocations = List.from(teacherData?['locations'] ?? []);
           isLoading = false;
         });
       }
     } catch (e) {
-      debugPrint('Fetch error: $e');
       if (mounted) setState(() => isLoading = false);
     }
   }
 
+  // --- Follow Logic ---
   void checkFollowStatus() async {
     final currentUID = _auth.currentUser?.uid;
     if (currentUID == null || widget.teacherId == null) return;
@@ -114,9 +109,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
     setState(() => isLoading = true);
     try {
       String? imageUrl = teacherData?['profileImageUrl'];
-      
       if (_selectedImage != null) {
-        // Compress image before update
         File? compressedFile = await ImageHelper.compressImage(_selectedImage!);
         final ref = _storage.ref().child('teachers/$uid/profile.jpg');
         await ref.putFile(compressedFile ?? _selectedImage!);
@@ -141,7 +134,6 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
         fetchTeacherData();
       }
     } catch (e) { 
-      debugPrint('Update error: $e');
       if (mounted) setState(() => isLoading = false);
     }
   }
@@ -150,10 +142,12 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
   Widget build(BuildContext context) {
     final photoUrl = teacherData?['profileImageUrl'];
     return Scaffold(
+      backgroundColor: Colors.white,
       appBar: AppBar(
-        title: const Text('Teacher Profile'),
+        title: const Text('Teacher Profile', style: TextStyle(fontWeight: FontWeight.bold)),
         backgroundColor: Colors.blue[800],
         foregroundColor: Colors.white,
+        centerTitle: true,
         actions: [
           if (widget.teacherId == null)
             IconButton(
@@ -167,26 +161,14 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
         child: Column(
           children: [
             _buildProfileImage(photoUrl),
-            const SizedBox(height: 10),
+            const SizedBox(height: 15),
             _buildNameWithBadge(),
             if (!isEditing) _buildFollowStats(),
             if (widget.teacherId != null) _buildFollowButton(),
-            const SizedBox(height: 20),
+            const SizedBox(height: 25),
             isEditing ? _buildEditForm() : _buildViewProfile(),
             if (widget.teacherId == null && !isEditing) _buildTeacherTools(),
-            if (isEditing) Padding(
-              padding: const EdgeInsets.only(top: 20),
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.blue[800],
-                  foregroundColor: Colors.white,
-                  minimumSize: const Size(double.infinity, 55),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))
-                ),
-                onPressed: updateTeacherProfile,
-                child: const Text("SAVE CHANGES", style: TextStyle(fontWeight: FontWeight.bold)),
-              ),
-            ),
+            if (isEditing) _buildSaveButton(),
           ],
         ),
       ),
@@ -194,17 +176,24 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
   }
 
   Widget _buildProfileImage(String? photoUrl) {
-    return GestureDetector(
-      onTap: isEditing ? () async {
-        final picked = await _picker.pickImage(source: ImageSource.gallery, imageQuality: 80);
-        if (picked != null) setState(() => _selectedImage = File(picked.path));
-      } : null,
-      child: CircleAvatar(
-        radius: 60,
-        backgroundColor: Colors.blue[50],
-        backgroundImage: _selectedImage != null ? FileImage(_selectedImage!) : 
-                        (photoUrl != null ? NetworkImage(photoUrl) : null) as ImageProvider?,
-        child: photoUrl == null && _selectedImage == null ? Icon(Icons.camera_alt, size: 40, color: Colors.blue[800]) : null,
+    return Center(
+      child: GestureDetector(
+        onTap: isEditing ? () async {
+          final picked = await _picker.pickImage(source: ImageSource.gallery, imageQuality: 80);
+          if (picked != null) setState(() => _selectedImage = File(picked.path));
+        } : null,
+        child: Stack(
+          children: [
+            CircleAvatar(
+              radius: 65,
+              backgroundColor: Colors.blue[50],
+              backgroundImage: _selectedImage != null ? FileImage(_selectedImage!) : 
+                              (photoUrl != null ? NetworkImage(photoUrl) : null) as ImageProvider?,
+              child: photoUrl == null && _selectedImage == null ? Icon(Icons.person, size: 60, color: Colors.blue[800]) : null,
+            ),
+            if (isEditing) Positioned(bottom: 0, right: 0, child: CircleAvatar(backgroundColor: Colors.blue[800], radius: 20, child: const Icon(Icons.camera_alt, color: Colors.white, size: 18))),
+          ],
+        ),
       ),
     );
   }
@@ -214,12 +203,8 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        Text(_nameController.text, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-        if (isVerified)
-          const Padding(
-            padding: EdgeInsets.only(left: 5),
-            child: Icon(Icons.check_circle, color: Colors.blue, size: 20),
-          ),
+        Text(_nameController.text, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+        if (isVerified) const Padding(padding: EdgeInsets.only(left: 6), child: Icon(Icons.verified, color: Colors.blue, size: 22)),
       ],
     );
   }
@@ -228,22 +213,28 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
     return StreamBuilder<QuerySnapshot>(
       stream: _firestore.collection('follows').where('teacherId', isEqualTo: targetUID).snapshots(),
       builder: (context, snapshot) {
-        return Text('Followers: ${snapshot.data?.docs.length ?? 0}', 
-          style: const TextStyle(color: Colors.blueGrey, fontWeight: FontWeight.bold));
+        int count = snapshot.data?.docs.length ?? 0;
+        return Container(
+          margin: const EdgeInsets.only(top: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          decoration: BoxDecoration(color: Colors.blue[50], borderRadius: BorderRadius.circular(20)),
+          child: Text('Followers: $count', style: TextStyle(color: Colors.blue[800], fontWeight: FontWeight.bold)),
+        );
       },
     );
   }
 
   Widget _buildFollowButton() {
     return Padding(
-      padding: const EdgeInsets.only(top: 10),
+      padding: const EdgeInsets.only(top: 15),
       child: ElevatedButton.icon(
         onPressed: toggleFollow,
-        icon: Icon(isFollowing ? Icons.person_remove : Icons.person_add, color: Colors.white),
-        label: Text(isFollowing ? 'My Teacher' : 'Follow'),
+        icon: Icon(isFollowing ? Icons.check : Icons.person_add),
+        label: Text(isFollowing ? 'Following' : 'Follow Teacher'),
         style: ElevatedButton.styleFrom(
           backgroundColor: isFollowing ? Colors.green : Colors.blue[800],
-          foregroundColor: Colors.white
+          foregroundColor: Colors.white,
+          minimumSize: const Size(180, 45)
         ),
       ),
     );
@@ -253,13 +244,16 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _infoTile("Bio", _bioController.text, Icons.info_outline),
-        _infoTile("Location", _locationController.text, Icons.location_on_outlined),
+        _infoTile("Bio", _bioController.text, Icons.description_outlined),
         _infoTile("Teaching Class", _classController.text, Icons.school_outlined),
-        _infoTile("Gender", gender ?? "Not set", Icons.wc),
-        const Divider(),
-        const Text("Subjects", style: TextStyle(fontWeight: FontWeight.bold)),
-        const SizedBox(height: 5),
+        _infoTile("Gender", gender ?? "Not set", Icons.wc_outlined),
+        const SizedBox(height: 15),
+        const Text("Teaching Areas (Locations)", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+        const SizedBox(height: 8),
+        Wrap(spacing: 8, children: teacherLocations.map((l) => Chip(label: Text(l), avatar: const Icon(Icons.location_on, size: 16))).toList()),
+        const Divider(height: 30),
+        const Text("Subjects", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+        const SizedBox(height: 8),
         Wrap(spacing: 8, children: selectedSubjects.map((s) => Chip(label: Text(s), backgroundColor: Colors.blue[50])).toList()),
       ],
     );
@@ -267,27 +261,39 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
 
   Widget _buildEditForm() {
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _editField("Full Name", _nameController),
-        _editField("Phone", _phoneController),
-        _editField("Home Location", _locationController),
-        _editField("Class", _classController),
-        _editField("Bio", _bioController, maxLines: 3),
-        DropdownButtonFormField<String>(
-          value: gender,
-          decoration: const InputDecoration(labelText: "Gender", border: OutlineInputBorder()),
-          items: ['Male', 'Female', 'Other'].map((g) => DropdownMenuItem(value: g, child: Text(g))).toList(),
-          onChanged: (val) => setState(() => gender = val),
+        _editField("Full Name", _nameController, Icons.person),
+        _editField("Bio", _bioController, Icons.info, maxLines: 3),
+        _editField("Teaching Class", _classController, Icons.book),
+        
+        // --- MULTIPLE LOCATION SECTION ---
+        const Text("Add Teaching Areas", style: TextStyle(fontWeight: FontWeight.bold)),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          children: teacherLocations.map((loc) => Chip(
+            label: Text(loc),
+            onDeleted: () => setState(() => teacherLocations.remove(loc)),
+          )).toList(),
         ),
-        const SizedBox(height: 20),
-        const Align(alignment: Alignment.centerLeft, child: Text("Select Subjects", style: TextStyle(fontWeight: FontWeight.bold))),
+        TextButton.icon(
+          onPressed: _addLocationDialog,
+          icon: const Icon(Icons.add_location_alt),
+          label: const Text("Add New Location"),
+        ),
+        const Divider(),
+        
+        // --- SUBJECT SEARCH SECTION ---
+        const Text("Select Subjects", style: TextStyle(fontWeight: FontWeight.bold)),
+        const SizedBox(height: 10),
         TextField(
           controller: _subjectSearchController,
-          decoration: const InputDecoration(hintText: "Search subjects...", prefixIcon: Icon(Icons.search)),
+          decoration: const InputDecoration(hintText: "Search subjects...", prefixIcon: Icon(Icons.search), border: OutlineInputBorder()),
           onChanged: (_) => setState(() {}),
         ),
         SizedBox(
-          height: 250,
+          height: 200,
           child: ListView(
             children: allSubjects.where((s) => s.toLowerCase().contains(_subjectSearchController.text.toLowerCase()))
               .map((s) => CheckboxListTile(
@@ -301,13 +307,34 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
     );
   }
 
+  void _addLocationDialog() {
+    TextEditingController lCon = TextEditingController();
+    showDialog(context: context, builder: (c) => AlertDialog(
+      title: const Text("Add Area"),
+      content: TextField(controller: lCon, decoration: const InputDecoration(hintText: "e.g. Dhanmondi, Dhaka")),
+      actions: [TextButton(onPressed: () {
+        if(lCon.text.isNotEmpty) setState(() => teacherLocations.add(lCon.text.trim()));
+        Navigator.pop(c);
+      }, child: const Text("Add"))],
+    ));
+  }
+
+  Widget _buildSaveButton() {
+    return Padding(
+      padding: const EdgeInsets.only(top: 20),
+      child: ElevatedButton(
+        style: ElevatedButton.styleFrom(backgroundColor: Colors.blue[800], foregroundColor: Colors.white, minimumSize: const Size(double.infinity, 55)),
+        onPressed: updateTeacherProfile,
+        child: const Text("SAVE CHANGES", style: TextStyle(fontWeight: FontWeight.bold)),
+      ),
+    );
+  }
+
   Widget _buildTeacherTools() {
     return Column(
       children: [
-        const Padding(padding: EdgeInsets.symmetric(vertical: 10), child: Divider()),
+        const Divider(height: 40),
         _toolTile(Icons.videocam, "Go Live", Colors.red, () {}),
-        _toolTile(Icons.schedule, "Fee Reminder", Colors.teal, () {}),
-        _toolTile(Icons.payment, "Edit UPI ID", Colors.orange, () {}),
         _toolTile(Icons.receipt_long, "Payment Confirmations", Colors.indigo, () {}),
       ],
     );
@@ -317,31 +344,22 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
     return ListTile(
       leading: Icon(icon, color: Colors.blue[800]), 
       title: Text(label, style: const TextStyle(fontSize: 12, color: Colors.grey)), 
-      subtitle: Text(value.isEmpty ? "N/A" : value, style: const TextStyle(fontSize: 16, color: Colors.black))
+      subtitle: Text(value.isEmpty ? "N/A" : value, style: const TextStyle(fontSize: 16, color: Colors.black, fontWeight: FontWeight.w500))
     );
   }
 
-  Widget _editField(String label, TextEditingController controller, {int maxLines = 1}) {
+  Widget _editField(String label, TextEditingController controller, IconData icon, {int maxLines = 1}) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 15), 
       child: TextField(
         controller: controller, 
         maxLines: maxLines, 
-        decoration: InputDecoration(labelText: label, border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))))
+        decoration: InputDecoration(labelText: label, prefixIcon: Icon(icon), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))))
       )
     );
   }
 
   Widget _toolTile(IconData icon, String label, Color color, VoidCallback onTap) {
-    return Card(
-      elevation: 2,
-      margin: const EdgeInsets.only(bottom: 10),
-      child: ListTile(
-        leading: Icon(icon, color: color), 
-        title: Text(label, style: const TextStyle(fontWeight: FontWeight.w500)), 
-        trailing: const Icon(Icons.arrow_forward_ios, size: 16), 
-        onTap: onTap
-      )
-    );
+    return Card(margin: const EdgeInsets.only(bottom: 10), child: ListTile(leading: Icon(icon, color: color), title: Text(label), trailing: const Icon(Icons.chevron_right), onTap: onTap));
   }
 }
