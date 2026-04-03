@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import '../utils/image_utils.dart'; // Standard helper for compression
 
 class TeacherProfileScreen extends StatefulWidget {
   final String? teacherId;
@@ -38,23 +39,14 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
 
   String get targetUID => widget.teacherId ?? _auth.currentUser?.uid ?? "";
 
-    final List<String> allSubjects = [
-    // Science
+  final List<String> allSubjects = [
     'Mathematics', 'Physics', 'Chemistry', 'Biology', 'Computer Science', 
     'Higher Math', 'General Science', 'Statistics',
-    
-    // Arts & Languages
     'English', 'Bengali', 'Hindi', 'Arabic', 'History', 'Geography', 
     'Political Science', 'Economics', 'Philosophy', 'Sociology', 'Sanskrit',
-    
-    // Commerce
     'Accounting', 'Business Studies', 'Finance', 'Marketing',
-    
-    // Tech & Skills
     'Web Development', 'App Development (Flutter)', 'Graphics Design', 
     'Digital Marketing', 'Video Editing', 'Python Programming', 'C/C++',
-    
-    // Others
     'Music', 'Drawing', 'Physical Education', 'General Knowledge'
   ];
 
@@ -69,21 +61,24 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
     if (targetUID.isEmpty) return;
     try {
       final doc = await _firestore.collection('teachers').doc(targetUID).get();
-      if (doc.exists) {
-        teacherData = doc.data();
-        _nameController.text = teacherData?['name'] ?? '';
-        _phoneController.text = teacherData?['phone'] ?? '';
-        _locationController.text = teacherData?['currentLocation'] ?? '';
-        _classController.text = teacherData?['class'] ?? '';
-        _bioController.text = teacherData?['bio'] ?? '';
-        gender = teacherData?['gender'];
-        selectedSubjects = List<String>.from(teacherData?['subjects'] ?? []);
-        teacherLocations = teacherData?['locations'] ?? [];
+      if (doc.exists && mounted) {
+        setState(() {
+          teacherData = doc.data();
+          _nameController.text = teacherData?['name'] ?? '';
+          _phoneController.text = teacherData?['phone'] ?? '';
+          _locationController.text = teacherData?['currentLocation'] ?? '';
+          _classController.text = teacherData?['class'] ?? '';
+          _bioController.text = teacherData?['bio'] ?? '';
+          gender = teacherData?['gender'];
+          selectedSubjects = List<String>.from(teacherData?['subjects'] ?? []);
+          teacherLocations = teacherData?['locations'] ?? [];
+          isLoading = false;
+        });
       }
     } catch (e) {
       debugPrint('Fetch error: $e');
+      if (mounted) setState(() => isLoading = false);
     }
-    if (mounted) setState(() => isLoading = false);
   }
 
   void checkFollowStatus() async {
@@ -97,16 +92,20 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
     final currentUID = _auth.currentUser?.uid;
     if (currentUID == null || widget.teacherId == null) return;
     final docRef = _firestore.collection('follows').doc('${currentUID}_${widget.teacherId}');
-    if (isFollowing) {
-      await docRef.delete();
-    } else {
-      await docRef.set({
-        'teacherId': widget.teacherId,
-        'studentId': currentUID,
-        'timestamp': FieldValue.serverTimestamp(),
-      });
+    try {
+      if (isFollowing) {
+        await docRef.delete();
+      } else {
+        await docRef.set({
+          'teacherId': widget.teacherId,
+          'studentId': currentUID,
+          'timestamp': FieldValue.serverTimestamp(),
+        });
+      }
+      checkFollowStatus();
+    } catch (e) {
+      debugPrint('Follow error: $e');
     }
-    checkFollowStatus();
   }
 
   Future<void> updateTeacherProfile() async {
@@ -115,11 +114,15 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
     setState(() => isLoading = true);
     try {
       String? imageUrl = teacherData?['profileImageUrl'];
+      
       if (_selectedImage != null) {
+        // Compress image before update
+        File? compressedFile = await ImageHelper.compressImage(_selectedImage!);
         final ref = _storage.ref().child('teachers/$uid/profile.jpg');
-        await ref.putFile(_selectedImage!);
+        await ref.putFile(compressedFile ?? _selectedImage!);
         imageUrl = await ref.getDownloadURL();
       }
+
       await _firestore.collection('teachers').doc(uid).update({
         'name': _nameController.text.trim(),
         'phone': _phoneController.text.trim(),
@@ -131,11 +134,16 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
         'subjects': selectedSubjects,
         'locations': teacherLocations,
       });
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Profile Updated!')));
-      setState(() => isEditing = false);
-      fetchTeacherData();
-    } catch (e) { debugPrint('Update error: $e'); }
-    setState(() => isLoading = false);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Profile Updated!')));
+        setState(() => isEditing = false);
+        fetchTeacherData();
+      }
+    } catch (e) { 
+      debugPrint('Update error: $e');
+      if (mounted) setState(() => isLoading = false);
+    }
   }
 
   @override
@@ -144,6 +152,8 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Teacher Profile'),
+        backgroundColor: Colors.blue[800],
+        foregroundColor: Colors.white,
         actions: [
           if (widget.teacherId == null)
             IconButton(
@@ -167,9 +177,14 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
             if (isEditing) Padding(
               padding: const EdgeInsets.only(top: 20),
               child: ElevatedButton(
-                style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 50)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.blue[800],
+                  foregroundColor: Colors.white,
+                  minimumSize: const Size(double.infinity, 55),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))
+                ),
                 onPressed: updateTeacherProfile,
-                child: const Text("SAVE CHANGES"),
+                child: const Text("SAVE CHANGES", style: TextStyle(fontWeight: FontWeight.bold)),
               ),
             ),
           ],
@@ -181,23 +196,21 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
   Widget _buildProfileImage(String? photoUrl) {
     return GestureDetector(
       onTap: isEditing ? () async {
-        final picked = await _picker.pickImage(source: ImageSource.gallery);
+        final picked = await _picker.pickImage(source: ImageSource.gallery, imageQuality: 80);
         if (picked != null) setState(() => _selectedImage = File(picked.path));
       } : null,
       child: CircleAvatar(
         radius: 60,
-        backgroundColor: Colors.grey[200],
+        backgroundColor: Colors.blue[50],
         backgroundImage: _selectedImage != null ? FileImage(_selectedImage!) : 
                         (photoUrl != null ? NetworkImage(photoUrl) : null) as ImageProvider?,
-        child: photoUrl == null && _selectedImage == null ? const Icon(Icons.camera_alt, size: 40) : null,
+        child: photoUrl == null && _selectedImage == null ? Icon(Icons.camera_alt, size: 40, color: Colors.blue[800]) : null,
       ),
     );
   }
 
   Widget _buildNameWithBadge() {
     bool isVerified = teacherData?['isVerified'] ?? false;
-    bool hasSpecialBadge = teacherData?['hasSpecialBadge'] ?? false;
-
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
@@ -207,15 +220,6 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
             padding: EdgeInsets.only(left: 5),
             child: Icon(Icons.check_circle, color: Colors.blue, size: 20),
           ),
-        if (hasSpecialBadge)
-          Padding(
-            padding: const EdgeInsets.only(left: 5),
-            child: Image.asset(
-              'assets/images/special_badge.png',
-              height: 25,
-              width: 25,
-            ),
-          ),
       ],
     );
   }
@@ -224,7 +228,8 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
     return StreamBuilder<QuerySnapshot>(
       stream: _firestore.collection('follows').where('teacherId', isEqualTo: targetUID).snapshots(),
       builder: (context, snapshot) {
-        return Text('Followers: ${snapshot.data?.docs.length ?? 0}', style: const TextStyle(color: Colors.blueGrey, fontWeight: FontWeight.bold));
+        return Text('Followers: ${snapshot.data?.docs.length ?? 0}', 
+          style: const TextStyle(color: Colors.blueGrey, fontWeight: FontWeight.bold));
       },
     );
   }
@@ -236,7 +241,10 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
         onPressed: toggleFollow,
         icon: Icon(isFollowing ? Icons.person_remove : Icons.person_add, color: Colors.white),
         label: Text(isFollowing ? 'My Teacher' : 'Follow'),
-        style: ElevatedButton.styleFrom(backgroundColor: isFollowing ? Colors.green : Colors.blue),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: isFollowing ? Colors.green : Colors.blue[800],
+          foregroundColor: Colors.white
+        ),
       ),
     );
   }
@@ -252,7 +260,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
         const Divider(),
         const Text("Subjects", style: TextStyle(fontWeight: FontWeight.bold)),
         const SizedBox(height: 5),
-        Wrap(spacing: 8, children: selectedSubjects.map((s) => Chip(label: Text(s))).toList()),
+        Wrap(spacing: 8, children: selectedSubjects.map((s) => Chip(label: Text(s), backgroundColor: Colors.blue[50])).toList()),
       ],
     );
   }
@@ -267,7 +275,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
         _editField("Bio", _bioController, maxLines: 3),
         DropdownButtonFormField<String>(
           value: gender,
-          decoration: const InputDecoration(labelText: "Gender"),
+          decoration: const InputDecoration(labelText: "Gender", border: OutlineInputBorder()),
           items: ['Male', 'Female', 'Other'].map((g) => DropdownMenuItem(value: g, child: Text(g))).toList(),
           onChanged: (val) => setState(() => gender = val),
         ),
@@ -275,11 +283,11 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
         const Align(alignment: Alignment.centerLeft, child: Text("Select Subjects", style: TextStyle(fontWeight: FontWeight.bold))),
         TextField(
           controller: _subjectSearchController,
-          decoration: const InputDecoration(hintText: "Search..."),
+          decoration: const InputDecoration(hintText: "Search subjects...", prefixIcon: Icon(Icons.search)),
           onChanged: (_) => setState(() {}),
         ),
         SizedBox(
-          height: 200,
+          height: 250,
           child: ListView(
             children: allSubjects.where((s) => s.toLowerCase().contains(_subjectSearchController.text.toLowerCase()))
               .map((s) => CheckboxListTile(
@@ -307,7 +315,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
 
   Widget _infoTile(String label, String value, IconData icon) {
     return ListTile(
-      leading: Icon(icon, color: Colors.blueAccent), 
+      leading: Icon(icon, color: Colors.blue[800]), 
       title: Text(label, style: const TextStyle(fontSize: 12, color: Colors.grey)), 
       subtitle: Text(value.isEmpty ? "N/A" : value, style: const TextStyle(fontSize: 16, color: Colors.black))
     );
@@ -315,12 +323,25 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
 
   Widget _editField(String label, TextEditingController controller, {int maxLines = 1}) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 10), 
-      child: TextField(controller: controller, maxLines: maxLines, decoration: InputDecoration(labelText: label, border: const OutlineInputBorder()))
+      padding: const EdgeInsets.only(bottom: 15), 
+      child: TextField(
+        controller: controller, 
+        maxLines: maxLines, 
+        decoration: InputDecoration(labelText: label, border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))))
+      )
     );
   }
 
   Widget _toolTile(IconData icon, String label, Color color, VoidCallback onTap) {
-    return Card(child: ListTile(leading: Icon(icon, color: color), title: Text(label), trailing: const Icon(Icons.arrow_forward_ios, size: 16), onTap: onTap));
+    return Card(
+      elevation: 2,
+      margin: const EdgeInsets.only(bottom: 10),
+      child: ListTile(
+        leading: Icon(icon, color: color), 
+        title: Text(label, style: const TextStyle(fontWeight: FontWeight.w500)), 
+        trailing: const Icon(Icons.arrow_forward_ios, size: 16), 
+        onTap: onTap
+      )
+    );
   }
 }
