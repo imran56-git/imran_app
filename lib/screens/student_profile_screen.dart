@@ -4,7 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import '../utils/image_utils.dart'; // Standard helper for compression
+import '../utils/image_utils.dart'; 
 
 class StudentProfileScreen extends StatefulWidget {
   const StudentProfileScreen({super.key});
@@ -34,22 +34,21 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
   String? studentClass;
   List<String> selectedSubjects = [];
 
+  // Full updated subject list
   final List<String> allSubjects = [
     'Mathematics', 'Physics', 'Chemistry', 'Biology', 'Computer Science',
     'English', 'Bengali', 'Hindi', 'Sanskrit', 'History', 'Geography',
     'Civics', 'Political Science', 'Economics', 'Philosophy', 'Psychology',
     'Sociology', 'Environmental Studies', 'General Science', 'Life Science',
-    'Physical Science', 'Social Studies', 'Moral Science', 'Fine Arts', 'Music', 
-    'Dance', 'Web Development', 'App Development', 'Cyber Security',
-    'Data Science', 'Artificial Intelligence', 'Robotics', 'Public Speaking', 
-    'Statistics', 'Legal Studies', 'Environmental Science',
+    'Physical Science', 'Social Studies', 'Web Development', 'App Development', 
+    'Cyber Security', 'Data Science', 'Artificial Intelligence', 'Robotics', 
+    'Public Speaking', 'Statistics', 'Legal Studies', 'Fine Arts', 'Music'
   ];
 
   final List<String> classOptions = [
     'Class 1', 'Class 2', 'Class 3', 'Class 4', 'Class 5',
     'Class 6', 'Class 7', 'Class 8', 'Class 9', 'Class 10',
-    'Class 11', 'Class 12', 'College 1st Year', 'College 2nd Year',
-    'University', 'Others',
+    'Class 11', 'Class 12', 'College', 'University', 'Others',
   ];
 
   @override
@@ -78,7 +77,6 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
         });
       }
     } catch (e) {
-      debugPrint("Error fetching data: $e");
       if (mounted) setState(() => isLoading = false);
     }
   }
@@ -93,7 +91,6 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
       String? imageUrl = studentData?['profileImageUrl'];
       
       if (_selectedImage != null) {
-        // Compressing image before update
         File? compressedFile = await ImageHelper.compressImage(_selectedImage!);
         final ref = _storage.ref().child('students/$uid/profile.jpg');
         await ref.putFile(compressedFile ?? _selectedImage!);
@@ -112,7 +109,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
       }, SetOptions(merge: true));
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Profile Updated!')));
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Profile Updated Successfully!')));
         setState(() => isEditing = false);
         fetchStudentData();
       }
@@ -122,7 +119,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
   }
 
   Future<void> pickImage() async {
-    final picked = await _picker.pickImage(source: ImageSource.gallery, imageQuality: 80);
+    final picked = await _picker.pickImage(source: ImageSource.gallery, imageQuality: 70);
     if (picked != null) {
       setState(() => _selectedImage = File(picked.path));
     }
@@ -142,7 +139,10 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
         actions: [
           IconButton(
             icon: Icon(isEditing ? Icons.close : Icons.edit),
-            onPressed: () => setState(() => isEditing = !isEditing),
+            onPressed: () {
+              if(isEditing) fetchStudentData(); // Reset data if cancel
+              setState(() => isEditing = !isEditing);
+            },
           ),
         ],
       ),
@@ -175,7 +175,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
               : (imageUrl != null ? NetworkImage(imageUrl) : null) as ImageProvider?,
           child: (imageUrl == null && _selectedImage == null)
               ? Icon(Icons.person, size: 65, color: Colors.blue[800])
-              : null,
+              : isEditing ? const Icon(Icons.camera_alt, color: Colors.white70) : null,
         ),
       ),
     );
@@ -184,14 +184,14 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
   Widget _buildEditForm() {
     return Column(
       children: [
-        _customEditField("Full Name", _nameController),
-        _customEditField("Phone Number", _phoneController),
-        _customEditField("Location", _locationController),
-        _customEditField("Bio", _bioController, maxLines: 3),
+        _customEditField("Full Name", _nameController, Icons.person),
+        _customEditField("Phone Number", _phoneController, Icons.phone),
+        _customEditField("Home Area", _locationController, Icons.location_on),
+        _customEditField("Bio", _bioController, Icons.info, maxLines: 3),
         const SizedBox(height: 10),
         DropdownButtonFormField<String>(
           value: gender,
-          decoration: const InputDecoration(labelText: "Gender", border: OutlineInputBorder()),
+          decoration: const InputDecoration(labelText: "Gender", border: OutlineInputBorder(), prefixIcon: Icon(Icons.wc)),
           onChanged: (val) => setState(() => gender = val),
           items: const [
             DropdownMenuItem(value: "Male", child: Text("Male")),
@@ -201,7 +201,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
         const SizedBox(height: 15),
         DropdownButtonFormField<String>(
           value: studentClass,
-          decoration: const InputDecoration(labelText: "Class/Level", border: OutlineInputBorder()),
+          decoration: const InputDecoration(labelText: "Class/Level", border: OutlineInputBorder(), prefixIcon: Icon(Icons.school)),
           onChanged: (val) => setState(() => studentClass = val),
           items: classOptions.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
         ),
@@ -212,7 +212,11 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
           width: double.infinity,
           height: 55,
           child: ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.blue[800], foregroundColor: Colors.white),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.blue[800], 
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))
+            ),
             onPressed: updateStudentProfile,
             child: const Text("SAVE CHANGES", style: TextStyle(fontWeight: FontWeight.bold)),
           ),
@@ -231,12 +235,17 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
         _infoTile("Bio", _bioController.text, Icons.info_outline),
         _infoTile("Gender", gender ?? "N/A", Icons.wc),
         _infoTile("Class", studentClass ?? "N/A", Icons.school_outlined),
-        const Divider(),
-        const Text("Interested Subjects", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue)),
-        const SizedBox(height: 8),
+        const Divider(height: 30),
+        const Text("Interested Subjects", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue, fontSize: 16)),
+        const SizedBox(height: 10),
         Wrap(
           spacing: 8,
-          children: selectedSubjects.map((s) => Chip(label: Text(s), backgroundColor: Colors.blue[50])).toList(),
+          runSpacing: 4,
+          children: selectedSubjects.map((s) => Chip(
+            label: Text(s, style: const TextStyle(fontSize: 12)), 
+            backgroundColor: Colors.blue[50],
+            side: BorderSide.none,
+          )).toList(),
         ),
       ],
     );
@@ -250,7 +259,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
         const SizedBox(height: 10),
         TextField(
           controller: _subjectSearchController,
-          decoration: const InputDecoration(hintText: "Search Subject...", prefixIcon: Icon(Icons.search)),
+          decoration: const InputDecoration(hintText: "Search Subject...", prefixIcon: Icon(Icons.search), border: OutlineInputBorder()),
           onChanged: (_) => setState(() {}),
         ),
         const SizedBox(height: 10),
@@ -264,6 +273,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
                 .map((s) => CheckboxListTile(
                       title: Text(s),
                       value: selectedSubjects.contains(s),
+                      activeColor: Colors.blue[800],
                       onChanged: (val) {
                         setState(() { val! ? selectedSubjects.add(s) : selectedSubjects.remove(s); });
                       },
@@ -278,19 +288,21 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
   Widget _buildActionButtons() {
     return Padding(
       padding: const EdgeInsets.only(top: 25),
-      child: Column(
-        children: [
-          SizedBox(
-            width: double.infinity,
-            height: 55,
-            child: ElevatedButton.icon(
-              icon: const Icon(Icons.upload_file),
-              label: const Text("UPLOAD PAYMENT CONFIRMATION"),
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.deepPurple, foregroundColor: Colors.white),
-              onPressed: () {},
-            ),
+      child: SizedBox(
+        width: double.infinity,
+        height: 55,
+        child: ElevatedButton.icon(
+          icon: const Icon(Icons.upload_file),
+          label: const Text("UPLOAD PAYMENT CONFIRMATION"),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.deepPurple, 
+            foregroundColor: Colors.white,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))
           ),
-        ],
+          onPressed: () {
+            // Navigation logic for payment
+          },
+        ),
       ),
     );
   }
@@ -304,16 +316,25 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
         const Text("Recent Conversations", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
         const SizedBox(height: 15),
         StreamBuilder<QuerySnapshot>(
-          stream: _firestore.collection('chats').where('participants', arrayContains: _auth.currentUser!.uid).snapshots(),
+          stream: _firestore
+              .collection('chats')
+              .where('participants', arrayContains: _auth.currentUser!.uid)
+              .orderBy('lastMessageTime', descending: true) // Ensuring latest chat is on top
+              .snapshots(),
           builder: (context, snapshot) {
-            if (!snapshot.hasData || snapshot.data!.docs.isEmpty) return const Text("No recent messages.");
+            if (snapshot.connectionState == ConnectionState.waiting) return const LinearProgressIndicator();
+            if (!snapshot.hasData || snapshot.data!.docs.isEmpty) return const Padding(
+              padding: EdgeInsets.all(8.0),
+              child: Text("No recent messages.", style: TextStyle(color: Colors.grey)),
+            );
             return ListView.builder(
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               itemCount: snapshot.data!.docs.length,
               itemBuilder: (context, index) {
                 final chat = snapshot.data!.docs[index];
-                final tId = (chat['participants'] as List).firstWhere((id) => id != _auth.currentUser!.uid);
+                final participants = List<String>.from(chat['participants']);
+                final tId = participants.firstWhere((id) => id != _auth.currentUser!.uid);
                 return _buildChatTile(tId, chat);
               },
             );
@@ -329,12 +350,17 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
       builder: (context, snap) {
         if (!snap.hasData || !snap.data!.exists) return const SizedBox();
         final teacher = snap.data!.data() as Map<String, dynamic>;
-        return ListTile(
-          leading: CircleAvatar(backgroundImage: teacher['profileImageUrl'] != null ? NetworkImage(teacher['profileImageUrl']) : null),
-          title: Text(teacher['name'] ?? 'Teacher'),
-          subtitle: Text(chat['lastMessage'] ?? '', maxLines: 1, overflow: TextOverflow.ellipsis),
-          trailing: const Icon(Icons.chevron_right),
-          onTap: () {},
+        return Card(
+          margin: const EdgeInsets.only(bottom: 8),
+          child: ListTile(
+            leading: CircleAvatar(backgroundImage: teacher['profileImageUrl'] != null ? NetworkImage(teacher['profileImageUrl']) : null),
+            title: Text(teacher['name'] ?? 'Teacher', style: const TextStyle(fontWeight: FontWeight.bold)),
+            subtitle: Text(chat['lastMessage'] ?? '', maxLines: 1, overflow: TextOverflow.ellipsis),
+            trailing: const Icon(Icons.chevron_right, color: Colors.blue),
+            onTap: () {
+              // Navigation to Chat Screen
+            },
+          ),
         );
       },
     );
@@ -343,19 +369,27 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
   Widget _infoTile(String label, String value, IconData icon) {
     return ListTile(
       contentPadding: EdgeInsets.zero,
-      leading: Icon(icon, color: Colors.blue[800]),
+      leading: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(color: Colors.blue[50], borderRadius: BorderRadius.circular(8)),
+        child: Icon(icon, color: Colors.blue[800]),
+      ),
       title: Text(label, style: const TextStyle(fontSize: 12, color: Colors.grey)),
-      subtitle: Text(value.isEmpty ? "N/A" : value, style: const TextStyle(fontSize: 16, color: Colors.black)),
+      subtitle: Text(value.isEmpty ? "Not set" : value, style: const TextStyle(fontSize: 16, color: Colors.black, fontWeight: FontWeight.w500)),
     );
   }
 
-  Widget _customEditField(String label, TextEditingController controller, {int maxLines = 1}) {
+  Widget _customEditField(String label, TextEditingController controller, IconData icon, {int maxLines = 1}) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 15),
       child: TextField(
         controller: controller,
         maxLines: maxLines,
-        decoration: InputDecoration(labelText: label, border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12)))),
+        decoration: InputDecoration(
+          labelText: label, 
+          prefixIcon: Icon(icon),
+          border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12)))
+        ),
       ),
     );
   }
