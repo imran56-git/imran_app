@@ -4,11 +4,12 @@ import 'package:flutter/material.dart';
 import 'package:find_your_best_teacher_today/screens/splash_screen.dart';
 import 'package:find_your_best_teacher_today/screens/welcome_screen.dart';
 import 'package:find_your_best_teacher_today/screens/user_selection_screen.dart';
-import 'package:find_your_best_teacher_today/screens/register_screen.dart';
 import 'package:find_your_best_teacher_today/screens/login_screen.dart';
 import 'package:find_your_best_teacher_today/screens/student_home_screen.dart';
 import 'package:find_your_best_teacher_today/screens/teacher_home_screen.dart';
 import 'package:find_your_best_teacher_today/screens/teacher_welcome_screen.dart';
+import 'package:find_your_best_teacher_today/screens/student_register_screen.dart';
+import 'package:find_your_best_teacher_today/screens/teacher_register_screen.dart';
 
 class AppRoutes {
   // Route Names
@@ -27,8 +28,8 @@ class AppRoutes {
     splash: (context) => const SplashScreen(),
     welcome: (context) => const WelcomeScreen(),
     userSelection: (context) => const UserSelectionScreen(),
-    studentRegister: (context) => const RegisterScreen(userType: 'student'),
-    teacherRegister: (context) => const RegisterScreen(userType: 'teacher'),
+    studentRegister: (context) => const StudentRegistrationScreen(), 
+    teacherRegister: (context) => const TeacherRegistrationScreen(),
     login: (context) => const LoginScreen(),
     studentHome: (context) => const StudentHomeScreen(),
     teacherHome: (context) => const TeacherHomeScreen(),
