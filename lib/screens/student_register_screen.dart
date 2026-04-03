@@ -6,6 +6,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../utils/image_utils.dart'; // Standard helper for compression
 
 class StudentRegistrationScreen extends StatefulWidget {
   const StudentRegistrationScreen({super.key});
@@ -52,7 +53,7 @@ class _StudentRegistrationScreenState extends State<StudentRegistrationScreen> {
   Future<void> _pickImage() async {
     final pickedFile = await ImagePicker().pickImage(
       source: ImageSource.gallery,
-      imageQuality: 40,
+      imageQuality: 80,
     );
     if (pickedFile != null) {
       setState(() => _profileImage = File(pickedFile.path));
@@ -61,6 +62,7 @@ class _StudentRegistrationScreenState extends State<StudentRegistrationScreen> {
 
   Future<void> _getCurrentLocation() async {
     setState(() => _fetchedLocation = "Fetching...");
+    // Integration point for your actual location service
     await Future.delayed(const Duration(seconds: 1)); 
     setState(() => _fetchedLocation = "Detected Location Area"); 
   }
@@ -80,6 +82,7 @@ class _StudentRegistrationScreenState extends State<StudentRegistrationScreen> {
     setState(() => _isLoading = true);
 
     try {
+      // 1. Create User Authentication
       final UserCredential userCredential = await FirebaseAuth.instance
           .createUserWithEmailAndPassword(
               email: _emailController.text.trim(),
@@ -87,11 +90,15 @@ class _StudentRegistrationScreenState extends State<StudentRegistrationScreen> {
 
       final String uid = userCredential.user!.uid;
 
+      // 2. Image Compression & Upload
       String imageUrl = "";
+      File? compressedFile = await ImageHelper.compressImage(_profileImage!);
+      
       final ref = FirebaseStorage.instance.ref().child('student_profiles/$uid.jpg');
-      await ref.putFile(_profileImage!);
+      await ref.putFile(compressedFile ?? _profileImage!);
       imageUrl = await ref.getDownloadURL();
 
+      // 3. Save Student Data to Firestore
       await FirebaseFirestore.instance.collection('students').doc(uid).set({
         'uid': uid,
         'name': _nameController.text.trim(),
@@ -214,7 +221,11 @@ class _StudentRegistrationScreenState extends State<StudentRegistrationScreen> {
     return TextFormField(
       controller: _emailController,
       keyboardType: TextInputType.emailAddress,
-      decoration: InputDecoration(labelText: "Email Address", prefixIcon: const Icon(Icons.email), border: OutlineInputBorder(borderRadius: BorderRadius.circular(12))),
+      decoration: InputDecoration(
+        labelText: "Email Address", 
+        prefixIcon: const Icon(Icons.email), 
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12))
+      ),
       validator: (val) {
         if (val == null || val.isEmpty) return "Email is required";
         if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(val)) return "Enter a valid email address";
@@ -224,16 +235,22 @@ class _StudentRegistrationScreenState extends State<StudentRegistrationScreen> {
   }
 
   Widget _buildPasswordField() {
-    return TextFormField(
-      controller: _passwordController,
-      obscureText: !_isPasswordVisible,
-      decoration: InputDecoration(
-        labelText: "Create Password",
-        prefixIcon: const Icon(Icons.lock),
-        suffixIcon: IconButton(icon: Icon(_isPasswordVisible ? Icons.visibility : Icons.visibility_off), onPressed: () => setState(() => _isPasswordVisible = !_isPasswordVisible)),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+    return Padding(
+      padding: const EdgeInsets.only(top: 16),
+      child: TextFormField(
+        controller: _passwordController,
+        obscureText: !_isPasswordVisible,
+        decoration: InputDecoration(
+          labelText: "Create Password",
+          prefixIcon: const Icon(Icons.lock),
+          suffixIcon: IconButton(
+            icon: Icon(_isPasswordVisible ? Icons.visibility : Icons.visibility_off), 
+            onPressed: () => setState(() => _isPasswordVisible = !_isPasswordVisible)
+          ),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+        validator: (val) => val!.length < 6 ? "Minimum 6 characters needed" : null,
       ),
-      validator: (val) => val!.length < 6 ? "Minimum 6 characters needed" : null,
     );
   }
 
@@ -241,7 +258,11 @@ class _StudentRegistrationScreenState extends State<StudentRegistrationScreen> {
     return Row(
       children: [
         Expanded(child: Text(_fetchedLocation ?? "Location not detected", style: TextStyle(color: Colors.grey[700]))),
-        TextButton.icon(onPressed: _getCurrentLocation, icon: const Icon(Icons.my_location), label: const Text("Get Location")),
+        TextButton.icon(
+          onPressed: _getCurrentLocation, 
+          icon: const Icon(Icons.my_location), 
+          label: const Text("Get Location")
+        ),
       ],
     );
   }
@@ -249,8 +270,15 @@ class _StudentRegistrationScreenState extends State<StudentRegistrationScreen> {
   Widget _buildGenderDropdown() {
     return DropdownButtonFormField<String>(
       value: _gender,
-      decoration: InputDecoration(labelText: 'Gender', prefixIcon: const Icon(Icons.people), border: OutlineInputBorder(borderRadius: BorderRadius.circular(12))),
-      items: const [DropdownMenuItem(value: 'Male', child: Text('Male')), DropdownMenuItem(value: 'Female', child: Text('Female'))],
+      decoration: InputDecoration(
+        labelText: 'Gender', 
+        prefixIcon: const Icon(Icons.people), 
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12))
+      ),
+      items: const [
+        DropdownMenuItem(value: 'Male', child: Text('Male')), 
+        DropdownMenuItem(value: 'Female', child: Text('Female'))
+      ],
       onChanged: (value) => setState(() => _gender = value),
     );
   }
@@ -277,7 +305,11 @@ class _StudentRegistrationScreenState extends State<StudentRegistrationScreen> {
       child: TextFormField(
         controller: controller,
         keyboardType: type,
-        decoration: InputDecoration(labelText: label, prefixIcon: Icon(icon), border: OutlineInputBorder(borderRadius: BorderRadius.circular(12))),
+        decoration: InputDecoration(
+          labelText: label, 
+          prefixIcon: Icon(icon), 
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12))
+        ),
         validator: (val) => val!.isEmpty ? "$label is required" : null,
       ),
     );
