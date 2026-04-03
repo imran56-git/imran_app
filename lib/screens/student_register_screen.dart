@@ -1,12 +1,11 @@
 import 'dart:io';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
-
-// Assuming you have a location service. If not, I've added a placeholder logic.
-// import '../services/location_service.dart'; 
+import 'package:url_launcher/url_launcher.dart';
 
 class StudentRegistrationScreen extends StatefulWidget {
   const StudentRegistrationScreen({super.key});
@@ -17,8 +16,7 @@ class StudentRegistrationScreen extends StatefulWidget {
 
 class _StudentRegistrationScreenState extends State<StudentRegistrationScreen> {
   final _formKey = GlobalKey<FormState>();
-  
-  // Controllers
+
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
   final _phoneController = TextEditingController();
@@ -27,9 +25,12 @@ class _StudentRegistrationScreenState extends State<StudentRegistrationScreen> {
 
   File? _profileImage;
   String? _gender;
-  String? _fetchedLocation; // Added back from your previous logic
+  String? _fetchedLocation; 
   bool _isLoading = false;
   bool _isPasswordVisible = false;
+  bool _isAccepted = false; 
+
+  final String _policyUrl = "https://docs.google.com/document/d/1pLnjsGpdQwmbdytG7ZC5Nro7LHaOmgy8nSLCKGEgy0E/edit?usp=drivesdk";
 
   @override
   void dispose() {
@@ -41,46 +42,44 @@ class _StudentRegistrationScreenState extends State<StudentRegistrationScreen> {
     super.dispose();
   }
 
+  Future<void> _launchUrl() async {
+    final Uri url = Uri.parse(_policyUrl);
+    if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
+      debugPrint('Could not launch $_policyUrl');
+    }
+  }
+
   Future<void> _pickImage() async {
     final pickedFile = await ImagePicker().pickImage(
       source: ImageSource.gallery,
-      imageQuality: 40, // Optimized for faster Firebase upload
+      imageQuality: 40,
     );
     if (pickedFile != null) {
       setState(() => _profileImage = File(pickedFile.path));
     }
   }
 
-  // Feature added back: Fetching current location
   Future<void> _getCurrentLocation() async {
-    // This is a placeholder for your LocationService
     setState(() => _fetchedLocation = "Fetching...");
     await Future.delayed(const Duration(seconds: 1)); 
-    setState(() => _fetchedLocation = "Dhaka, Bangladesh"); // Replace with real logic
+    setState(() => _fetchedLocation = "Detected Location Area"); 
   }
 
   Future<void> _submit() async {
-    // Checking all conditions including image and gender
     if (!_formKey.currentState!.validate()) return;
-    
     if (_profileImage == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please upload a profile photo')),
-      );
+      _showSnackBar('Please upload a profile photo');
       return;
     }
-
     if (_gender == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select your gender')),
-      );
+      _showSnackBar('Please select your gender');
       return;
     }
+    if (!_isAccepted) return;
 
     setState(() => _isLoading = true);
 
     try {
-      // 1. Create Firebase Auth User
       final UserCredential userCredential = await FirebaseAuth.instance
           .createUserWithEmailAndPassword(
               email: _emailController.text.trim(),
@@ -88,13 +87,11 @@ class _StudentRegistrationScreenState extends State<StudentRegistrationScreen> {
 
       final String uid = userCredential.user!.uid;
 
-      // 2. Upload Image to Firebase Storage
       String imageUrl = "";
       final ref = FirebaseStorage.instance.ref().child('student_profiles/$uid.jpg');
       await ref.putFile(_profileImage!);
       imageUrl = await ref.getDownloadURL();
 
-      // 3. Save Data to Firestore (Including all your missing fields)
       await FirebaseFirestore.instance.collection('students').doc(uid).set({
         'uid': uid,
         'name': _nameController.text.trim(),
@@ -105,24 +102,25 @@ class _StudentRegistrationScreenState extends State<StudentRegistrationScreen> {
         'gender': _gender,
         'profileImageUrl': imageUrl,
         'userType': 'student',
+        'isAcceptedTerms': _isAccepted,
         'createdAt': FieldValue.serverTimestamp(),
       });
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Registration Successful!'), backgroundColor: Colors.green),
-        );
+        _showSnackBar('Registration Successful!', isError: false);
         Navigator.pop(context);
       }
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: ${e.toString()}'), backgroundColor: Colors.red),
-        );
-      }
+      if (mounted) _showSnackBar('Error: ${e.toString()}');
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  void _showSnackBar(String message, {bool isError = true}) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), backgroundColor: isError ? Colors.red : Colors.green),
+    );
   }
 
   @override
@@ -132,7 +130,6 @@ class _StudentRegistrationScreenState extends State<StudentRegistrationScreen> {
       appBar: AppBar(
         title: const Text("Student Registration", style: TextStyle(fontWeight: FontWeight.bold)),
         centerTitle: true,
-        elevation: 0,
         backgroundColor: Colors.blue[800],
         foregroundColor: Colors.white,
       ),
@@ -146,42 +143,19 @@ class _StudentRegistrationScreenState extends State<StudentRegistrationScreen> {
                 children: [
                   _buildImagePicker(),
                   const SizedBox(height: 30),
-
                   _buildTextField(_nameController, "Full Name", Icons.person),
-                  
-                  // Improved Email Validation
-                  TextFormField(
-                    controller: _emailController,
-                    keyboardType: TextInputType.emailAddress,
-                    decoration: InputDecoration(
-                      labelText: "Email Address",
-                      prefixIcon: const Icon(Icons.email),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                    validator: (val) {
-                      if (val == null || val.isEmpty) return "Email is required";
-                      if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(val)) {
-                        return "Enter a valid email address";
-                      }
-                      return null;
-                    },
-                  ),
+                  _buildEmailField(),
                   const SizedBox(height: 16),
-
                   _buildTextField(_phoneController, "Phone Number", Icons.phone, type: TextInputType.phone),
-                  
                   _buildPasswordField(),
                   const SizedBox(height: 16),
-
                   _buildTextField(_homeLocationController, "Home Area", Icons.home),
-
                   _buildLocationRow(),
                   const SizedBox(height: 16),
-
                   _buildGenderDropdown(),
-                  
-                  const SizedBox(height: 40),
-                  
+                  const SizedBox(height: 30),
+                  _buildTermsAndConditions(),
+                  const SizedBox(height: 20),
                   _buildSubmitButton(),
                 ],
               ),
@@ -190,7 +164,32 @@ class _StudentRegistrationScreenState extends State<StudentRegistrationScreen> {
     );
   }
 
-  // --- UI HELPER METHODS ---
+  Widget _buildTermsAndConditions() {
+    return Row(
+      children: [
+        Checkbox(
+          value: _isAccepted,
+          activeColor: Colors.blue[800],
+          onChanged: (val) => setState(() => _isAccepted = val ?? false),
+        ),
+        Expanded(
+          child: RichText(
+            text: TextSpan(
+              style: const TextStyle(color: Colors.black, fontSize: 13),
+              children: [
+                const TextSpan(text: "I agree to the "),
+                TextSpan(
+                  text: "Terms & Conditions and Privacy Policy",
+                  style: TextStyle(color: Colors.blue[800], fontWeight: FontWeight.bold, decoration: TextDecoration.underline),
+                  recognizer: TapGestureRecognizer()..onTap = _launchUrl,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 
   Widget _buildImagePicker() {
     return Center(
@@ -202,56 +201,25 @@ class _StudentRegistrationScreenState extends State<StudentRegistrationScreen> {
               radius: 60,
               backgroundColor: Colors.blue[50],
               backgroundImage: _profileImage != null ? FileImage(_profileImage!) : null,
-              child: _profileImage == null 
-                  ? Icon(Icons.add_a_photo, size: 40, color: Colors.blue[800]) 
-                  : null,
+              child: _profileImage == null ? Icon(Icons.add_a_photo, size: 40, color: Colors.blue[800]) : null,
             ),
-            Positioned(
-              bottom: 0,
-              right: 4,
-              child: CircleAvatar(
-                backgroundColor: Colors.blue[800],
-                radius: 18,
-                child: const Icon(Icons.edit, color: Colors.white, size: 18),
-              ),
-            ),
+            Positioned(bottom: 0, right: 4, child: CircleAvatar(backgroundColor: Colors.blue[800], radius: 18, child: const Icon(Icons.edit, color: Colors.white, size: 18))),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildLocationRow() {
-    return Row(
-      children: [
-        Expanded(
-          child: Text(
-            _fetchedLocation ?? "Location not detected",
-            style: TextStyle(color: Colors.grey[700]),
-          ),
-        ),
-        TextButton.icon(
-          onPressed: _getCurrentLocation,
-          icon: const Icon(Icons.my_location),
-          label: const Text("Get Location"),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildGenderDropdown() {
-    return DropdownButtonFormField<String>(
-      value: _gender,
-      decoration: InputDecoration(
-        labelText: 'Gender',
-        prefixIcon: const Icon(Icons.people),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-      ),
-      items: const [
-        DropdownMenuItem(value: 'Male', child: Text('Male')),
-        DropdownMenuItem(value: 'Female', child: Text('Female')),
-      ],
-      onChanged: (value) => setState(() => _gender = value),
+  Widget _buildEmailField() {
+    return TextFormField(
+      controller: _emailController,
+      keyboardType: TextInputType.emailAddress,
+      decoration: InputDecoration(labelText: "Email Address", prefixIcon: const Icon(Icons.email), border: OutlineInputBorder(borderRadius: BorderRadius.circular(12))),
+      validator: (val) {
+        if (val == null || val.isEmpty) return "Email is required";
+        if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(val)) return "Enter a valid email address";
+        return null;
+      },
     );
   }
 
@@ -262,13 +230,28 @@ class _StudentRegistrationScreenState extends State<StudentRegistrationScreen> {
       decoration: InputDecoration(
         labelText: "Create Password",
         prefixIcon: const Icon(Icons.lock),
-        suffixIcon: IconButton(
-          icon: Icon(_isPasswordVisible ? Icons.visibility : Icons.visibility_off),
-          onPressed: () => setState(() => _isPasswordVisible = !_isPasswordVisible),
-        ),
+        suffixIcon: IconButton(icon: Icon(_isPasswordVisible ? Icons.visibility : Icons.visibility_off), onPressed: () => setState(() => _isPasswordVisible = !_isPasswordVisible)),
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
       ),
       validator: (val) => val!.length < 6 ? "Minimum 6 characters needed" : null,
+    );
+  }
+
+  Widget _buildLocationRow() {
+    return Row(
+      children: [
+        Expanded(child: Text(_fetchedLocation ?? "Location not detected", style: TextStyle(color: Colors.grey[700]))),
+        TextButton.icon(onPressed: _getCurrentLocation, icon: const Icon(Icons.my_location), label: const Text("Get Location")),
+      ],
+    );
+  }
+
+  Widget _buildGenderDropdown() {
+    return DropdownButtonFormField<String>(
+      value: _gender,
+      decoration: InputDecoration(labelText: 'Gender', prefixIcon: const Icon(Icons.people), border: OutlineInputBorder(borderRadius: BorderRadius.circular(12))),
+      items: const [DropdownMenuItem(value: 'Male', child: Text('Male')), DropdownMenuItem(value: 'Female', child: Text('Female'))],
+      onChanged: (value) => setState(() => _gender = value),
     );
   }
 
@@ -277,12 +260,11 @@ class _StudentRegistrationScreenState extends State<StudentRegistrationScreen> {
       width: double.infinity,
       height: 55,
       child: ElevatedButton(
-        onPressed: _submit,
+        onPressed: _isAccepted ? _submit : null,
         style: ElevatedButton.styleFrom(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          backgroundColor: Colors.blue[800],
+          backgroundColor: _isAccepted ? Colors.blue[800] : Colors.grey,
           foregroundColor: Colors.white,
-          elevation: 2,
         ),
         child: const Text("REGISTER NOW", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
       ),
@@ -295,11 +277,7 @@ class _StudentRegistrationScreenState extends State<StudentRegistrationScreen> {
       child: TextFormField(
         controller: controller,
         keyboardType: type,
-        decoration: InputDecoration(
-          labelText: label,
-          prefixIcon: Icon(icon),
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-        ),
+        decoration: InputDecoration(labelText: label, prefixIcon: Icon(icon), border: OutlineInputBorder(borderRadius: BorderRadius.circular(12))),
         validator: (val) => val!.isEmpty ? "$label is required" : null,
       ),
     );
