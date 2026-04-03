@@ -1,13 +1,10 @@
 import 'dart:io';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_storage/firebase_storage.dart';
-
-// Import your custom screens here
-// import 'chat_screen.dart'; 
-// import 'student_payment_confirmation_screen.dart';
+import '../utils/image_utils.dart'; // Standard helper for compression
 
 class StudentProfileScreen extends StatefulWidget {
   const StudentProfileScreen({super.key});
@@ -20,54 +17,39 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseStorage _storage = FirebaseStorage.instance;
+  final ImagePicker _picker = ImagePicker();
 
   Map<String, dynamic>? studentData;
   bool isLoading = true;
   bool isEditing = false;
   File? _selectedImage;
-  final ImagePicker _picker = ImagePicker();
 
   final _nameController = TextEditingController();
   final _phoneController = TextEditingController();
   final _locationController = TextEditingController();
   final _bioController = TextEditingController();
   final _subjectSearchController = TextEditingController();
-  
+
   String? gender;
   String? studentClass;
   List<String> selectedSubjects = [];
 
-  // --- COMPLETE SUBJECT LIST FROM YOUR ORIGINAL CODE ---
   final List<String> allSubjects = [
     'Mathematics', 'Physics', 'Chemistry', 'Biology', 'Computer Science',
     'English', 'Bengali', 'Hindi', 'Sanskrit', 'History', 'Geography',
     'Civics', 'Political Science', 'Economics', 'Philosophy', 'Psychology',
     'Sociology', 'Environmental Studies', 'General Science', 'Life Science',
-    'Physical Science', 'Social Studies', 'Moral Science', 'Science (Junior Level)',
-    'Fine Arts', 'Visual Arts', 'Performing Arts', 'Music', 'Dance', 'Drama/Theatre',
-    'Art & Craft', 'Painting', 'Drawing', 'French', 'Spanish', 'German', 'Arabic',
-    'Chinese', 'Japanese', 'Korean', 'Pali', 'Urdu', 'Business Studies', 'Accounting',
-    'Finance', 'Entrepreneurship', 'Marketing', 'Commerce', 'Taxation', 'Banking',
-    'Information Technology', 'Web Development', 'App Development', 'Cyber Security',
-    'Data Science', 'Artificial Intelligence', 'Robotics', 'Machine Learning',
-    'Electrical Engineering Basics', 'Mechanical Engineering Basics', 'Electronics',
-    '3D Design & Printing', 'Physical Education', 'Yoga', 'Health & Hygiene',
-    'Nutrition & Dietetics', 'Home Science', 'First Aid', 'Life Skills',
-    'Public Speaking', 'Leadership Skills', 'Soft Skills', 'General Knowledge',
-    'Alphabet & Phonics', 'Storytelling', 'Rhymes', 'Basic Drawing',
-    'Counting & Numbers', 'Shapes & Colors', 'Moral Education', 'Astronomy',
-    'Statistics', 'Library Science', 'Media Studies', 'Photography',
-    'Film & Television', 'Fashion Design', 'Interior Design', 'Agricultural Science',
-    'Legal Studies', 'Criminology', 'Tourism & Hospitality', 'Environmental Science',
-    'Ethics', 'Gender Studies',
+    'Physical Science', 'Social Studies', 'Moral Science', 'Fine Arts', 'Music', 
+    'Dance', 'Web Development', 'App Development', 'Cyber Security',
+    'Data Science', 'Artificial Intelligence', 'Robotics', 'Public Speaking', 
+    'Statistics', 'Legal Studies', 'Environmental Science',
   ];
 
   final List<String> classOptions = [
     'Class 1', 'Class 2', 'Class 3', 'Class 4', 'Class 5',
     'Class 6', 'Class 7', 'Class 8', 'Class 9', 'Class 10',
     'Class 11', 'Class 12', 'College 1st Year', 'College 2nd Year',
-    'University 1st Year', 'University 2nd Year', 'University 3rd Year',
-    'University 4th Year', 'Others',
+    'University', 'Others',
   ];
 
   @override
@@ -82,21 +64,23 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
 
     try {
       final doc = await _firestore.collection('students').doc(uid).get();
-      if (doc.exists) {
-        studentData = doc.data();
-        _nameController.text = studentData?['name'] ?? '';
-        _phoneController.text = studentData?['phone'] ?? '';
-        _locationController.text = studentData?['location'] ?? '';
-        _bioController.text = studentData?['bio'] ?? '';
-        gender = studentData?['gender'];
-        studentClass = studentData?['studentClass'];
-        selectedSubjects = List<String>.from(studentData?['interestedSubjects'] ?? []);
+      if (doc.exists && mounted) {
+        setState(() {
+          studentData = doc.data();
+          _nameController.text = studentData?['name'] ?? '';
+          _phoneController.text = studentData?['phone'] ?? '';
+          _locationController.text = studentData?['location'] ?? '';
+          _bioController.text = studentData?['bio'] ?? '';
+          gender = studentData?['gender'];
+          studentClass = studentData?['studentClass'];
+          selectedSubjects = List<String>.from(studentData?['interestedSubjects'] ?? []);
+          isLoading = false;
+        });
       }
     } catch (e) {
       debugPrint("Error fetching data: $e");
+      if (mounted) setState(() => isLoading = false);
     }
-
-    if (mounted) setState(() => isLoading = false);
   }
 
   Future<void> updateStudentProfile() async {
@@ -107,9 +91,12 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
 
     try {
       String? imageUrl = studentData?['profileImageUrl'];
+      
       if (_selectedImage != null) {
+        // Compressing image before update
+        File? compressedFile = await ImageHelper.compressImage(_selectedImage!);
         final ref = _storage.ref().child('students/$uid/profile.jpg');
-        await ref.putFile(_selectedImage!);
+        await ref.putFile(compressedFile ?? _selectedImage!);
         imageUrl = await ref.getDownloadURL();
       }
 
@@ -125,46 +112,20 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
       }, SetOptions(merge: true));
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Profile Updated Successfully!')),
-        );
-        setState(() {
-          isEditing = false;
-          _selectedImage = null;
-        });
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Profile Updated!')));
+        setState(() => isEditing = false);
         fetchStudentData();
       }
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
-        );
-      }
-    } finally {
       if (mounted) setState(() => isLoading = false);
     }
   }
 
   Future<void> pickImage() async {
-    final picked = await _picker.pickImage(source: ImageSource.gallery);
+    final picked = await _picker.pickImage(source: ImageSource.gallery, imageQuality: 80);
     if (picked != null) {
       setState(() => _selectedImage = File(picked.path));
     }
-  }
-
-  Widget _buildInfoRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(label, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.indigo)),
-          const SizedBox(height: 4),
-          Text(value.isEmpty ? "N/A" : value, style: const TextStyle(fontSize: 16)),
-          const Divider(),
-        ],
-      ),
-    );
   }
 
   @override
@@ -175,6 +136,8 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
       backgroundColor: Colors.white,
       appBar: AppBar(
         title: const Text("Student Profile", style: TextStyle(fontWeight: FontWeight.bold)),
+        backgroundColor: Colors.blue[800],
+        foregroundColor: Colors.white,
         centerTitle: true,
         actions: [
           IconButton(
@@ -189,39 +152,32 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
               padding: const EdgeInsets.all(20),
               child: Column(
                 children: [
-                  // --- PROFILE IMAGE SECTION ---
-                  Center(
-                    child: GestureDetector(
-                      onTap: isEditing ? pickImage : null,
-                      child: CircleAvatar(
-                        radius: 65,
-                        backgroundColor: Colors.indigo[50],
-                        backgroundImage: _selectedImage != null
-                            ? FileImage(_selectedImage!)
-                            : (imageUrl != null ? NetworkImage(imageUrl) : null) as ImageProvider?,
-                        child: (imageUrl == null && _selectedImage == null)
-                            ? const Icon(Icons.person, size: 65, color: Colors.indigo)
-                            : null,
-                      ),
-                    ),
-                  ),
+                  _buildProfileHeader(imageUrl),
                   const SizedBox(height: 25),
-
-                  // --- TEXT FIELDS / INFO ROWS ---
                   isEditing ? _buildEditForm() : _buildProfileView(),
-
-                  const SizedBox(height: 30),
-
-                  // --- PAYMENT BUTTON (Only in View Mode) ---
-                  if (!isEditing) _buildPaymentButton(),
-
-                  // --- CHAT SECTION (Only in View Mode) ---
+                  if (!isEditing) _buildActionButtons(),
                   if (!isEditing) _buildRecentChatsSection(),
-                  
-                  const SizedBox(height: 20),
                 ],
               ),
             ),
+    );
+  }
+
+  Widget _buildProfileHeader(String? imageUrl) {
+    return Center(
+      child: GestureDetector(
+        onTap: isEditing ? pickImage : null,
+        child: CircleAvatar(
+          radius: 65,
+          backgroundColor: Colors.blue[50],
+          backgroundImage: _selectedImage != null
+              ? FileImage(_selectedImage!)
+              : (imageUrl != null ? NetworkImage(imageUrl) : null) as ImageProvider?,
+          child: (imageUrl == null && _selectedImage == null)
+              ? Icon(Icons.person, size: 65, color: Colors.blue[800])
+              : null,
+        ),
+      ),
     );
   }
 
@@ -254,8 +210,9 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
         const SizedBox(height: 30),
         SizedBox(
           width: double.infinity,
-          height: 50,
+          height: 55,
           child: ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.blue[800], foregroundColor: Colors.white),
             onPressed: updateStudentProfile,
             child: const Text("SAVE CHANGES", style: TextStyle(fontWeight: FontWeight.bold)),
           ),
@@ -268,18 +225,18 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildInfoRow("Name", _nameController.text),
-        _buildInfoRow("Phone", _phoneController.text),
-        _buildInfoRow("Location", _locationController.text),
-        _buildInfoRow("Bio", _bioController.text),
-        _buildInfoRow("Gender", gender ?? "N/A"),
-        _buildInfoRow("Class", studentClass ?? "N/A"),
-        const SizedBox(height: 10),
-        const Text("Interested Subjects", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.indigo)),
+        _infoTile("Name", _nameController.text, Icons.person_outline),
+        _infoTile("Phone", _phoneController.text, Icons.phone_android),
+        _infoTile("Location", _locationController.text, Icons.map_outlined),
+        _infoTile("Bio", _bioController.text, Icons.info_outline),
+        _infoTile("Gender", gender ?? "N/A", Icons.wc),
+        _infoTile("Class", studentClass ?? "N/A", Icons.school_outlined),
+        const Divider(),
+        const Text("Interested Subjects", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue)),
         const SizedBox(height: 8),
         Wrap(
           spacing: 8,
-          children: selectedSubjects.map((s) => Chip(label: Text(s))).toList(),
+          children: selectedSubjects.map((s) => Chip(label: Text(s), backgroundColor: Colors.blue[50])).toList(),
         ),
       ],
     );
@@ -308,9 +265,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
                       title: Text(s),
                       value: selectedSubjects.contains(s),
                       onChanged: (val) {
-                        setState(() {
-                          val! ? selectedSubjects.add(s) : selectedSubjects.remove(s);
-                        });
+                        setState(() { val! ? selectedSubjects.add(s) : selectedSubjects.remove(s); });
                       },
                     ))
                 .toList(),
@@ -320,21 +275,22 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
     );
   }
 
-  Widget _buildPaymentButton() {
+  Widget _buildActionButtons() {
     return Padding(
-      padding: const EdgeInsets.only(top: 20),
-      child: SizedBox(
-        width: double.infinity,
-        height: 55,
-        child: ElevatedButton.icon(
-          icon: const Icon(Icons.upload_file),
-          label: const Text("UPLOAD PAYMENT CONFIRMATION"),
-          style: ElevatedButton.styleFrom(backgroundColor: Colors.deepPurple, foregroundColor: Colors.white),
-          onPressed: () {
-            final tId = studentData?['connectedTeacherId'] ?? 'demo_id';
-            // Navigator.push(context, MaterialPageRoute(builder: (_) => StudentPaymentConfirmationScreen(teacherId: tId)));
-          },
-        ),
+      padding: const EdgeInsets.only(top: 25),
+      child: Column(
+        children: [
+          SizedBox(
+            width: double.infinity,
+            height: 55,
+            child: ElevatedButton.icon(
+              icon: const Icon(Icons.upload_file),
+              label: const Text("UPLOAD PAYMENT CONFIRMATION"),
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.deepPurple, foregroundColor: Colors.white),
+              onPressed: () {},
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -348,11 +304,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
         const Text("Recent Conversations", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
         const SizedBox(height: 15),
         StreamBuilder<QuerySnapshot>(
-          stream: _firestore
-              .collection('chats')
-              .where('participants', arrayContains: _auth.currentUser!.uid)
-              .orderBy('lastMessageTime', descending: true)
-              .snapshots(),
+          stream: _firestore.collection('chats').where('participants', arrayContains: _auth.currentUser!.uid).snapshots(),
           builder: (context, snapshot) {
             if (!snapshot.hasData || snapshot.data!.docs.isEmpty) return const Text("No recent messages.");
             return ListView.builder(
@@ -382,11 +334,18 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
           title: Text(teacher['name'] ?? 'Teacher'),
           subtitle: Text(chat['lastMessage'] ?? '', maxLines: 1, overflow: TextOverflow.ellipsis),
           trailing: const Icon(Icons.chevron_right),
-          onTap: () {
-            // Navigator.push(context, MaterialPageRoute(builder: (_) => ChatScreen(...)));
-          },
+          onTap: () {},
         );
       },
+    );
+  }
+
+  Widget _infoTile(String label, String value, IconData icon) {
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: Icon(icon, color: Colors.blue[800]),
+      title: Text(label, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+      subtitle: Text(value.isEmpty ? "N/A" : value, style: const TextStyle(fontSize: 16, color: Colors.black)),
     );
   }
 
@@ -396,7 +355,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
       child: TextField(
         controller: controller,
         maxLines: maxLines,
-        decoration: InputDecoration(labelText: label, border: const OutlineInputBorder()),
+        decoration: InputDecoration(labelText: label, border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12)))),
       ),
     );
   }
