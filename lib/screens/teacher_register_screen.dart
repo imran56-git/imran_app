@@ -7,6 +7,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../services/firestore_service.dart';
 import '../services/location_service.dart';
+import '../utils/image_utils.dart'; // Standard import for your helper
 
 class TeacherRegistrationScreen extends StatefulWidget {
   const TeacherRegistrationScreen({super.key});
@@ -18,7 +19,6 @@ class TeacherRegistrationScreen extends StatefulWidget {
 class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
   final _formKey = GlobalKey<FormState>();
 
-  // Controllers
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
@@ -43,7 +43,6 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
 
   @override
   void dispose() {
-    // Proper disposal of controllers to prevent memory leaks
     _nameController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
@@ -61,7 +60,7 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
   }
 
   Future<void> _pickImage(Function(File) onPicked) async {
-    final picked = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 50);
+    final picked = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 80);
     if (picked != null) onPicked(File(picked.path));
   }
 
@@ -76,6 +75,16 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
     }
   }
 
+  Future<String> _processAndUpload(File file, String path) async {
+    // Compressing image before upload to save memory
+    File? compressedFile = await ImageHelper.compressImage(file);
+    File fileToUpload = compressedFile ?? file;
+
+    final ref = FirebaseStorage.instance.ref().child(path);
+    await ref.putFile(fileToUpload);
+    return await ref.getDownloadURL();
+  }
+
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -88,23 +97,19 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
     setState(() => _isLoading = true);
 
     try {
-      // 1. Create User with Email and Password
       final userCredential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
         email: _emailController.text.trim(),
         password: _passwordController.text.trim(),
       );
-      
-      final uid = userCredential.user!.uid;
 
-      // 2. Send Email Verification (Crucial for verifying if email is real)
+      final uid = userCredential.user!.uid;
       await userCredential.user!.sendEmailVerification();
 
-      // 3. Upload Images to Firebase Storage
-      final profileUrl = await _uploadFile(_profileImage!, 'profile_images/$uid.jpg');
-      final certUrl = await _uploadFile(_qualificationCertificate!, 'qualification_certificates/$uid.jpg');
-      final idProofUrl = await _uploadFile(_idProofImage!, 'id_proofs/$uid.jpg');
+      // Uploading compressed images
+      final profileUrl = await _processAndUpload(_profileImage!, 'teachers/$uid/profile.jpg');
+      final certUrl = await _processAndUpload(_qualificationCertificate!, 'teachers/$uid/certificate.jpg');
+      final idProofUrl = await _processAndUpload(_idProofImage!, 'teachers/$uid/id_proof.jpg');
 
-      // 4. Save Data to Firestore
       await FirestoreService().saveTeacherData(uid, {
         'uid': uid,
         'name': _nameController.text.trim(),
@@ -124,19 +129,13 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
         'isAcceptedTerms': _isAccepted,
       });
 
-      _showSnackBar('Registration successful! Please check your email for verification link.', isError: false);
+      _showSnackBar('Registration successful! Verify your email.', isError: false);
       if (mounted) Navigator.pop(context);
     } catch (e) {
       _showSnackBar('Error: $e');
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
-  }
-
-  Future<String> _uploadFile(File file, String path) async {
-    final ref = FirebaseStorage.instance.ref().child(path);
-    await ref.putFile(file);
-    return await ref.getDownloadURL();
   }
 
   void _showSnackBar(String message, {bool isError = true}) {
@@ -187,7 +186,6 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
     );
   }
 
-  // UI Components
   Widget _buildProfileImagePicker() {
     return GestureDetector(
       onTap: () => _pickImage((file) => setState(() => _profileImage = file)),
@@ -207,11 +205,7 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
         controller: _emailController,
         keyboardType: TextInputType.emailAddress,
         decoration: InputDecoration(labelText: 'Email Address', prefixIcon: const Icon(Icons.email), border: OutlineInputBorder(borderRadius: BorderRadius.circular(12))),
-        validator: (val) {
-          if (val == null || val.isEmpty) return 'Email is required';
-          if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(val)) return 'Enter a valid email';
-          return null;
-        },
+        validator: (val) => (val == null || val.isEmpty) ? 'Email is required' : (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(val) ? 'Enter a valid email' : null),
       ),
     );
   }
@@ -280,7 +274,7 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
               children: [
                 const TextSpan(text: "I agree to the "),
                 TextSpan(
-                  text: "Terms & Conditions and Privacy Policy",
+                  text: "Terms & Conditions",
                   style: const TextStyle(color: Colors.blue, fontWeight: FontWeight.bold, decoration: TextDecoration.underline),
                   recognizer: TapGestureRecognizer()..onTap = _launchUrl,
                 ),
