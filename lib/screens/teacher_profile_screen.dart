@@ -39,11 +39,54 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
 
   String get targetUID => widget.teacherId ?? _auth.currentUser?.uid ?? "";
 
-  final List<String> allSubjects = [
-    'Mathematics', 'Physics', 'Chemistry', 'Biology', 'Computer Science', 
-    'English', 'Bengali', 'Arabic', 'Accounting', 'Business Studies', 
-    'App Development (Flutter)', 'Graphics Design', 'Music', 'Drawing'
+    final List<String> allSubjects = [
+    // --- Primary & Junior (Class 1 - 8) ---
+    'Bengali', 'English', 'Mathematics', 'General Science', 'Social Studies',
+    'Religion & Moral Education', 'ICT (Information & Tech)', 'Physical Education',
+    'Arts and Crafts', 'Work and Life Oriented Education', 'Global Studies',
+
+    // --- High School (Class 9 - 10) ---
+    // Science
+    'Physics', 'Chemistry', 'Biology', 'Higher Mathematics',
+    // Commerce
+    'Accounting', 'Business Studies', 'Finance & Banking',
+    // Arts
+    'Geography & Environment', 'History', 'Civics & Citizenship', 'Economics',
+
+    // --- Higher Secondary (Class 11 - 12 / College) ---
+    // Science
+    'Physics 1st/2nd Paper', 'Chemistry 1st/2nd Paper', 'Biology 1st/2nd Paper', 
+    'Higher Math 1st/2nd Paper', 'Statistics',
+    // Commerce
+    'Management', 'Marketing', 'Production Management', 'Commercial Law',
+    // Arts
+    'Logic', 'Sociology', 'Social Work', 'Psychology', 'Islamic History',
+    'Philosophy', 'Political Science', 'Sanskrit', 'Home Science',
+
+    // --- University & Professional Course ---
+    // Technology & IT
+    'Computer Science', 'Programming (C/C++, Python, Java)', 'Data Structure',
+    'Web Development', 'App Development (Flutter)', 'Graphic Design',
+    'Digital Marketing', 'Cyber Security', 'Artificial Intelligence',
+    'Robotics', 'Data Science', 'Machine Learning', 'UI/UX Design',
+    // Engineering
+    'Mechanical Engineering', 'Electrical Engineering', 'Civil Engineering',
+    'Software Engineering', 'Textile Engineering',
+    // Medical
+    'Anatomy', 'Physiology', 'Biochemistry', 'Microbiology', 'Pharmacy',
+    // Business & Professional
+    'BBA', 'MBA', 'Human Resource (HRM)', 'Supply Chain Management',
+    'Chartered Accountancy (CA)', 'Public Speaking', 'Legal Studies (Law)',
+
+    // --- Language Learning ---
+    'Arabic', 'Hindi', 'Urdu', 'French', 'German', 'Japanese', 'Chinese', 'Spanish',
+
+    // --- Creative & Vocational ---
+    'Fine Arts', 'Music (Vocal)', 'Music (Instrumental)', 'Dance', 'Photography',
+    'Video Editing', 'Interior Design', 'Fashion Design', 'Agriculture',
+    'General Knowledge (GK)', 'Current Affairs', 'IELTS/GRE Preparation',
   ];
+
 
   @override
   void initState() {
