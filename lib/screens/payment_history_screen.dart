@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:intl/intl.dart'; // Date formatting 
 
 class PaymentHistoryScreen extends StatelessWidget {
   final String teacherId;
@@ -13,7 +14,6 @@ class PaymentHistoryScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Ensuring the reference strictly follows your database structure
     final Query paymentsQuery = FirebaseFirestore.instance
         .collection('teachers')
         .doc(teacherId)
@@ -23,165 +23,129 @@ class PaymentHistoryScreen extends StatelessWidget {
         .orderBy('date', descending: true);
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F9FA), // Professional light background
+      backgroundColor: const Color(0xFFF0F2F5),
       appBar: AppBar(
-        title: const Text(
-          "Payment History", 
-          style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 0.8),
-        ),
+        title: const Text("Payment History", style: TextStyle(fontWeight: FontWeight.bold)),
         centerTitle: true,
         elevation: 0,
-        backgroundColor: Colors.indigo[700],
+        backgroundColor: const Color(0xFF128C7E), // consistent with your theme
         foregroundColor: Colors.white,
       ),
       body: StreamBuilder<QuerySnapshot>(
         stream: paymentsQuery.snapshots(),
         builder: (context, snapshot) {
-          // Error State Handling
-          if (snapshot.hasError) {
-            return const Center(
-              child: Text("Error loading payments. Please check your connection."),
-            );
-          }
-
-          // Loading State
+          if (snapshot.hasError) return _errorState();
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator(color: Colors.indigo));
+            return const Center(child: CircularProgressIndicator());
           }
 
           final List<QueryDocumentSnapshot> docs = snapshot.data!.docs;
+          if (docs.isEmpty) return _emptyState();
 
-          // Empty State Handling
-          if (docs.isEmpty) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.receipt_long_rounded, size: 80, color: Colors.grey[300]),
-                  const SizedBox(height: 16),
-                  const Text(
-                    "No payment records found.", 
-                    style: TextStyle(color: Colors.grey, fontSize: 16),
-                  ),
-                ],
-              ),
-            );
-          }
+          // Advanced: Calculate Total Paid Amount
+          double totalAmount = docs.fold(0, (sum, doc) => sum + (double.tryParse(doc['amount'].toString()) ?? 0));
 
-          // List Construction
-          return ListView.builder(
-            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-            itemCount: docs.length,
-            itemBuilder: (context, index) {
-              final Map<String, dynamic> data = docs[index].data() as Map<String, dynamic>;
+          return Column(
+            children: [
+              // --- Advanced Summary Card ---
+              _buildSummaryHeader(totalAmount, docs.length),
               
-              return _buildPaymentCard(data);
-            },
+              Expanded(
+                child: ListView.builder(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: docs.length,
+                  itemBuilder: (context, index) {
+                    final data = docs[index].data() as Map<String, dynamic>;
+                    return _buildAdvancedPaymentCard(data, context);
+                  },
+                ),
+              ),
+            ],
           );
         },
       ),
     );
   }
 
-  // Refined Card Widget for better UI polish
-  Widget _buildPaymentCard(Map<String, dynamic> data) {
+  // --- Summary Header (Advanced Feature) ---
+  Widget _buildSummaryHeader(double total, int count) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: const BoxDecoration(
+        color: Color(0xFF128C7E),
+        borderRadius: BorderRadius.only(bottomLeft: Radius.circular(30), bottomRight: Radius.circular(30)),
+      ),
+      child: Column(
+        children: [
+          const Text("Total Fees Received", style: TextStyle(color: Colors.white70, fontSize: 14)),
+          const SizedBox(height: 5),
+          Text("₹${total.toStringAsFixed(0)}", 
+            style: const TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 10),
+          Text("Total Transactions: $count", style: const TextStyle(color: Colors.white60, fontSize: 12)),
         ],
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
+    );
+  }
+
+  // --- UI Card with advanced styling and Actions ---
+  Widget _buildAdvancedPaymentCard(Map<String, dynamic> data, BuildContext context) {
+    String method = data['method']?.toString().toUpperCase() ?? 'OTHER';
+    
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(15),
+        border: Border.all(color: Colors.grey.withOpacity(0.1)),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10, offset: const Offset(0, 5))],
+      ),
+      child: ListTile(
+        contentPadding: const EdgeInsets.all(15),
+        leading: CircleAvatar(
+          backgroundColor: _getMethodColor(method).withOpacity(0.1),
+          child: Icon(_getMethodIcon(method), color: _getMethodColor(method)),
+        ),
+        title: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text("₹${data['amount']}", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+            const Text("SUCCESS", style: TextStyle(color: Colors.green, fontSize: 10, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Row(
-                  children: [
-                    const CircleAvatar(
-                      radius: 20,
-                      backgroundColor: Color(0xFFE8EAF6),
-                      child: Icon(Icons.currency_rupee, color: Colors.indigo, size: 20),
-                    ),
-                    const SizedBox(width: 12),
-                    Text(
-                      "₹${data['amount'] ?? '0'}",
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold, 
-                        fontSize: 20, 
-                        color: Colors.black87,
-                      ),
-                    ),
-                  ],
-                ),
-                // Dynamic Status Badge (Optional - can be customized)
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.green[50],
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    "PAID",
-                    style: TextStyle(color: Colors.green[700], fontSize: 10, fontWeight: FontWeight.bold),
-                  ),
-                ),
-              ],
-            ),
-            const Divider(height: 24, thickness: 0.8),
-            
-            // Detail Information Rows
-            _buildDetailRow(Icons.payments_outlined, "Method", data['method'] ?? 'N/A'),
-            const SizedBox(height: 8),
-            _buildDetailRow(Icons.calendar_today_outlined, "Date & Time", "${data['date'] ?? ''} ${data['time'] ?? ''}"),
-            
-            // Note Section - only shows if content exists
-            if (data['note'] != null && data['note'].toString().trim().isNotEmpty) ...[
-              const SizedBox(height: 12),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.grey[50],
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.grey[200]!),
-                ),
-                child: Text(
-                  "Note: ${data['note']}",
-                  style: const TextStyle(fontSize: 13, color: Colors.black54, fontStyle: FontStyle.italic),
-                ),
-              ),
-            ],
+            const SizedBox(height: 5),
+            Text("Via $method", style: const TextStyle(fontSize: 13, color: Colors.blueGrey)),
+            const SizedBox(height: 3),
+            Text("Date: ${data['date']}", style: const TextStyle(fontSize: 12, color: Colors.grey)),
           ],
+        ),
+        trailing: IconButton(
+          icon: const Icon(Icons.share_outlined, color: Colors.grey),
+          onPressed: () {
+            // Future logic: Generate PDF Receipt
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Downloading PDF Receipt...")));
+          },
         ),
       ),
     );
   }
 
-  Widget _buildDetailRow(IconData icon, String label, String value) {
-    return Row(
-      children: [
-        Icon(icon, size: 16, color: Colors.indigo[300]),
-        const SizedBox(width: 8),
-        Text("$label: ", style: const TextStyle(color: Colors.black54, fontSize: 14)),
-        Expanded(
-          child: Text(
-            value, 
-            style: const TextStyle(fontWeight: FontWeight.w500, color: Colors.black87, fontSize: 14),
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
-      ],
-    );
+  // --- Helper methods for Dynamic UI ---
+  IconData _getMethodIcon(String method) {
+    if (method.contains('CASH')) return Icons.money;
+    if (method.contains('UPI') || method.contains('ONLINE')) return Icons.account_balance_wallet;
+    return Icons.payment;
   }
+
+  Color _getMethodColor(String method) {
+    if (method.contains('CASH')) return Colors.orange;
+    return Colors.blue;
+  }
+
+  Widget _errorState() => const Center(child: Text("Error fetching payment data."));
+  Widget _emptyState() => const Center(child: Text("No payments recorded yet."));
 }
