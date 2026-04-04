@@ -1,65 +1,226 @@
-import 'dart:async'; import 'dart:io'; import 'package:flutter/material.dart'; import 'package:image_picker/image_picker.dart'; import 'package:flutter_sound/flutter_sound.dart'; import 'package:emoji_picker_flutter/emoji_picker_flutter.dart'; import 'package:permission_handler/permission_handler.dart'; import 'package:path_provider/path_provider.dart'; import 'package:cloud_firestore/cloud_firestore.dart'; import 'package:just_audio/just_audio.dart'; import '../services/voice_message_handler.dart'; import '../widgets/message_bubble.dart';
+import 'dart:async';
+import 'dart:io';
+import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:flutter_sound/flutter_sound.dart';
+import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import '../services/voice_message_handler.dart';
+import '../widgets/message_bubble.dart';
 
-class ChatScreen extends StatefulWidget { final String teacherName; final String chatId; final String currentUserId; final String receiverId;
+class ChatScreen extends StatefulWidget {
+  final String teacherName;
+  final String chatId;
+  final String currentUserId;
+  final String receiverId;
 
-const ChatScreen({ super.key, required this.teacherName, required this.chatId, required this.currentUserId, required this.receiverId, });
-
-@override State<ChatScreen> createState() => _ChatScreenState(); }
-
-class _ChatScreenState extends State<ChatScreen> { final TextEditingController _messageController = TextEditingController(); final FlutterSoundRecorder _recorder = FlutterSoundRecorder(); final AudioPlayer _audioPlayer = AudioPlayer(); final ImagePicker _picker = ImagePicker(); final VoiceMessageHandler _voiceHandler = VoiceMessageHandler();
-
-bool _isRecording = false; bool _isEmojiVisible = false; bool _isTyping = false; bool _isTeacherOnline = true; DateTime _lastSeen = DateTime.now().subtract(const Duration(minutes: 30));
-
-Timer? _typingTimer;
-
-@override void initState() { super.initState(); _initRecorder(); _autoSendInviteMessage(); }
-
-Future<void> _initRecorder() async { await Permission.microphone.request(); await _recorder.openRecorder(); }
-
-void _autoSendInviteMessage() async { await _sendMessage( "Hello teacher, I’ve seen your profile and I’m really interested in learning from you. I need proper guidance and would love to start a great learning journey with your help." ); }
-
-Future<void> _sendMessage(String text) async { if (text.trim().isEmpty) return;
-
-final isUserBlocked = await isBlocked(widget.currentUserId, widget.receiverId);
-if (isUserBlocked) {
-  ScaffoldMessenger.of(context).showSnackBar(
-    const SnackBar(content: Text('You are blocked by this user.')),
-  );
-  return;
-}
-
-await FirebaseFirestore.instance.collection('chats')
-  .doc(widget.chatId).collection('messages').add({
-    'message': text,
-    'senderId': widget.currentUserId,
-    'receiverId': widget.receiverId,
-    'timestamp': Timestamp.now(),
-    'type': 'text',
+  const ChatScreen({
+    super.key,
+    required this.teacherName,
+    required this.chatId,
+    required this.currentUserId,
+    required this.receiverId,
   });
 
-_messageController.clear();
-
+  @override
+  State<ChatScreen> createState() => _ChatScreenState();
 }
 
-Future<void> _pickImage() async { final pickedFile = await _picker.pickImage(source: ImageSource.gallery); if (pickedFile != null) { final imageFile = File(pickedFile.path); // Upload logic needed here } }
+class _ChatScreenState extends State<ChatScreen> {
+  final TextEditingController _messageController = TextEditingController();
+  final FlutterSoundRecorder _recorder = FlutterSoundRecorder();
+  final ImagePicker _picker = ImagePicker();
+  final VoiceMessageHandler _voiceHandler = VoiceMessageHandler();
 
-Future<void> _startOrStopRecording() async { if (_isRecording) { final audioUrl = await _voiceHandler.stopAndUploadRecording(widget.chatId); if (audioUrl != null) { await FirebaseFirestore.instance.collection('chats') .doc(widget.chatId).collection('messages').add({ 'senderId': widget.currentUserId, 'receiverId': widget.receiverId, 'audioUrl': audioUrl, 'timestamp': Timestamp.now(), 'type': 'audio', }); } } else { await _voiceHandler.startRecording(); } setState(() => _isRecording = !_isRecording); }
+  bool _isRecording = false;
+  bool _isEmojiVisible = false;
+  bool _isTyping = false;
+  String _backgroundImageUrl = "assets/chat_bg.png"; // ডিফল্ট ব্যাকগ্রাউন্ড
 
-Future<void> deleteMessage(String messageId) async { await FirebaseFirestore.instance .collection('chats') .doc(widget.chatId) .collection('messages') .doc(messageId) .delete(); }
+  @override
+  void initState() {
+    super.initState();
+    _initRecorder();
+  }
 
-Future<void> blockUser(String blockerId, String blockedId) async { final blockDocId = '${blockerId}_$blockedId'; await FirebaseFirestore.instance.collection('blocks').doc(blockDocId).set({ 'blockerId': blockerId, 'blockedId': blockedId, 'timestamp': FieldValue.serverTimestamp(), }); }
+  Future<void> _initRecorder() async {
+    await Permission.microphone.request();
+    await _recorder.openRecorder();
+  }
 
-Future<void> unblockUser(String blockerId, String blockedId) async { final blockDocId = '${blockerId}_$blockedId'; await FirebaseFirestore.instance.collection('blocks').doc(blockDocId).delete(); }
+  // --- মেসেজ অ্যাকশন মেনু (Long Press) ---
+  void _showContextMenu(BuildContext context, Offset offset, String messageId, String currentText, bool isMe) {
+    showMenu(
+      context: context,
+      position: RelativeRect.fromLTRB(offset.dx, offset.dy, offset.dx, offset.dy),
+      items: [
+        if (isMe) const PopupMenuItem(value: 'edit', child: Row(children: [Icon(Icons.edit), SizedBox(width: 8), Text('Edit')])),
+        const PopupMenuItem(value: 'delete_me', child: Row(children: [Icon(Icons.delete_outline), SizedBox(width: 8), Text('Delete for me')])),
+        if (isMe) const PopupMenuItem(value: 'delete_all', child: Row(children: [Icon(Icons.delete_forever), SizedBox(width: 8), Text('Delete for everyone')])),
+      ],
+    ).then((value) {
+      if (value == 'edit') _showEditDialog(context, messageId, currentText);
+      if (value == 'delete_me' || value == 'delete_all') _deleteMessage(messageId, value == 'delete_all');
+    });
+  }
 
-Future<bool> isBlocked(String senderId, String receiverId) async { final blockDocId = '${receiverId}_$senderId'; final doc = await FirebaseFirestore.instance.collection('blocks').doc(blockDocId).get(); return doc.exists; }
+  // --- মেসেজ ডিলিট লজিক ---
+  Future<void> _deleteMessage(String messageId, bool forEveryone) async {
+    if (forEveryone) {
+      await FirebaseFirestore.instance.collection('chats').doc(widget.chatId).collection('messages').doc(messageId).delete();
+    } else {
+      // Local delete logic can be added here
+    }
+  }
 
-void _onTyping(String value) { if (!_isTyping) setState(() => _isTyping = true); _typingTimer?.cancel(); _typingTimer = Timer(const Duration(seconds: 2), () { setState(() => _isTyping = false); }); }
+  // --- চ্যাট ব্যাকগ্রাউন্ড পরিবর্তন ---
+  void _changeBackground() async {
+    final XFile? image = await _picker.pickImage(source: ImageSource.gallery);
+    if (image != null) {
+      setState(() {
+        _backgroundImageUrl = image.path;
+      });
+    }
+  }
 
-String _getStatusText() { if (_isTeacherOnline) { return _isTyping ? 'Typing...' : 'Online'; } else { final duration = DateTime.now().difference(_lastSeen); if (duration.inMinutes < 60) return 'Last seen ${duration.inMinutes} minutes ago'; if (duration.inHours < 24) return 'Last seen ${duration.inHours} hours ago'; return 'Last seen on ${_lastSeen.day}/${_lastSeen.month}/${_lastSeen.year}'; } }
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        leadingWidth: 70,
+        titleSpacing: 0,
+        leading: InkWell(
+          onTap: () => Navigator.pop(context),
+          child: Row(
+            children: [
+              const Icon(Icons.arrow_back),
+              CircleAvatar(backgroundColor: Colors.grey[300], child: const Icon(Icons.person, color: Colors.white)),
+            ],
+          ),
+        ),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(widget.teacherName, style: const TextStyle(fontSize: 16)),
+            const Text("Online", style: TextStyle(fontSize: 12, fontWeight: FontWeight.normal)),
+          ],
+        ),
+        actions: [
+          PopupMenuButton(
+            onSelected: (val) {
+              if (val == 'bg') _changeBackground();
+            },
+            itemBuilder: (context) => [
+              const PopupMenuItem(value: 'bg', child: Text("Change Wallpaper")),
+              const PopupMenuItem(value: 'clear', child: Text("Clear Chat")),
+            ],
+          ),
+        ],
+      ),
+      body: Container(
+        decoration: BoxDecoration(
+          image: DecorationImage(
+            image: _backgroundImageUrl.contains('assets') 
+                ? AssetImage(_backgroundImageUrl) as ImageProvider 
+                : FileImage(File(_backgroundImageUrl)),
+            fit: BoxFit.cover,
+          ),
+        ),
+        child: Column(
+          children: [
+            Expanded(
+              child: StreamBuilder<QuerySnapshot>(
+                stream: FirebaseFirestore.instance
+                    .collection('chats')
+                    .doc(widget.chatId)
+                    .collection('messages')
+                    .orderBy('timestamp', descending: true)
+                    .snapshots(),
+                builder: (context, snapshot) {
+                  if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+                  return ListView.builder(
+                    reverse: true,
+                    itemCount: snapshot.data!.docs.length,
+                    itemBuilder: (context, index) {
+                      var doc = snapshot.data!.docs[index];
+                      bool isMe = doc['senderId'] == widget.currentUserId;
+                      return GestureDetector(
+                        onLongPressStart: (details) => _showContextMenu(
+                          context, details.globalPosition, doc.id, doc['message'] ?? "", isMe
+                        ),
+                        child: MessageBubble(
+                          message: doc['message'] ?? '',
+                          isMe: isMe,
+                          timestamp: doc['timestamp'],
+                          type: doc['type'],
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+            _buildMessageInput(),
+            if (_isEmojiVisible) SizedBox(height: 250, child: EmojiPicker(
+              onEmojiSelected: (cat, emoji) => _messageController.text += emoji.emoji,
+            )),
+          ],
+        ),
+      ),
+    );
+  }
 
-void _showEditDialog(BuildContext context, String messageId, String oldMessage) { TextEditingController _editController = TextEditingController(text: oldMessage); showDialog( context: context, builder: (context) => AlertDialog( title: const Text('Edit Message'), content: TextField(controller: _editController), actions: [ TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')), TextButton( onPressed: () { FirebaseFirestore.instance.collection('chats') .doc(widget.chatId).collection('messages') .doc(messageId).update({'message': _editController.text}); Navigator.pop(context); }, child: const Text('Save'), ), ], ), ); }
+  Widget _buildMessageInput() {
+    return Container(
+      padding: const EdgeInsets.all(8),
+      child: Row(
+        children: [
+          Expanded(
+            child: Container(
+              decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(25)),
+              child: Row(
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.emoji_emotions_outlined, color: Colors.grey),
+                    onPressed: () => setState(() => _isEmojiVisible = !_isEmojiVisible),
+                  ),
+                  Expanded(
+                    child: TextField(
+                      controller: _messageController,
+                      decoration: const InputDecoration(hintText: "Message", border: InputBorder.none),
+                    ),
+                  ),
+                  IconButton(icon: const Icon(Icons.attach_file, color: Colors.grey), onPressed: () {}),
+                  IconButton(icon: const Icon(Icons.camera_alt, color: Colors.grey), onPressed: () {}),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(width: 5),
+          CircleAvatar(
+            backgroundColor: const Color(0xFF128C7E),
+            child: IconButton(
+              icon: Icon(_messageController.text.isEmpty ? Icons.mic : Icons.send, color: Colors.white),
+              onPressed: () {
+                if (_messageController.text.isNotEmpty) {
+                  _sendMessage(_messageController.text);
+                }
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
-@override void dispose() { _recorder.closeRecorder(); _typingTimer?.cancel(); super.dispose(); }
-
-@override Widget build(BuildContext context) { return Scaffold( appBar: AppBar( title: Column( crossAxisAlignment: CrossAxisAlignment.start, children: [ Text(widget.teacherName), Text(_getStatusText(), style: const TextStyle(fontSize: 12)), ], ), actions: [ IconButton( icon: const Icon(Icons.block), onPressed: () => blockUser(widget.currentUserId, widget.receiverId), ), IconButton( icon: const Icon(Icons.lock_open), onPressed: () => unblockUser(widget.currentUserId, widget.receiverId), ), ], ), body: Column( children: [ Expanded( child: StreamBuilder<QuerySnapshot>( stream: FirebaseFirestore.instance .collection('chats') .doc(widget.chatId) .collection('messages') .orderBy('timestamp', descending: true) .snapshots(), builder: (context, snapshot) { if (!snapshot.hasData) { return const Center(child: CircularProgressIndicator()); } return ListView( reverse: true, children: snapshot.data!.docs.map((message) { final data = message.data() as Map<String, dynamic>; return MessageBubble( message: data['message'] ?? '', isMe: data['senderId'] == widget.currentUserId, messageId: message.id, currentUserId: widget.currentUserId, onEdit: _showEditDialog, timestamp: data['timestamp'], ); }).toList(), ); }, ), ), if (_isEmojiVisible) SizedBox( height: 250, child: EmojiPicker( onEmojiSelected: (category, emoji) => _messageController.text += emoji.emoji, config: const Config(columns: 7, emojiSizeMax: 28), ), ), Container( padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6), color: Colors.grey[100], child: Row( children: [ IconButton( icon: const Icon(Icons.emoji_emotions_outlined), onPressed: () => setState(() => _isEmojiVisible = !_isEmojiVisible), ), IconButton(icon: const Icon(Icons.image), onPressed: _pickImage), IconButton( icon: Icon(_isRecording ? Icons.stop : Icons.mic), onPressed: _startOrStopRecording, ), Expanded( child: TextField( controller: _messageController, onChanged: _onTyping, decoration: const InputDecoration(hintText: 'Type a message', border: InputBorder.none), ), ), IconButton(
-
+  Future<void> _sendMessage(String text) async {
+    await FirebaseFirestore.instance.collection('chats').doc(widget.chatId).collection('messages').add({
+      'message': text,
+      'senderId': widget.currentUserId,
+      'timestamp': Timestamp.now(),
+      'type': 'text',
+    });
+    _messageController.clear();
+  }
+}
