@@ -11,100 +11,132 @@ class StudentHomeScreen extends StatefulWidget {
 }
 
 class _StudentHomeScreenState extends State<StudentHomeScreen> {
-  // 1. Core State Variables
-  int _selectedIndex = 1; // Defaulting to Search Screen for better UX
+  // 1. Core State Management
+  int _selectedIndex = 1; // Defaulting to Search for better user onboarding
 
-  // 2. Titles list as per your original requirement
+  // 2. Titles mapped to indices
   final List<String> _titles = [
-    "Chats",
-    "Search Teachers",
-    "My Profile",
+    "Messages",
+    "Find Teachers",
+    "Student Profile",
   ];
 
-  // 3. Screens list wrapped in a list for IndexedStack
+  // 3. Main Screens (Ensure these files are imported correctly)
   final List<Widget> _screens = [
     const ChatHomeScreen(),
     const TeacherSearchScreen(),
     const StudentProfileScreen(),
   ];
 
-  // 4. Your original Tab Tapping logic with setState
+  // 4. Tab Switcher Logic
   void _onTabTapped(int index) {
-    setState(() {
-      _selectedIndex = index;
-    });
+    if (_selectedIndex != index) {
+      setState(() {
+        _selectedIndex = index;
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F9FD),
-      
-      // AppBar with dynamic title switching logic
+      backgroundColor: const Color(0xFFF4F7FA),
+
+      // Professional Dynamic AppBar
       appBar: AppBar(
         title: Text(
           _titles[_selectedIndex],
           style: const TextStyle(
             fontWeight: FontWeight.bold,
-            letterSpacing: 0.5,
+            fontSize: 20,
+            color: Color(0xFF1A1C1E),
           ),
         ),
-        centerTitle: true,
+        centerTitle: false, // Professional left-aligned title
         elevation: 0,
         backgroundColor: Colors.white,
-        foregroundColor: Colors.deepPurple[800],
         actions: [
-          if (_selectedIndex == 2) // Action button specifically for Profile tab
+          // Dynamic actions based on selected tab
+          if (_selectedIndex == 0)
             IconButton(
-              icon: const Icon(Icons.settings_outlined),
+              icon: const Icon(Icons.mark_chat_read_outlined, color: Colors.blue),
+              onPressed: () {},
+            ),
+          if (_selectedIndex == 2)
+            IconButton(
+              icon: const Icon(Icons.settings_outlined, color: Colors.black87),
               onPressed: () {
-                // Settings navigation logic goes here
+                // Navigate to Settings
               },
             ),
         ],
       ),
 
-      // IndexedStack ensures that search results or chat states are preserved
+      // IndexedStack preserves the state of each page (no reloading)
       body: IndexedStack(
         index: _selectedIndex,
         children: _screens,
       ),
 
-      // Professional Bottom Navigation Bar
+      // Context-Aware Floating Action Button
+      floatingActionButton: _selectedIndex != 2 
+        ? FloatingActionButton(
+            backgroundColor: const Color(0xFF128C7E),
+            onPressed: () {
+              // Action based on tab: Create Group or Apply Filter
+            },
+            child: Icon(
+              _selectedIndex == 0 ? Icons.chat : Icons.filter_list,
+              color: Colors.white,
+            ),
+          )
+        : null,
+
+      // Highly Professional Bottom Navigation Bar
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
+          color: Colors.white,
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.05),
-              blurRadius: 15,
-              offset: const Offset(0, -2),
+              color: Colors.black.withOpacity(0.04),
+              blurRadius: 20,
+              offset: const Offset(0, -5),
             ),
           ],
         ),
         child: BottomNavigationBar(
           currentIndex: _selectedIndex,
-          onTap: _onTabTapped, // Calling your original method
-          selectedItemColor: Colors.deepPurple[700],
-          unselectedItemColor: Colors.grey[500],
-          selectedFontSize: 12,
-          unselectedFontSize: 12,
+          onTap: _onTabTapped,
+          selectedItemColor: const Color(0xFF128C7E), // Professional Teal/Green
+          unselectedItemColor: Colors.blueGrey[300],
+          backgroundColor: Colors.white,
           type: BottomNavigationBarType.fixed,
-          showSelectedLabels: true,
-          showUnselectedLabels: true,
+          elevation: 0,
+          selectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
+          unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w500, fontSize: 12),
           items: const [
             BottomNavigationBarItem(
-              icon: Icon(Icons.chat_bubble_outline),
-              activeIcon: Icon(Icons.chat_bubble),
+              icon: Padding(
+                padding: EdgeInsets.only(bottom: 4),
+                child: Icon(Icons.message_outlined),
+              ),
+              activeIcon: Icon(Icons.message),
               label: 'Chats',
             ),
             BottomNavigationBarItem(
-              icon: Icon(Icons.search),
-              activeIcon: Icon(Icons.manage_search),
-              label: 'Search',
+              icon: Padding(
+                padding: EdgeInsets.only(bottom: 4),
+                child: Icon(Icons.travel_explore_outlined),
+              ),
+              activeIcon: Icon(Icons.travel_explore),
+              label: 'Explore',
             ),
             BottomNavigationBarItem(
-              icon: Icon(Icons.person_outline),
-              activeIcon: Icon(Icons.person),
+              icon: Padding(
+                padding: EdgeInsets.only(bottom: 4),
+                child: Icon(Icons.account_circle_outlined),
+              ),
+              activeIcon: Icon(Icons.account_circle),
               label: 'Profile',
             ),
           ],
