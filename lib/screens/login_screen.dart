@@ -5,9 +5,10 @@ import 'package:google_sign_in/google_sign_in.dart';
 
 import 'student_home_screen.dart';
 import 'teacher_home_screen.dart';
+import 'forgot_password_screen.dart'; // Ensure this file exists from previous step
 
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({Key? key}) : super(key: key);
+  const LoginScreen({super.key});
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -18,7 +19,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController _passwordController = TextEditingController();
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  
+
   bool _isLoading = false;
   final _formKey = GlobalKey<FormState>();
 
@@ -29,6 +30,7 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
+  // --- Input Validation Logic ---
   String? _validateEmail(String? value) {
     if (value == null || value.isEmpty) return 'Email is required';
     final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
@@ -36,6 +38,7 @@ class _LoginScreenState extends State<LoginScreen> {
     return null;
   }
 
+  // --- Email & Password Sign In ---
   Future<void> _handleEmailSignIn() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -56,6 +59,7 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  // --- Google Sign In Logic ---
   Future<void> _handleGoogleSignIn() async {
     setState(() => _isLoading = true);
 
@@ -74,7 +78,8 @@ class _LoginScreenState extends State<LoginScreen> {
 
       final userCredential = await _auth.signInWithCredential(credential);
       final uid = userCredential.user!.uid;
-      
+
+      // Check if user exists in Firestore, if not create a Student profile
       final userDoc = await _firestore.collection('users').doc(uid).get();
 
       if (!userDoc.exists) {
@@ -82,7 +87,7 @@ class _LoginScreenState extends State<LoginScreen> {
           'uid': uid,
           'email': userCredential.user!.email,
           'displayName': userCredential.user!.displayName,
-          'userType': 'student', 
+          'userType': 'student', // Default type for Google Sign-in
           'createdAt': FieldValue.serverTimestamp(),
           'lastLogin': FieldValue.serverTimestamp(),
         });
@@ -91,12 +96,13 @@ class _LoginScreenState extends State<LoginScreen> {
       if (!mounted) return;
       await _navigateBasedOnUserType(uid);
     } catch (e) {
-      _showError("Google sign-in failed. Please check your connection.");
+      _showError("Google sign-in failed. Check your internet connection.");
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
+  // --- Role-Based Navigation ---
   Future<void> _navigateBasedOnUserType(String uid) async {
     try {
       final userDoc = await _firestore.collection('users').doc(uid).get();
@@ -105,7 +111,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
       if (userDoc.exists && userDoc.data() != null) {
         final userType = userDoc.data()!['userType'];
-        
+
         final Widget nextScreen = userType == 'teacher' 
             ? const TeacherHomeScreen() 
             : const StudentHomeScreen();
@@ -139,8 +145,6 @@ class _LoginScreenState extends State<LoginScreen> {
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        title: const Text('Login', style: TextStyle(fontWeight: FontWeight.bold)),
-        centerTitle: true,
         elevation: 0,
         backgroundColor: Colors.transparent,
         foregroundColor: Colors.black,
@@ -153,20 +157,29 @@ class _LoginScreenState extends State<LoginScreen> {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Icon(Icons.auto_stories_rounded, size: 100, color: Colors.blueAccent),
+                // Branding Icon
+                const Icon(Icons.school_rounded, size: 90, color: Color(0xFF128C7E)),
+                const SizedBox(height: 10),
+                const Text(
+                  "Welcome Back",
+                  style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
+                ),
                 const SizedBox(height: 40),
+
+                // Email Field
                 TextFormField(
                   controller: _emailController,
                   keyboardType: TextInputType.emailAddress,
                   decoration: InputDecoration(
-                    labelText: 'Email',
-                    hintText: 'example@domain.com',
+                    labelText: 'Email Address',
                     prefixIcon: const Icon(Icons.email_outlined),
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                   ),
                   validator: _validateEmail,
                 ),
                 const SizedBox(height: 20),
+
+                // Password Field
                 TextFormField(
                   controller: _passwordController,
                   obscureText: true,
@@ -176,11 +189,30 @@ class _LoginScreenState extends State<LoginScreen> {
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                   ),
                   validator: (value) => (value == null || value.length < 6) 
-                      ? 'Password must be at least 6 characters' : null,
+                      ? 'Minimum 6 characters required' : null,
                 ),
-                const SizedBox(height: 30),
+
+                // --- Forgot Password Button ---
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (context) => const ForgotPasswordScreen()),
+                      );
+                    },
+                    child: const Text(
+                      "Forgot Password?",
+                      style: TextStyle(color: Color(0xFF128C7E), fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+
+                // Login Actions
                 _isLoading
-                    ? const CircularProgressIndicator()
+                    ? const CircularProgressIndicator(color: Color(0xFF128C7E))
                     : Column(
                         children: [
                           SizedBox(
@@ -189,10 +221,10 @@ class _LoginScreenState extends State<LoginScreen> {
                             child: ElevatedButton(
                               onPressed: _handleEmailSignIn,
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.blueAccent,
+                                backgroundColor: const Color(0xFF128C7E),
                                 foregroundColor: Colors.white,
                                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                elevation: 2,
+                                elevation: 0,
                               ),
                               child: const Text('Login', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                             ),
@@ -209,6 +241,8 @@ class _LoginScreenState extends State<LoginScreen> {
                             ],
                           ),
                           const SizedBox(height: 25),
+                          
+                          // Google Sign In Button
                           SizedBox(
                             width: double.infinity,
                             height: 55,
@@ -217,7 +251,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               icon: const Icon(Icons.g_mobiledata_rounded, size: 30, color: Colors.red),
                               label: const Text('Continue with Google', style: TextStyle(fontSize: 16, color: Colors.black87)),
                               style: OutlinedButton.styleFrom(
-                                side: const BorderSide(color: Colors.grey),
+                                side: BorderSide(color: Colors.grey[300]!),
                                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                               ),
                             ),
