@@ -1,100 +1,191 @@
 import 'package:flutter/material.dart';
-import 'package:jitsi_meet_wrapper/jitsi_meet_wrapper.dart';
-import 'package:uuid/uuid.dart';
+import 'package:agora_rtc_engine/agora_rtc_engine.dart';
+import 'package:permission_handler/permission_handler.dart';
 
-class CreateLiveClassScreen extends StatefulWidget {
-  const CreateLiveClassScreen({super.key});
+class LiveClassScreen extends StatefulWidget {
+  final String channelName; // Unique Group or Class ID
+  final String userName;
+
+  const LiveClassScreen({
+    super.key, 
+    required this.channelName, 
+    required this.userName
+  });
 
   @override
-  State<CreateLiveClassScreen> createState() => _CreateLiveClassScreenState();
+  State<LiveClassScreen> createState() => _LiveClassScreenState();
 }
 
-class _CreateLiveClassScreenState extends State<CreateLiveClassScreen> {
-  final TextEditingController _topicController = TextEditingController();
-  bool isAudioMuted = false;
-  bool isVideoMuted = false;
-  String? generatedRoomCode;
+class _LiveClassScreenState extends State<LiveClassScreen> {
+  late RtcEngine _engine;
+  int? _remoteUid;
+  bool _localUserJoined = false;
+  bool _isMuted = false;
+  bool _isVideoOff = false;
 
-  void startMeeting() async {
-    final topic = _topicController.text.trim();
-    if (topic.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter a class topic')),
-      );
-      return;
-    }
+  @override
+  void initState() {
+    super.initState();
+    _initAgora();
+  }
 
-    final roomName = const Uuid().v4().substring(0, 8);
-    setState(() => generatedRoomCode = roomName);
+  // --- Initialize Agora Engine ---
+  Future<void> _initAgora() async {
+    // Request Microhpone and Camera Permissions
+    await [Permission.microphone, Permission.camera].request();
 
-    final options = JitsiMeetingOptions(roomName: roomName)
-      ..subject = topic
-      ..userDisplayName = "Teacher"
-      ..userEmail = "teacher@example.com"
-      ..audioMuted = isAudioMuted
-      ..videoMuted = isVideoMuted;
+    // Create the engine
+    _engine = createAgoraRtcEngine();
+    await _engine.initialize(const RfcEngineContext(
+      appId: "YOUR_AGORA_APP_ID_HERE", // Replace with your Agora App ID
+      channelProfile: ChannelProfileType.channelProfileLiveBroadcasting,
+    ));
 
-    await JitsiMeetWrapper.joinMeeting(options: options);
+    _engine.registerEventHandler(
+      RtcEngineEventHandler(
+        onJoinChannelSuccess: (RtcConnection connection, int elapsed) {
+          debugPrint("Local user ${connection.localUid} joined");
+          setState(() => _localUserJoined = true);
+        },
+        onUserJoined: (RtcConnection connection, int remoteUid, int elapsed) {
+          debugPrint("Remote user $remoteUid joined");
+          setState(() => _remoteUid = remoteUid);
+        },
+        onUserOffline: (RtcConnection connection, int remoteUid, UserOfflineReasonType reason) {
+          debugPrint("Remote user $remoteUid left channel");
+          setState(() => _remoteUid = null);
+        },
+      ),
+    );
+
+    await _engine.setClientRole(role: ClientRoleType.clientRoleBroadcaster);
+    await _engine.enableVideo();
+    await _engine.startPreview();
+
+    await _engine.joinChannel(
+      token: "YOUR_TEMP_TOKEN_HERE", // Use token for production security
+      channelId: widget.channelName,
+      uid: 0,
+      options: const ChannelMediaOptions(),
+    );
+  }
+
+  // --- Toggle Mic (Mute/Unmute) ---
+  void _onToggleMute() {
+    setState(() {
+      _isMuted = !_isMuted;
+    });
+    _engine.muteLocalAudioStream(_isMuted);
+  }
+
+  // --- Toggle Video (Camera On/Off) ---
+  void _onToggleVideo() {
+    setState(() {
+      _isVideoOff = !_isVideoOff;
+    });
+    _engine.enableLocalVideo(!_isVideoOff);
+  }
+
+  // --- Switch Front/Back Camera ---
+  void _onSwitchCamera() {
+    _engine.switchCamera();
+  }
+
+  @override
+  void dispose() {
+    _engine.leaveChannel();
+    _engine.release();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('Create Live Class')),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+      backgroundColor: Colors.black,
+      body: Stack(
+        children: [
+          Center(child: _remoteVideo()), // Main remote video (Teacher)
+          Align(
+            alignment: Alignment.topLeft,
+            child: SizedBox(
+              width: 120,
+              height: 180,
+              child: Center(
+                child: _localUserJoined && !_isVideoOff
+                    ? AgoraVideoView(
+                        controller: VideoViewController(
+                          rtcEngine: _engine,
+                          canvas: const VideoCanvas(uid: 0),
+                        ),
+                      )
+                    : Container(color: Colors.grey[900], child: const Icon(Icons.videocam_off, color: Colors.white)),
+              ),
+            ),
+          ),
+          _buildToolbar(), // Call Controls (Mute, Camera, Leave)
+        ],
+      ),
+    );
+  }
+
+  // Display Remote User (Teacher's View)
+  Widget _remoteVideo() {
+    if (_remoteUid != null) {
+      return AgoraVideoView(
+        controller: VideoViewController.remote(
+          rtcEngine: _engine,
+          canvas: VideoCanvas(uid: _remoteUid),
+          connection: RtcConnection(channelId: widget.channelName),
+        ),
+      );
+    } else {
+      return const Text(
+        'Waiting for other participants...',
+        style: TextStyle(color: Colors.white),
+      );
+    }
+  }
+
+  // WhatsApp/Zoom style toolbar
+  Widget _buildToolbar() {
+    return Align(
+      alignment: Alignment.bottomCenter,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 40),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text(
-              "Live Class Setup",
-              style: theme.textTheme.headline6?.copyWith(fontWeight: FontWeight.bold),
+            RawMaterialButton(
+              onPressed: _onToggleMute,
+              shape: const CircleBorder(),
+              padding: const EdgeInsets.all(12.0),
+              fillColor: _isMuted ? Colors.redAccent : Colors.white,
+              child: Icon(_isMuted ? Icons.mic_off : Icons.mic, color: _isMuted ? Colors.white : Colors.blueAccent, size: 20.0),
             ),
-            const SizedBox(height: 20),
-            TextField(
-              controller: _topicController,
-              decoration: const InputDecoration(
-                labelText: "Class Topic",
-                hintText: "e.g. Class 10 - Science Doubt Clearance",
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.title),
-              ),
+            RawMaterialButton(
+              onPressed: () {
+                _engine.leaveChannel();
+                Navigator.pop(context);
+              },
+              shape: const CircleBorder(),
+              padding: const EdgeInsets.all(15.0),
+              fillColor: Colors.redAccent,
+              child: const Icon(Icons.call_end, color: Colors.white, size: 35.0),
             ),
-            const SizedBox(height: 20),
-            SwitchListTile(
-              title: const Text("Mute Audio"),
-              value: isAudioMuted,
-              onChanged: (val) => setState(() => isAudioMuted = val),
-              secondary: const Icon(Icons.mic_off),
+            RawMaterialButton(
+              onPressed: _onToggleVideo,
+              shape: const CircleBorder(),
+              padding: const EdgeInsets.all(12.0),
+              fillColor: _isVideoOff ? Colors.redAccent : Colors.white,
+              child: Icon(_isVideoOff ? Icons.videocam_off : Icons.videocam, color: _isVideoOff ? Colors.white : Colors.blueAccent, size: 20.0),
             ),
-            SwitchListTile(
-              title: const Text("Mute Video"),
-              value: isVideoMuted,
-              onChanged: (val) => setState(() => isVideoMuted = val),
-              secondary: const Icon(Icons.videocam_off),
+            RawMaterialButton(
+              onPressed: _onSwitchCamera,
+              shape: const CircleBorder(),
+              padding: const EdgeInsets.all(12.0),
+              fillColor: Colors.white,
+              child: const Icon(Icons.switch_camera, color: Colors.blueAccent, size: 20.0),
             ),
-            const SizedBox(height: 24),
-            ElevatedButton.icon(
-              onPressed: startMeeting,
-              icon: const Icon(Icons.video_call),
-              label: const Text("Start Live Class"),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.green,
-                foregroundColor: Colors.white,
-                minimumSize: const Size.fromHeight(50),
-                textStyle: const TextStyle(fontSize: 18),
-              ),
-            ),
-            if (generatedRoomCode != null) ...[
-              const SizedBox(height: 16),
-              Center(
-                child: Text(
-                  "Room Code: $generatedRoomCode",
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                ),
-              ),
-            ]
           ],
         ),
       ),
