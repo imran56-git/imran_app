@@ -87,7 +87,6 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
     'General Knowledge (GK)', 'Current Affairs', 'IELTS/GRE Preparation',
   ];
 
-
   @override
   void initState() {
     super.initState();
