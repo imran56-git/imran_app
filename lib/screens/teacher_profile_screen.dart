@@ -42,7 +42,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
   final List<String> allSubjects = [
     'Bengali', 'English', 'Mathematics', 'General Science', 'Social Studies',
     'Religion & Moral Education', 'ICT (Information & Tech)', 'Physical Education',
-    'Arts and Crafts', 'Work and Life Oriented Education', 'Global Studies',
+    'Arts and Crafts', 'Work and Life Oriented Education', 'Global Studies','Class1-8 all subjects',
     'Physics', 'Chemistry', 'Biology', 'Higher Mathematics',
     'Accounting', 'Business Studies', 'Finance & Banking',
     'Geography & Environment', 'History', 'Civics & Citizenship', 'Economics',
