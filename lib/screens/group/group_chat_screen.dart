@@ -1,8 +1,27 @@
+import 'dart:io';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_sound/flutter_sound.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:uuid/uuid.dart';
+import 'package:image_picker/image_picker.dart';
+import '../widgets/message_bubble.dart'; // Ensure this widget exists
+
 class GroupChatScreen extends StatefulWidget {
   final String groupName;
-  const GroupChatScreen({super.key, required this.groupName});
+  final String groupId;
+  final String currentUserId;
+  final String currentUserName;
+
+  const GroupChatScreen({
+    super.key,
+    required this.groupName,
+    required this.groupId,
+    required this.currentUserId,
+    required this.currentUserName,
+  });
 
   @override
   State<GroupChatScreen> createState() => _GroupChatScreenState();
@@ -10,155 +29,219 @@ class GroupChatScreen extends StatefulWidget {
 
 class _GroupChatScreenState extends State<GroupChatScreen> {
   final TextEditingController _messageController = TextEditingController();
-  final List<String> messages = [];
+  final FlutterSoundRecorder _recorder = FlutterSoundRecorder();
+  final ImagePicker _picker = ImagePicker();
+  
+  bool _isRecording = false;
+  String? _recordedFilePath;
+  String _backgroundImage = "assets/default_bg.png"; // Default Wallpaper
 
-final FlutterSoundRecorder _recorder = FlutterSoundRecorder();
-bool _isRecording = false;
-String? _recordedFilePath;
+  @override
+  void initState() {
+    super.initState();
+    _initRecorder();
+  }
 
-Future<void> _initRecorder() async {
-  await Permission.microphone.request();
-  await _recorder.openRecorder();
-}
+  Future<void> _initRecorder() async {
+    await Permission.microphone.request();
+    await _recorder.openRecorder();
+  }
 
-Future<void> _startRecording() async {
-  final tempDir = await getTemporaryDirectory();
-  final filePath = '${tempDir.path}/${const Uuid().v4()}.aac';
-  await _recorder.startRecorder(toFile: filePath);
-  setState(() {
-    _isRecording = true;
-    _recordedFilePath = filePath;
-  });
-}
-
-Future<void> _stopRecordingAndSend() async {
-  await _recorder.stopRecorder();
-  setState(() {
-    _isRecording = false;
-  });
-
-  if (_recordedFilePath != null) {
-    try {
-      final File voiceFile = File(_recordedFilePath!);
-      final fileName = '${DateTime.now().millisecondsSinceEpoch}.aac';
-
-      // Firebase Storage path
-      final storageRef = FirebaseStorage.instance
-          .ref()
-          .child('group_voice_messages')
-          .child(widget.groupId)
-          .child(fileName);
-
-      // Upload to Firebase Storage
-      final uploadTask = await storageRef.putFile(voiceFile);
-
-      // Get download URL
-      final downloadUrl = await uploadTask.ref.getDownloadURL();
-
-      // Save message in Firestore
-      await FirebaseFirestore.instance
-          .collection('groups')
-          .doc(widget.groupId)
-          .collection('messages')
-          .add({
-        'senderId': widget.currentUserId,
-        'voiceUrl': downloadUrl,
-        'timestamp': FieldValue.serverTimestamp(),
-        'type': 'voice',
-      });
-
+  // --- Change Chat Wallpaper ---
+  Future<void> _changeWallpaper() async {
+    final XFile? image = await _picker.pickImage(source: ImageSource.gallery);
+    if (image != null) {
       setState(() {
-        _recordedFilePath = null;
+        _backgroundImage = image.path;
       });
-    } catch (e) {
-      print('ভয়েস মেসেজ পাঠাতে সমস্যা হয়েছে: $e');
     }
   }
-}
 
-void _sendMessage() {
-  final messageText = _messageController.text.trim();
-  if (messageText.isNotEmpty) {
+  // --- Voice Message Logic (Hold to Record) ---
+  Future<void> _startRecording() async {
+    Directory tempDir = await getTemporaryDirectory();
+    String path = '${tempDir.path}/${const Uuid().v4()}.aac';
+    await _recorder.startRecorder(toFile: path);
+    setState(() {
+      _isRecording = true;
+      _recordedFilePath = path;
+    });
+  }
+
+  Future<void> _stopAndSendVoice() async {
+    await _recorder.stopRecorder();
+    setState(() => _isRecording = false);
+
+    if (_recordedFilePath != null) {
+      File file = File(_recordedFilePath!);
+      String fileName = '${DateTime.now().millisecondsSinceEpoch}.aac';
+      
+      var ref = FirebaseStorage.instance.ref().child('group_voice/${widget.groupId}/$fileName');
+      var uploadTask = await ref.putFile(file);
+      String url = await uploadTask.ref.getDownloadURL();
+
+      _sendToFirestore(content: url, type: 'voice');
+    }
+  }
+
+  // --- Send Text Message ---
+  void _sendTextMessage() {
+    String text = _messageController.text.trim();
+    if (text.isNotEmpty) {
+      _sendToFirestore(content: text, type: 'text');
+      _messageController.clear();
+    }
+  }
+
+  void _sendToFirestore({required String content, required String type}) {
     FirebaseFirestore.instance
         .collection('groups')
         .doc(widget.groupId)
         .collection('messages')
         .add({
       'senderId': widget.currentUserId,
-      'text': messageText,
+      'senderName': widget.currentUserName,
+      'content': content,
       'timestamp': FieldValue.serverTimestamp(),
-      'type': 'text',
+      'type': type,
     });
-    _messageController.clear();
   }
-}
 
-@override
-void initState() {
-  super.initState();
-  _initRecorder();
-}
-
-  void sendMessage() {
-    final message = _messageController.text.trim();
-    if (message.isNotEmpty) {
-      setState(() {
-        messages.add(message);
-        _messageController.clear();
-      });
-    }
+  // --- Long Press Context Menu ---
+  void _showOptions(BuildContext context, Offset offset, String messageId, String text, bool isMe) {
+    showMenu(
+      context: context,
+      position: RelativeRect.fromLTRB(offset.dx, offset.dy, offset.dx, offset.dy),
+      items: [
+        if (isMe) const PopupMenuItem(value: 'edit', child: Text('Edit Message')),
+        const PopupMenuItem(value: 'delete_me', child: Text('Delete for me')),
+        const PopupMenuItem(value: 'delete_all', child: Text('Delete for everyone')),
+      ],
+    ).then((value) {
+      if (value == 'delete_all') {
+        FirebaseFirestore.instance.collection('groups').doc(widget.groupId).collection('messages').doc(messageId).delete();
+      }
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.groupName),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(widget.groupName, style: const TextStyle(fontSize: 18)),
+            const Text("Group Chat", style: TextStyle(fontSize: 12)),
+          ],
+        ),
+        actions: [
+          PopupMenuButton(
+            onSelected: (val) {
+              if (val == 'wallpaper') _changeWallpaper();
+            },
+            itemBuilder: (context) => [
+              const PopupMenuItem(value: 'wallpaper', child: Text("Change Wallpaper")),
+              const PopupMenuItem(value: 'info', child: Text("Group Info")),
+            ],
+          ),
+        ],
       ),
-      body: Column(
+      body: Container(
+        decoration: BoxDecoration(
+          image: DecorationImage(
+            image: _backgroundImage.contains('assets') ? AssetImage(_backgroundImage) : FileImage(File(_backgroundImage)) as ImageProvider,
+            fit: BoxFit.cover,
+          ),
+        ),
+        child: Column(
+          children: [
+            Expanded(
+              child: StreamBuilder<QuerySnapshot>(
+                stream: FirebaseFirestore.instance
+                    .collection('groups')
+                    .doc(widget.groupId)
+                    .collection('messages')
+                    .orderBy('timestamp', descending: true)
+                    .snapshots(),
+                builder: (context, snapshot) {
+                  if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+                  return ListView.builder(
+                    reverse: true,
+                    itemCount: snapshot.data!.docs.length,
+                    itemBuilder: (context, index) {
+                      var doc = snapshot.data!.docs[index];
+                      bool isMe = doc['senderId'] == widget.currentUserId;
+                      return GestureDetector(
+                        onLongPressStart: (d) => _showOptions(context, d.globalPosition, doc.id, doc['content'], isMe),
+                        child: MessageBubble(
+                          message: doc['content'],
+                          senderName: isMe ? "You" : doc['senderName'],
+                          isMe: isMe,
+                          type: doc['type'],
+                          timestamp: doc['timestamp'],
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+            _buildInputArea(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInputArea() {
+    return Container(
+      padding: const EdgeInsets.all(8),
+      child: Row(
         children: [
           Expanded(
-            child: ListView.builder(
-              itemCount: messages.length,
-              itemBuilder: (context, index) => ListTile(
-                title: Text(messages[index]),
+            child: Container(
+              decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(30)),
+              child: Row(
+                children: [
+                  IconButton(icon: const Icon(Icons.emoji_emotions_outlined, color: Colors.grey), onPressed: () {}),
+                  Expanded(
+                    child: TextField(
+                      controller: _messageController,
+                      onChanged: (v) => setState(() {}),
+                      decoration: const InputDecoration(hintText: "Message", border: InputBorder.none),
+                    ),
+                  ),
+                  IconButton(icon: const Icon(Icons.attach_file, color: Colors.grey), onPressed: () {}),
+                ],
               ),
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _messageController,
-                    decoration: const InputDecoration(
-                      hintText: 'Type a message...',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
+          const SizedBox(width: 5),
+          GestureDetector(
+            onLongPress: _startRecording,
+            onLongPressUp: _stopAndSendVoice,
+            child: CircleAvatar(
+              backgroundColor: const Color(0xFF128C7E),
+              radius: 25,
+              child: IconButton(
+                icon: Icon(
+                  _messageController.text.isEmpty ? (_isRecording ? Icons.stop : Icons.mic) : Icons.send,
+                  color: Colors.white,
                 ),
-                IconButton(
-                  icon: const Icon(Icons.send),
-                  onPressed: sendMessage,
-                ),
-const SizedBox(width: 4), 
-    Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 4),
-GestureDetector(
-  onLongPress: _startRecording,
-  onLongPressUp: _stopRecordingAndSend,
-  child: Icon(
-    _isRecording ? Icons.stop : Icons.mic,
-    color: _isRecording ? Colors.red : Colors.black,
-  ),
-),
-
-              ],
+                onPressed: _messageController.text.isNotEmpty ? _sendTextMessage : null,
+              ),
             ),
           ),
         ],
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    _recorder.closeRecorder();
+    _messageController.dispose();
+    super.dispose();
   }
 }
