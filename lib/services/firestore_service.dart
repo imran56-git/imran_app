@@ -17,7 +17,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
   bool isLoading = true;
   bool isEditing = false;
 
-  // Controllers
+  // Controllers for text fields
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _phoneController = TextEditingController();
   final TextEditingController _locationController = TextEditingController();
@@ -31,6 +31,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
     fetchTeacherData();
   }
 
+  // --- Fetch Teacher Data from Firestore ---
   Future<void> fetchTeacherData() async {
     try {
       final uid = _auth.currentUser?.uid;
@@ -52,138 +53,178 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
         setState(() => isLoading = false);
       }
     } catch (e) {
-      print('Error fetching teacher data: $e');
+      debugPrint('Fetch Error: $e');
       setState(() => isLoading = false);
     }
   }
 
+  // --- Update Profile Logic ---
   Future<void> updateTeacherProfile() async {
+    if (_nameController.text.isEmpty) {
+      _showSnackBar("Name cannot be empty");
+      return;
+    }
+
     final uid = _auth.currentUser?.uid;
     if (uid == null) return;
 
     try {
+      // Logic to preserve existing location coordinates if any
+      List locations = teacherData?['locations'] ?? [];
+
       await _firestore.collection('teachers').doc(uid).update({
         'name': _nameController.text,
-        'locations': teacherLocations
-    .map((loc) => {
-          'latitude': loc.latitude,
-          'longitude': loc.longitude,
-        })
-    .toList(),
         'phone': _phoneController.text,
         'currentLocation': _locationController.text,
         'subject': _subjectController.text,
         'experience': _experienceController.text,
         'bio': _bioController.text,
+        'locations': locations, // Preserving current coordinates list
       });
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Profile updated successfully')),
-      );
+      _showSnackBar('Profile updated successfully');
 
       setState(() {
         isEditing = false;
         teacherData?['name'] = _nameController.text;
-        teacherData?['phone'] = _phoneController.text;
-        teacherData?['currentLocation'] = _locationController.text;
-        teacherData?['subject'] = _subjectController.text;
-        teacherData?['experience'] = _experienceController.text;
-        teacherData?['bio'] = _bioController.text;
       });
     } catch (e) {
-      print('Error updating teacher profile: $e');
+      debugPrint('Update Error: $e');
+      _showSnackBar("Update failed. Please try again.");
     }
+  }
+
+  void _showSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.white,
       appBar: AppBar(
-        title: const Text('Teacher Profile'),
+        title: const Text('My Profile', style: TextStyle(fontWeight: FontWeight.bold)),
+        elevation: 0,
+        backgroundColor: Colors.white,
+        foregroundColor: Colors.black,
         actions: [
           IconButton(
-            icon: Icon(isEditing ? Icons.close : Icons.edit),
-            onPressed: () {
-              setState(() {
-                isEditing = !isEditing;
-              });
-            },
+            icon: Icon(isEditing ? Icons.cancel_outlined : Icons.edit_note, size: 28),
+            onPressed: () => setState(() => isEditing = !isEditing),
           ),
         ],
       ),
       body: isLoading
-          ? const Center(child: CircularProgressIndicator())
+          ? const Center(child: CircularProgressIndicator(color: Color(0xFF128C7E)))
           : teacherData == null
-              ? const Center(child: Text('No profile data found.'))
-              : Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: ListView(
+              ? const Center(child: Text('Profile not found.'))
+              : SingleChildScrollView(
+                  padding: const EdgeInsets.all(20.0),
+                  child: Column(
                     children: [
-                      CircleAvatar(
-                        radius: 50,
-                        backgroundImage: teacherData!['profileImageUrl'] != null
-                            ? NetworkImage(teacherData!['profileImageUrl'])
-                            : const AssetImage('assets/images/teacher_avatar.png') as ImageProvider,
-                      ),
-                      const SizedBox(height: 16),
-
-                      buildEditableField(label: 'Name', controller: _nameController),
-                      buildEditableField(label: 'Phone', controller: _phoneController),
-                      buildEditableField(label: 'Location', controller: _locationController),
-                      buildEditableField(label: 'Subject', controller: _subjectController),
-                      buildEditableField(label: 'Experience', controller: _experienceController),
-                      buildEditableField(label: 'Bio', controller: _bioController, maxLines: 3),
-
-                      const SizedBox(height: 16),
-                      Text('Email: ${teacherData!['email'] ?? 'N/A'}', style: const TextStyle(fontSize: 16)),
-                      const SizedBox(height: 8),
-                      Text('Gender: ${teacherData!['gender'] ?? 'N/A'}', style: const TextStyle(fontSize: 16)),
-
-                      const SizedBox(height: 24),
-                      isEditing
-                          ? ElevatedButton(
-                              onPressed: updateTeacherProfile,
-                              child: const Text('Save Changes'),
-                            )
-                          : ElevatedButton(
-                              onPressed: () {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('Contact feature coming soon!')),
-                                );
-                              },
-                              child: const Text('Contact Now'),
+                      // --- Profile Image Header ---
+                      Center(
+                        child: Stack(
+                          children: [
+                            CircleAvatar(
+                              radius: 60,
+                              backgroundColor: Colors.grey[200],
+                              backgroundImage: teacherData!['profileImageUrl'] != null
+                                  ? NetworkImage(teacherData!['profileImageUrl'])
+                                  : null,
+                              child: teacherData!['profileImageUrl'] == null
+                                  ? const Icon(Icons.person, size: 60, color: Colors.grey)
+                                  : null,
                             ),
+                            if (isEditing)
+                              Positioned(
+                                bottom: 0,
+                                right: 0,
+                                child: CircleAvatar(
+                                  radius: 18,
+                                  backgroundColor: const Color(0xFF128C7E),
+                                  child: const Icon(Icons.camera_alt, size: 18, color: Colors.white),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 30),
+
+                      // --- Dynamic Profile Form ---
+                      _buildField("Full Name", _nameController, Icons.person_outline),
+                      _buildField("Contact Number", _phoneController, Icons.phone_android),
+                      _buildField("Teaching Subject", _subjectController, Icons.book_outlined),
+                      _buildField("Location", _locationController, Icons.location_on_outline),
+                      _buildField("Experience", _experienceController, Icons.history_edu),
+                      _buildField("Professional Bio", _bioController, Icons.description_outlined, maxLines: 4),
+
+                      const SizedBox(height: 20),
+                      
+                      // --- Read-only Information ---
+                      _buildInfoRow("Email", teacherData!['email'] ?? 'N/A'),
+                      _buildInfoRow("Account Status", "Verified Teacher"),
+
+                      const SizedBox(height: 30),
+
+                      if (isEditing)
+                        ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF128C7E),
+                            minimumSize: const Size(double.infinity, 55),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                          onPressed: updateTeacherProfile,
+                          child: const Text('Save Profile Settings', style: TextStyle(color: Colors.white, fontSize: 16)),
+                        ),
                     ],
                   ),
                 ),
     );
   }
 
-  Widget buildEditableField({
-    required String label,
-    required TextEditingController controller,
-    int maxLines = 1,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label, style: const TextStyle(fontWeight: FontWeight.bold)),
-        const SizedBox(height: 4),
-        isEditing
-            ? TextField(
-                controller: controller,
-                maxLines: maxLines,
-                decoration: InputDecoration(
-                  hintText: 'Enter $label',
-                  border: const OutlineInputBorder(),
+  // Helper widget for editable fields
+  Widget _buildField(String label, TextEditingController controller, IconData icon, {int maxLines = 1}) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blueGrey)),
+          const SizedBox(height: 8),
+          isEditing
+              ? TextField(
+                  controller: controller,
+                  maxLines: maxLines,
+                  decoration: InputDecoration(
+                    prefixIcon: Icon(icon, size: 20),
+                    filled: true,
+                    fillColor: Colors.grey[50],
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey[300]!)),
+                  ),
+                )
+              : Row(
+                  children: [
+                    Icon(icon, size: 20, color: Colors.grey),
+                    const SizedBox(width: 12),
+                    Expanded(child: Text(controller.text, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500))),
+                  ],
                 ),
-              )
-            : Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8.0),
-                child: Text(controller.text, style: const TextStyle(fontSize: 16)),
-              ),
-        const SizedBox(height: 12),
-      ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInfoRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: const TextStyle(color: Colors.grey)),
+          Text(value, style: const TextStyle(fontWeight: FontWeight.bold)),
+        ],
+      ),
     );
   }
 }
