@@ -4,28 +4,24 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 
-import 'firebase_options.dart'; // Firebase console থেকে ডাউনলোড করা
-import 'routes/app_routes.dart'; // তোমার রুটিং ফাইল
-import 'screens/splash_screen.dart';
+import 'firebase_options.dart'; 
+import 'routes/app_routes.dart'; 
 
-// Firebase background notification handler
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp();
-  print('Handling a background message: ${message.messageId}');
 }
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
-runApp(GetMaterialApp(
-  debugShowCheckedModeBanner: false,
-  home: const SplashScreen(),
-));
+  runApp(const FindYourBestTeacherTodayApp());
+}
 
 class FindYourBestTeacherTodayApp extends StatefulWidget {
   const FindYourBestTeacherTodayApp({super.key});
@@ -36,14 +32,34 @@ class FindYourBestTeacherTodayApp extends StatefulWidget {
 
 class _FindYourBestTeacherTodayAppState extends State<FindYourBestTeacherTodayApp>
     with WidgetsBindingObserver {
-  final _auth = FirebaseAuth.instance;
-  final _firestore = FirebaseFirestore.instance;
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseMessaging _messaging = FirebaseMessaging.instance;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _setUserOnlineStatus(true); // App launch করলে অনলাইন
+    _initializeAppData();
+  }
+
+  Future<void> _initializeAppData() async {
+    await _setupNotifications();
+    await _setUserOnlineStatus(true);
+  }
+
+  Future<void> _setupNotifications() async {
+    await _messaging.requestPermission(
+      alert: true,
+      badge: true,
+      sound: true,
+    );
+
+    FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+      if (message.notification != null) {
+        // Foreground message handling logic
+      }
+    });
   }
 
   @override
@@ -54,23 +70,24 @@ class _FindYourBestTeacherTodayAppState extends State<FindYourBestTeacherTodayAp
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    final user = _auth.currentUser;
-    if (user != null) {
-      if (state == AppLifecycleState.resumed) {
-        _setUserOnlineStatus(true);
-      } else {
-        _setUserOnlineStatus(false);
-      }
+    if (state == AppLifecycleState.resumed) {
+      _setUserOnlineStatus(true);
+    } else {
+      _setUserOnlineStatus(false);
     }
   }
 
   Future<void> _setUserOnlineStatus(bool isOnline) async {
-    final user = _auth.currentUser;
+    final User? user = _auth.currentUser;
     if (user != null) {
-      await _firestore.collection('users').doc(user.uid).update({
-        'isOnline': isOnline,
-        'lastSeen': FieldValue.serverTimestamp(),
-      });
+      try {
+        await _firestore.collection('users').doc(user.uid).update({
+          'isOnline': isOnline,
+          'lastSeen': FieldValue.serverTimestamp(),
+        });
+      } catch (e) {
+        debugPrint("Firestore Update Error: $e");
+      }
     }
   }
 
@@ -80,7 +97,8 @@ class _FindYourBestTeacherTodayAppState extends State<FindYourBestTeacherTodayAp
       title: 'Find Your Best Teacher Today',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        primarySwatch: Colors.teal,
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal),
+        useMaterial3: true,
       ),
       initialRoute: AppRoutes.splash,
       routes: AppRoutes.routes,
