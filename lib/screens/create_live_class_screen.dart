@@ -36,10 +36,10 @@ class _LiveClassScreenState extends State<LiveClassScreen> {
 
     // Create the engine
     _engine = createAgoraRtcEngine();
-    await _engine.initialize(const RfcEngineContext(
-      appId: "YOUR_AGORA_APP_ID_HERE", // Replace with your Agora App ID
-      channelProfile: ChannelProfileType.channelProfileLiveBroadcasting,
-    ));
+        await _engine.initialize(const RtcEngineContext(
+              appId: "YOUR_AGORA_APP_ID_HERE", 
+                    channelProfile: ChannelProfileType.channelProfileLiveBroadcasting,
+                        ));
 
     _engine.registerEventHandler(
       RtcEngineEventHandler(

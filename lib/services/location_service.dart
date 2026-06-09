@@ -24,15 +24,9 @@ class LocationService {
         return Future.error('PERMISSION_PERMANENTLY_DENIED');
       }
 
-      // Advanced: Using LocationSettings for better platform-specific behavior
-      const LocationSettings locationSettings = LocationSettings(
-        accuracy: LocationAccuracy.high,
-        distanceFilter: 10, // Updates only if moved 10 meters
-      );
-
       return await Geolocator.getCurrentPosition(
-        locationSettings: locationSettings,
-      ).timeout(const Duration(seconds: 12));
+          desiredAccuracy: LocationAccuracy.high,
+          ).timeout(const Duration(seconds: 12));
 
     } catch (e) {
       return Future.error('SYSTEM_ERROR: $e');

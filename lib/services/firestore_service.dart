@@ -155,7 +155,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> {
                       _buildField("Full Name", _nameController, Icons.person_outline),
                       _buildField("Contact Number", _phoneController, Icons.phone_android),
                       _buildField("Teaching Subject", _subjectController, Icons.book_outlined),
-                      _buildField("Location", _locationController, Icons.location_on_outline),
+                      _buildField("Location", _locationController, Icons.location_on_outlined),
                       _buildField("Experience", _experienceController, Icons.history_edu),
                       _buildField("Professional Bio", _bioController, Icons.description_outlined, maxLines: 4),
 

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart'; 
-import '../../models/group_model.dart';
 import 'create_group_screen.dart';
 import 'group_chat_screen.dart';
 

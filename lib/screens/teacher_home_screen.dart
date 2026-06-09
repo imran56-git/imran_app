@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'chat_home_screen.dart';
+import 'chat_screen.dart';
 import 'teacher_profile_screen.dart';
 
 class TeacherHomeScreen extends StatefulWidget {
@@ -13,9 +13,16 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
   int _selectedIndex = 0;
 
   final List<Widget> _screens = [
-    const ChatHomeScreen(),
-    const TeacherProfileScreen(),
-  ];
+        // Ensure you pass the required arguments here
+            const ChatScreen(
+                  teacherName: "Student",
+                        chatId: "sample_chat_id",
+                              currentUserId: "teacher_id",
+                                    receiverId: "student_id",
+                                        ),
+                                            const TeacherProfileScreen(),
+                                              ];
+  
 
   final List<String> _titles = [
     "Student Messages",
