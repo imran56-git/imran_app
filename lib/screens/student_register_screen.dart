@@ -269,7 +269,7 @@ class _StudentRegistrationScreenState extends State<StudentRegistrationScreen> {
 
   Widget _buildGenderDropdown() {
     return DropdownButtonFormField<String>(
-      initialValue: _gender,
+      value: _gender,
       decoration: InputDecoration(
         labelText: 'Gender', 
         prefixIcon: const Icon(Icons.people), 

@@ -190,7 +190,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
         _customEditField("Bio", _bioController, Icons.info, maxLines: 3),
         const SizedBox(height: 10),
         DropdownButtonFormField<String>(
-          initialValue: gender,
+          value: gender,
           decoration: const InputDecoration(labelText: "Gender", border: OutlineInputBorder(), prefixIcon: Icon(Icons.wc)),
           onChanged: (val) => setState(() => gender = val),
           items: const [
@@ -200,7 +200,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
         ),
         const SizedBox(height: 15),
         DropdownButtonFormField<String>(
-          initialValue: studentClass,
+          value: studentClass,
           decoration: const InputDecoration(labelText: "Class/Level", border: OutlineInputBorder(), prefixIcon: Icon(Icons.school)),
           onChanged: (val) => setState(() => studentClass = val),
           items: classOptions.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
