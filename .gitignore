@@ -15,3 +15,5 @@ build/
 *.log
 local.properties
 .DS_Store
+.flutter-plugins
+.flutter-plugins-dependencies
