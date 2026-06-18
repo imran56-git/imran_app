@@ -1,80 +1,64 @@
 plugins {
-    id "com.android.application"
-        id "kotlin-android"
-            id "dev.flutter.flutter-gradle-plugin"
-            }
+        id "com.android.application"
+            id "kotlin-android"
+                id "dev.flutter.flutter-gradle-plugin"
+                }
 
-            def localProperties = new Properties()
-            def localPropertiesFile = rootProject.file("local.properties")
-            if (localPropertiesFile.exists()) {
-                localPropertiesFile.withReader("UTF-8") { reader ->
-                        localProperties.load(reader)
-                            }
-                            }
-
-                            def flutterVersionCode = localProperties.getProperty("flutter.versionCode")
-                            if (flutterVersionCode == null) {
-                                flutterVersionCode = "1"
+                def localProperties = new Properties()
+                def localPropertiesFile = rootProject.file("local.properties")
+                if (localPropertiesFile.exists()) {
+                    localPropertiesFile.withReader("UTF-8") { reader ->
+                            localProperties.load(reader)
+                                }
                                 }
 
-                                def flutterVersionName = localProperties.getProperty("flutter.versionName")
-                                if (flutterVersionName == null) {
-                                    flutterVersionName = "1.0"
+                                def flutterVersionCode = localProperties.getProperty("flutter.versionCode")
+                                if (flutterVersionCode == null) {
+                                    flutterVersionCode = "1"
                                     }
 
-                                    android {
-                                        namespace = "com.example.fnid_your_best_teacher_today"
-                                            compileSdk = 34
-                                                ndkVersion = flutter.ndkVersion
+                                    def flutterVersionName = localProperties.getProperty("flutter.versionName")
+                                    if (flutterVersionName == null) {
+                                        flutterVersionName = "1.0"
+                                        }
 
-                                                    compileOptions {
-                                                            sourceCompatibility = JavaVersion.VERSION_1_8
-                                                                    targetCompatibility = JavaVersion.VERSION_1_8
-                                                                        }
+                                        android {
+                                            namespace = "com.example.fnid_your_best_teacher_today"
+                                                compileSdk = 34
+                                                    ndkVersion = flutter.ndkVersion
 
-                                                                            defaultConfig {
-                                                                                    applicationId = "com.example.fnid_your_best_teacher_today"
-                                                                                            minSdk = 26
-                                                                                                    targetSdk = 34
-                                                                                                            versionCode = flutterVersionCode.toInteger()
-                                                                                                                    versionName = flutterVersionName
-                                                                                                                        }
+                                                        compileOptions {
+                                                                sourceCompatibility = JavaVersion.VERSION_1_8
+                                                                        targetCompatibility = JavaVersion.VERSION_1_8
+                                                                            }
 
-                                                                                                                            buildTypes {
-                                                                                                                                    release {
-                                                                                                                                                signingConfig = signingConfigs.debug
-                                                                                                                                                        }
-                                                                                                                                                            }
+                                                                                defaultConfig {
+                                                                                        applicationId = "com.example.fnid_your_best_teacher_today"
+                                                                                                minSdk = 26
+                                                                                                        targetSdk = 34
+                                                                                                                versionCode = flutterVersionCode.toInteger()
+                                                                                                                        versionName = flutterVersionName
+                                                                                                                                multiDexEnabled true
+                                                                                                                                    }
 
-                                                                                                                                                                packagingOptions {
-                                                                                                                                                                        pickFirst 'lib/arm64-v8a/libjingle_peerconnection_so.so'
-                                                                                                                                                                                pickFirst 'lib/armeabi-v7a/libjingle_peerconnection_so.so'
-                                                                                                                                                                                        pickFirst 'lib/x86/libjingle_peerconnection_so.so'
-                                                                                                                                                                                                pickFirst 'lib/x86_64/libjingle_peerconnection_so.so'
-                                                                                                                                                                                                    }
+                                                                                                                                        buildTypes {
+                                                                                                                                                release {
+                                                                                                                                                            signingConfig = signingConfigs.debug
+                                                                                                                                                                        minifyEnabled false
+                                                                                                                                                                                    shrinkResources false
+                                                                                                                                                                                            }
+                                                                                                                                                                                                }
 
-                                                                                                                                                                                                        configurations.all {
-                                                                                                                                                                                                                resolutionStrategy.eachDependency { DependencyResolveDetails details ->
-                                                                                                                                                                                                                            if (details.requested.group == 'org.webrtc' || details.requested.group == 'io.github.webrtc-sdk') {
-                                                                                                                                                                                                                                            details.useVersion '125.6422.03'
-                                                                                                                                                                                                                                                        }
-                                                                                                                                                                                                                                                                }
-                                                                                                                                                                                                                                                                    }
-                                                                                                                                                                                                                                                                    }
+                                                                                                                                                                                                    packagingOptions {
+                                                                                                                                                                                                            pickFirst 'lib/arm64-v8a/libjingle_peerconnection_so.so'
+                                                                                                                                                                                                                    pickFirst 'lib/armeabi-v7a/libjingle_peerconnection_so.so'
+                                                                                                                                                                                                                            pickFirst 'lib/x86/libjingle_peerconnection_so.so'
+                                                                                                                                                                                                                                    pickFirst 'lib/x86_64/libjingle_peerconnection_so.so'
+                                                                                                                                                                                                                                            pickFirst 'lib/*/libjitsi-webrtc.so'
+                                                                                                                                                                                                                                                }
+                                                                                                                                                                                                                                                }
 
-                                                                                                                                                                                                                                                                    subprojects {
-                                                                                                                                                                                                                                                                        afterEvaluate { project ->
-                                                                                                                                                                                                                                                                                if (project.hasProperty("android")) {
-                                                                                                                                                                                                                                                                                            project.android {
-                                                                                                                                                                                                                                                                                                            if (compileSdkVersion == 35) {
-                                                                                                                                                                                                                                                                                                                                compileSdkVersion 34
-                                                                                                                                                                                                                                                                                                                                                }
-                                                                                                                                                                                                                                                                                                                                                            }
-                                                                                                                                                                                                                                                                                                                                                                    }
-                                                                                                                                                                                                                                                                                                                                                                        }
-                                                                                                                                                                                                                                                                                                                                                                        }
-
-                                                                                                                                                                                                                                                                                                                                                                        flutter {
-                                                                                                                                                                                                                                                                                                                                                                            source = "../.."
-                                                                                                                                                                                                                                                                                                                                                                            }
-                                                                                                                                                                                                                                                                                                                                                                            
+                                                                                                                                                                                                                                                flutter {
+                                                                                                                                                                                                                                                    source = "../.."
+                                                                                                                                                                                                                                                    }
+                                                                                                                                                                                                                                                    
