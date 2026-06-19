@@ -15,7 +15,7 @@ class DefaultFirebaseOptions {
   }
 
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'AIzaSyDmQiaw36SnsqbC8UlOord7krWJE1PtXZA',
+    apiKey: 'const String.fromEnvironment('FIREBASE_API_KEY')',
     appId: '1:575213013835:android:d1b593868111d322e076ce',
     messagingSenderId: '575213013835',
     projectId: 'find-your-best-teacher-today',
