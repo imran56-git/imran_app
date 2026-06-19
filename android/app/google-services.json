@@ -28,7 +28,7 @@
       ],
       "api_key": [
         {
-          "current_key": "const String.fromEnvironment('FIREBASE_API_KEY')"
+          "current_key": " String.fromEnvironment('FIREBASE_API_KEY')"
         }
       ]
     }
