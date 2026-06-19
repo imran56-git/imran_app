@@ -7,6 +7,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
 
@@ -21,8 +22,8 @@ jobs:
 
       - run: flutter pub get
 
-- name: Generate App Icon
-  run: dart run flutter_launcher_icons
+      - name: Generate App Icon
+        run: dart run flutter_launcher_icons
 
       - name: Build APK
         run: flutter build apk --release --no-shrink --dart-define=FIREBASE_API_KEY=${{ secrets.FIREBASE_API_KEY }}
