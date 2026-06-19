@@ -17,9 +17,10 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
       - run: flutter pub get
-      - name: Clean Gradle
+      - name: Force Update Gradle
         run: |
           cd android
+          ./gradlew wrapper --gradle-version 8.7
           chmod +x gradlew
           ./gradlew clean
           cd ..
