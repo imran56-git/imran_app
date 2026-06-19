@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Miscellaneous
 *.class
 *.log
@@ -10,6 +11,8 @@
 .svn/
 
 # Flutter/Dart
+=======
+>>>>>>> d12d8648942cee63aa51dbd4ddeb0e2609699879
 .dart_tool/
 .flutter-plugins
 .flutter-plugins-dependencies
@@ -21,6 +24,7 @@ devtools_options.yaml
 
 # Android
 .gradle/
+<<<<<<< HEAD
 android/app/build/
 android/build/
 android/app/build/
@@ -65,3 +69,18 @@ build/
 # Sensitive files
 secrets.json
 .env
+=======
+.idea/
+.vscode/
+.idx/
+*.apk
+*.aab
+*.jar
+*.class
+*.so
+*.log
+local.properties
+.DS_Store
+.flutter-plugins
+.flutter-plugins-dependencies
+>>>>>>> d12d8648942cee63aa51dbd4ddeb0e2609699879
