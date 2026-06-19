@@ -24,7 +24,7 @@ plugins {
 
                                         android {
                                             namespace = "com.example.fnid_your_best_teacher_today"
-                                                compileSdk = 34
+                                                compileSdk = 36
                                                     ndkVersion = flutter.ndkVersion
 
                                                         compileOptions {
@@ -35,7 +35,7 @@ plugins {
                                                                                 defaultConfig {
                                                                                         applicationId = "com.example.fnid_your_best_teacher_today"
                                                                                                 minSdk = 26
-                                                                                                        targetSdk = 34
+                                                                                                        targetSdk = 36
                                                                                                                 versionCode = flutterVersionCode.toInteger()
                                                                                                                         versionName = flutterVersionName
                                                                                                                                 multiDexEnabled true
