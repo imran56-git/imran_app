@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
-import 'student_register_screen.dart';
-import 'teacher_register_screen.dart';
+import '../routes/app_routes.dart';
 
 class UserSelectionScreen extends StatelessWidget {
   const UserSelectionScreen({super.key});
@@ -8,11 +7,9 @@ class UserSelectionScreen extends StatelessWidget {
 
   void navigateToTeacherRegister(BuildContext context) {
 
-    Navigator.push(
+    Navigator.pushNamed(
       context,
-      MaterialPageRoute(
-        builder: (_) => const TeacherRegistrationScreen(),
-      ),
+      AppRoutes.teacherRegister,
     );
 
   }
@@ -20,11 +17,9 @@ class UserSelectionScreen extends StatelessWidget {
 
   void navigateToStudentRegister(BuildContext context) {
 
-    Navigator.push(
+    Navigator.pushNamed(
       context,
-      MaterialPageRoute(
-        builder: (_) => const StudentRegistrationScreen(),
-      ),
+      AppRoutes.studentRegister,
     );
 
   }
@@ -54,6 +49,7 @@ class UserSelectionScreen extends StatelessWidget {
         foregroundColor: Colors.white,
 
       ),
+
 
 
       body: SafeArea(
@@ -96,7 +92,7 @@ class UserSelectionScreen extends StatelessWidget {
 
 
 
-                // Teacher Section
+                // Teacher Image
 
                 Image.asset(
 
@@ -104,7 +100,10 @@ class UserSelectionScreen extends StatelessWidget {
 
                   height: 150,
 
+                  fit: BoxFit.contain,
+
                 ),
+
 
 
                 const SizedBox(height: 15),
@@ -122,10 +121,15 @@ class UserSelectionScreen extends StatelessWidget {
                         navigateToTeacherRegister(context),
 
 
+
                     icon: const Icon(
+
                       Icons.school,
+
                       size: 28,
+
                     ),
+
 
 
                     label: const Text(
@@ -133,11 +137,15 @@ class UserSelectionScreen extends StatelessWidget {
                       'Teacher',
 
                       style: TextStyle(
+
                         fontSize: 20,
+
                         fontWeight: FontWeight.bold,
+
                       ),
 
                     ),
+
 
 
                     style: ElevatedButton.styleFrom(
@@ -148,8 +156,11 @@ class UserSelectionScreen extends StatelessWidget {
 
 
                       minimumSize: const Size(
+
                         double.infinity,
+
                         55,
+
                       ),
 
 
@@ -173,13 +184,15 @@ class UserSelectionScreen extends StatelessWidget {
 
 
 
-                // Student Section
+                // Student Image
 
                 Image.asset(
 
                   'assets/images/student.png',
 
                   height: 150,
+
+                  fit: BoxFit.contain,
 
                 ),
 
@@ -198,6 +211,7 @@ class UserSelectionScreen extends StatelessWidget {
 
                     onPressed: () =>
                         navigateToStudentRegister(context),
+
 
 
                     icon: const Icon(
@@ -234,8 +248,11 @@ class UserSelectionScreen extends StatelessWidget {
 
 
                       minimumSize: const Size(
+
                         double.infinity,
+
                         55,
+
                       ),
 
 
