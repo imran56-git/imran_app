@@ -22,7 +22,7 @@ jobs:
       - name: Build APK
         run: |
           cd android
-          ./gradlew clean assembleRelease 
+          ./gradlew clean assembleRelease --build-cache --parallel --dart-define=FIREBASE_API_KEY=${{ secrets.FIREBASE_API_KEY }}
           cd ..
       - uses: actions/upload-artifact@v4
         with:
