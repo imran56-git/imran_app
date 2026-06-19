@@ -17,14 +17,13 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
       - run: flutter pub get
-      - name: Force Update Gradle
+      - name: Verify Gradle
+        run: ls -la android/
+      - name: Build APK
         run: |
           cd android
-          ./gradlew wrapper --gradle-version 8.7
-          chmod +x gradlew
-          ./gradlew clean
+          ./gradlew clean assembleRelease 
           cd ..
-      - run: flutter build apk --release --dart-define=FIREBASE_API_KEY=${{ secrets.FIREBASE_API_KEY }}
       - uses: actions/upload-artifact@v4
         with:
           name: release-apk
