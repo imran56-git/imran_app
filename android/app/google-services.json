@@ -1,0 +1,37 @@
+{
+  "project_info": {
+    "project_number": "575213013835",
+    "project_id": "find-your-best-teacher-today",
+    "storage_bucket": "find-your-best-teacher-today.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:575213013835:android:d1b593868111d322e076ce",
+        "android_client_info": {
+          "package_name": "com.imran.findyourbestteacher"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "575213013835-dlp14hne1c28jkjsukcpa7arm50kqkiu.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.imran.findyourbestteacher",
+            "certificate_hash": "843ddf1257dc5b2e8fc1494d25bcd5380f423206"
+          }
+        },
+        {
+          "client_id": "575213013835-6vmhuc5tc13il0fla1ifru2d3a0o7ups.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "const String.fromEnvironment('FIREBASE_API_KEY')"
+        }
+      ]
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -1,27 +1,67 @@
-# Flutter/Dart related
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.buildlog/
+.history
+.svn/
+
+# Flutter/Dart
 .dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
 .packages
 .pub-cache/
 .pub/
-build/
-.flutter-plugins
-.flutter-plugins-dependencies
+/build/
+devtools_options.yaml
 
-# Android/Gradle related
-android/.gradle/
+# Android
+.gradle/
 android/app/build/
 android/build/
-android/app/google-services.json
-
-# IDE related
-.idea/
-.vscode/
-
-# Build outputs
+android/app/build/
+android/app/src/main/assets/flutter_assets/
+android/app/src/main/java/io/flutter/plugins/
+android/app/src/main/res/
+android/gradle.properties
+android/local.properties
+android/.gradle
+android/key.properties
+android/app/src/main/assets/app.dill
 *.apk
 *.aab
-*.jar
-*.class
-*.so
-*.log
-.DS_Store
+
+# iOS
+ios/Assets/
+ios/build/
+ios/Pods/
+ios/Podfile.lock
+ios/.symlinks/
+ios/Runner/Assets.xcassets/
+ios/Runner/GeneratedPluginRegistrant.h
+ios/Runner/GeneratedPluginRegistrant.m
+ios/Runner/Runner.xcscheme
+ios/Runner/Runner.xcworkspace/
+ios/Runner.xcodeproj/project.xcworkspace/
+ios/Runner.xcodeproj/xcuserdata/
+ios/Flutter/App.framework
+ios/Flutter/Flutter.framework
+ios-profile.dSYM/
+ios-release.dSYM/
+
+# IDE files
+.idea/
+*.iml
+find_your_best_teacher_today.iml
+fnid_your_best_teacher_today.iml
+
+# Build files
+build/
+
+# Sensitive files
+secrets.json
+.env
