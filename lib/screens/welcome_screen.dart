@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../main.dart';
+import '../routes/app_routes.dart';
 
 class WelcomeScreen extends StatefulWidget {
   const WelcomeScreen({super.key});
@@ -50,11 +50,9 @@ class _WelcomeScreenState extends State<WelcomeScreen>
 
     Future.delayed(const Duration(seconds: 1), () {
 
-      Navigator.pushReplacement(
+      Navigator.pushReplacementNamed(
         context,
-        MaterialPageRoute(
-          builder: (_) => const FindYourBestTeacherTodayApp(),
-        ),
+        AppRoutes.userSelection,
       );
 
     });
@@ -300,4 +298,4 @@ class _WelcomeScreenState extends State<WelcomeScreen>
 
   }
 
-}                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 
+}                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                
