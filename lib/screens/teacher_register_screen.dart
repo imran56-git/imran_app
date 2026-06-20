@@ -67,24 +67,28 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
   }
 
   Future<void> _getCurrentLocation() async {
-    setState(() => _isLoading = true);
-    try {
-      String? location = await LocationService.getCurrentLocation();
-      if (location != null) {
-        _locationController.text = location;
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not fetch location. Please check permissions.')),
-        );
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString())),
-      );
-    } finally {
-      setState(() => _isLoading = false);
-    }
+  setState(() => _isLoading = true);
+
+  try {
+    final position = await LocationService.getCurrentLocation();
+
+    _locationController.text =
+        "${position.latitude}, ${position.longitude}";
+
+  } catch (e) {
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text("Location error: $e"),
+      ),
+    );
+
+  } finally {
+
+    setState(() => _isLoading = false);
+
   }
+}
 
   Future<String> _processAndUpload(File file, String path) async {
     File? compressedFile = await ImageHelper.compressImage(file);
