@@ -199,22 +199,28 @@ class _StudentRegistrationScreenState extends State<StudentRegistrationScreen> {
                         ),
                       ),
                     ),
-                    CheckboxListTile(
-                      value: _isAccepted,
-                      onChanged: (v) => setState(() => _isAccepted = v!),
-                      title: RichText(
-                        text: TextSpan(
-                          style: const TextStyle(color: Colors.black), 
-                          children: [
-                            const TextSpan(text: "I agree to "),
-                            TextSpan(
-                              text: "Terms & Conditions", 
-                              style: const TextStyle(color: Colors.blue, fontWeight: FontWeight.bold), 
-                              recognizer: TapGestureRecognizer()..onTap = _launchUrl
-                            ),
-                          ]
+                    Row(
+                      children: [
+                        Checkbox(
+                          value: _isAccepted,
+                          onChanged: (v) => setState(() => _isAccepted = v!),
                         ),
-                      ),
+                        Expanded(
+                          child: RichText(
+                            text: TextSpan(
+                              style: const TextStyle(color: Colors.black), 
+                              children: [
+                                const TextSpan(text: "I agree to "),
+                                TextSpan(
+                                  text: "Terms & Conditions", 
+                                  style: const TextStyle(color: Colors.blue, fontWeight: FontWeight.bold), 
+                                  recognizer: TapGestureRecognizer()..onTap = _launchUrl
+                                ),
+                              ]
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                     ElevatedButton(
                       onPressed: _isAccepted ? _submit : null,
