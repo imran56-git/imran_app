@@ -252,15 +252,21 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
                       trailing: IconButton(icon: const Icon(Icons.upload_file), onPressed: () => _pickImage((f) => setState(() => _idProofImage = f))),
                       subtitle: Text(_idProofImage != null ? "File Selected" : "No file selected"),
                     ),
-                    CheckboxListTile(
-                      value: _isAccepted,
-                      onChanged: (val) => setState(() => _isAccepted = val!),
-                      title: RichText(
-                        text: TextSpan(children: [
-                          const TextSpan(text: "I accept the ", style: TextStyle(color: Colors.black)),
-                          TextSpan(text: "Terms & Conditions", style: const TextStyle(color: Colors.blue), recognizer: TapGestureRecognizer()..onTap = _launchUrl),
-                        ]),
-                      ),
+                    Row(
+                      children: [
+                        Checkbox(
+                          value: _isAccepted,
+                          onChanged: (val) => setState(() => _isAccepted = val!),
+                        ),
+                        Expanded(
+                          child: RichText(
+                            text: TextSpan(children: [
+                              const TextSpan(text: "I accept the ", style: TextStyle(color: Colors.black)),
+                              TextSpan(text: "Terms & Conditions", style: const TextStyle(color: Colors.blue), recognizer: TapGestureRecognizer()..onTap = _launchUrl),
+                            ]),
+                          ),
+                        ),
+                      ],
                     ),
                     ElevatedButton(
                       onPressed: _isAccepted ? _submit : null,
@@ -278,4 +284,4 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
     );
   }
 }
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          
