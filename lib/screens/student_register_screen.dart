@@ -25,7 +25,6 @@ class _StudentRegistrationScreenState extends State<StudentRegistrationScreen> {
 
   File? _profileImage;
   String? _gender;
-  String? _fetchedLocation;
   bool _isLoading = false;
   bool _isPasswordVisible = false;
   bool _isAccepted = false;
@@ -56,11 +55,21 @@ class _StudentRegistrationScreenState extends State<StudentRegistrationScreen> {
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
+
     if (_profileImage == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please upload profile photo')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please upload a profile photo')),
+      );
       return;
     }
-    
+
+    if (_gender == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select gender')),
+      );
+      return;
+    }
+
     setState(() => _isLoading = true);
 
     try {
@@ -73,6 +82,7 @@ class _StudentRegistrationScreenState extends State<StudentRegistrationScreen> {
 
       final String uid = userCredential.user!.uid;
       String imageUrl = "";
+      
       File? compressedFile = await ImageHelper.compressImage(_profileImage!);
       final ref = FirebaseStorage.instance.ref().child('student_profiles/$uid.jpg');
       await ref.putFile(compressedFile ?? _profileImage!);
@@ -86,17 +96,33 @@ class _StudentRegistrationScreenState extends State<StudentRegistrationScreen> {
         'homeLocation': _homeLocationController.text.trim(),
         'gender': _gender,
         'profileImageUrl': imageUrl,
+        'role': 'student',
+        'createdAt': FieldValue.serverTimestamp(),
       });
 
       if (mounted) {
-        showDialog(context: context, builder: (ctx) => AlertDialog(
-          title: const Text("Verify Email"),
-          content: const Text("Verification link sent. Please verify to login."),
-          actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text("OK"))],
-        ));
+        showDialog(
+          context: context, 
+          barrierDismissible: false,
+          builder: (ctx) => AlertDialog(
+            title: const Text("Verify Your Email"),
+            content: const Text("A verification link has been sent to your email. Please check your inbox and verify to login."),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  Navigator.pop(context);
+                }, 
+                child: const Text("OK")
+              )
+            ],
+          ),
+        );
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString())),
+      );
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -116,7 +142,12 @@ class _StudentRegistrationScreenState extends State<StudentRegistrationScreen> {
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(15)),
           floatingLabelBehavior: FloatingLabelBehavior.auto,
         ),
-        validator: (val) => val!.isEmpty ? "Required" : null,
+        validator: (val) {
+          if (val == null || val.trim().isEmpty) {
+            return "$label is required";
+          }
+          return null;
+        },
       ),
     );
   }
@@ -125,56 +156,75 @@ class _StudentRegistrationScreenState extends State<StudentRegistrationScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text("Student Registration")),
-      body: _isLoading ? const Center(child: CircularProgressIndicator()) : SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            children: [
-              Card(
-                elevation: 4,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                child: Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: Column(
-                    children: [
-                      GestureDetector(
-                        onTap: _pickImage,
-                        child: CircleAvatar(radius: 50, backgroundImage: _profileImage != null ? FileImage(_profileImage!) : null, child: _profileImage == null ? const Icon(Icons.camera_alt, size: 40) : null),
+      body: _isLoading 
+          ? const Center(child: CircularProgressIndicator()) 
+          : SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  children: [
+                    Card(
+                      elevation: 4,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                      child: Padding(
+                        padding: const EdgeInsets.all(20),
+                        child: Column(
+                          children: [
+                            GestureDetector(
+                              onTap: _pickImage,
+                              child: CircleAvatar(
+                                radius: 50, 
+                                backgroundImage: _profileImage != null ? FileImage(_profileImage!) : null, 
+                                child: _profileImage == null ? const Icon(Icons.camera_alt, size: 40) : null
+                              ),
+                            ),
+                            const SizedBox(height: 20),
+                            _buildField(_nameController, "Full Name", Icons.person),
+                            _buildField(_emailController, "Email Address", Icons.email, type: TextInputType.emailAddress),
+                            _buildField(_passwordController, "Password", Icons.lock, isPass: true),
+                            _buildField(_phoneController, "Phone Number", Icons.phone, type: TextInputType.phone),
+                            _buildField(_homeLocationController, "Home Area", Icons.home),
+                            DropdownButtonFormField<String>(
+                              value: _gender,
+                              decoration: InputDecoration(
+                                labelText: 'Gender', 
+                                prefixIcon: const Icon(Icons.people), 
+                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(15))
+                              ),
+                              items: ['Male', 'Female'].map((g) => DropdownMenuItem(value: g, child: Text(g))).toList(),
+                              onChanged: (v) => setState(() => _gender = v),
+                            ),
+                          ],
+                        ),
                       ),
-                      const SizedBox(height: 20),
-                      _buildField(_nameController, "Full Name", Icons.person),
-                      _buildField(_emailController, "Email Address", Icons.email, type: TextInputType.emailAddress),
-                      _buildField(_passwordController, "Password", Icons.lock, isPass: true),
-                      _buildField(_phoneController, "Phone Number", Icons.phone, type: TextInputType.phone),
-                      _buildField(_homeLocationController, "Home Area", Icons.home),
-                      DropdownButtonFormField<String>(
-                        value: _gender,
-                        decoration: InputDecoration(labelText: 'Gender', prefixIcon: const Icon(Icons.people), border: OutlineInputBorder(borderRadius: BorderRadius.circular(15))),
-                        items: ['Male', 'Female'].map((g) => DropdownMenuItem(value: g, child: Text(g))).toList(),
-                        onChanged: (v) => setState(() => _gender = v),
+                    ),
+                    CheckboxListTile(
+                      value: _isAccepted,
+                      onChanged: (v) => setState(() => _isAccepted = v!),
+                      title: RichText(
+                        text: TextSpan(
+                          style: const TextStyle(color: Colors.black), 
+                          children: [
+                            const TextSpan(text: "I agree to "),
+                            TextSpan(
+                              text: "Terms & Conditions", 
+                              style: const TextStyle(color: Colors.blue, fontWeight: FontWeight.bold), 
+                              recognizer: TapGestureRecognizer()..onTap = _launchUrl
+                            ),
+                          ]
+                        ),
                       ),
-                    ],
-                  ),
+                    ),
+                    ElevatedButton(
+                      onPressed: _isAccepted ? _submit : null,
+                      style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 50), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15))),
+                      child: const Text("REGISTER"),
+                    ),
+                  ],
                 ),
               ),
-              CheckboxListTile(
-                value: _isAccepted,
-                onChanged: (v) => setState(() => _isAccepted = v!),
-                title: RichText(text: TextSpan(style: const TextStyle(color: Colors.black), children: [
-                  const TextSpan(text: "I agree to "),
-                  TextSpan(text: "Terms & Conditions", style: const TextStyle(color: Colors.blue, fontWeight: FontWeight.bold), recognizer: TapGestureRecognizer()..onTap = _launchUrl),
-                ])),
-              ),
-              ElevatedButton(
-                onPressed: _isAccepted ? _submit : null,
-                style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 50), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15))),
-                child: const Text("REGISTER"),
-              ),
-            ],
-          ),
-        ),
-      ),
+            ),
     );
   }
 }
