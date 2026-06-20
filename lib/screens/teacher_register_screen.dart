@@ -66,6 +66,26 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
     }
   }
 
+  Future<void> _getCurrentLocation() async {
+    setState(() => _isLoading = true);
+    try {
+      String? location = await LocationService.getCurrentLocation();
+      if (location != null) {
+        _locationController.text = location;
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not fetch location. Please check permissions.')),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString())),
+      );
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
   Future<String> _processAndUpload(File file, String path) async {
     File? compressedFile = await ImageHelper.compressImage(file);
     File fileToUpload = compressedFile ?? file;
@@ -214,8 +234,30 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
                             const SizedBox(height: 10),
                             TextFormField(
                               controller: _locationController, 
-                              decoration: const InputDecoration(labelText: 'Teaching Location', border: OutlineInputBorder(), floatingLabelBehavior: FloatingLabelBehavior.auto),
-                              validator: (val) => _validateField(val, "Teaching Location"),
+                              decoration: const InputDecoration(
+                                labelText: 'Teaching Location', 
+                                border: OutlineInputBorder(), 
+                                floatingLabelBehavior: FloatingLabelBehavior.auto,
+                                suffixIcon: IconButton(
+                                  icon: Icon(Icons.my_location),
+                                  onPressed: null, // Handled by GestureDetector wrapper if needed, or put direct function
+                                ),
+                              ),
+                              // To make it directly tap responsive on suffix icon
+                              onTap: null, 
+                            ),
+                            // Direct replication of UI but with active suffix button
+                            TextFormField(
+                              controller: _locationController,
+                              decoration: InputDecoration(
+                                labelText: 'Teaching Location',
+                                border: const OutlineInputBorder(),
+                                floatingLabelBehavior: FloatingLabelBehavior.auto,
+                                suffixIcon: IconButton(
+                                  icon: const Icon(Icons.my_location),
+                                  onPressed: _getCurrentLocation,
+                                ),
+                              ),
                             ),
                           ],
                         ),
@@ -284,4 +326,4 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
     );
   }
 }
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    
