@@ -8,6 +8,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../services/location_service.dart';
 import '../utils/image_utils.dart';
+import 'package:geolocator/geolocator.dart';
 
 class StudentRegistrationScreen extends StatefulWidget {
   const StudentRegistrationScreen({super.key});
@@ -61,24 +62,28 @@ class _StudentRegistrationScreenState extends State<StudentRegistrationScreen> {
   }
 
   Future<void> _getCurrentLocation() async {
-    setState(() => _isLoading = true);
-    try {
-      String? location = await LocationService.getCurrentLocation();
-      if (location != null) {
-        _homeLocationController.text = location;
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not fetch location. Please check permissions.')),
-        );
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString())),
-      );
-    } finally {
-      setState(() => _isLoading = false);
-    }
+  setState(() => _isLoading = true);
+
+  try {
+    final position = await LocationService.getCurrentLocation();
+
+    _homeLocationController.text =
+        "${position.latitude}, ${position.longitude}";
+
+  } catch (e) {
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text("Location error: $e"),
+      ),
+    );
+
+  } finally {
+
+    setState(() => _isLoading = false);
+
   }
+}
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
