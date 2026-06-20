@@ -1,4 +1,4 @@
-import 'dart:io';
+ import 'dart:io';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
@@ -6,6 +6,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../services/location_service.dart';
 import '../utils/image_utils.dart';
 
 class StudentRegistrationScreen extends StatefulWidget {
@@ -51,6 +52,26 @@ class _StudentRegistrationScreenState extends State<StudentRegistrationScreen> {
   Future<void> _pickImage() async {
     final pickedFile = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 80);
     if (pickedFile != null) setState(() => _profileImage = File(pickedFile.path));
+  }
+
+  Future<void> _getCurrentLocation() async {
+    setState(() => _isLoading = true);
+    try {
+      String? location = await LocationService.getCurrentLocation();
+      if (location != null) {
+        _homeLocationController.text = location;
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not fetch location. Please check permissions.')),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString())),
+      );
+    } finally {
+      setState(() => _isLoading = false);
+    }
   }
 
   Future<void> _submit() async {
@@ -128,7 +149,7 @@ class _StudentRegistrationScreenState extends State<StudentRegistrationScreen> {
     }
   }
 
-  Widget _buildField(TextEditingController controller, String label, IconData icon, {bool isPass = false, TextInputType type = TextInputType.text}) {
+  Widget _buildField(TextEditingController controller, String label, IconData icon, {bool isPass = false, TextInputType type = TextInputType.text, bool isLocation = false}) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 15),
       child: TextFormField(
@@ -138,11 +159,16 @@ class _StudentRegistrationScreenState extends State<StudentRegistrationScreen> {
         decoration: InputDecoration(
           labelText: label,
           prefixIcon: Icon(icon),
-          suffixIcon: isPass ? IconButton(icon: Icon(_isPasswordVisible ? Icons.visibility : Icons.visibility_off), onPressed: () => setState(() => _isPasswordVisible = !_isPasswordVisible)) : null,
+          suffixIcon: isPass 
+              ? IconButton(icon: Icon(_isPasswordVisible ? Icons.visibility : Icons.visibility_off), onPressed: () => setState(() => _isPasswordVisible = !_isPasswordVisible)) 
+              : isLocation 
+                  ? IconButton(icon: const Icon(Icons.my_location), onPressed: _getCurrentLocation)
+                  : null,
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(15)),
           floatingLabelBehavior: FloatingLabelBehavior.auto,
         ),
         validator: (val) {
+          if (isLocation) return null;
           if (val == null || val.trim().isEmpty) {
             return "$label is required";
           }
@@ -184,7 +210,7 @@ class _StudentRegistrationScreenState extends State<StudentRegistrationScreen> {
                             _buildField(_emailController, "Email Address", Icons.email, type: TextInputType.emailAddress),
                             _buildField(_passwordController, "Password", Icons.lock, isPass: true),
                             _buildField(_phoneController, "Phone Number", Icons.phone, type: TextInputType.phone),
-                            _buildField(_homeLocationController, "Home Area", Icons.home),
+                            _buildField(_homeLocationController, "Home Area", Icons.home, isLocation: true),
                             DropdownButtonFormField<String>(
                               value: _gender,
                               decoration: InputDecoration(
