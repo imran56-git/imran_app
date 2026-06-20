@@ -1,4 +1,4 @@
- import 'dart:io';
+import 'dart:io';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
@@ -23,6 +23,9 @@ class _StudentRegistrationScreenState extends State<StudentRegistrationScreen> {
   final _phoneController = TextEditingController();
   final _passwordController = TextEditingController();
   final _homeLocationController = TextEditingController();
+  final _classController = TextEditingController();
+  final _schoolController = TextEditingController();
+  final _collegeController = TextEditingController();
 
   File? _profileImage;
   String? _gender;
@@ -39,6 +42,9 @@ class _StudentRegistrationScreenState extends State<StudentRegistrationScreen> {
     _phoneController.dispose();
     _passwordController.dispose();
     _homeLocationController.dispose();
+    _classController.dispose();
+    _schoolController.dispose();
+    _collegeController.dispose();
     super.dispose();
   }
 
@@ -116,6 +122,9 @@ class _StudentRegistrationScreenState extends State<StudentRegistrationScreen> {
         'phone': _phoneController.text.trim(),
         'homeLocation': _homeLocationController.text.trim(),
         'gender': _gender,
+        'class': _classController.text.trim(),
+        'schoolName': _schoolController.text.trim(),
+        'collegeName': _collegeController.text.trim(),
         'profileImageUrl': imageUrl,
         'role': 'student',
         'createdAt': FieldValue.serverTimestamp(),
@@ -149,7 +158,7 @@ class _StudentRegistrationScreenState extends State<StudentRegistrationScreen> {
     }
   }
 
-  Widget _buildField(TextEditingController controller, String label, IconData icon, {bool isPass = false, TextInputType type = TextInputType.text, bool isLocation = false}) {
+  Widget _buildField(TextEditingController controller, String label, IconData icon, {bool isPass = false, TextInputType type = TextInputType.text, bool isLocation = false, bool isOptional = false}) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 15),
       child: TextFormField(
@@ -157,7 +166,7 @@ class _StudentRegistrationScreenState extends State<StudentRegistrationScreen> {
         obscureText: isPass ? !_isPasswordVisible : false,
         keyboardType: type,
         decoration: InputDecoration(
-          labelText: label,
+          labelText: isOptional ? "$label (Optional)" : label,
           prefixIcon: Icon(icon),
           suffixIcon: isPass 
               ? IconButton(icon: Icon(_isPasswordVisible ? Icons.visibility : Icons.visibility_off), onPressed: () => setState(() => _isPasswordVisible = !_isPasswordVisible)) 
@@ -168,7 +177,7 @@ class _StudentRegistrationScreenState extends State<StudentRegistrationScreen> {
           floatingLabelBehavior: FloatingLabelBehavior.auto,
         ),
         validator: (val) {
-          if (isLocation) return null;
+          if (isOptional || isLocation) return null;
           if (val == null || val.trim().isEmpty) {
             return "$label is required";
           }
@@ -197,13 +206,29 @@ class _StudentRegistrationScreenState extends State<StudentRegistrationScreen> {
                         padding: const EdgeInsets.all(20),
                         child: Column(
                           children: [
-                            GestureDetector(
-                              onTap: _pickImage,
-                              child: CircleAvatar(
-                                radius: 50, 
-                                backgroundImage: _profileImage != null ? FileImage(_profileImage!) : null, 
-                                child: _profileImage == null ? const Icon(Icons.camera_alt, size: 40) : null
-                              ),
+                            Stack(
+                              children: [
+                                GestureDetector(
+                                  onTap: _pickImage,
+                                  child: CircleAvatar(
+                                    radius: 50, 
+                                    backgroundImage: _profileImage != null ? FileImage(_profileImage!) : null, 
+                                    child: _profileImage == null ? const Icon(Icons.person, size: 50) : null
+                                  ),
+                                ),
+                                Positioned(
+                                  bottom: 0,
+                                  right: 0,
+                                  child: CircleAvatar(
+                                    radius: 18,
+                                    backgroundColor: Colors.blue,
+                                    child: IconButton(
+                                      icon: const Icon(Icons.camera_alt, size: 16, color: Colors.white),
+                                      onPressed: _pickImage,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
                             const SizedBox(height: 20),
                             _buildField(_nameController, "Full Name", Icons.person),
@@ -211,6 +236,9 @@ class _StudentRegistrationScreenState extends State<StudentRegistrationScreen> {
                             _buildField(_passwordController, "Password", Icons.lock, isPass: true),
                             _buildField(_phoneController, "Phone Number", Icons.phone, type: TextInputType.phone),
                             _buildField(_homeLocationController, "Home Area", Icons.home, isLocation: true),
+                            _buildField(_classController, "Class", Icons.class_, isOptional: true),
+                            _buildField(_schoolController, "School Name", Icons.school, isOptional: true),
+                            _buildField(_collegeController, "College Name", Icons.account_balance, isOptional: true),
                             DropdownButtonFormField<String>(
                               value: _gender,
                               decoration: InputDecoration(
