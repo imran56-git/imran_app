@@ -101,7 +101,7 @@ class _FindYourBestTeacherTodayAppState extends State<FindYourBestTeacherTodayAp
         useMaterial3: true,
       ),
       initialRoute: AppRoutes.splash,
-      routes: AppRoutes.routes,
+      onGenerateRoute: AppRoutes.generateRoute,
     );
   }
 }
