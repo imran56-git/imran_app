@@ -237,19 +237,6 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
                             ),
                             const SizedBox(height: 10),
 
-TextFormField(
-  controller: _locationController,
-  decoration: InputDecoration(
-    labelText: 'Teaching Location',
-    border: const OutlineInputBorder(),
-    floatingLabelBehavior: FloatingLabelBehavior.auto,
-    suffixIcon: IconButton(
-      icon: const Icon(Icons.my_location),
-      onPressed: _getCurrentLocation,
-    ),
-  ),
-),
-                            // Direct replication of UI but with active suffix button
                             TextFormField(
                               controller: _locationController,
                               decoration: InputDecoration(
