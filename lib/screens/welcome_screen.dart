@@ -41,23 +41,12 @@ class _WelcomeScreenState extends State<WelcomeScreen>
 
   void _navigateToNextScreen() {
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Proceeding to next screen...'),
-      ),
-    );
+  Navigator.pushReplacementNamed(
+    context,
+    AppRoutes.userSelection,
+  );
 
-
-    Future.delayed(const Duration(seconds: 1), () {
-
-      Navigator.pushReplacementNamed(
-        context,
-        AppRoutes.userSelection,
-      );
-
-    });
-
-  }
+}
 
 
   @override
