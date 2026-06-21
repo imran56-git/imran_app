@@ -236,20 +236,19 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
                               validator: (val) => _validateField(val, "Phone Number"),
                             ),
                             const SizedBox(height: 10),
-                            TextFormField(
-                              controller: _locationController, 
-                              decoration: const InputDecoration(
-                                labelText: 'Teaching Location', 
-                                border: OutlineInputBorder(), 
-                                floatingLabelBehavior: FloatingLabelBehavior.auto,
-                                suffixIcon: IconButton(
-                                  icon: Icon(Icons.my_location),
-                                  onPressed: null, // Handled by GestureDetector wrapper if needed, or put direct function
-                                ),
-                              ),
-                              // To make it directly tap responsive on suffix icon
-                              onTap: null, 
-                            ),
+
+TextFormField(
+  controller: _locationController,
+  decoration: InputDecoration(
+    labelText: 'Teaching Location',
+    border: const OutlineInputBorder(),
+    floatingLabelBehavior: FloatingLabelBehavior.auto,
+    suffixIcon: IconButton(
+      icon: const Icon(Icons.my_location),
+      onPressed: _getCurrentLocation,
+    ),
+  ),
+),
                             // Direct replication of UI but with active suffix button
                             TextFormField(
                               controller: _locationController,
