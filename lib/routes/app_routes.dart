@@ -23,16 +23,82 @@ class AppRoutes {
   static const String teacherHome = '/teacher-home';
   static const String teacherWelcome = '/teacher-welcome';
 
-  // Route Mapping
-  static final Map<String, WidgetBuilder> routes = {
-    splash: (context) => const SplashScreen(),
-    welcome: (context) => const WelcomeScreen(),
-    userSelection: (context) => const UserSelectionScreen(),
-    studentRegister: (context) => const StudentRegistrationScreen(), 
-    teacherRegister: (context) => const TeacherRegistrationScreen(),
-    login: (context) => const LoginScreen(),
-    studentHome: (context) => const StudentHomeScreen(),
-    teacherHome: (context) => const TeacherHomeScreen(),
-    teacherWelcome: (context) => const TeacherWelcomeScreen(),
-  };
+// Route Mapping with Animation
+static Route<dynamic> generateRoute(RouteSettings settings) {
+
+  Widget page;
+
+  switch (settings.name) {
+
+    case splash:
+      page = const SplashScreen();
+      break;
+
+    case welcome:
+      page = const WelcomeScreen();
+      break;
+
+    case userSelection:
+      page = const UserSelectionScreen();
+      break;
+
+    case studentRegister:
+      page = const StudentRegistrationScreen();
+      break;
+
+    case teacherRegister:
+      page = const TeacherRegistrationScreen();
+      break;
+
+    case login:
+      page = const LoginScreen();
+      break;
+
+    case studentHome:
+      page = const StudentHomeScreen();
+      break;
+
+    case teacherHome:
+      page = const TeacherHomeScreen();
+      break;
+
+    case teacherWelcome:
+      page = const TeacherWelcomeScreen();
+      break;
+
+    default:
+      page = const WelcomeScreen();
+  }
+
+  return PageRouteBuilder(
+    settings: settings,
+
+    pageBuilder: (context, animation, secondaryAnimation) {
+      return page;
+    },
+
+    transitionsBuilder:
+        (context, animation, secondaryAnimation, child) {
+
+      const begin = Offset(1.0, 0.0);
+      const end = Offset.zero;
+
+      final tween = Tween(
+        begin: begin,
+        end: end,
+      ).chain(
+        CurveTween(
+          curve: Curves.easeInOut,
+        ),
+      );
+
+      return FadeTransition(
+        opacity: animation,
+        child: SlideTransition(
+          position: animation.drive(tween),
+          child: child,
+        ),
+      );
+    },
+  );
 }
