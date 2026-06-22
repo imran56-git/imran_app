@@ -102,3 +102,5 @@ static Route<dynamic> generateRoute(RouteSettings settings) {
     },
   );
 }
+
+}
