@@ -113,7 +113,7 @@ Future<bool> _checkUserIdExists(String userId) async {
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
  
-final userId = _usernameController.text.trim();
+final userId = _usernameController.text.trim().toLowerCase();
 
 final exists = await _checkUserIdExists(userId);
 
