@@ -175,6 +175,16 @@ if (exists) {
         'createdAt': FieldValue.serverTimestamp(),
       });
 
+await FirebaseFirestore.instance
+    .collection('users')
+    .doc(_usernameController.text.trim())
+    .set({
+  'uid': uid,
+  'username': _usernameController.text.trim(),
+  'role': 'teacher',
+  'createdAt': FieldValue.serverTimestamp(),
+});
+
       if (mounted) {
         showDialog(
           context: context,
