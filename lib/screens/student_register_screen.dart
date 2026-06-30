@@ -150,6 +150,7 @@ if (exists) {
 
       await FirebaseFirestore.instance.collection('students').doc(uid).set({
         'uid': uid,
+        'username': userId,
         'name': _nameController.text.trim(),
         'username': userId,
         'email': _emailController.text.trim(),
@@ -280,6 +281,8 @@ await FirebaseFirestore.instance
                             ),
                             const SizedBox(height: 20),
                             _buildField(_nameController, "Full Name", Icons.person),
+
+_buildField(_usernameController, "User ID", Icons.account_circle),
                             _buildField(_emailController, "Email Address", Icons.email, type: TextInputType.emailAddress),
                             _buildField(_passwordController, "Password", Icons.lock, isPass: true),
                             _buildField(_phoneController, "Phone Number", Icons.phone, type: TextInputType.phone),
