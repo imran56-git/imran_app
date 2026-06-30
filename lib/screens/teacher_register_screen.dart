@@ -23,6 +23,7 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
   final _passwordController = TextEditingController();
   final _phoneController = TextEditingController();
   final _locationController = TextEditingController();
+  final _usernameController = TextEditingController();
 
   List<String> _selectedSubjects = [];
   File? _profileImage;
@@ -52,6 +53,7 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
     _phoneController.dispose();
     _locationController.dispose();
     super.dispose();
+    _usernameController.dispose();
   }
 
   Future<void> _pickImage(Function(File) onPicked) async {
@@ -133,6 +135,7 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
 
       await FirebaseFirestore.instance.collection('teachers').doc(uid).set({
         'uid': uid,
+        'username': _usernameController.text.trim(),
         'name': _nameController.text.trim(),
         'email': _emailController.text.trim(),
         'phone': _phoneController.text.trim(),
@@ -214,6 +217,21 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
                               decoration: const InputDecoration(labelText: 'Full Name', border: OutlineInputBorder(), floatingLabelBehavior: FloatingLabelBehavior.auto),
                               validator: (val) => _validateField(val, "Full Name"),
                             ),
+const SizedBox(height: 10),
+
+TextFormField(
+  controller: _usernameController,
+  decoration: const InputDecoration(
+    labelText: 'User ID',
+    border: OutlineInputBorder(),
+  ),
+  validator: (value){
+    if(value == null || value.trim().isEmpty){
+      return "User ID required";
+    }
+    return null;
+  },
+),
                             const SizedBox(height: 10),
                             TextFormField(
                               controller: _emailController, 
