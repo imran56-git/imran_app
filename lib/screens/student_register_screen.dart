@@ -152,7 +152,6 @@ if (exists) {
         'uid': uid,
         'username': userId,
         'name': _nameController.text.trim(),
-        'username': userId,
         'email': _emailController.text.trim(),
         'phone': _phoneController.text.trim(),
         'homeLocation': _homeLocationController.text.trim(),
