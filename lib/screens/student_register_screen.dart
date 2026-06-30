@@ -27,6 +27,7 @@ class _StudentRegistrationScreenState extends State<StudentRegistrationScreen> {
   final _classController = TextEditingController();
   final _schoolController = TextEditingController();
   final _collegeController = TextEditingController();
+final _usernameController = TextEditingController();
 
   File? _profileImage;
   String? _gender;
@@ -46,6 +47,7 @@ class _StudentRegistrationScreenState extends State<StudentRegistrationScreen> {
     _classController.dispose();
     _schoolController.dispose();
     _collegeController.dispose();
+    _usernameController.dispose();
     super.dispose();
   }
 
@@ -84,9 +86,35 @@ class _StudentRegistrationScreenState extends State<StudentRegistrationScreen> {
 
   }
 }
+ 
+Future<bool> _checkUserIdExists(String userId) async {
+
+  final result = await FirebaseFirestore.instance
+      .collection('users')
+      .doc(userId)
+      .get();
+
+  return result.exists;
+}
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
+
+final userId = _usernameController.text.trim().toLowerCase();
+
+final exists = await _checkUserIdExists(userId);
+
+if (exists) {
+
+  ScaffoldMessenger.of(context).showSnackBar(
+    const SnackBar(
+      content: Text("User ID already exists"),
+      backgroundColor: Colors.red,
+    ),
+  );
+
+  return;
+} 
 
     if (_profileImage == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -123,6 +151,7 @@ class _StudentRegistrationScreenState extends State<StudentRegistrationScreen> {
       await FirebaseFirestore.instance.collection('students').doc(uid).set({
         'uid': uid,
         'name': _nameController.text.trim(),
+        'username': userId,
         'email': _emailController.text.trim(),
         'phone': _phoneController.text.trim(),
         'homeLocation': _homeLocationController.text.trim(),
@@ -134,6 +163,20 @@ class _StudentRegistrationScreenState extends State<StudentRegistrationScreen> {
         'role': 'student',
         'createdAt': FieldValue.serverTimestamp(),
       });
+await FirebaseFirestore.instance
+    .collection('users')
+    .doc(userId)
+    .set({
+
+  'uid': uid,
+
+  'username': userId,
+
+  'role': 'student',
+
+  'createdAt': FieldValue.serverTimestamp(),
+
+});
 
       if (mounted) {
         showDialog(
