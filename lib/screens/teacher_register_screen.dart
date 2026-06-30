@@ -177,10 +177,10 @@ if (exists) {
 
 await FirebaseFirestore.instance
     .collection('users')
-    .doc(_usernameController.text.trim())
+    .doc(userId)
     .set({
   'uid': uid,
-  'username': _usernameController.text.trim(),
+  'username': userId,
   'role': 'teacher',
   'createdAt': FieldValue.serverTimestamp(),
 });
