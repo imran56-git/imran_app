@@ -52,8 +52,8 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
     _passwordController.dispose();
     _phoneController.dispose();
     _locationController.dispose();
-    super.dispose();
     _usernameController.dispose();
+    super.dispose();
   }
 
   Future<void> _pickImage(Function(File) onPicked) async {
@@ -91,6 +91,16 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
 
   }
 }
+ 
+Future<bool> _checkUserIdExists(String userId) async {
+
+  final result = await FirebaseFirestore.instance
+      .collection('users')
+      .doc(userId)
+      .get();
+
+  return result.exists;
+}
 
   Future<String> _processAndUpload(File file, String path) async {
     File? compressedFile = await ImageHelper.compressImage(file);
@@ -102,6 +112,22 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
+ 
+final userId = _usernameController.text.trim();
+
+final exists = await _checkUserIdExists(userId);
+
+if (exists) {
+
+  ScaffoldMessenger.of(context).showSnackBar(
+    const SnackBar(
+      content: Text("User ID already exists"),
+      backgroundColor: Colors.red,
+    ),
+  );
+
+  return;
+}
 
     if (_profileImage == null || _qualificationCertificate == null || _idProofImage == null) {
       ScaffoldMessenger.of(context).showSnackBar(
