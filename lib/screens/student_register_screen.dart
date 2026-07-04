@@ -280,6 +280,12 @@ await FirebaseFirestore.instance
     );
   }
 
+} finally {
+
+  if (mounted) {
+    setState(() => _isLoading = false);
+  }
+
 }
 
   Widget _buildField(TextEditingController controller, String label, IconData icon, {bool isPass = false, TextInputType type = TextInputType.text, bool isLocation = false, bool isOptional = false}) {
