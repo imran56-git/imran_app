@@ -89,32 +89,58 @@ final _usernameController = TextEditingController();
  
 Future<bool> _checkUserIdExists(String userId) async {
 
-  final result = await FirebaseFirestore.instance
-      .collection('users')
-      .doc(userId)
-      .get();
+  try {
 
-  return result.exists;
+    final result =
+        await FirebaseFirestore.instance
+            .collection("users")
+            .doc(userId)
+            .get();
+
+    return result.exists;
+
+  } on FirebaseException catch (e) {
+
+    debugPrint("Firestore Error : ${e.code}");
+
+    rethrow;
+
+  } catch (e) {
+
+    debugPrint(e.toString());
+
+    rethrow;
+
+  }
+
 }
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
 
-final userId = _usernameController.text.trim().toLowerCase();
+ setState(() => _isLoading = true);
 
-final exists = await _checkUserIdExists(userId);
+try {
 
-if (exists) {
+  final userId =
+      _usernameController.text.trim().toLowerCase();
 
-  ScaffoldMessenger.of(context).showSnackBar(
-    const SnackBar(
-      content: Text("User ID already exists"),
-      backgroundColor: Colors.red,
-    ),
-  );
+  final exists =
+      await _checkUserIdExists(userId);
 
-  return;
-} 
+  if (exists) {
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("User ID already exists"),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+
+    return;
+  }
 
     if (_profileImage == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -130,9 +156,6 @@ if (exists) {
       return;
     }
 
-    setState(() => _isLoading = true);
-
-    try {
       final UserCredential userCredential = await FirebaseAuth.instance
           .createUserWithEmailAndPassword(
               email: _emailController.text.trim(),
@@ -197,14 +220,67 @@ await FirebaseFirestore.instance
           ),
         );
       }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString())),
-      );
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
-    }
+    } on FirebaseAuthException catch (e) {
+
+  String message = "";
+
+  switch (e.code) {
+
+    case "email-already-in-use":
+      message = "This email is already registered.";
+      break;
+
+    case "invalid-email":
+      message = "Invalid email address.";
+      break;
+
+    case "weak-password":
+      message = "Password must be at least 6 characters.";
+      break;
+
+    case "network-request-failed":
+      message = "No internet connection.";
+      break;
+
+    case "user-disabled":
+      message = "This account has been disabled.";
+      break;
+
+    case "too-many-requests":
+      message = "Too many requests. Please try again later.";
+      break;
+
+    default:
+      message = e.message ?? e.code;
   }
+
+  if (mounted) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
+  }
+
+} on FirebaseException catch (e) {
+
+  if (mounted) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text("Firebase Error: ${e.message}"),
+      ),
+    );
+  }
+
+} catch (e) {
+
+  if (mounted) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text("Unknown Error: $e"),
+      ),
+    );
+  }
+
+}
 
   Widget _buildField(TextEditingController controller, String label, IconData icon, {bool isPass = false, TextInputType type = TextInputType.text, bool isLocation = false, bool isOptional = false}) {
     return Padding(
