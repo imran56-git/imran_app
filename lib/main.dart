@@ -7,7 +7,6 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'firebase_options.dart';
 import 'routes/app_routes.dart';
 import 'screens/splash_screen.dart';
-import 'screens/student_home_screen.dart';
 
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp();
@@ -34,20 +33,30 @@ class FindYourBestTeacherTodayApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal),
         useMaterial3: true,
       ),
-      home: const AuthWrapper(),
+      builder: (context, child) {
+        return Scaffold(
+          body: Stack(
+            children: [
+              child!,
+              const AppInitializer(),
+            ],
+          ),
+        );
+      },
+      home: const SplashScreen(),
       onGenerateRoute: AppRoutes.generateRoute,
     );
   }
 }
 
-class AuthWrapper extends StatefulWidget {
-  const AuthWrapper({super.key});
+class AppInitializer extends StatefulWidget {
+  const AppInitializer({super.key});
 
   @override
-  State<AuthWrapper> createState() => _AuthWrapperState();
+  State<AppInitializer> createState() => _AppInitializerState();
 }
 
-class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
+class _AppInitializerState extends State<AppInitializer> with WidgetsBindingObserver {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseMessaging _messaging = FirebaseMessaging.instance;
@@ -96,17 +105,6 @@ class _AuthWrapperState extends State<AuthWrapper> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<User?>(
-      stream: _auth.authStateChanges(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Scaffold(body: Center(child: CircularProgressIndicator()));
-        }
-        if (snapshot.hasData) {
-          return const StudentHomeScreen();
-        }
-        return const SplashScreen();
-      },
-    );
+    return const SizedBox.shrink();
   }
 }
