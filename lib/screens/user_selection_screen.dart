@@ -28,14 +28,29 @@ class _UserSelectionScreenState extends State<UserSelectionScreen> {
             children: [
               const Text('Are you a...', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
               const SizedBox(height: 30),
-              
+
               _buildRoleCard('Teacher', Colors.deepPurple, 'assets/images/teacher.png'),
               const SizedBox(height: 20),
-              
+
               _buildRoleCard('Student', Colors.teal, 'assets/images/student.png'),
-              
+
               const Spacer(),
-              
+
+              TextButton(
+                onPressed: () {
+                  Navigator.pushNamed(context, AppRoutes.login);
+                },
+                child: const Text(
+                  "Already have an account? Login",
+                  style: TextStyle(
+                    fontSize: 16,
+                    color: Colors.deepPurple,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+
               SizedBox(
                 width: double.infinity,
                 height: 55,
