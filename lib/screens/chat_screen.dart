@@ -217,22 +217,27 @@ class _ChatScreenState extends State<ChatScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        leadingWidth: 70,
         titleSpacing: 0,
-        leading: InkWell(
-          onTap: () => Navigator.pop(context),
-          child: Row(
-            children: [
-              const Icon(Icons.arrow_back),
-              CircleAvatar(backgroundColor: Colors.grey[300], child: const Icon(Icons.person, color: Colors.white)),
-            ],
-          ),
-        ),
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        title: Row(
           children: [
-            Text(widget.teacherName, style: const TextStyle(fontSize: 16)),
-            const Text("Online", style: TextStyle(fontSize: 12, fontWeight: FontWeight.normal)),
+            Padding(
+              padding: const EdgeInsets.all(8.0),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(8.0),
+                child: Image.asset(
+                  'assets/app_logo.png',
+                  height: 35,
+                  width: 35,
+                  fit: BoxFit.cover,
+                ),
+              ),
+            ),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text("Messages", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              ],
+            ),
           ],
         ),
         actions: [
@@ -330,8 +335,8 @@ class _ChatScreenState extends State<ChatScreen> {
                     child: TextField(
                       controller: _messageController,
                       onTap: () => setState(() => _isEmojiVisible = false),
-                      decoration: InputDecoration(
-                        hintText: _isRecording ? "Recording audio..." : "Message",
+                      decoration: const InputDecoration(
+                        hintText: "Message",
                         border: InputBorder.none,
                       ),
                     ),
