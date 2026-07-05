@@ -159,11 +159,19 @@ try {
 
       final String uid = userCredential.user!.uid;
       String imageUrl = "";
-      
-      File? compressedFile = await ImageHelper.compressImage(_profileImage!);
-      final ref = FirebaseStorage.instance.ref().child('student_profiles/$uid.jpg');
-      await ref.putFile(compressedFile ?? _profileImage!);
-      imageUrl = await ref.getDownloadURL();
+
+if (_profileImage != null) {
+  File? compressedFile =
+      await ImageHelper.compressImage(_profileImage!);
+
+  final ref = FirebaseStorage.instance
+      .ref()
+      .child("student_profiles/$uid.jpg");
+
+  await ref.putFile(compressedFile ?? _profileImage!);
+
+  imageUrl = await ref.getDownloadURL();
+}
 
       await FirebaseFirestore.instance.collection('students').doc(uid).set({
         'uid': uid,
