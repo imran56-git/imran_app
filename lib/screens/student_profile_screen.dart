@@ -28,27 +28,10 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
   final _phoneController = TextEditingController();
   final _locationController = TextEditingController();
   final _bioController = TextEditingController();
-  final _subjectSearchController = TextEditingController();
 
   String? gender;
   String? studentClass;
   List<String> selectedSubjects = [];
-
-  final List<String> allSubjects = [
-    'Mathematics', 'Physics', 'Chemistry', 'Biology', 'Computer Science',
-    'English', 'Bengali', 'Hindi', 'Sanskrit', 'History', 'Geography',
-    'Civics', 'Political Science', 'Economics', 'Philosophy', 'Psychology',
-    'Sociology', 'Environmental Studies', 'General Science', 'Life Science',
-    'Physical Science', 'Social Studies', 'Web Development', 'App Development',
-    'Cyber Security', 'Data Science', 'Artificial Intelligence', 'Robotics',
-    'Public Speaking', 'Statistics', 'Legal Studies', 'Fine Arts', 'Music'
-  ];
-
-  final List<String> classOptions = [
-    'Class 1', 'Class 2', 'Class 3', 'Class 4', 'Class 5',
-    'Class 6', 'Class 7', 'Class 8', 'Class 9', 'Class 10',
-    'Class 11', 'Class 12', 'College', 'University', 'Others',
-  ];
 
   @override
   void initState() {
@@ -80,41 +63,39 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
     }
   }
 
-  Future<void> updateStudentProfile() async {
+  Future<void> _handleDeleteAccount() async {
     final uid = _auth.currentUser?.uid;
     if (uid == null) return;
 
-    setState(() => isLoading = true);
+    bool confirm = await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text("Warning"),
+        content: const Text("This action will permanently delete your account and all associated data. This cannot be undone."),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text("Cancel")),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text("Delete", style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    ) ?? false;
 
-    try {
-      String? imageUrl = studentData?['profileImageUrl'];
-
-      if (_selectedImage != null) {
-        File? compressedFile = await ImageHelper.compressImage(_selectedImage!);
-        final ref = _storage.ref().child('students/$uid/profile.jpg');
-        await ref.putFile(compressedFile ?? _selectedImage!);
-        imageUrl = await ref.getDownloadURL();
+    if (confirm) {
+      try {
+        await _firestore.collection('students').doc(uid).delete();
+        await _auth.currentUser?.delete();
+        if (mounted) Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
+      } catch (e) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Error deleting account")));
       }
-
-      await _firestore.collection('students').doc(uid).set({
-        'name': _nameController.text.trim(),
-        'phone': _phoneController.text.trim(),
-        'location': _locationController.text.trim(),
-        'bio': _bioController.text.trim(),
-        'gender': gender,
-        'studentClass': studentClass,
-        'interestedSubjects': selectedSubjects,
-        'profileImageUrl': imageUrl,
-      }, SetOptions(merge: true));
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Profile Updated!')));
-        setState(() => isEditing = false);
-        fetchStudentData();
-      }
-    } catch (e) {
-      if (mounted) setState(() => isLoading = false);
     }
+  }
+
+  Future<void> _handleLogout() async {
+    await _auth.signOut();
+    if (mounted) Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
   }
 
   @override
@@ -122,14 +103,21 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        automaticallyImplyLeading: false,
         title: const Text("Profile", style: TextStyle(fontWeight: FontWeight.bold)),
         backgroundColor: const Color(0xFF1E4C7A),
         foregroundColor: Colors.white,
         actions: [
-          IconButton(
-            icon: Icon(isEditing ? Icons.close : Icons.edit),
-            onPressed: () => setState(() => isEditing = !isEditing),
+          PopupMenuButton<String>(
+            onSelected: (value) {
+              if (value == 'edit') setState(() => isEditing = true);
+              if (value == 'logout') _handleLogout();
+              if (value == 'delete') _handleDeleteAccount();
+            },
+            itemBuilder: (context) => [
+              const PopupMenuItem(value: 'edit', child: Text("Edit Profile")),
+              const PopupMenuItem(value: 'logout', child: Text("Log Out")),
+              const PopupMenuItem(value: 'delete', child: Text("Delete Account", style: TextStyle(color: Colors.red))),
+            ],
           ),
         ],
       ),
@@ -150,7 +138,6 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
                         CircleAvatar(radius: 50, backgroundImage: _selectedImage != null ? FileImage(_selectedImage!) : (studentData?['profileImageUrl'] != null ? NetworkImage(studentData!['profileImageUrl']) : null) as ImageProvider?),
                         const SizedBox(height: 10),
                         Text(_nameController.text, style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)),
-                        Text(studentClass ?? "", style: const TextStyle(color: Colors.white70, fontSize: 16)),
                       ],
                     ),
                   ),
@@ -170,20 +157,8 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
         _customEditField("Full Name", _nameController),
         _customEditField("Phone", _phoneController),
         _customEditField("Location", _locationController),
-        DropdownButtonFormField<String>(
-          value: gender,
-          decoration: const InputDecoration(labelText: "Gender"),
-          onChanged: (val) => setState(() => gender = val),
-          items: ["Male", "Female"].map((g) => DropdownMenuItem(value: g, child: Text(g))).toList(),
-        ),
-        DropdownButtonFormField<String>(
-          value: studentClass,
-          decoration: const InputDecoration(labelText: "Class"),
-          onChanged: (val) => setState(() => studentClass = val),
-          items: classOptions.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
-        ),
         const SizedBox(height: 20),
-        ElevatedButton(onPressed: updateStudentProfile, child: const Text("Save Changes")),
+        ElevatedButton(onPressed: () => setState(() => isEditing = false), child: const Text("Save Changes")),
       ],
     );
   }
@@ -191,23 +166,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
   Widget _buildProfileView() {
     return Column(
       children: [
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                Column(children: [const Icon(Icons.school), Text(studentClass ?? "N/A")]),
-                Column(children: [const Icon(Icons.location_on), Text(_locationController.text.isNotEmpty ? _locationController.text : "N/A")]),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(height: 20),
-        const Align(alignment: Alignment.centerLeft, child: Text("Interested Subjects", style: TextStyle(fontWeight: FontWeight.bold))),
-        Wrap(spacing: 8, children: selectedSubjects.map((s) => Chip(label: Text(s))).toList()),
-        const SizedBox(height: 20),
-        SizedBox(width: double.infinity, child: ElevatedButton(onPressed: () {}, child: const Text("UPLOAD PAYMENT CONFIRMATION"))),
+        Card(child: Padding(padding: const EdgeInsets.all(16), child: Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [const Icon(Icons.location_on), Text(_locationController.text.isNotEmpty ? _locationController.text : "N/A")]))),
       ],
     );
   }
