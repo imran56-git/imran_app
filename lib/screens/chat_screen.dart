@@ -68,54 +68,18 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<void> _sendMessage(String text) async {
     if (text.isEmpty) return;
-
-    try {
-      await FirebaseFirestore.instance
-          .collection('chats')
-          .doc(widget.chatId)
-          .collection('messages')
-          .add({
-        'message': text,
-        'senderId': widget.currentUserId,
-        'timestamp': FieldValue.serverTimestamp(),
-        'type': 'text',
-      });
-      _messageController.clear();
-      setState(() => _isTyping = false);
-    } catch (e) {
-      debugPrint("Error sending text message: $e");
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text("Failed to send message")));
-      }
-    }
-  }
-
-  Future<void> _sendAudioMessage(String filePath) async {
-    try {
-      setState(() => _isRecording = true);
-
-      String? remoteUrl = await _voiceHandler.stopAndUploadRecording(widget.chatId);
-
-      if (remoteUrl != null) {
-        await FirebaseFirestore.instance
-            .collection('chats')
-            .doc(widget.chatId)
-            .collection('messages')
-            .add({
-          'message': remoteUrl,
-          'senderId': widget.currentUserId,
-          'timestamp': FieldValue.serverTimestamp(),
-          'type': 'audio',
-        });
-      }
-    } catch (e) {
-      debugPrint("Error sending audio: $e");
-    } finally {
-      if (mounted) {
-        setState(() => _isRecording = false);
-      }
-    }
+    await FirebaseFirestore.instance
+        .collection('chats')
+        .doc(widget.chatId)
+        .collection('messages')
+        .add({
+      'message': text,
+      'senderId': widget.currentUserId,
+      'timestamp': FieldValue.serverTimestamp(),
+      'type': 'text',
+    });
+    _messageController.clear();
+    setState(() => _isTyping = false);
   }
 
   Future<void> _toggleRecording() async {
@@ -123,7 +87,15 @@ class _ChatScreenState extends State<ChatScreen> {
       String? path = await _recorder.stopRecorder();
       setState(() => _isRecording = false);
       if (path != null) {
-        await _sendAudioMessage(path);
+        String? remoteUrl = await _voiceHandler.stopAndUploadRecording(widget.chatId);
+        if (remoteUrl != null) {
+          await FirebaseFirestore.instance.collection('chats').doc(widget.chatId).collection('messages').add({
+            'message': remoteUrl,
+            'senderId': widget.currentUserId,
+            'timestamp': FieldValue.serverTimestamp(),
+            'type': 'audio',
+          });
+        }
       }
     } else {
       await _recorder.startRecorder(toFile: 'audio_msg.aac');
@@ -131,133 +103,32 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  void _showContextMenu(BuildContext context, Offset offset, String messageId, String currentText, bool isMe) {
-    showMenu(
-      context: context,
-      position: RelativeRect.fromLTRB(offset.dx, offset.dy, offset.dx, offset.dy),
-      items: [
-        if (isMe)
-          const PopupMenuItem(
-            value: 'edit',
-            child: Row(children: [Icon(Icons.edit), SizedBox(width: 8), Text('Edit')]),
-          ),
-        const PopupMenuItem(
-          value: 'delete_me',
-          child: Row(children: [Icon(Icons.delete_outline), SizedBox(width: 8), Text('Delete for me')]),
-        ),
-        if (isMe)
-          const PopupMenuItem(
-            value: 'delete_forever',
-            child: Row(children: [Icon(Icons.delete_forever), SizedBox(width: 8), Text('Delete for everyone')]),
-          ),
-      ],
-    ).then((value) {
-      if (value == 'edit') _showEditDialog(context, messageId, currentText);
-      if (value == 'delete_me' || value == 'delete_forever') _deleteMessage(messageId, value == 'delete_forever');
-    });
-  }
-
-  void _showEditDialog(BuildContext context, String messageId, String currentText) {
-    final TextEditingController editController = TextEditingController(text: currentText);
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text("Edit Message"),
-        content: TextField(
-          controller: editController,
-          decoration: const InputDecoration(hintText: "Update message content..."),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text("Cancel")),
-          TextButton(
-            onPressed: () async {
-              if (editController.text.trim().isNotEmpty) {
-                await _updateMessage(messageId, editController.text.trim());
-                if (context.mounted) Navigator.pop(context);
-              }
-            },
-            child: const Text("Update"),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _updateMessage(String messageId, String newText) async {
-    await FirebaseFirestore.instance
-        .collection('chats')
-        .doc(widget.chatId)
-        .collection('messages')
-        .doc(messageId)
-        .update({
-      'message': newText,
-      'isEdited': true,
-    });
-  }
-
-  Future<void> _deleteMessage(String messageId, bool forEveryone) async {
-    if (forEveryone) {
-      await FirebaseFirestore.instance
-          .collection('chats')
-          .doc(widget.chatId)
-          .collection('messages')
-          .doc(messageId)
-          .delete();
-    }
-  }
-
-  void _changeBackground() async {
-    final XFile? image = await _picker.pickImage(source: ImageSource.gallery);
-    if (image != null) {
-      setState(() => _backgroundImageUrl = image.path);
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: const Color(0xFFF8F9FA),
       appBar: AppBar(
-        titleSpacing: 0,
+        backgroundColor: const Color(0xFF1A237E),
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          onPressed: () => Navigator.pop(context),
+        ),
         title: Row(
           children: [
-            Padding(
-              padding: const EdgeInsets.all(8.0),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(8.0),
-                child: Image.asset(
-                  'assets/app_logo.png',
-                  height: 35,
-                  width: 35,
-                  fit: BoxFit.cover,
-                ),
-              ),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: Image.asset('assets/app_logo.png', height: 40, width: 40, fit: BoxFit.cover),
             ),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text("Messages", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-              ],
-            ),
+            const SizedBox(width: 12),
+            Text(widget.teacherName, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
           ],
         ),
-        actions: [
-          PopupMenuButton<String>(
-            onSelected: (val) {
-              if (val == 'bg') _changeBackground();
-            },
-            itemBuilder: (context) => [
-              const PopupMenuItem(value: 'bg', child: Text("Change Wallpaper")),
-              const PopupMenuItem(value: 'clear', child: Text("Clear Chat")),
-            ],
-          ),
-        ],
       ),
       body: Container(
         decoration: BoxDecoration(
           image: DecorationImage(
-            image: _backgroundImageUrl.contains('assets')
-                ? AssetImage(_backgroundImageUrl) as ImageProvider
-                : FileImage(File(_backgroundImageUrl)),
+            image: _backgroundImageUrl.contains('assets') ? AssetImage(_backgroundImageUrl) as ImageProvider : FileImage(File(_backgroundImageUrl)),
             fit: BoxFit.cover,
           ),
         ),
@@ -279,19 +150,14 @@ class _ChatScreenState extends State<ChatScreen> {
                     itemBuilder: (context, index) {
                       var doc = snapshot.data!.docs[index];
                       bool isMe = doc['senderId'] == widget.currentUserId;
-                      return GestureDetector(
-                        onLongPressStart: (details) => _showContextMenu(
-                          context, details.globalPosition, doc.id, doc['message'] ?? "", isMe
-                        ),
-                        child: MessageBubble(
-                          message: doc['message'] ?? '',
-                          isMe: isMe,
-                          timestamp: doc['timestamp'],
-                          type: doc['type'],
-                          messageId: doc.id,
-                          isTyping: _isTyping,
-                          uploadVoiceMessage: () {},
-                        ),
+                      return MessageBubble(
+                        message: doc['message'] ?? '',
+                        isMe: isMe,
+                        timestamp: doc['timestamp'],
+                        type: doc['type'],
+                        messageId: doc.id,
+                        isTyping: false,
+                        uploadVoiceMessage: () {},
                       );
                     },
                   );
@@ -302,11 +168,7 @@ class _ChatScreenState extends State<ChatScreen> {
             if (_isEmojiVisible)
               SizedBox(
                 height: 250,
-                child: EmojiPicker(
-                  onEmojiSelected: (category, emoji) {
-                    _messageController.text += emoji.emoji;
-                  },
-                ),
+                child: EmojiPicker(onEmojiSelected: (cat, emoji) => setState(() => _messageController.text += emoji.emoji)),
               ),
           ],
         ),
@@ -316,49 +178,33 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Widget _buildMessageInput() {
     return Container(
-      padding: const EdgeInsets.all(8),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+      color: Colors.white,
       child: Row(
         children: [
           Expanded(
             child: Container(
-              decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(25)),
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              decoration: BoxDecoration(color: const Color(0xFFF0F2F5), borderRadius: BorderRadius.circular(25)),
               child: Row(
                 children: [
-                  IconButton(
-                    icon: Icon(_isEmojiVisible ? Icons.keyboard : Icons.emoji_emotions_outlined, color: Colors.grey),
-                    onPressed: () {
-                      if (_isEmojiVisible) FocusScope.of(context).requestFocus(FocusNode());
-                      setState(() => _isEmojiVisible = !_isEmojiVisible);
-                    },
-                  ),
+                  IconButton(icon: Icon(_isEmojiVisible ? Icons.keyboard : Icons.emoji_emotions_outlined), onPressed: () => setState(() => _isEmojiVisible = !_isEmojiVisible)),
                   Expanded(
                     child: TextField(
                       controller: _messageController,
-                      onTap: () => setState(() => _isEmojiVisible = false),
-                      decoration: const InputDecoration(
-                        hintText: "Message",
-                        border: InputBorder.none,
-                      ),
+                      decoration: const InputDecoration(hintText: "Type a message...", border: InputBorder.none),
                     ),
                   ),
-                  IconButton(icon: const Icon(Icons.attach_file, color: Colors.grey), onPressed: () {}),
-                  IconButton(icon: const Icon(Icons.camera_alt, color: Colors.grey), onPressed: () {}),
                 ],
               ),
             ),
           ),
-          const SizedBox(width: 5),
+          const SizedBox(width: 8),
           CircleAvatar(
-            backgroundColor: const Color(0xFF128C7E),
+            backgroundColor: const Color(0xFF1A237E),
             child: IconButton(
               icon: Icon(_isTyping ? Icons.send : (_isRecording ? Icons.stop : Icons.mic), color: Colors.white),
-              onPressed: () {
-                if (_isTyping) {
-                  _sendMessage(_messageController.text.trim());
-                } else {
-                  _toggleRecording();
-                }
-              },
+              onPressed: () => _isTyping ? _sendMessage(_messageController.text.trim()) : _toggleRecording(),
             ),
           ),
         ],
