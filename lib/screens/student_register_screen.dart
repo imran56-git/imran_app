@@ -143,13 +143,6 @@ try {
     return;
   }
 
-    if (_profileImage == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please upload a profile photo')),
-      );
-      return;
-    }
-
     if (_gender == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please select gender')),
