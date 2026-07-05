@@ -9,137 +9,170 @@ import 'forgot_passwaord_screen.dart';
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
-    @override
-      State<LoginScreen> createState() => _LoginScreenState();
+  @override
+  State<LoginScreen> createState() => _LoginScreenState();
+}
+
+class _LoginScreenState extends State<LoginScreen> {
+  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final GoogleSignIn _googleSignIn = GoogleSignIn();
+
+  bool _isLoading = false;
+  final _formKey = GlobalKey<FormState>();
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loginUser() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() => _isLoading = true);
+    try {
+      await _auth.signInWithEmailAndPassword(
+        email: _emailController.text.trim(),
+        password: _passwordController.text.trim(),
+      );
+      
+      final User? user = _auth.currentUser;
+      if (user != null) {
+        await _checkAndNavigateUser(user);
+      }
+    } on FirebaseAuthException catch (e) {
+      _showError(e.message ?? "Login failed");
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _handleGoogleSignIn() async {
+    setState(() => _isLoading = true);
+    try {
+      final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
+      if (googleUser == null) {
+        setState(() => _isLoading = false);
+        return;
       }
 
-      class _LoginScreenState extends State<LoginScreen> {
-        final TextEditingController _emailController = TextEditingController();
-          final TextEditingController _passwordController = TextEditingController();
-            final FirebaseAuth _auth = FirebaseAuth.instance;
-              final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-                final GoogleSignIn _googleSignIn = GoogleSignIn();
+      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
+      final AuthCredential credential = GoogleAuthProvider.credential(
+        accessToken: googleAuth.accessToken,
+        idToken: googleAuth.idToken,
+      );
 
-                  bool _isLoading = false;
-                    final _formKey = GlobalKey<FormState>();
+      final UserCredential userCredential = await _auth.signInWithCredential(credential);
+      final User? user = userCredential.user;
 
-                      @override
-                        void dispose() {
-                            _emailController.dispose();
-                                _passwordController.dispose();
-                                    super.dispose();
-                                      }
+      if (user != null) {
+        await _checkAndNavigateUser(user);
+      }
+    } catch (e) {
+      _showError("Google sign-in failed: ${e.toString()}");
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
 
-                                        // --- New Optimized Google Sign-In ---
-                                          Future<void> _handleGoogleSignIn() async {
-                                              setState(() => _isLoading = true);
-                                                  try {
-                                                        final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
-                                                              if (googleUser == null) {
-                                                                      setState(() => _isLoading = false);
-                                                                              return;
-                                                                                    }
+  Future<void> _checkAndNavigateUser(User user) async {
+    final userDoc = await _firestore.collection('users').doc(user.uid).get();
+    if (!mounted) return;
 
-                                                                                          final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
-                                                                                                
-                                                                                                      // Null-safety handling added
-                                                                                                            final AuthCredential credential = GoogleAuthProvider.credential(
-                                                                                                                    accessToken: googleAuth.accessToken,
-                                                                                                                            idToken: googleAuth.idToken,
-                                                                                                                                  );
+    if (userDoc.exists) {
+      final String userType = userDoc.data()?['userType'] ?? 'student';
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => userType == 'teacher' ? const TeacherHomeScreen() : const StudentHomeScreen(),
+        ),
+      );
+    } else {
+      await _firestore.collection('users').doc(user.uid).set({
+        'uid': user.uid,
+        'email': user.email,
+        'userType': 'student',
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+      Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const StudentHomeScreen()));
+    }
+  }
 
-                                                                                                                                        final UserCredential userCredential = await _auth.signInWithCredential(credential);
-                                                                                                                                              final User? user = userCredential.user;
+  void _showError(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message), backgroundColor: Colors.redAccent));
+  }
 
-                                                                                                                                                    if (user != null) {
-                                                                                                                                                            await _checkAndNavigateUser(user);
-                                                                                                                                                                  }
-                                                                                                                                                                      } catch (e) {
-                                                                                                                                                                            _showError("Google sign-in failed: ${e.toString()}");
-                                                                                                                                                                                } finally {
-                                                                                                                                                                                      if (mounted) setState(() => _isLoading = false);
-                                                                                                                                                                                          }
-                                                                                                                                                                                            }
-
-                                                                                                                                                                                              Future<void> _checkAndNavigateUser(User user) async {
-                                                                                                                                                                                                  final userDoc = await _firestore.collection('users').doc(user.uid).get();
-                                                                                                                                                                                                      if (!mounted) return;
-
-                                                                                                                                                                                                          if (userDoc.exists) {
-                                                                                                                                                                                                                final String userType = userDoc.data()?['userType'] ?? 'student';
-                                                                                                                                                                                                                      Navigator.pushReplacement(
-                                                                                                                                                                                                                              context,
-                                                                                                                                                                                                                                      MaterialPageRoute(
-                                                                                                                                                                                                                                                builder: (_) => userType == 'teacher' ? const TeacherHomeScreen() : const StudentHomeScreen(),
-                                                                                                                                                                                                                                                        ),
-                                                                                                                                                                                                                                                              );
-                                                                                                                                                                                                                                                                  } else {
-                                                                                                                                                                                                                                                                        // New user creation logic
-                                                                                                                                                                                                                                                                              await _firestore.collection('users').doc(user.uid).set({
-                                                                                                                                                                                                                                                                                      'uid': user.uid,
-                                                                                                                                                                                                                                                                                              'email': user.email,
-                                                                                                                                                                                                                                                                                                      'userType': 'student',
-                                                                                                                                                                                                                                                                                                              'createdAt': FieldValue.serverTimestamp(),
-                                                                                                                                                                                                                                                                                                                    });
-                                                                                                                                                                                                                                                                                                                          Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const StudentHomeScreen()));
-                                                                                                                                                                                                                                                                                                                              }
-                                                                                                                                                                                                                                                                                                                                }
-
-                                                                                                                                                                                                                                                                                                                                  void _showError(String message) {
-                                                                                                                                                                                                                                                                                                                                      if (!mounted) return;
-                                                                                                                                                                                                                                                                                                                                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message), backgroundColor: Colors.redAccent));
-                                                                                                                                                                                                                                                                                                                                            }
-
-                                                                                                                                                                                                                                                                                                                                              @override
-                                                                                                                                                                                                                                                                                                                                                Widget build(BuildContext context) {
-                                                                                                                                                                                                                                                                                                                                                    return Scaffold(
-                                                                                                                                                                                                                                                                                                                                                          backgroundColor: Colors.white,
-                                                                                                                                                                                                                                                                                                                                                                appBar: AppBar(elevation: 0, backgroundColor: Colors.transparent, foregroundColor: Colors.black),
-                                                                                                                                                                                                                                                                                                                                                                      body: Center(
-                                                                                                                                                                                                                                                                                                                                                                              child: SingleChildScrollView(
-                                                                                                                                                                                                                                                                                                                                                                                        padding: const EdgeInsets.symmetric(horizontal: 30),
-                                                                                                                                                                                                                                                                                                                                                                                                  child: Form(
-                                                                                                                                                                                                                                                                                                                                                                                                              key: _formKey,
-                                                                                                                                                                                                                                                                                                                                                                                                                          child: Column(
-                                                                                                                                                                                                                                                                                                                                                                                                                                        children: [
-                                                                                                                                                                                                                                                                                                                                                                                                                                                        const Icon(Icons.school_rounded, size: 90, color: Color(0xFF128C7E)),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                        const Text("Welcome Back", style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        const SizedBox(height: 40),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        TextFormField(
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          controller: _emailController,
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            decoration: InputDecoration(labelText: 'Email Address', prefixIcon: const Icon(Icons.email_outlined), border: OutlineInputBorder(borderRadius: BorderRadius.circular(12))),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            ),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            const SizedBox(height: 20),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            TextFormField(
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              controller: _passwordController,
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                obscureText: true,
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  decoration: InputDecoration(labelText: 'Password', prefixIcon: const Icon(Icons.lock_outline), border: OutlineInputBorder(borderRadius: BorderRadius.circular(12))),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  ),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  Align(
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    alignment: Alignment.centerRight,
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      child: TextButton(
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ForgotPasswordScreen())),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              child: const Text("Forgot Password?", style: TextStyle(color: Color(0xFF12BC7E))),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                ),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                ),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                const SizedBox(height: 20),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                _isLoading 
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  ? const CircularProgressIndicator() 
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    : Column(
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          children: [
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  SizedBox(width: double.infinity, height: 55, child: ElevatedButton(onPressed: () {}, child: const Text('Login', style: TextStyle(fontSize: 18)))),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          const SizedBox(height: 25),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  Row(children: const [Expanded(child: Divider()), Padding(padding: EdgeInsets.symmetric(horizontal: 10), child: Text("OR")), Expanded(child: Divider())]),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          const SizedBox(height: 25),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  SizedBox(width: double.infinity, height: 55, child: OutlinedButton.icon(onPressed: _handleGoogleSignIn, icon: const Icon(Icons.g_mobiledata_rounded, size: 30, color: Colors.red), label: const Text('Continue with Google'))),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        ],
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            ),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          ],
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      ),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                ),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        ),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              ),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  );
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    }
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    }
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.white,
+      appBar: AppBar(elevation: 0, backgroundColor: Colors.transparent, foregroundColor: Colors.black),
+      body: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 30),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              children: [
+                const Icon(Icons.school_rounded, size: 90, color: Color(0xFF128C7E)),
+                const Text("Welcome Back", style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 40),
+                TextFormField(
+                  controller: _emailController,
+                  validator: (val) => val!.isEmpty ? 'Enter email' : null,
+                  decoration: InputDecoration(labelText: 'Email Address', prefixIcon: const Icon(Icons.email_outlined), border: OutlineInputBorder(borderRadius: BorderRadius.circular(12))),
+                ),
+                const SizedBox(height: 20),
+                TextFormField(
+                  controller: _passwordController,
+                  obscureText: true,
+                  validator: (val) => val!.length < 6 ? 'Password too short' : null,
+                  decoration: InputDecoration(labelText: 'Password', prefixIcon: const Icon(Icons.lock_outline), border: OutlineInputBorder(borderRadius: BorderRadius.circular(12))),
+                ),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                    onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ForgotPasswordScreen())),
+                    child: const Text("Forgot Password?", style: TextStyle(color: Color(0xFF12BC7E))),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                _isLoading
+                    ? const CircularProgressIndicator()
+                    : Column(
+                        children: [
+                          SizedBox(
+                            width: double.infinity,
+                            height: 55,
+                            child: ElevatedButton(
+                              onPressed: _loginUser,
+                              child: const Text('Login', style: TextStyle(fontSize: 18)),
+                            ),
+                          ),
+                          const SizedBox(height: 25),
+                          Row(children: const [Expanded(child: Divider()), Padding(padding: EdgeInsets.symmetric(horizontal: 10), child: Text("OR")), Expanded(child: Divider())]),
+                          const SizedBox(height: 25),
+                          SizedBox(
+                            width: double.infinity,
+                            height: 55,
+                            child: OutlinedButton.icon(
+                              onPressed: _handleGoogleSignIn,
+                              icon: const Icon(Icons.g_mobiledata_rounded, size: 30, color: Colors.red),
+                              label: const Text('Continue with Google'),
+                            ),
+                          ),
+                        ],
+                      ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
