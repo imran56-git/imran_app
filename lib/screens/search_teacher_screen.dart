@@ -52,11 +52,11 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF8F9FA),
+      // AppBar empty but keeping height for structure if needed, or you can remove it
       appBar: AppBar(
-        title: const Text("Find Your Teacher", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 22)),
-        centerTitle: true,
         backgroundColor: const Color(0xFF1A237E),
         elevation: 0,
+        toolbarHeight: 0, 
       ),
       body: Column(
         children: [
@@ -79,13 +79,23 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
 
   Widget _buildAdvancedSearchPanel() {
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
       decoration: const BoxDecoration(
         color: Color(0xFF1A237E),
         borderRadius: BorderRadius.vertical(bottom: Radius.circular(30)),
       ),
       child: Column(
         children: [
+          // Moved the title here
+          const Text(
+            "Find Your Teacher",
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 20),
           _customSearchField("Teacher's Name", _nameController, Icons.person_outline),
           const SizedBox(height: 12),
           Row(children: [
