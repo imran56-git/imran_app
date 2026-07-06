@@ -93,13 +93,12 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
 }
  
 Future<bool> _checkUserIdExists(String userId) async {
-
   final result = await FirebaseFirestore.instance
       .collection('users')
-      .doc(userId)
+      .where('username', isEqualTo: userId)
       .get();
 
-  return result.exists;
+  return result.docs.isNotEmpty;
 }
 
   Future<String> _processAndUpload(File file, String path) async {
