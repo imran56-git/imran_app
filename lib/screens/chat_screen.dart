@@ -34,7 +34,9 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _isTyping = false;
   bool _isRecording = false;
   bool _isBlocked = false;
-  String _backgroundImageUrl = 'assets/chat_bg.png';
+
+  /// default wallpaper
+  String _backgroundImageUrl = 'assets/images/chat_bg.png';
 
   @override
   void initState() {
@@ -90,12 +92,16 @@ class _ChatScreenState extends State<ChatScreen> {
 
     _messageController.clear();
 
-    setState(() {
-      _isTyping = false;
-    });
+    if (mounted) {
+      setState(() {
+        _isTyping = false;
+      });
+    }
   }
 
   Future<void> _sendAudioMessage(String audioUrl) async {
+    if (audioUrl.trim().isEmpty) return;
+
     await FirebaseFirestore.instance
         .collection('chats')
         .doc(widget.chatId)
@@ -117,19 +123,25 @@ class _ChatScreenState extends State<ChatScreen> {
       if (_isRecording) {
         final audioUrl =
             await _voiceHandler.stopAndUploadRecording(widget.chatId);
-        setState(() => _isRecording = false);
 
-        if (audioUrl != null) {
+        if (mounted) {
+          setState(() => _isRecording = false);
+        }
+
+        if (audioUrl != null && audioUrl.isNotEmpty) {
           await _sendAudioMessage(audioUrl);
         }
       } else {
         await _voiceHandler.startRecording();
-        setState(() => _isRecording = true);
+        if (mounted) {
+          setState(() => _isRecording = true);
+        }
       }
     } catch (e) {
       debugPrint('Recording error: $e');
-      setState(() => _isRecording = false);
+
       if (mounted) {
+        setState(() => _isRecording = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Recording error: $e')),
         );
@@ -138,34 +150,43 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _markMessagesAsSeen() async {
-    final query = await FirebaseFirestore.instance
-        .collection('chats')
-        .doc(widget.chatId)
-        .collection('messages')
-        .where('receiverId', isEqualTo: widget.currentUserId)
-        .where('isSeen', isEqualTo: false)
-        .get();
+    try {
+      final query = await FirebaseFirestore.instance
+          .collection('chats')
+          .doc(widget.chatId)
+          .collection('messages')
+          .where('receiverId', isEqualTo: widget.currentUserId)
+          .where('isSeen', isEqualTo: false)
+          .get();
 
-    for (final doc in query.docs) {
-      await doc.reference.update({'isSeen': true});
+      for (final doc in query.docs) {
+        await doc.reference.update({'isSeen': true});
+      }
+    } catch (e) {
+      debugPrint('Seen update error: $e');
     }
   }
 
   Future<void> _clearChat() async {
-    final messagesRef = FirebaseFirestore.instance
-        .collection('chats')
-        .doc(widget.chatId)
-        .collection('messages');
+    try {
+      final messagesRef = FirebaseFirestore.instance
+          .collection('chats')
+          .doc(widget.chatId)
+          .collection('messages');
 
-    final snapshot = await messagesRef.get();
-    for (final doc in snapshot.docs) {
-      await doc.reference.delete();
-    }
+      final snapshot = await messagesRef.get();
 
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Chat cleared')),
-      );
+      for (final doc in snapshot.docs) {
+        await doc.reference.delete();
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Chat cleared')),
+        );
+      }
+    } catch (e) {
+      debugPrint('Clear chat error: $e');
     }
   }
 
@@ -216,20 +237,18 @@ class _ChatScreenState extends State<ChatScreen> {
       ),
     );
 
-    if (confirm == true) {
+    if (confirm == true && mounted) {
       setState(() {
         _isBlocked = !_isBlocked;
       });
 
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              _isBlocked ? 'Teacher blocked' : 'Teacher unblocked',
-            ),
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            _isBlocked ? 'Teacher blocked' : 'Teacher unblocked',
           ),
-        );
-      }
+        ),
+      );
     }
   }
 
@@ -279,16 +298,23 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _pickChatBackground() async {
-    final picked = await _picker.pickImage(source: ImageSource.gallery);
-    if (picked != null) {
-      setState(() {
-        _backgroundImageUrl = picked.path;
-      });
+    try {
+      final picked = await _picker.pickImage(source: ImageSource.gallery);
+      if (picked != null && mounted) {
+        setState(() {
+          _backgroundImageUrl = picked.path;
+        });
+      }
+    } catch (e) {
+      debugPrint('Background picker error: $e');
     }
   }
 
   void _handleMenu(String value) {
     switch (value) {
+      case 'background':
+        _pickChatBackground();
+        break;
       case 'clear':
         _showClearChatDialog();
         break;
@@ -297,9 +323,6 @@ class _ChatScreenState extends State<ChatScreen> {
         break;
       case 'report':
         _showReportDialog();
-        break;
-      case 'background':
-        _pickChatBackground();
         break;
     }
   }
@@ -400,9 +423,10 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final bgProvider = _backgroundImageUrl.startsWith('assets/')
-        ? AssetImage(_backgroundImageUrl) as ImageProvider
-        : FileImage(File(_backgroundImageUrl));
+    final ImageProvider bgProvider =
+        _backgroundImageUrl.startsWith('assets/')
+            ? AssetImage(_backgroundImageUrl)
+            : FileImage(File(_backgroundImageUrl));
 
     return Scaffold(
       backgroundColor: const Color(0xFFECE5DD),
@@ -447,19 +471,19 @@ class _ChatScreenState extends State<ChatScreen> {
           PopupMenuButton<String>(
             onSelected: _handleMenu,
             itemBuilder: (context) => [
-              const PopupMenuItem(
+              const PopupMenuItem<String>(
                 value: 'background',
                 child: Text('Change Chat Background'),
               ),
-              const PopupMenuItem(
+              const PopupMenuItem<String>(
                 value: 'clear',
                 child: Text('Clear Chat'),
               ),
-              PopupMenuItem(
+              PopupMenuItem<String>(
                 value: 'block',
                 child: Text(_isBlocked ? 'Unblock Teacher' : 'Block Teacher'),
               ),
-              const PopupMenuItem(
+              const PopupMenuItem<String>(
                 value: 'report',
                 child: Text('Report Teacher'),
               ),
@@ -515,16 +539,17 @@ class _ChatScreenState extends State<ChatScreen> {
                     padding: const EdgeInsets.only(top: 10, bottom: 10),
                     itemCount: snapshot.data!.docs.length,
                     itemBuilder: (context, index) {
-                      var doc = snapshot.data!.docs[index];
+                      final doc = snapshot.data!.docs[index];
                       final data = doc.data() as Map<String, dynamic>;
 
-                      bool isMe = data['senderId'] == widget.currentUserId;
+                      final bool isMe =
+                          data['senderId'] == widget.currentUserId;
 
                       return MessageBubble(
-                        message: data['message'] ?? '',
+                        message: (data['message'] ?? '').toString(),
                         isMe: isMe,
                         timestamp: data['timestamp'] as Timestamp?,
-                        type: data['type'] ?? 'text',
+                        type: (data['type'] ?? 'text').toString(),
                         messageId: doc.id,
                         isTyping: false,
                         uploadVoiceMessage: () {},
@@ -548,10 +573,18 @@ class _ChatScreenState extends State<ChatScreen> {
                     );
                     _onTextChanged();
                   },
-                  config: const Config(
-                    columns: 8,
-                    emojiSizeMax: 28,
-                    bgColor: Colors.white,
+                  config: Config(
+                    height: 260,
+                    checkPlatformCompatibility: true,
+                    emojiViewConfig: EmojiViewConfig(
+                      columns: 8,
+                      emojiSizeMax: 28,
+                      backgroundColor: Colors.white,
+                    ),
+                    skinToneConfig: const SkinToneConfig(),
+                    categoryViewConfig: const CategoryViewConfig(),
+                    bottomActionBarConfig: const BottomActionBarConfig(),
+                    searchViewConfig: const SearchViewConfig(),
                   ),
                 ),
               ),
