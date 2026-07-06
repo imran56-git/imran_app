@@ -288,24 +288,158 @@ fetchStudentData();
   }
 
   Widget _buildProfileDetails() {
-    return FadeInUp(
-      child: Card(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        child: Padding(
-          padding: const EdgeInsets.all(20),
+  return FadeInUp(
+    child: Card(
+      elevation: 5,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+
+            _buildInfoTile(
+              Icons.person,
+              "Name",
+              _nameController.text,
+            ),
+
+            _buildInfoTile(
+              Icons.phone,
+              "Phone",
+              _phoneController.text,
+            ),
+
+            _buildInfoTile(
+              Icons.location_on,
+              "Home Location",
+              _locationController.text,
+            ),
+
+            _buildInfoTile(
+              Icons.people,
+              "Gender",
+              gender ?? "Not Added",
+            ),
+
+            _buildInfoTile(
+              Icons.school,
+              "Class",
+              studentClass ?? "Not Added",
+            ),
+
+            _buildInfoTile(
+              Icons.school_outlined,
+              "School",
+              _schoolController.text.isEmpty
+                  ? "Not Added"
+                  : _schoolController.text,
+            ),
+
+            _buildInfoTile(
+              Icons.account_balance,
+              "College",
+              _collegeController.text.isEmpty
+                  ? "Not Added"
+                  : _collegeController.text,
+            ),
+
+            _buildInfoTile(
+              Icons.info_outline,
+              "Bio",
+              _bioController.text.isEmpty
+                  ? "Not Added"
+                  : _bioController.text,
+            ),
+
+            const SizedBox(height: 20),
+
+            const Text(
+              "Interested Subjects",
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+
+            const SizedBox(height: 10),
+
+            selectedSubjects.isEmpty
+                ? const Text("No Subjects Selected")
+                : Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: selectedSubjects.map((subject) {
+                      return Chip(
+                        label: Text(subject),
+                        backgroundColor: Colors.blue.shade50,
+                      );
+                    }).toList(),
+                  ),
+
+            const SizedBox(height: 25),
+
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () {
+                  // Future Payment Screen
+                },
+                child: const Text(
+                  "PAYMENT CONFIRMATION",
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+Widget _buildInfoTile(
+  IconData icon,
+  String title,
+  String value,
+) {
+  return Padding(
+    padding: const EdgeInsets.only(bottom: 15),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(
+          icon,
+          color: const Color(0xFF1E4C7A),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
           child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              ListTile(title: Text("Name"), subtitle: Text(_nameController.text)),
-              ListTile(title: Text("Institution"), subtitle: Text(_institutionController.text)),
-              ListTile(title: Text("Class"), subtitle: Text(studentClass ?? "N/A")),
-              const SizedBox(height: 20),
-              SizedBox(width: double.infinity, child: ElevatedButton(onPressed: () {}, child: const Text("PAYMENT CONFIRMATION"))),
+              Text(
+                title,
+                style: const TextStyle(
+                  color: Colors.grey,
+                  fontSize: 13,
+                ),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                value,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
             ],
           ),
         ),
-      ),
-    );
-  }
+      ],
+    ),
+  );
+}
 
   Widget _buildEditForm() {
   return Column(
