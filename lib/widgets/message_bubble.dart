@@ -22,8 +22,8 @@ class MessageBubble extends StatefulWidget {
     required this.type,
     required this.isTyping,
     required this.uploadVoiceMessage,
-    required this.isSeen,
-    required this.isDelivered,
+    this.isSeen = false,
+    this.isDelivered = true,
   });
 
   @override
@@ -31,8 +31,20 @@ class MessageBubble extends StatefulWidget {
 }
 
 class _MessageBubbleState extends State<MessageBubble> {
-  final AudioPlayer _audioPlayer = AudioPlayer();
+  late final AudioPlayer _audioPlayer;
   bool _isPlaying = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _audioPlayer = AudioPlayer();
+
+    _audioPlayer.onPlayerComplete.listen((event) {
+      if (mounted) {
+        setState(() => _isPlaying = false);
+      }
+    });
+  }
 
   String _formatTime(Timestamp? ts) {
     if (ts == null) return '';
@@ -44,24 +56,26 @@ class _MessageBubbleState extends State<MessageBubble> {
   }
 
   Future<void> _toggleAudio() async {
-    if (widget.message.isEmpty) return;
+    if (widget.message.trim().isEmpty) return;
 
     try {
       if (_isPlaying) {
         await _audioPlayer.stop();
-        setState(() => _isPlaying = false);
+        if (mounted) {
+          setState(() => _isPlaying = false);
+        }
       } else {
+        await _audioPlayer.stop();
         await _audioPlayer.play(UrlSource(widget.message));
-        setState(() => _isPlaying = true);
-
-        _audioPlayer.onPlayerComplete.listen((event) {
-          if (mounted) {
-            setState(() => _isPlaying = false);
-          }
-        });
+        if (mounted) {
+          setState(() => _isPlaying = true);
+        }
       }
     } catch (e) {
       debugPrint('Audio play error: $e');
+      if (mounted) {
+        setState(() => _isPlaying = false);
+      }
     }
   }
 
@@ -69,14 +83,62 @@ class _MessageBubbleState extends State<MessageBubble> {
     if (!widget.isMe) return const SizedBox.shrink();
 
     if (widget.isSeen) {
-      return const Icon(Icons.done_all, size: 16, color: Colors.blue);
+      return const Icon(
+        Icons.done_all,
+        size: 16,
+        color: Colors.blue,
+      );
     }
 
     if (widget.isDelivered) {
-      return const Icon(Icons.done_all, size: 16, color: Colors.grey);
+      return const Icon(
+        Icons.done_all,
+        size: 16,
+        color: Colors.grey,
+      );
     }
 
-    return const Icon(Icons.done, size: 16, color: Colors.grey);
+    return const Icon(
+      Icons.done,
+      size: 16,
+      color: Colors.grey,
+    );
+  }
+
+  Widget _buildAudioBubble() {
+    return InkWell(
+      onTap: _toggleAudio,
+      borderRadius: BorderRadius.circular(14),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          CircleAvatar(
+            radius: 18,
+            backgroundColor: const Color(0xFF128C7E),
+            child: Icon(
+              _isPlaying ? Icons.pause : Icons.play_arrow,
+              color: Colors.white,
+              size: 20,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Container(
+            width: 110,
+            height: 4,
+            decoration: BoxDecoration(
+              color: Colors.grey.shade400,
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+          const SizedBox(width: 8),
+          const Icon(
+            Icons.mic,
+            size: 18,
+            color: Colors.grey,
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -87,9 +149,8 @@ class _MessageBubbleState extends State<MessageBubble> {
 
   @override
   Widget build(BuildContext context) {
-    final bubbleColor = widget.isMe
-        ? const Color(0xFFDCF8C6)
-        : Colors.white;
+    final bubbleColor =
+        widget.isMe ? const Color(0xFFDCF8C6) : Colors.white;
 
     return Align(
       alignment:
@@ -110,7 +171,6 @@ class _MessageBubbleState extends State<MessageBubble> {
                 ),
               ),
             ),
-
           Container(
             margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -130,49 +190,21 @@ class _MessageBubbleState extends State<MessageBubble> {
                   color: Colors.black.withOpacity(0.06),
                   blurRadius: 4,
                   offset: const Offset(0, 2),
-                )
+                ),
               ],
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if (widget.type == 'audio')
-                  InkWell(
-                    onTap: _toggleAudio,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        CircleAvatar(
-                          radius: 18,
-                          backgroundColor: const Color(0xFF128C7E),
-                          child: Icon(
-                            _isPlaying ? Icons.pause : Icons.play_arrow,
-                            color: Colors.white,
-                          ),
+                widget.type == 'audio'
+                    ? _buildAudioBubble()
+                    : Text(
+                        widget.message,
+                        style: const TextStyle(
+                          fontSize: 15,
+                          color: Colors.black87,
                         ),
-                        const SizedBox(width: 10),
-                        Container(
-                          width: 100,
-                          height: 4,
-                          decoration: BoxDecoration(
-                            color: Colors.grey.shade400,
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        const Icon(Icons.mic, size: 18, color: Colors.grey),
-                      ],
-                    ),
-                  )
-                else
-                  Text(
-                    widget.message,
-                    style: const TextStyle(
-                      fontSize: 15,
-                      color: Colors.black87,
-                    ),
-                  ),
-
+                      ),
                 const SizedBox(height: 6),
                 Row(
                   mainAxisSize: MainAxisSize.min,
@@ -184,8 +216,10 @@ class _MessageBubbleState extends State<MessageBubble> {
                         color: Colors.grey[600],
                       ),
                     ),
-                    const SizedBox(width: 4),
-                    _buildStatusIcon(),
+                    if (widget.isMe) ...[
+                      const SizedBox(width: 4),
+                      _buildStatusIcon(),
+                    ],
                   ],
                 ),
               ],
