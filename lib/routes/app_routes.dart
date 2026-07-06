@@ -43,7 +43,9 @@ static Route<dynamic> generateRoute(RouteSettings settings) {
       break;
 
     case studentRegister:
-      page = const StudentRegistrationScreen();
+      page = StudentHomeScreen(
+  currentUserId: FirebaseAuth.instance.currentUser!.uid,
+);
       break;
 
     case teacherRegister:
