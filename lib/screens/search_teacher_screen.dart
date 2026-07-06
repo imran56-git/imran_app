@@ -26,14 +26,22 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
       query = query.where('name', isEqualTo: _nameController.text.trim());
     }
     if (_subjectController.text.trim().isNotEmpty) {
-      query = query.where('subjects', arrayContains: _subjectController.text.trim());
+      query = query.where(
+        'subjects',
+        arrayContains: _subjectController.text.trim(),
+      );
     }
     if (_locationController.text.trim().isNotEmpty) {
-      query = query.where('location', isEqualTo: _locationController.text.trim());
+      query = query.where(
+        'location',
+        isEqualTo: _locationController.text.trim(),
+      );
     }
     if (_experienceController.text.trim().isNotEmpty) {
       final exp = int.tryParse(_experienceController.text.trim());
-      if (exp != null) query = query.where('experience', isGreaterThanOrEqualTo: exp);
+      if (exp != null) {
+        query = query.where('experience', isGreaterThanOrEqualTo: exp);
+      }
     }
 
     try {
@@ -44,7 +52,11 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
       });
     } catch (e) {
       setState(() => _isSearching = false);
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Error fetching data.")));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Error fetching data.")),
+        );
+      }
     }
   }
 
@@ -52,27 +64,46 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF8F9FA),
-      // AppBar empty but keeping height for structure if needed, or you can remove it
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF1A237E),
-        elevation: 0,
-        toolbarHeight: 0, 
-      ),
-      body: Column(
-        children: [
-          _buildAdvancedSearchPanel(),
-          Expanded(
-            child: _isSearching
-                ? const Center(child: CircularProgressIndicator(color: Color(0xFF1A237E)))
-                : searchResults.isEmpty
-                    ? _buildNoResultsView()
-                    : ListView.builder(
-                        padding: const EdgeInsets.all(16),
-                        itemCount: searchResults.length,
-                        itemBuilder: (context, index) => _buildTeacherCard(searchResults[index]),
+      body: SafeArea(
+        child: Column(
+          children: [
+            // Top white title section
+            Container(
+              width: double.infinity,
+              color: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              child: const Center(
+                child: Text(
+                  "Find Your Teacher",
+                  style: TextStyle(
+                    color: Colors.black,
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ),
+
+            _buildAdvancedSearchPanel(),
+
+            Expanded(
+              child: _isSearching
+                  ? const Center(
+                      child: CircularProgressIndicator(
+                        color: Color(0xFF1A237E),
                       ),
-          ),
-        ],
+                    )
+                  : searchResults.isEmpty
+                      ? _buildNoResultsView()
+                      : ListView.builder(
+                          padding: const EdgeInsets.all(16),
+                          itemCount: searchResults.length,
+                          itemBuilder: (context, index) =>
+                              _buildTeacherCard(searchResults[index]),
+                        ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -82,30 +113,50 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
       decoration: const BoxDecoration(
         color: Color(0xFF1A237E),
-        borderRadius: BorderRadius.vertical(bottom: Radius.circular(30)),
+        borderRadius: BorderRadius.vertical(
+          bottom: Radius.circular(30),
+        ),
       ),
       child: Column(
         children: [
-          // Moved the title here
-          const Text(
-            "Find Your Teacher",
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-            ),
+          _customSearchField(
+            "Teacher's Name",
+            _nameController,
+            Icons.person_outline,
           ),
-          const SizedBox(height: 20),
-          _customSearchField("Teacher's Name", _nameController, Icons.person_outline),
           const SizedBox(height: 12),
-          Row(children: [
-            Expanded(child: _customSearchField("Subject", _subjectController, Icons.book_outlined)),
-            const SizedBox(width: 10),
-            Expanded(child: _customSearchField("Location", _locationController, Icons.location_on_outlined)),
-          ]),
+
+          Row(
+            children: [
+              Expanded(
+                child: _customSearchField(
+                  "Subject",
+                  _subjectController,
+                  Icons.book_outlined,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _customSearchField(
+                  "Location",
+                  _locationController,
+                  Icons.location_on_outlined,
+                ),
+              ),
+            ],
+          ),
+
           const SizedBox(height: 12),
-          _customSearchField("Min. Experience (Years)", _experienceController, Icons.history, isNumber: true),
+
+          _customSearchField(
+            "Min. Experience (Years)",
+            _experienceController,
+            Icons.history,
+            isNumber: true,
+          ),
+
           const SizedBox(height: 20),
+
           SizedBox(
             width: double.infinity,
             height: 55,
@@ -113,9 +164,18 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
               onPressed: _searchTeachers,
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFFFFB300),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(15),
+                ),
               ),
-              child: const Text("SEARCH TEACHERS", style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 16)),
+              child: const Text(
+                "SEARCH TEACHERS",
+                style: TextStyle(
+                  color: Colors.black,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                ),
+              ),
             ),
           ),
         ],
@@ -123,7 +183,12 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
     );
   }
 
-  Widget _customSearchField(String hint, TextEditingController controller, IconData icon, {bool isNumber = false}) {
+  Widget _customSearchField(
+    String hint,
+    TextEditingController controller,
+    IconData icon, {
+    bool isNumber = false,
+  }) {
     return TextField(
       controller: controller,
       keyboardType: isNumber ? TextInputType.number : TextInputType.text,
@@ -134,35 +199,87 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
         prefixIcon: Icon(icon, color: const Color(0xFFFFB300)),
         filled: true,
         fillColor: Colors.white.withOpacity(0.1),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(15), borderSide: BorderSide.none),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(15),
+          borderSide: BorderSide.none,
+        ),
       ),
     );
   }
 
   Widget _buildTeacherCard(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
+
     return Container(
       margin: const EdgeInsets.only(bottom: 15),
       padding: const EdgeInsets.all(15),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10)]),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+          ),
+        ],
+      ),
       child: Column(
         children: [
           ListTile(
-            leading: CircleAvatar(radius: 30, backgroundColor: Colors.indigo.shade50, child: const Icon(Icons.person, size: 35, color: Color(0xFF1A237E))),
-            title: Text(data['name'] ?? 'Unknown', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-            subtitle: Text("${data['location']} • ${data['experience']} Years Exp."),
+            leading: CircleAvatar(
+              radius: 30,
+              backgroundColor: Colors.indigo.shade50,
+              child: const Icon(
+                Icons.person,
+                size: 35,
+                color: Color(0xFF1A237E),
+              ),
+            ),
+            title: Text(
+              data['name'] ?? 'Unknown',
+              style: const TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 18,
+              ),
+            ),
+            subtitle: Text(
+              "${data['location']} • ${data['experience']} Years Exp.",
+            ),
           ),
           ElevatedButton(
-            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => TeacherProfileScreen(teacherId: doc.id))),
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1A237E), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
-            child: const Text("View Profile", style: TextStyle(color: Colors.white)),
-          )
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) =>
+                      TeacherProfileScreen(teacherId: doc.id),
+                ),
+              );
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF1A237E),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+            child: const Text(
+              "View Profile",
+              style: TextStyle(color: Colors.white),
+            ),
+          ),
         ],
       ),
     );
   }
 
   Widget _buildNoResultsView() {
-    return Column(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.search_off, size: 80, color: Colors.grey), const Text("No teachers found.")]);
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: const [
+        Icon(Icons.search_off, size: 80, color: Colors.grey),
+        SizedBox(height: 10),
+        Text("No teachers found."),
+      ],
+    );
   }
 }
