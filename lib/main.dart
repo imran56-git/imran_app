@@ -4,9 +4,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 
-import 'firebase_options.dart';
-import 'routes/app_routes.dart';
-import 'screens/splash_screen.dart';
+import 'firebase_options.dart'; 
+import 'routes/app_routes.dart'; 
 
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp();
@@ -14,49 +13,25 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+
   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+
   runApp(const FindYourBestTeacherTodayApp());
 }
 
-class FindYourBestTeacherTodayApp extends StatelessWidget {
+class FindYourBestTeacherTodayApp extends StatefulWidget {
   const FindYourBestTeacherTodayApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Find Your Best Teacher Today',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal),
-        useMaterial3: true,
-      ),
-      builder: (context, child) {
-        return Scaffold(
-          body: Stack(
-            children: [
-              child!,
-              const AppInitializer(),
-            ],
-          ),
-        );
-      },
-      home: const SplashScreen(),
-      onGenerateRoute: AppRoutes.generateRoute,
-    );
-  }
+  State<FindYourBestTeacherTodayApp> createState() => _FindYourBestTeacherTodayAppState();
 }
 
-class AppInitializer extends StatefulWidget {
-  const AppInitializer({super.key});
-
-  @override
-  State<AppInitializer> createState() => _AppInitializerState();
-}
-
-class _AppInitializerState extends State<AppInitializer> with WidgetsBindingObserver {
+class _FindYourBestTeacherTodayAppState extends State<FindYourBestTeacherTodayApp>
+    with WidgetsBindingObserver {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseMessaging _messaging = FirebaseMessaging.instance;
@@ -74,8 +49,17 @@ class _AppInitializerState extends State<AppInitializer> with WidgetsBindingObse
   }
 
   Future<void> _setupNotifications() async {
-    await _messaging.requestPermission(alert: true, badge: true, sound: true);
-    FirebaseMessaging.onMessage.listen((RemoteMessage message) {});
+    await _messaging.requestPermission(
+      alert: true,
+      badge: true,
+      sound: true,
+    );
+
+    FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+      if (message.notification != null) {
+        // Foreground message handling logic
+      }
+    });
   }
 
   @override
@@ -86,7 +70,11 @@ class _AppInitializerState extends State<AppInitializer> with WidgetsBindingObse
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    _setUserOnlineStatus(state == AppLifecycleState.resumed);
+    if (state == AppLifecycleState.resumed) {
+      _setUserOnlineStatus(true);
+    } else {
+      _setUserOnlineStatus(false);
+    }
   }
 
   Future<void> _setUserOnlineStatus(bool isOnline) async {
@@ -105,6 +93,15 @@ class _AppInitializerState extends State<AppInitializer> with WidgetsBindingObse
 
   @override
   Widget build(BuildContext context) {
-    return const SizedBox.shrink();
+    return MaterialApp(
+      title: 'Find Your Best Teacher Today',
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal),
+        useMaterial3: true,
+      ),
+      initialRoute: AppRoutes.splash,
+      onGenerateRoute: AppRoutes.generateRoute,
+    );
   }
 }
