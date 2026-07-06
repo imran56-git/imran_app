@@ -34,16 +34,18 @@ class _MessageBubbleState extends State<MessageBubble> {
   final AudioPlayer _audioPlayer = AudioPlayer();
   bool _isPlaying = false;
 
-  String _formatTime(Timestamp? timestamp) {
-    if (timestamp == null) return '';
-    final date = timestamp.toDate();
-    final hour = date.hour > 12 ? date.hour - 12 : date.hour == 0 ? 12 : date.hour;
+  String _formatTime(Timestamp? ts) {
+    if (ts == null) return '';
+    final date = ts.toDate();
+    final hour = date.hour % 12 == 0 ? 12 : date.hour % 12;
     final minute = date.minute.toString().padLeft(2, '0');
-    final period = date.hour >= 12 ? 'PM' : 'AM';
-    return '$hour:$minute $period';
+    final amPm = date.hour >= 12 ? 'PM' : 'AM';
+    return '$hour:$minute $amPm';
   }
 
-  Future<void> _playAudio() async {
+  Future<void> _toggleAudio() async {
+    if (widget.message.isEmpty) return;
+
     try {
       if (_isPlaying) {
         await _audioPlayer.stop();
@@ -90,7 +92,8 @@ class _MessageBubbleState extends State<MessageBubble> {
         : Colors.white;
 
     return Align(
-      alignment: widget.isMe ? Alignment.centerRight : Alignment.centerLeft,
+      alignment:
+          widget.isMe ? Alignment.centerRight : Alignment.centerLeft,
       child: Column(
         crossAxisAlignment:
             widget.isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
@@ -99,7 +102,7 @@ class _MessageBubbleState extends State<MessageBubble> {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
               child: Text(
-                'typing...',
+                'Typing...',
                 style: TextStyle(
                   fontSize: 12,
                   fontStyle: FontStyle.italic,
@@ -107,54 +110,53 @@ class _MessageBubbleState extends State<MessageBubble> {
                 ),
               ),
             ),
+
           Container(
-            constraints: BoxConstraints(
-              maxWidth: MediaQuery.of(context).size.width * 0.78,
-            ),
-            margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+            margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            constraints: BoxConstraints(
+              maxWidth: MediaQuery.of(context).size.width * 0.75,
+            ),
             decoration: BoxDecoration(
               color: bubbleColor,
               borderRadius: BorderRadius.only(
-                topLeft: const Radius.circular(14),
-                topRight: const Radius.circular(14),
-                bottomLeft: Radius.circular(widget.isMe ? 14 : 4),
-                bottomRight: Radius.circular(widget.isMe ? 4 : 14),
+                topLeft: const Radius.circular(18),
+                topRight: const Radius.circular(18),
+                bottomLeft: Radius.circular(widget.isMe ? 18 : 4),
+                bottomRight: Radius.circular(widget.isMe ? 4 : 18),
               ),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
-                  blurRadius: 2,
-                  offset: const Offset(0, 1),
-                ),
+                  color: Colors.black.withOpacity(0.06),
+                  blurRadius: 4,
+                  offset: const Offset(0, 2),
+                )
               ],
             ),
             child: Column(
-              crossAxisAlignment:
-                  widget.isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 if (widget.type == 'audio')
                   InkWell(
-                    onTap: _playAudio,
+                    onTap: _toggleAudio,
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         CircleAvatar(
                           radius: 18,
-                          backgroundColor: const Color(0xFF128C7E).withOpacity(0.12),
+                          backgroundColor: const Color(0xFF128C7E),
                           child: Icon(
                             _isPlaying ? Icons.pause : Icons.play_arrow,
-                            color: const Color(0xFF128C7E),
+                            color: Colors.white,
                           ),
                         ),
                         const SizedBox(width: 10),
                         Container(
-                          width: 110,
+                          width: 100,
                           height: 4,
                           decoration: BoxDecoration(
-                            color: Colors.grey[350],
-                            borderRadius: BorderRadius.circular(20),
+                            color: Colors.grey.shade400,
+                            borderRadius: BorderRadius.circular(10),
                           ),
                         ),
                         const SizedBox(width: 8),
@@ -170,6 +172,7 @@ class _MessageBubbleState extends State<MessageBubble> {
                       color: Colors.black87,
                     ),
                   ),
+
                 const SizedBox(height: 6),
                 Row(
                   mainAxisSize: MainAxisSize.min,
@@ -178,13 +181,11 @@ class _MessageBubbleState extends State<MessageBubble> {
                       _formatTime(widget.timestamp),
                       style: TextStyle(
                         fontSize: 11,
-                        color: Colors.grey[700],
+                        color: Colors.grey[600],
                       ),
                     ),
-                    if (widget.isMe) ...[
-                      const SizedBox(width: 4),
-                      _buildStatusIcon(),
-                    ],
+                    const SizedBox(width: 4),
+                    _buildStatusIcon(),
                   ],
                 ),
               ],
