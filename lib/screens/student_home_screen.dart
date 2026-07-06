@@ -1,130 +1,185 @@
 import 'package:flutter/material.dart';
-import 'chat_screen.dart'; 
+
+import 'chat_list_screen.dart';
 import 'search_teacher_screen.dart';
 import 'student_profile_screen.dart';
 
 class StudentHomeScreen extends StatefulWidget {
-  const StudentHomeScreen({super.key});
+  final String currentUserId;
 
-    @override
-      State<StudentHomeScreen> createState() => _StudentHomeScreenState();
-      }
+  const StudentHomeScreen({
+    super.key,
+    required this.currentUserId,
+  });
 
-      class _StudentHomeScreenState extends State<StudentHomeScreen> {
-        // 1. Core State Management
-          int _selectedIndex = 1; // Defaulting to Search for better user onboarding
+  @override
+  State<StudentHomeScreen> createState() => _StudentHomeScreenState();
+}
 
-            // 2. Titles mapped to indices
-              final List<String> _titles = [
-                  "Messages",
-                      "Find Teachers",
-                          "Student Profile",
-                            ];
+class _StudentHomeScreenState extends State<StudentHomeScreen> {
+  int _selectedIndex = 0;
 
-                              // 3. Main Screens (Ensure these files are imported correctly)
-                                final List<Widget> _screens = [
-                                    ChatScreen(
-                                          teacherName: "Chat",
-                                                chatId: "sample_chat_id",
-                                                      currentUserId: "student_id",
-                                                            receiverId: "teacher_id",
-                                                                ),
-                                                                    const TeacherSearchScreen(),
-                                                                        const StudentProfileScreen(),
-                                                                          ];
+  late final List<Widget> _screens;
 
-                                                                            // 4. Tab Switcher Logic
-                                                                              void _onTabTapped(int index) {
-                                                                                  if (_selectedIndex != index) {
-                                                                                        setState(() {
-                                                                                                _selectedIndex = index;
-                                                                                                      });
-                                                                                                          }
-                                                                                                            }
+  final List<String> _titles = const [
+    'Messages',
+    'Find Teachers',
+    'Student Profile',
+  ];
 
-                                                                                                              @override
-                                                                                                                Widget build(BuildContext context) {
-                                                                                                                    return Scaffold(
-                                                                                                                          backgroundColor: const Color(0xFFF4F7FA),
+  @override
+  void initState() {
+    super.initState();
 
-                                                                                                                                // Professional Dynamic AppBar
-                                                                                                                                      appBar: AppBar(
-                                                                                                                                              title: Text(
-                                                                                                                                                        _titles[_selectedIndex],
-                                                                                                                                                                  style: const TextStyle(
-                                                                                                                                                                              fontWeight: FontWeight.bold,
-                                                                                                                                                                                          fontSize: 20,
-                                                                                                                                                                                                      color: Color(0xFF1A1C1E),
-                                                                                                                                                                                                                ),
-                                                                                                                                                                                                                        ),
-                                                                                                                                                                                                                                centerTitle: false, // Professional left-aligned title
-                                                                                                                                                                                                                                        elevation: 0,
-                                                                                                                                                                                                                                                backgroundColor: Colors.white,
-                                                                                                                                                                                                                                                        actions: [
-                                                                                                                                                                                                                                                                  // Dynamic actions based on selected tab
-                                                                                                                                                                                                                                                                            if (_selectedIndex == 0)
-                                                                                                                                                                                                                                                                                        IconButton(
-                                                                                                                                                                                                                                                                                                      icon: const Icon(Icons.mark_chat_read_outlined, color: Colors.blue),
-                                                                                                                                                                                                                                                                                                                    onPressed: () {},
-                                                                                                                                                                                                                                                                                                                                ),
-                                                                                                                                                                                                                                                                                                                                          if (_selectedIndex == 2)
-                                                                                                                                                                                                                                                                                                                                                      IconButton(
-                                                                                                                                                                                                                                                                                                                                                                    icon: const Icon(Icons.settings_outlined, color: Colors.black87),
-                                                                                                                                                                                                                                                                                                                                                                                  onPressed: () {
-                                                                                                                                                                                                                                                                                                                                                                                                  // Navigate to Settings
-                                                                                                                                                                                                                                                                                                                                                                                                                },
-                                                                                                                                                                                                                                                                                                                                                                                                                            ),
-                                                                                                                                                                                                                                                                                                                                                                                                                                    ],
-                                                                                                                                                                                                                                                                                                                                                                                                                                          ),
+    _screens = [
+      ChatListScreen(currentUserId: widget.currentUserId),
+      const TeacherSearchScreen(),
+      const StudentProfileScreen(),
+    ];
+  }
 
-                                                                                                                                                                                                                                                                                                                                                                                                                                                // IndexedStack preserves the state of each page (no reloading)
-                                                                                                                                                                                                                                                                                                                                                                                                                                                      body: IndexedStack(
-                                                                                                                                                                                                                                                                                                                                                                                                                                                              index: _selectedIndex,
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                      children: _screens,
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                            ),
+  void _onTabTapped(int index) {
+    if (_selectedIndex == index) return;
+    setState(() => _selectedIndex = index);
+  }
 
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  // Context-Aware Floating Action Button
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        floatingActionButton: _selectedIndex != 2 
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  ? FloatingActionButton(
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                backgroundColor: const Color(0xFF128C7E),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              onPressed: () {
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              // Action based on tab: Create Group or Apply Filter
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            },
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          child: Icon(
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          _selectedIndex == 0 ? Icons.chat : Icons.filter_list,
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          color: Colors.white,
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        ),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    )
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              : null,
+  void _handleFabPressed() {
+    if (_selectedIndex == 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Open new chat / teacher search from here'),
+        ),
+      );
+    } else if (_selectedIndex == 1) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Apply teacher search filters here'),
+        ),
+      );
+    }
+  }
 
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    // Highly Professional Bottom Navigation Bar
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          bottomNavigationBar: BottomNavigationBar(
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  currentIndex: _selectedIndex,
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          onTap: _onTabTapped,
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  backgroundColor: Colors.white,
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          selectedItemColor: const Color(0xFF128C7E),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  unselectedItemColor: Colors.grey,
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          showUnselectedLabels: true,
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  type: BottomNavigationBarType.fixed,
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          items: const [
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    BottomNavigationBarItem(
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                icon: Icon(Icons.message_outlined),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            activeIcon: Icon(Icons.message),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        label: 'Messages',
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  ),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            BottomNavigationBarItem(
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        icon: Icon(Icons.search_outlined),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    activeIcon: Icon(Icons.search),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                label: 'Search',
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          ),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    BottomNavigationBarItem(
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                icon: Icon(Icons.person_outline),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            activeIcon: Icon(Icons.person),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        label: 'Profile',
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  ),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          ],
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                ),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    );
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      }
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      }
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      
+  List<Widget> _buildAppBarActions() {
+    if (_selectedIndex == 0) {
+      return [
+        IconButton(
+          tooltip: 'Mark all as read',
+          icon: const Icon(Icons.mark_chat_read_outlined, color: Color(0xFF1A237E)),
+          onPressed: () {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Mark all chats as read')),
+            );
+          },
+        ),
+      ];
+    }
+
+    if (_selectedIndex == 2) {
+      return [
+        IconButton(
+          tooltip: 'Settings',
+          icon: const Icon(Icons.settings_outlined, color: Color(0xFF1A237E)),
+          onPressed: () {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Open settings screen here')),
+            );
+          },
+        ),
+      ];
+    }
+
+    return [];
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bool showFab = _selectedIndex != 2;
+
+    return Scaffold(
+      backgroundColor: const Color(0xFFF4F7FA),
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        centerTitle: false,
+        titleSpacing: 16,
+        title: Text(
+          _titles[_selectedIndex],
+          style: const TextStyle(
+            color: Color(0xFF1A1C1E),
+            fontWeight: FontWeight.w800,
+            fontSize: 22,
+          ),
+        ),
+        actions: _buildAppBarActions(),
+      ),
+
+      body: IndexedStack(
+        index: _selectedIndex,
+        children: _screens,
+      ),
+
+      floatingActionButton: showFab
+          ? FloatingActionButton(
+              backgroundColor: const Color(0xFF128C7E),
+              elevation: 3,
+              onPressed: _handleFabPressed,
+              child: Icon(
+                _selectedIndex == 0 ? Icons.chat : Icons.filter_alt_outlined,
+                color: Colors.white,
+              ),
+            )
+          : null,
+
+      bottomNavigationBar: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.06),
+              blurRadius: 16,
+              offset: const Offset(0, -4),
+            ),
+          ],
+        ),
+        child: SafeArea(
+          top: false,
+          child: BottomNavigationBar(
+            currentIndex: _selectedIndex,
+            onTap: _onTabTapped,
+            backgroundColor: Colors.white,
+            elevation: 0,
+            type: BottomNavigationBarType.fixed,
+            selectedItemColor: const Color(0xFF128C7E),
+            unselectedItemColor: Colors.grey,
+            selectedLabelStyle: const TextStyle(
+              fontWeight: FontWeight.w700,
+              fontSize: 13,
+            ),
+            unselectedLabelStyle: const TextStyle(
+              fontWeight: FontWeight.w500,
+              fontSize: 12,
+            ),
+            items: const [
+              BottomNavigationBarItem(
+                icon: Icon(Icons.chat_bubble_outline_rounded),
+                activeIcon: Icon(Icons.chat_bubble_rounded),
+                label: 'Messages',
+              ),
+              BottomNavigationBarItem(
+                icon: Icon(Icons.search_rounded),
+                activeIcon: Icon(Icons.manage_search_rounded),
+                label: 'Teachers',
+              ),
+              BottomNavigationBarItem(
+                icon: Icon(Icons.person_outline_rounded),
+                activeIcon: Icon(Icons.person_rounded),
+                label: 'Profile',
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
