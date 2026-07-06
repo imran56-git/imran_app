@@ -2,6 +2,11 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'welcome_screen.dart';
 import '../widgets/shiny_loader.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+
+import 'student_home_screen.dart';
+import 'teacher_home_screen.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({Key? key}) : super(key: key);
@@ -36,21 +41,54 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
 
     _controller.forward();
 
-    Timer(const Duration(seconds: 3), () {
-      if (mounted) {
-        Navigator.pushReplacement(
-          context,
-          PageRouteBuilder(
-            pageBuilder: (context, animation, secondaryAnimation) => const WelcomeScreen(),
-            transitionsBuilder: (context, animation, secondaryAnimation, child) {
-              return FadeTransition(opacity: animation, child: child);
-            },
-            transitionDuration: const Duration(milliseconds: 800),
-          ),
-        );
-      }
-    });
+    Timer(const Duration(seconds: 3), () async {
+  if (!mounted) return;
+
+  final user = FirebaseAuth.instance.currentUser;
+
+  if (user == null) {
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const WelcomeScreen(),
+      ),
+    );
+    return;
   }
+
+  final doc = await FirebaseFirestore.instance
+      .collection('users')
+      .doc(user.uid)
+      .get();
+
+  if (!doc.exists) {
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const WelcomeScreen(),
+      ),
+    );
+    return;
+  }
+
+  final role = doc['role'];
+
+  if (role == 'teacher') {
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const TeacherHomeScreen(),
+      ),
+    );
+  } else {
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const StudentHomeScreen(),
+      ),
+    );
+  }
+});
 
   @override
   void dispose() {
