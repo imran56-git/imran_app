@@ -89,6 +89,7 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
     );
   }
 });
+}
 
   @override
   void dispose() {
