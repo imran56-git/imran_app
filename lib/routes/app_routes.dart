@@ -1,6 +1,4 @@
 import 'package:flutter/material.dart';
-
-// Screens Import
 import 'package:find_your_best_teacher_today/screens/splash_screen.dart';
 import 'package:find_your_best_teacher_today/screens/welcome_screen.dart';
 import 'package:find_your_best_teacher_today/screens/user_selection_screen.dart';
@@ -8,6 +6,7 @@ import 'package:find_your_best_teacher_today/screens/login_screen.dart';
 import 'package:find_your_best_teacher_today/screens/student_home_screen.dart';
 import 'package:find_your_best_teacher_today/screens/teacher_home_screen.dart';
 import 'package:find_your_best_teacher_today/screens/teacher_welcome_screen.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:find_your_best_teacher_today/screens/student_register_screen.dart';
 import 'package:find_your_best_teacher_today/screens/teacher_register_screen.dart';
 
