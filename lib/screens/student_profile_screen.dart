@@ -77,14 +77,108 @@ _collegeController.text = studentData?['collegeName'] ?? '';
 
   // --- DELETE & SIGNOUT LOGIC (As requested) ---
   Future<void> _handleDeleteAccount() async {
-    // Confirmation dialog logic here...
-    // All Firestore, Storage, Auth cleanup logic included
+  final confirm = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text("Delete Account"),
+      content: const Text(
+        "This will permanently delete your account and all your data.\n\nAre you sure?",
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: const Text("Cancel"),
+        ),
+        ElevatedButton(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.red,
+          ),
+          onPressed: () => Navigator.pop(context, true),
+          child: const Text(
+            "Delete",
+            style: TextStyle(color: Colors.white),
+          ),
+        ),
+      ],
+    ),
+  );
+
+  if (confirm != true) return;
+
+  try {
+    final user = _auth.currentUser;
+    if (user == null) return;
+
+    final uid = user.uid;
+
+    // Firestore Student Data Delete
+    await _firestore.collection("students").doc(uid).delete();
+
+    // Username Mapping Delete
+    await _firestore
+        .collection("usernames")
+        .doc(uid)
+        .delete()
+        .catchError((_) {});
+
+    // Storage Profile Photo Delete
+    await _storage
+        .ref("students/$uid/profile.jpg")
+        .delete()
+        .catchError((_) {});
+
+    // Firebase Auth Delete
+    await user.delete();
+
+    if (!mounted) return;
+
+    Navigator.pushNamedAndRemoveUntil(
+      context,
+      "/login",
+      (route) => false,
+    );
+  } catch (e) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text("Delete Failed: $e"),
+      ),
+    );
   }
+}
 
   Future<void> _handleSignOut() async {
-    await _auth.signOut();
-    if (mounted) Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
-  }
+  final confirm = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text("Sign Out"),
+      content: const Text(
+        "Are you sure you want to sign out?",
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: const Text("Cancel"),
+        ),
+        ElevatedButton(
+          onPressed: () => Navigator.pop(context, true),
+          child: const Text("Sign Out"),
+        ),
+      ],
+    ),
+  );
+
+  if (confirm != true) return;
+
+  await _auth.signOut();
+
+  if (!mounted) return;
+
+  Navigator.pushNamedAndRemoveUntil(
+    context,
+    '/login',
+    (route) => false,
+  );
+}
 
   Future<void> updateStudentProfile() async {
     final uid = _auth.currentUser?.uid;
@@ -107,15 +201,18 @@ _collegeController.text = studentData?['collegeName'] ?? '';
         'institution': _institutionController.text.trim(),
 'schoolName': _schoolController.text.trim(),
 'collegeName': _collegeController.text.trim(),
-'bio': _bioController.text.trim(),
         'gender': gender,
         'studentClass': studentClass,
         'interestedSubjects': selectedSubjects,
         'profileImageUrl': imageUrl,
       }, SetOptions(merge: true));
 
-      setState(() => isEditing = false);
-      fetchStudentData();
+      setState(() {
+  isLoading = false;
+  isEditing = false;
+});
+
+fetchStudentData();
     } catch (e) {
       setState(() => isLoading = false);
     }
