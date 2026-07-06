@@ -177,7 +177,7 @@ if (exists) {
 
 await FirebaseFirestore.instance
     .collection('users')
-    .doc(userId)
+.doc(uid)
     .set({
   'uid': uid,
   'username': userId,
