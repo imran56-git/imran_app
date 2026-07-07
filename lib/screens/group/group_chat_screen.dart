@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:uuid/uuid.dart';
+
 import '../../widgets/message_bubble.dart';
 
 class GroupChatScreen extends StatefulWidget {
@@ -35,12 +36,27 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
 
   bool _isRecording = false;
   String? _recordedFilePath;
-  String _backgroundImage = 'assets/default_bg.png';
+  String _backgroundImage = 'assets/images/chat_bg.png';
 
   @override
   void initState() {
     super.initState();
     _initRecorder();
+  }
+
+  @override
+  void dispose() {
+    _messageController.dispose();
+    _scrollController.dispose();
+    _recorder.closeRecorder();
+    super.dispose();
+  }
+
+  ImageProvider _buildBackgroundProvider() {
+    if (_backgroundImage.startsWith('assets/')) {
+      return AssetImage(_backgroundImage);
+    }
+    return FileImage(File(_backgroundImage));
   }
 
   Future<void> _initRecorder() async {
@@ -53,11 +69,9 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
   }
 
   Future<void> _changeWallpaper() async {
-    final XFile? image = await _picker.pickImage(source: ImageSource.gallery);
+    final image = await _picker.pickImage(source: ImageSource.gallery);
     if (image != null && mounted) {
-      setState(() {
-        _backgroundImage = image.path;
-      });
+      setState(() => _backgroundImage = image.path);
     }
   }
 
@@ -87,9 +101,7 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
       final recordedPath = await _recorder.stopRecorder();
 
       if (!mounted) return;
-      setState(() {
-        _isRecording = false;
-      });
+      setState(() => _isRecording = false);
 
       final path = recordedPath ?? _recordedFilePath;
       if (path == null) return;
@@ -110,7 +122,6 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
       );
 
       final url = await uploadTask.ref.getDownloadURL();
-
       await _sendToFirestore(content: url, type: 'audio');
 
       if (await file.exists()) {
@@ -121,9 +132,7 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
     } catch (e) {
       debugPrint('Stop/send voice error: $e');
       if (mounted) {
-        setState(() {
-          _isRecording = false;
-        });
+        setState(() => _isRecording = false);
       }
     }
   }
@@ -330,9 +339,7 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
                 child: IconButton(
                   onPressed: hasText ? _sendTextMessage : null,
                   icon: Icon(
-                    hasText
-                        ? Icons.send
-                        : (_isRecording ? Icons.stop : Icons.mic),
+                    hasText ? Icons.send : (_isRecording ? Icons.stop : Icons.mic),
                     color: Colors.white,
                   ),
                 ),
@@ -346,10 +353,7 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final ImageProvider backgroundProvider =
-        _backgroundImage.startsWith('assets/')
-            ? AssetImage(_backgroundImage)
-            : FileImage(File(_backgroundImage));
+    final backgroundProvider = _buildBackgroundProvider();
 
     return Scaffold(
       backgroundColor: const Color(0xFFECE5DD),
@@ -380,10 +384,7 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
                   ),
                   const Text(
                     'Group chat',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.white70,
-                    ),
+                    style: TextStyle(fontSize: 12, color: Colors.white70),
                   ),
                 ],
               ),
@@ -462,8 +463,7 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
 
                       final String message = (data['content'] ?? '').toString();
                       final String type = (data['type'] ?? 'text').toString();
-                      final bool isMe =
-                          data['senderId'] == widget.currentUserId;
+                      final bool isMe = data['senderId'] == widget.currentUserId;
 
                       return GestureDetector(
                         onLongPress: () => _showOptions(
@@ -494,13 +494,5 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
         ),
       ),
     );
-  }
-
-  @override
-  void dispose() {
-    _messageController.dispose();
-    _scrollController.dispose();
-    _recorder.closeRecorder();
-    super.dispose();
   }
 }
