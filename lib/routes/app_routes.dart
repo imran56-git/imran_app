@@ -40,7 +40,7 @@ class AppRoutes {
         break;
 
       case studentRegister:
-        page = const StudentRegisterScreen();
+        page = const StudentRegistrationScreen();
         break;
 
       case teacherRegister:
