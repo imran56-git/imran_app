@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+
 import '../services/voice_message_handler.dart';
 import '../widgets/message_bubble.dart';
 
@@ -35,7 +36,6 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _isRecording = false;
   bool _isBlocked = false;
 
-  /// default wallpaper
   String _backgroundImageUrl = 'assets/images/chat_bg.png';
 
   @override
@@ -44,14 +44,6 @@ class _ChatScreenState extends State<ChatScreen> {
     _messageController.addListener(_onTextChanged);
     _initVoiceRecorder();
     _markMessagesAsSeen();
-  }
-
-  Future<void> _initVoiceRecorder() async {
-    try {
-      await _voiceHandler.initRecorder();
-    } catch (e) {
-      debugPrint('Recorder init error: $e');
-    }
   }
 
   @override
@@ -63,13 +55,26 @@ class _ChatScreenState extends State<ChatScreen> {
     super.dispose();
   }
 
+  Future<void> _initVoiceRecorder() async {
+    try {
+      await _voiceHandler.initRecorder();
+    } catch (e) {
+      debugPrint('Recorder init error: $e');
+    }
+  }
+
   void _onTextChanged() {
     final typing = _messageController.text.trim().isNotEmpty;
     if (_isTyping != typing) {
-      setState(() {
-        _isTyping = typing;
-      });
+      setState(() => _isTyping = typing);
     }
+  }
+
+  ImageProvider _buildBackgroundProvider() {
+    if (_backgroundImageUrl.startsWith('assets/')) {
+      return AssetImage(_backgroundImageUrl);
+    }
+    return FileImage(File(_backgroundImageUrl));
   }
 
   Future<void> _sendMessage(String text) async {
@@ -93,9 +98,7 @@ class _ChatScreenState extends State<ChatScreen> {
     _messageController.clear();
 
     if (mounted) {
-      setState(() {
-        _isTyping = false;
-      });
+      setState(() => _isTyping = false);
     }
   }
 
@@ -238,15 +241,11 @@ class _ChatScreenState extends State<ChatScreen> {
     );
 
     if (confirm == true && mounted) {
-      setState(() {
-        _isBlocked = !_isBlocked;
-      });
+      setState(() => _isBlocked = !_isBlocked);
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            _isBlocked ? 'Teacher blocked' : 'Teacher unblocked',
-          ),
+          content: Text(_isBlocked ? 'Teacher blocked' : 'Teacher unblocked'),
         ),
       );
     }
@@ -301,9 +300,7 @@ class _ChatScreenState extends State<ChatScreen> {
     try {
       final picked = await _picker.pickImage(source: ImageSource.gallery);
       if (picked != null && mounted) {
-        setState(() {
-          _backgroundImageUrl = picked.path;
-        });
+        setState(() => _backgroundImageUrl = picked.path);
       }
     } catch (e) {
       debugPrint('Background picker error: $e');
@@ -348,9 +345,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     IconButton(
                       onPressed: () {
                         FocusScope.of(context).unfocus();
-                        setState(() {
-                          _isEmojiVisible = !_isEmojiVisible;
-                        });
+                        setState(() => _isEmojiVisible = !_isEmojiVisible);
                       },
                       icon: Icon(
                         _isEmojiVisible
@@ -390,9 +385,7 @@ class _ChatScreenState extends State<ChatScreen> {
                         }
                       },
                 icon: Icon(
-                  _isTyping
-                      ? Icons.send
-                      : (_isRecording ? Icons.stop : Icons.mic),
+                  _isTyping ? Icons.send : (_isRecording ? Icons.stop : Icons.mic),
                   color: Colors.white,
                 ),
               ),
@@ -423,10 +416,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final ImageProvider bgProvider =
-        _backgroundImageUrl.startsWith('assets/')
-            ? AssetImage(_backgroundImageUrl)
-            : FileImage(File(_backgroundImageUrl));
+    final bgProvider = _buildBackgroundProvider();
 
     return Scaffold(
       backgroundColor: const Color(0xFFECE5DD),
@@ -525,10 +515,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     return const Center(
                       child: Text(
                         'No messages yet',
-                        style: TextStyle(
-                          color: Colors.black54,
-                          fontSize: 15,
-                        ),
+                        style: TextStyle(color: Colors.black54, fontSize: 15),
                       ),
                     );
                   }
@@ -542,8 +529,7 @@ class _ChatScreenState extends State<ChatScreen> {
                       final doc = snapshot.data!.docs[index];
                       final data = doc.data() as Map<String, dynamic>;
 
-                      final bool isMe =
-                          data['senderId'] == widget.currentUserId;
+                      final bool isMe = data['senderId'] == widget.currentUserId;
 
                       return MessageBubble(
                         message: (data['message'] ?? '').toString(),
@@ -576,7 +562,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   config: Config(
                     height: 260,
                     checkPlatformCompatibility: true,
-                    emojiViewConfig: EmojiViewConfig(
+                    emojiViewConfig: const EmojiViewConfig(
                       columns: 8,
                       emojiSizeMax: 28,
                       backgroundColor: Colors.white,
