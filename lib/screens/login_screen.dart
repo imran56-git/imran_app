@@ -52,7 +52,9 @@ class _LoginScreenState extends State<LoginScreen> {
     } catch (e) {
       _showError('Login failed: $e');
     } finally {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
@@ -60,7 +62,8 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => _isLoading = true);
 
     try {
-      final googleUser = await _googleSignIn.signIn();
+      final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
+
       if (googleUser == null) {
         if (mounted) setState(() => _isLoading = false);
         return;
@@ -82,14 +85,14 @@ class _LoginScreenState extends State<LoginScreen> {
     } catch (e) {
       _showError('Google sign-in failed: $e');
     } finally {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
   Future<void> _checkAndNavigateUser(User user) async {
-    final userRef = _firestore.collection('users').doc(user.uid);
-    final userDoc = await userRef.get();
-
+    final userDoc = await _firestore.collection('users').doc(user.uid).get();
     if (!mounted) return;
 
     if (userDoc.exists) {
@@ -107,7 +110,7 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
-    await userRef.set({
+    await _firestore.collection('users').doc(user.uid).set({
       'uid': user.uid,
       'email': user.email,
       'userType': 'student',
@@ -189,14 +192,12 @@ class _LoginScreenState extends State<LoginScreen> {
                 Align(
                   alignment: Alignment.centerRight,
                   child: TextButton(
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const ForgotPasswordScreen(),
-                        ),
-                      );
-                    },
+                    onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const ForgotPasswordScreen(),
+                      ),
+                    ),
                     child: const Text(
                       "Forgot Password?",
                       style: TextStyle(color: Color(0xFF12BC7E)),
