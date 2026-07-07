@@ -1,13 +1,11 @@
 import 'dart:async';
-
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'welcome_screen.dart';
 import '../widgets/shiny_loader.dart';
 import 'student_home_screen.dart';
 import 'teacher_home_screen.dart';
-import 'welcome_screen.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -16,8 +14,7 @@ class SplashScreen extends StatefulWidget {
   State<SplashScreen> createState() => _SplashScreenState();
 }
 
-class _SplashScreenState extends State<SplashScreen>
-    with TickerProviderStateMixin {
+class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMixin {
   late final AnimationController _controller;
   late final Animation<double> _rotationAnimation;
   late final Animation<double> _scaleAnimation;
@@ -31,31 +28,19 @@ class _SplashScreenState extends State<SplashScreen>
       vsync: this,
     );
 
-    _rotationAnimation = Tween<double>(
-      begin: -0.5,
-      end: 0.0,
-    ).animate(
-      CurvedAnimation(
-        parent: _controller,
-        curve: Curves.easeOutBack,
-      ),
+    _rotationAnimation = Tween<double>(begin: -0.5, end: 0).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeOutBack),
     );
 
-    _scaleAnimation = Tween<double>(
-      begin: 0.5,
-      end: 1.0,
-    ).animate(
-      CurvedAnimation(
-        parent: _controller,
-        curve: Curves.easeOut,
-      ),
+    _scaleAnimation = Tween<double>(begin: 0.5, end: 1).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeOut),
     );
 
     _controller.forward();
-    _navigateAfterSplash();
+    _handleNavigation();
   }
 
-  Future<void> _navigateAfterSplash() async {
+  Future<void> _handleNavigation() async {
     await Future.delayed(const Duration(seconds: 3));
     if (!mounted) return;
 
@@ -66,53 +51,40 @@ class _SplashScreenState extends State<SplashScreen>
       return;
     }
 
-    try {
-      final doc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .get();
+    final doc = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .get();
 
-      if (!mounted) return;
+    if (!mounted) return;
 
-      if (!doc.exists) {
-        _goToWelcome();
-        return;
-      }
-
-      final data = doc.data() ?? {};
-      final role =
-          (data['role'] ?? data['userType'] ?? 'student')
-              .toString()
-              .toLowerCase();
-
-      if (role == 'teacher') {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (_) => const TeacherHomeScreen(),
-          ),
-        );
-      } else {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (_) =>
-                StudentHomeScreen(currentUserId: user.uid),
-          ),
-        );
-      }
-    } catch (_) {
-      if (!mounted) return;
+    if (!doc.exists) {
       _goToWelcome();
+      return;
+    }
+
+    final data = doc.data() ?? {};
+    final role = (data['role'] ?? data['userType'] ?? 'student').toString();
+
+    if (role == 'teacher') {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => const TeacherHomeScreen()),
+      );
+    } else {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => StudentHomeScreen(currentUserId: user.uid),
+        ),
+      );
     }
   }
 
   void _goToWelcome() {
     Navigator.pushReplacement(
       context,
-      MaterialPageRoute(
-        builder: (_) => const WelcomeScreen(),
-      ),
+      MaterialPageRoute(builder: (_) => const WelcomeScreen()),
     );
   }
 
