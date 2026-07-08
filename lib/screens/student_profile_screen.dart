@@ -25,9 +25,9 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
 
   Map<String, dynamic>? studentData;
   File? _selectedImage;
-  bool isLoading = true, isEditing = false;
+  bool isLoading = true, isEditing = false, _triggerAnimation = true;
   String? gender, studentClass;
-  List selectedSubjects = [];
+  List<String> selectedSubjects = []; // 8. Strongly typed list for better quality
 
   final classOptions = const ['Class 1','Class 2','Class 3','Class 4','Class 5','Class 6','Class 7','Class 8','Class 9','Class 10','Class 11','Class 12','College','University','Others'];
   final subjectOptions = const ["Mathematics","Physics","Chemistry","Biology","English","Computer Science","History","Geography"];
@@ -54,7 +54,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
         _institution.text = data['institution'] ?? ''; _school.text = data['schoolName'] ?? '';
         _college.text = data['collegeName'] ?? ''; gender = data['gender'];
         studentClass = data['studentClass']; selectedSubjects = List<String>.from(data['interestedSubjects'] ?? []);
-        isLoading = false;
+        isLoading = false; _triggerAnimation = !_triggerAnimation; // 10. Toggle to refresh UI animation smoothly
       });
     } catch (e) { if (mounted) setState(() => isLoading = false); _snack('Failed to load profile: $e'); }
   }
@@ -64,18 +64,25 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
     if (picked != null && mounted) setState(() => _selectedImage = File(picked.path));
   }
 
+  // 7. Handle Delete Account with Re-authentication check
   Future _handleDeleteAccount() async {
-    final ok = await confirm('Delete Account', 'This will permanently delete your account and data.\n\nAre you sure?', confirmText: 'Delete', danger: true);
+    final ok = await confirm('Delete Account', 'This will permanently delete your account.\n\nAre you sure?', confirmText: 'Delete', danger: true);
     if (ok != true) return;
     try {
       final user = _auth.currentUser; if (user == null) return;
       final uid = user.uid;
+      setState(() => isLoading = true);
       await _firestore.collection('students').doc(uid).delete();
       await _firestore.collection('usernames').doc(uid).delete().catchError((_) {});
       await _storage.ref('students/$uid/profile.jpg').delete().catchError((_) {});
       await user.delete();
       if (mounted) Navigator.pushNamedAndRemoveUntil(context, '/login', (_) => false);
-    } catch (e) { _snack('Delete Failed: $e'); }
+    } catch (e) {
+      setState(() => isLoading = false);
+      if (e is FirebaseAuthException && e.code == 'requires-recent-login') {
+        _snack('Security Error: Please logout and sign back in to delete your account.');
+      } else { _snack('Delete Failed: $e'); }
+    }
   }
 
   Future _handleSignOut() async {
@@ -101,18 +108,18 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
         'interestedSubjects': selectedSubjects, 'profileImageUrl': imageUrl,
       }, SetOptions(merge: true));
       await fetchStudentData();
-      if (mounted) setState(() { isLoading = false; isEditing = false; });
+      if (mounted) setState(() { isEditing = false; });
       _snack('Profile updated successfully');
     } catch (e) { if (mounted) setState(() => isLoading = false); _snack('Update failed: $e'); }
   }
 
   Future<bool?> confirm(String title, String msg, {String confirmText = 'Confirm', bool danger = false}) {
-    return showDialog<bool>(context: context, builder: () => AlertDialog(
+    return showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
       title: Text(title), content: Text(msg),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
         ElevatedButton(style: danger ? ElevatedButton.styleFrom(backgroundColor: Colors.red) : null,
-          onPressed: () => Navigator.pop(context, true), child: Text(confirmText, style: TextStyle(color: danger ? Colors.white : null))),
+          onPressed: () => Navigator.pop(ctx, true), child: Text(confirmText, style: TextStyle(color: danger ? Colors.white : null))),
       ],
     ));
   }
@@ -133,14 +140,23 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
         backgroundColor: const Color(0xFF1E4C7A), foregroundColor: Colors.white, elevation: 0,
         title: const Text('Student Profile', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
         actions: [
-          IconButton(icon: const Icon(Icons.settings), onPressed: () {}),
+          // 6. Settings Screen Functional Navigation 
+          IconButton(icon: const Icon(Icons.settings), onPressed: () => Navigator.pushNamed(context, '/settings')),
           PopupMenuButton<String>(
             onSelected: (v) { if (v == 'edit') setState(() => isEditing = true); if (v == 'logout') _handleSignOut(); if (v == 'delete') _handleDeleteAccount(); },
-            itemBuilder: () => const [PopupMenuItem(value: 'edit', child: Text('Edit Profile')), PopupMenuItem(value: 'logout', child: Text('Sign Out')), PopupMenuItem(value: 'delete', child: Text('Delete Account', style: TextStyle(color: Colors.red)))],
+            itemBuilder: (ctx) => const [PopupMenuItem(value: 'edit', child: Text('Edit Profile')), PopupMenuItem(value: 'logout', child: Text('Sign Out')), PopupMenuItem(value: 'delete', child: Text('Delete Account', style: TextStyle(color: Colors.red)))],
           )
         ],
       ),
-      body: isLoading ? const Center(child: CircularProgressIndicator()) : SingleChildScrollView(child: Column(children: [_buildHeader(), Padding(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8), child: isEditing ? _buildEditForm() : _buildProfileDetails())])),
+      body: isLoading ? const Center(child: CircularProgressIndicator()) : SingleChildScrollView(
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 400), // 10. Smooth profile refresh transition effect
+          child: Column(key: ValueKey(_triggerAnimation), children: [
+            _buildHeader(), 
+            Padding(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8), child: isEditing ? _buildEditForm() : _buildProfileDetails())
+          ]),
+        ),
+      ),
     );
   }
 
@@ -178,16 +194,21 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
       const SizedBox(height: 12),
       selectedSubjects.isEmpty ? const Text("No Subjects Selected", style: TextStyle(color: Colors.grey)) : Wrap(spacing: 10, runSpacing: 10, children: selectedSubjects.map((s) => Container(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10), decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(10), border: Border.all(color: Colors.grey.shade300)), child: Text(s, style: const TextStyle(fontSize: 14, color: Colors.black87, fontWeight: FontWeight.w500)))).toList()),
       const SizedBox(height: 30),
-      SizedBox(width: double.infinity, height: 52, child: ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: Colors.white, foregroundColor: const Color(0xFF1E7A6E), elevation: 1, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30), side: Border.all(color: Colors.grey.shade300))), onPressed: () {}, child: const Text("UPLOAD PAYMENT CONFIRMATION", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)))),
+      // 5. Payment Screen Navigation Added
+      SizedBox(width: double.infinity, height: 52, child: ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: Colors.white, foregroundColor: const Color(0xFF1E7A6E), elevation: 1, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30), side: BorderSide(color: Colors.grey.shade300))), onPressed: () => Navigator.pushNamed(context, '/payment_confirmation'), child: const Text("UPLOAD PAYMENT CONFIRMATION", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)))),
       const SizedBox(height: 25),
       Container(
         padding: const EdgeInsets.all(16), decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(18)),
         child: Column(children: [
           _info(Icons.person_outline, "Name", _name.text), const Divider(height: 1),
           _info(Icons.wc_outlined, "Gender", gender ?? "Not Added"), const Divider(height: 1),
+          _info(Icons.school_outlined, "Class", studentClass ?? "Not Added"), const Divider(height: 1), // 4. Class Re-added here
           _info(Icons.history_edu_outlined, "School", _school.text), const Divider(height: 1),
           _info(Icons.account_balance_outlined, "College", _college.text), const Divider(height: 1),
-          _info(Icons.business_outlined, "Institution", _institution.text),
+          _info(Icons.business_outlined, "Institution", _institution.text), const Divider(height: 1),
+          _info(Icons.map_outlined, "Home Location", _location.text), const Divider(height: 1), // 3. Home Location Re-added here
+          _info(Icons.info_outline, "Bio", _bio.text), // 2. Bio Card Info Re-added here
+          // 1. Note: Phone field is totally hidden from this Profile View details block as requested
         ]),
       ),
       const SizedBox(height: 20),
@@ -202,7 +223,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
   Widget _buildEditForm() => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
     const SizedBox(height: 10),
     _field(_name, "Full Name", Icons.person), _gap(),
-    _field(_phone, "Phone", Icons.phone, type: TextInputType.phone), _gap(), // ফায়ারবেসে সেভ হবে
+    _field(_phone, "Phone", Icons.phone, type: TextInputType.phone), _gap(), // Available and saves to firebase securely
     _field(_location, "Home Location", Icons.location_on), _gap(),
     _dropDown("Gender", Icons.people, gender, ['Male', 'Female'], (v) => setState(() => gender = v)), _gap(),
     _dropDown("Class", Icons.school, studentClass, classOptions, (v) => setState(() => studentClass = v)), _gap(),
@@ -219,7 +240,17 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
     const SizedBox(height: 25),
   ]);
 
-  Widget _dropDown(String label, IconData icon, String? value, List<String> items, ValueChanged<String?> onChanged) => DropdownButtonFormField<String>(value: value, decoration: InputDecoration(labelText: label, prefixIcon: Icon(icon)), items: items.map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(), onChanged: onChanged);
-  Widget _field(TextEditingController c, String lbl, IconData i, {TextInputType type = TextInputType.text, int maxLines = 1}) => TextField(controller: c, keyboardType: type, maxLines: maxLines, decoration: InputDecoration(labelText: lbl, prefixIcon: Icon(i)));
+  Widget _dropDown(String label, IconData icon, String? value, List<String> items, ValueChanged<String?> onChanged) => DropdownButtonFormField<String>(value: value, decoration: InputDecoration(labelText: label, prefixIcon: Icon(icon), border: OutlineInputBorder(borderRadius: BorderRadius.circular(10))), items: items.map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(), onChanged: onChanged);
+  
+  // 9. Premium Input Styling with Rounded Borders and Filled Background
+  Widget _field(TextEditingController c, String lbl, IconData i, {TextInputType type = TextInputType.text, int maxLines = 1}) => TextField(
+    controller: c, keyboardType: type, maxLines: maxLines, 
+    decoration: InputDecoration(
+      labelText: lbl, prefixIcon: Icon(i), filled: true, fillColor: Colors.grey.shade50,
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Colors.grey.shade300)),
+      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Colors.grey.shade300)),
+      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFF1E4C7A), width: 1.5)),
+    )
+  );
   Widget _gap() => const SizedBox(height: 15);
 }
