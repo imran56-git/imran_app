@@ -223,7 +223,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
         const SizedBox(height: 20),
         Stack(alignment: Alignment.center, children: [
           CircleAvatar(radius: 55, backgroundColor: const Color(0xFFA2E8DD), backgroundImage: _profileImage, child: _profileImage == null ? const Icon(Icons.person, size: 65, color: Colors.white) : null),
-          if (isEditing) Positioned(bottom: 0, right: 0, child: InkWell(onTap: _pickProfileImage, child: Container(padding: const EdgeInsets.all(8), decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle, boxShadow: [BoxShape.circle(color: Colors.black12, blurRadius: 4)]), child: const Icon(Icons.camera_alt, color: Color(0xFF1E4C7A), size: 20)))),
+          if (isEditing) Positioned(bottom: 0, right: 0, child: InkWell(onTap: _pickProfileImage, child: Container(padding: const EdgeInsets.all(8), decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle, boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 4)]), child: const Icon(Icons.camera_alt, color: Color(0xFF1E4C7A), size: 20)))),
         ]),
         const SizedBox(height: 15),
         Text(_name.text.isEmpty ? "No Name Added" : _name.text, style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)),
