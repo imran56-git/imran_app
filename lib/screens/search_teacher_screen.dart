@@ -64,26 +64,41 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF8F9FA),
+      // সাদা টেক্সট মুছে অ্যাপ বার এ লোগো ও নাম বসানো হয়েছে
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        automaticallyImplyLeading: false,
+        title: Row(
+          children: [
+            // Rounded Corner অ্যাপ লোগো
+            ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: Image.asset(
+                'assets/images/app_logo.png',
+                width: 32,
+                height: 32,
+                fit: BoxFit.cover,
+                errorBuilder: (context, error, stackTrace) => const Icon(Icons.apps, color: Color(0xFF1A237E), size: 32),
+              ),
+            ),
+            const SizedBox(width: 10),
+            // লোগোর ডান পাশে অ্যাপের শর্ট নেম
+            const Text(
+              'FYBTT', 
+              style: TextStyle(
+                color: Colors.black, 
+                fontWeight: FontWeight.bold, 
+                fontSize: 18, 
+                letterSpacing: 0.5
+              )
+            ),
+          ],
+        ),
+      ),
       body: SafeArea(
         child: Column(
           children: [
-            // Top white title section
-            Container(
-              width: double.infinity,
-              color: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-              child: const Center(
-                child: Text(
-                  "Find Your Teacher",
-                  style: TextStyle(
-                    color: Colors.black,
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ),
-
             _buildAdvancedSearchPanel(),
 
             Expanded(
@@ -110,7 +125,7 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
 
   Widget _buildAdvancedSearchPanel() {
     return Container(
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
+      padding: const EdgeInsets.fromLTRB(20, 15, 20, 20),
       decoration: const BoxDecoration(
         color: Color(0xFF1A237E),
         borderRadius: BorderRadius.vertical(
@@ -119,6 +134,20 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
       ),
       child: Column(
         children: [
+          // "Find Your Teacher" লেখাটি সাদা জায়গা থেকে সরিয়ে এখানে কালারের ভেতরে নিয়ে আসা হয়েছে
+          const Center(
+            child: Text(
+              "Find Your Teacher",
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 0.5,
+              ),
+            ),
+          ),
+          const SizedBox(height: 18), // লেখার নিচে সামঞ্জস্যপূর্ণ স্পেস
+
           _customSearchField(
             "Teacher's Name",
             _nameController,
@@ -243,7 +272,7 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
               ),
             ),
             subtitle: Text(
-              "${data['location']} • ${data['experience']} Years Exp.",
+              "${data['location'] ?? 'N/A'} • ${data['experience'] ?? '0'} Years Exp.",
             ),
           ),
           ElevatedButton(
