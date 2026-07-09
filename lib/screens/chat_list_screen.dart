@@ -1,6 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-
 import 'chat_screen.dart';
 import 'group/group_chat_screen.dart';
 
@@ -148,20 +147,37 @@ class _ChatListScreenState extends State<ChatListScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF3F5F7),
+      // ওপরের সাদা অংশের জন্য AppBar কনফিগারেশন আপডেট করা হয়েছে
       appBar: AppBar(
-        backgroundColor: const Color(0xFF112B44),
+        backgroundColor: Colors.white,
         elevation: 0,
-        titleSpacing: 0,
-        title: const Row(
+        automaticallyImplyLeading: false,
+        title: Row(
           children: [
-            Icon(Icons.chat_bubble_outline, color: Colors.white, size: 28),
-            SizedBox(width: 10),
-            Text(
-              'Messages',
+            // Rounded Corner অ্যাপ লোগো
+            ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: Image.asset(
+                'assets/images/app_logo.png', // আপনার অ্যাপের সঠিক লোগো পাথটি দিন
+                width: 32,
+                height: 32,
+                fit: BoxFit.cover,
+                errorBuilder: (context, error, stackTrace) => const Icon(
+                  Icons.chat_bubble_rounded, 
+                  color: Color(0xFF112B44), 
+                  size: 32
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            // অ্যাপের শর্ট নেম
+            const Text(
+              'FYBTT',
               style: TextStyle(
-                color: Colors.white,
-                fontSize: 26,
-                fontWeight: FontWeight.w800,
+                color: Colors.black,
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 0.5,
               ),
             ),
           ],
@@ -184,10 +200,13 @@ class _ChatListScreenState extends State<ChatListScreen> {
 
                 if (snapshot.hasError) {
                   return Center(
-                    child: Text(
-                      'Something went wrong.\n${snapshot.error}',
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(fontSize: 14),
+                    child: Padding(
+                      padding: const EdgeInsets.all(20.0),
+                      child: Text(
+                        'Something went wrong.\n${snapshot.error}',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(fontSize: 14, color: Colors.red),
+                      ),
                     ),
                   );
                 }
@@ -274,7 +293,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
   Widget _buildSearchBar() {
     return Container(
       color: const Color(0xFF112B44),
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 14),
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 14),
       child: Container(
         height: 52,
         decoration: BoxDecoration(
