@@ -22,7 +22,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
       _location = TextEditingController(), _bio = TextEditingController(),
       _institution = TextEditingController(), _school = TextEditingController(),
       _college = TextEditingController(),
-      _customSubjectController = TextEditingController(); // কাস্টম সাবজেক্ট কন্ট্রোলার
+      _customSubjectController = TextEditingController(); 
 
   Map<String, dynamic>? studentData;
   File? _selectedImage;
@@ -138,9 +138,30 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
       backgroundColor: const Color(0xFFF4F6F8),
       appBar: AppBar(
         backgroundColor: const Color(0xFF1E4C7A), foregroundColor: Colors.white, elevation: 0,
-        title: const Text('Profile', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)), // ১. AppBar টাইটেল আপডেট
+        automaticallyImplyLeading: false, // ব্যাক বাটন ডিজেবল করার জন্য (প্রয়োজন হলে রাখতে পারেন)
+        title: Row(
+          children: [
+            // ১. Rounded Corner অ্যাপ লোগো
+            ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: Image.asset(
+                'assets/images/app_logo.png',
+                width: 32,
+                height: 32,
+                fit: BoxFit.cover,
+                errorBuilder: (context, error, stackTrace) => const Icon(Icons.apps, color: Colors.white, size: 32),
+              ),
+            ),
+            const SizedBox(width: 10),
+            // লোগোর ডান পাশে ছোট লেখা
+            const Text(
+              'FYBTT', 
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, letterSpacing: 0.5)
+            ),
+          ],
+        ),
         actions: [
-          IconButton(icon: const Icon(Icons.settings), onPressed: () => Navigator.pushNamed(context, '/settings')),
+          // গিয়ার/সেটিংস আইকনটি সম্পূর্ণ রিমুভ করা হয়েছে
           PopupMenuButton<String>(
             onSelected: (v) { if (v == 'edit') setState(() => isEditing = true); if (v == 'logout') _handleSignOut(); if (v == 'delete') _handleDeleteAccount(); },
             itemBuilder: (ctx) => const [PopupMenuItem(value: 'edit', child: Text('Edit Profile')), PopupMenuItem(value: 'logout', child: Text('Sign Out')), PopupMenuItem(value: 'delete', child: Text('Delete Account', style: TextStyle(color: Colors.red)))],
@@ -164,6 +185,12 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
       width: double.infinity, padding: const EdgeInsets.only(bottom: 30, top: 10),
       decoration: const BoxDecoration(color: Color(0xFF1E4C7A), borderRadius: BorderRadius.only(bottomLeft: Radius.circular(35), bottomRight: Radius.circular(35))),
       child: Column(children: [
+        // ২. নীল হেডার এর ভেতরে শুধুমাত্র Profile লেখা রাখা হয়েছে
+        const Text(
+          'Profile', 
+          style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold, letterSpacing: 0.5)
+        ),
+        const SizedBox(height: 20),
         Stack(alignment: Alignment.center, children: [
           CircleAvatar(radius: 55, backgroundColor: const Color(0xFFA2E8DD), backgroundImage: _profileImage, child: _profileImage == null ? const Icon(Icons.person, size: 65, color: Colors.white) : null),
           if (isEditing) Positioned(bottom: 0, right: 0, child: InkWell(onTap: _pickProfileImage, child: Container(padding: const EdgeInsets.all(8), decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle, boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 4)]), child: const Icon(Icons.camera_alt, color: Color(0xFF1E4C7A), size: 20)))),
@@ -232,7 +259,6 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
     const Text("Interested Subjects", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
     const SizedBox(height: 10),
     
-    // ২. কাস্টম সাবজেক্ট টাইপ করে এড করার রো ফিল্ড
     Row(
       children: [
         Expanded(
@@ -263,17 +289,14 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
     ),
     const SizedBox(height: 15),
 
-    // ডিফল্ট এবং কাস্টম সাবজেক্টের চিপস তালিকা
     Wrap(
       spacing: 8, runSpacing: 8, 
       children: [
-        // ১. ফিক্সড অপশনগুলোর চিপস তালিকা
         ...subjectOptions.map((subject) => FilterChip(
           label: Text(subject), 
           selected: selectedSubjects.contains(subject), 
           onSelected: (v) => setState(() { v ? selectedSubjects.add(subject) : selectedSubjects.remove(subject); selectedSubjects = selectedSubjects.toSet().toList(); })
         )),
-        // ২. আলাদাভাবে অ্যাড করা নতুন কাস্টম চিপসগুলোর রিমুভ করার অপশন
         ...selectedSubjects.where((s) => !subjectOptions.contains(s)).map((customSub) => InputChip(
           label: Text(customSub),
           selected: true,
