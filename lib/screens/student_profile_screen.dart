@@ -5,7 +5,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'student_payment_confirmation_screen.dart'; 
 
 class StudentProfileScreen extends StatefulWidget {
   const StudentProfileScreen({super.key});
@@ -125,6 +124,24 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
     ));
   }
 
+  void _showServiceUnavailableDialog() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Service Unavailable'),
+        content: const Text(
+          'This service is currently disabled.\n\nIt will be available in a future update.\nThank you for your patience.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _snack(String msg) { if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg))); }
 
   ImageProvider? get _profileImage {
@@ -142,7 +159,6 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
         automaticallyImplyLeading: false, 
         title: Row(
           children: [
-            // ১. AppBar বাম পাশে Rounded Corner অ্যাপ লোগো
             ClipRRect(
               borderRadius: BorderRadius.circular(10),
               child: Image.asset(
@@ -154,7 +170,6 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
               ),
             ),
             const SizedBox(width: 10),
-            // লোগোর ডান পাশে ছোট লেখা FYBTT
             const Text(
               'FYBTT', 
               style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, letterSpacing: 0.5)
@@ -162,10 +177,19 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
           ],
         ),
         actions: [
-          // ⚙️ সেটিংস/গিয়ার আইকন সম্পূর্ণ মুছে ফেলা হয়েছে। শুধুমাত্র থ্রি ডট মেনু আছে।
           PopupMenuButton<String>(
-            onSelected: (v) { if (v == 'edit') setState(() => isEditing = true); if (v == 'logout') _handleSignOut(); if (v == 'delete') _handleDeleteAccount(); },
-            itemBuilder: (ctx) => const [PopupMenuItem(value: 'edit', child: Text('Edit Profile')), PopupMenuItem(value: 'logout', child: Text('Sign Out')), PopupMenuItem(value: 'delete', child: Text('Delete Account', style: TextStyle(color: Colors.red)))],
+            onSelected: (v) { 
+              if (v == 'edit') setState(() => isEditing = true); 
+              if (v == 'logout') _handleSignOut(); 
+              if (v == 'delete') _handleDeleteAccount(); 
+              if (v == 'payment') _showServiceUnavailableDialog();
+            },
+            itemBuilder: (ctx) => const [
+              PopupMenuItem(value: 'edit', child: Text('Edit Profile')), 
+              PopupMenuItem(value: 'logout', child: Text('Sign Out')), 
+              PopupMenuItem(value: 'delete', child: Text('Delete Account', style: TextStyle(color: Colors.red))),
+              PopupMenuItem(value: 'payment', child: Text('Payment Confirmation')),
+            ],
           )
         ],
       ),
@@ -186,7 +210,6 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
       width: double.infinity, padding: const EdgeInsets.only(bottom: 30, top: 15),
       decoration: const BoxDecoration(color: Color(0xFF1E4C7A), borderRadius: BorderRadius.only(bottomLeft: Radius.circular(35), bottomRight: Radius.circular(35))),
       child: Column(crossAxisAlignment: CrossAxisAlignment.center, children: [
-        // ২. নীল হেডারের বামে লোগো ছাড়া শুধু বড় করে "Profile" লেখা
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 24),
           child: Align(
@@ -200,7 +223,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
         const SizedBox(height: 20),
         Stack(alignment: Alignment.center, children: [
           CircleAvatar(radius: 55, backgroundColor: const Color(0xFFA2E8DD), backgroundImage: _profileImage, child: _profileImage == null ? const Icon(Icons.person, size: 65, color: Colors.white) : null),
-          if (isEditing) Positioned(bottom: 0, right: 0, child: InkWell(onTap: _pickProfileImage, child: Container(padding: const EdgeInsets.all(8), decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle, boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 4)]), child: const Icon(Icons.camera_alt, color: Color(0xFF1E4C7A), size: 20)))),
+          if (isEditing) Positioned(bottom: 0, right: 0, child: InkWell(onTap: _pickProfileImage, child: Container(padding: const EdgeInsets.all(8), decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle, boxShadow: [BoxShape.circle(color: Colors.black12, blurRadius: 4)]), child: const Icon(Icons.camera_alt, color: Color(0xFF1E4C7A), size: 20)))),
         ]),
         const SizedBox(height: 15),
         Text(_name.text.isEmpty ? "No Name Added" : _name.text, style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)),
@@ -226,25 +249,6 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
       const Text("Interested Subjects", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black87)),
       const SizedBox(height: 12),
       selectedSubjects.isEmpty ? const Text("No Subjects Selected", style: TextStyle(color: Colors.grey)) : Wrap(spacing: 10, runSpacing: 10, children: selectedSubjects.map((s) => Container(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10), decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(10), border: Border.all(color: Colors.grey.shade300)), child: Text(s, style: const TextStyle(fontSize: 14, color: Colors.black87, fontWeight: FontWeight.w500)))).toList()),
-      const SizedBox(height: 30),
-      
-      // ৩. সরাসরি MaterialPageRoute ব্যবহার করে নির্দিষ্ট স্ক্রিন ওপেন করার লজিক
-      SizedBox(
-        width: double.infinity, 
-        height: 52, 
-        child: ElevatedButton(
-          style: ElevatedButton.styleFrom(backgroundColor: Colors.white, foregroundColor: const Color(0xFF1E7A6E), elevation: 1, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30), side: BorderSide(color: Colors.grey.shade300))), 
-          onPressed: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => const StudentPaymentConfirmationScreen(),
-              ),
-            );
-          }, 
-          child: const Text("UPLOAD PAYMENT CONFIRMATION", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14))
-        )
-      ),
       const SizedBox(height: 25),
       Container(
         padding: const EdgeInsets.all(16), decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(18)),
