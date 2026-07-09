@@ -21,13 +21,14 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
   final _name = TextEditingController(), _phone = TextEditingController(),
       _location = TextEditingController(), _bio = TextEditingController(),
       _institution = TextEditingController(), _school = TextEditingController(),
-      _college = TextEditingController();
+      _college = TextEditingController(),
+      _customSubjectController = TextEditingController(); // কাস্টম সাবজেক্ট কন্ট্রোলার
 
   Map<String, dynamic>? studentData;
   File? _selectedImage;
   bool isLoading = true, isEditing = false, _triggerAnimation = true;
   String? gender, studentClass;
-  List<String> selectedSubjects = []; // 8. Strongly typed list for better quality
+  List<String> selectedSubjects = []; 
 
   final classOptions = const ['Class 1','Class 2','Class 3','Class 4','Class 5','Class 6','Class 7','Class 8','Class 9','Class 10','Class 11','Class 12','College','University','Others'];
   final subjectOptions = const ["Mathematics","Physics","Chemistry","Biology","English","Computer Science","History","Geography"];
@@ -37,7 +38,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
 
   @override
   void dispose() {
-    for (var c in [_name, _phone, _location, _bio, _institution, _school, _college]) { c.dispose(); }
+    for (var c in [_name, _phone, _location, _bio, _institution, _school, _college, _customSubjectController]) { c.dispose(); }
     super.dispose();
   }
 
@@ -54,7 +55,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
         _institution.text = data['institution'] ?? ''; _school.text = data['schoolName'] ?? '';
         _college.text = data['collegeName'] ?? ''; gender = data['gender'];
         studentClass = data['studentClass']; selectedSubjects = List<String>.from(data['interestedSubjects'] ?? []);
-        isLoading = false; _triggerAnimation = !_triggerAnimation; // 10. Toggle to refresh UI animation smoothly
+        isLoading = false; _triggerAnimation = !_triggerAnimation; 
       });
     } catch (e) { if (mounted) setState(() => isLoading = false); _snack('Failed to load profile: $e'); }
   }
@@ -64,7 +65,6 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
     if (picked != null && mounted) setState(() => _selectedImage = File(picked.path));
   }
 
-  // 7. Handle Delete Account with Re-authentication check
   Future _handleDeleteAccount() async {
     final ok = await confirm('Delete Account', 'This will permanently delete your account.\n\nAre you sure?', confirmText: 'Delete', danger: true);
     if (ok != true) return;
@@ -138,9 +138,8 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
       backgroundColor: const Color(0xFFF4F6F8),
       appBar: AppBar(
         backgroundColor: const Color(0xFF1E4C7A), foregroundColor: Colors.white, elevation: 0,
-        title: const Text('Student Profile', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+        title: const Text('Profile', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)), // ১. AppBar টাইটেল আপডেট
         actions: [
-          // 6. Settings Screen Functional Navigation 
           IconButton(icon: const Icon(Icons.settings), onPressed: () => Navigator.pushNamed(context, '/settings')),
           PopupMenuButton<String>(
             onSelected: (v) { if (v == 'edit') setState(() => isEditing = true); if (v == 'logout') _handleSignOut(); if (v == 'delete') _handleDeleteAccount(); },
@@ -150,7 +149,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
       ),
       body: isLoading ? const Center(child: CircularProgressIndicator()) : SingleChildScrollView(
         child: AnimatedSwitcher(
-          duration: const Duration(milliseconds: 400), // 10. Smooth profile refresh transition effect
+          duration: const Duration(milliseconds: 400), 
           child: Column(key: ValueKey(_triggerAnimation), children: [
             _buildHeader(), 
             Padding(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8), child: isEditing ? _buildEditForm() : _buildProfileDetails())
@@ -194,7 +193,6 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
       const SizedBox(height: 12),
       selectedSubjects.isEmpty ? const Text("No Subjects Selected", style: TextStyle(color: Colors.grey)) : Wrap(spacing: 10, runSpacing: 10, children: selectedSubjects.map((s) => Container(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10), decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(10), border: Border.all(color: Colors.grey.shade300)), child: Text(s, style: const TextStyle(fontSize: 14, color: Colors.black87, fontWeight: FontWeight.w500)))).toList()),
       const SizedBox(height: 30),
-      // 5. Payment Screen Navigation Added
       SizedBox(width: double.infinity, height: 52, child: ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: Colors.white, foregroundColor: const Color(0xFF1E7A6E), elevation: 1, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30), side: BorderSide(color: Colors.grey.shade300))), onPressed: () => Navigator.pushNamed(context, '/payment_confirmation'), child: const Text("UPLOAD PAYMENT CONFIRMATION", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)))),
       const SizedBox(height: 25),
       Container(
@@ -202,13 +200,12 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
         child: Column(children: [
           _info(Icons.person_outline, "Name", _name.text), const Divider(height: 1),
           _info(Icons.wc_outlined, "Gender", gender ?? "Not Added"), const Divider(height: 1),
-          _info(Icons.school_outlined, "Class", studentClass ?? "Not Added"), const Divider(height: 1), // 4. Class Re-added here
+          _info(Icons.school_outlined, "Class", studentClass ?? "Not Added"), const Divider(height: 1), 
           _info(Icons.history_edu_outlined, "School", _school.text), const Divider(height: 1),
           _info(Icons.account_balance_outlined, "College", _college.text), const Divider(height: 1),
           _info(Icons.business_outlined, "Institution", _institution.text), const Divider(height: 1),
-          _info(Icons.map_outlined, "Home Location", _location.text), const Divider(height: 1), // 3. Home Location Re-added here
-          _info(Icons.info_outline, "Bio", _bio.text), // 2. Bio Card Info Re-added here
-          // 1. Note: Phone field is totally hidden from this Profile View details block as requested
+          _info(Icons.map_outlined, "Home Location", _location.text), const Divider(height: 1), 
+          _info(Icons.info_outline, "Bio", _bio.text), 
         ]),
       ),
       const SizedBox(height: 20),
@@ -223,7 +220,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
   Widget _buildEditForm() => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
     const SizedBox(height: 10),
     _field(_name, "Full Name", Icons.person), _gap(),
-    _field(_phone, "Phone", Icons.phone, type: TextInputType.phone), _gap(), // Available and saves to firebase securely
+    _field(_phone, "Phone", Icons.phone, type: TextInputType.phone), _gap(), 
     _field(_location, "Home Location", Icons.location_on), _gap(),
     _dropDown("Gender", Icons.people, gender, ['Male', 'Female'], (v) => setState(() => gender = v)), _gap(),
     _dropDown("Class", Icons.school, studentClass, classOptions, (v) => setState(() => studentClass = v)), _gap(),
@@ -234,15 +231,64 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
     const SizedBox(height: 20),
     const Text("Interested Subjects", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
     const SizedBox(height: 10),
-    Wrap(spacing: 8, runSpacing: 8, children: subjectOptions.map((subject) => FilterChip(label: Text(subject), selected: selectedSubjects.contains(subject), onSelected: (v) => setState(() { v ? selectedSubjects.add(subject) : selectedSubjects.remove(subject); selectedSubjects = selectedSubjects.toSet().toList(); }))).toList()),
+    
+    // ২. কাস্টম সাবজেক্ট টাইপ করে এড করার রো ফিল্ড
+    Row(
+      children: [
+        Expanded(
+          child: TextField(
+            controller: _customSubjectController,
+            decoration: InputDecoration(
+              hintText: "Enter Custom Subject (e.g., Bengali)",
+              filled: true, fillColor: Colors.grey.shade50,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Colors.grey.shade300)),
+              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Colors.grey.shade300)),
+            ),
+          ),
+        ),
+        const SizedBox(width: 10),
+        IconButton.filled(
+          style: IconButton.styleFrom(backgroundColor: const Color(0xFF1E4C7A), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+          icon: const Icon(Icons.add, color: Colors.white),
+          onPressed: () {
+            final txt = _customSubjectController.text.trim();
+            if (txt.isNotEmpty) {
+              if (!selectedSubjects.contains(txt)) { setState(() { selectedSubjects.add(txt); }); }
+              _customSubjectController.clear();
+            }
+          },
+        ),
+      ],
+    ),
+    const SizedBox(height: 15),
+
+    // ডিফল্ট এবং কাস্টম সাবজেক্টের চিপস তালিকা
+    Wrap(
+      spacing: 8, runSpacing: 8, 
+      children: [
+        // ১. ফিক্সড অপশনগুলোর চিপস তালিকা
+        ...subjectOptions.map((subject) => FilterChip(
+          label: Text(subject), 
+          selected: selectedSubjects.contains(subject), 
+          onSelected: (v) => setState(() { v ? selectedSubjects.add(subject) : selectedSubjects.remove(subject); selectedSubjects = selectedSubjects.toSet().toList(); })
+        )),
+        // ২. আলাদাভাবে অ্যাড করা নতুন কাস্টম চিপসগুলোর রিমুভ করার অপশন
+        ...selectedSubjects.where((s) => !subjectOptions.contains(s)).map((customSub) => InputChip(
+          label: Text(customSub),
+          selected: true,
+          selectedColor: const Color(0xFFA2E8DD).withOpacity(0.4),
+          onDeleted: () => setState(() => selectedSubjects.remove(customSub)),
+        )),
+      ]
+    ),
     const SizedBox(height: 30),
-    Row(children: [Expanded(child: OutlinedButton(onPressed: () { setState(() { isEditing = false; _selectedImage = null; }); fetchStudentData(); }, child: const Text("Cancel"))), const SizedBox(width: 12), Expanded(child: ElevatedButton(onPressed: updateStudentProfile, child: const Text("Save Changes")))]),
+    Row(children: [Expanded(child: OutlinedButton(onPressed: () { setState(() { isEditing = false; _selectedImage = null; }); _customSubjectController.clear(); fetchStudentData(); }, child: const Text("Cancel"))), const SizedBox(width: 12), Expanded(child: ElevatedButton(onPressed: updateStudentProfile, child: const Text("Save Changes")))]),
     const SizedBox(height: 25),
   ]);
 
   Widget _dropDown(String label, IconData icon, String? value, List<String> items, ValueChanged<String?> onChanged) => DropdownButtonFormField<String>(value: value, decoration: InputDecoration(labelText: label, prefixIcon: Icon(icon), border: OutlineInputBorder(borderRadius: BorderRadius.circular(10))), items: items.map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(), onChanged: onChanged);
-  
-  // 9. Premium Input Styling with Rounded Borders and Filled Background
+
   Widget _field(TextEditingController c, String lbl, IconData i, {TextInputType type = TextInputType.text, int maxLines = 1}) => TextField(
     controller: c, keyboardType: type, maxLines: maxLines, 
     decoration: InputDecoration(
