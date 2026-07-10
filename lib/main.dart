@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart'; // ১. স্ট্যাটাস বার হাইড করার জন্য সিস্টেম সার্ভিস ইম্পোর্ট করা হলো
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -12,7 +13,11 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 }
 
 void main() async {
+  // ২. উইজেট বাইন্ডিং নিশ্চিত করা হলো (ইতিমধ্যে আপনার কোডে ছিল)
   WidgetsFlutterBinding.ensureInitialized();
+
+  // ৩. পুরো অ্যাপের সব স্ক্রিন থেকে ওপরের বার হাইড করার ম্যাজিক লাইন
+  SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
 
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
@@ -20,6 +25,7 @@ void main() async {
 
   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
+  // আপনার অ্যাপের মূল ক্লাসটি রান করা হচ্ছে
   runApp(const FindYourBestTeacherTodayApp());
 }
 
