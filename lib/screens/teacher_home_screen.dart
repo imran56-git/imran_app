@@ -14,18 +14,14 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
 
   // A list of screens to show in the IndexedStack
   final List<Widget> _screens = [
-    // This will open the chat screen from TeacherHomeScreen
-    const ChatScreen(
-      // REQUIRED ARGUMENTS you asked for:
-      teacherId: "teacher_id_from_home",
-      teacherName: "Teacher Name From Home",
-      teacherImage: "https://example.com/teacher_image.jpg",
-      studentId: "student_id_from_home",
-      studentName: "Student Name From Home",
-      studentImage: "https://example.com/student_image.jpg",
-    ),
-    const TeacherProfileScreen(),
-  ];
+  const ChatScreen(
+    teacherName: "Student",
+    chatId: "sample_chat_id",
+    currentUserId: "teacher_id_from_home",
+    receiverId: "student_id_from_home",
+  ),
+  const TeacherProfileScreen(),
+];
 
   final List<String> _titles = [
     "Student Messages",
