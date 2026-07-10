@@ -80,32 +80,26 @@ class _ChatListScreenState extends State<ChatListScreen> {
     return '${date.day}/${date.month}/${date.year}';
   }
 
-  void _openChat(Map<String, dynamic> data, String chatDocId) {
-    final bool isGroup = data['isGroup'] == true;
+  void _openChat({
+    required Map<String, dynamic> chatData,
+    required String chatDocId,
+    required String receiverName,
+    required String receiverId,
+  }) {
+    final bool isGroup = chatData['isGroup'] == true;
 
-    final String chatId = data['chatId']?.toString().isNotEmpty == true
-        ? data['chatId'].toString()
+    final String chatId = chatData['chatId']?.toString().isNotEmpty == true
+        ? chatData['chatId'].toString()
         : chatDocId;
 
-    final String title = (data['teacherName'] ??
-            data['groupName'] ??
-            data['name'] ??
-            'Chat')
-        .toString();
-
-    final String receiverId = (data['receiverId'] ??
-            data['teacherId'] ??
-            data['otherUserId'] ??
-            '')
-        .toString();
-
     if (isGroup) {
+      final String groupName = (chatData['groupName'] ?? 'Group Chat').toString();
       Navigator.push(
         context,
         MaterialPageRoute(
           builder: (_) => GroupChatScreen(
             groupId: chatId,
-            groupName: title,
+            groupName: groupName,
             currentUserId: widget.currentUserId,
             currentUserName: _currentUserName,
           ),
@@ -116,7 +110,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
         context,
         MaterialPageRoute(
           builder: (_) => ChatScreen(
-            teacherName: title,
+            teacherName: receiverName,
             chatId: chatId,
             currentUserId: widget.currentUserId,
             receiverId: receiverId,
@@ -126,17 +120,12 @@ class _ChatListScreenState extends State<ChatListScreen> {
     }
   }
 
-  bool _matchesSearch(Map<String, dynamic> data) {
+  bool _matchesSearch(Map<String, dynamic> chatData, String otherUserName) {
     if (_searchText.isEmpty) return true;
 
-    final name = (data['teacherName'] ??
-            data['groupName'] ??
-            data['name'] ??
-            '')
-        .toString()
-        .toLowerCase();
+    final name = otherUserName.toLowerCase();
 
-    final lastMessage = (data['lastMessage'] ?? '')
+    final lastMessage = (chatData['lastMessage'] ?? '')
         .toString()
         .toLowerCase();
 
@@ -147,18 +136,16 @@ class _ChatListScreenState extends State<ChatListScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF3F5F7),
-      // ওপরের সাদা অংশের জন্য AppBar কনফিগারেশন আপডেট করা হয়েছে
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
         automaticallyImplyLeading: false,
         title: Row(
           children: [
-            // Rounded Corner অ্যাপ লোগো
             ClipRRect(
               borderRadius: BorderRadius.circular(10),
               child: Image.asset(
-                'assets/images/app_logo.png', // আপনার অ্যাপের সঠিক লোগো পাথটি দিন
+                'assets/images/app_logo.png',
                 width: 32,
                 height: 32,
                 fit: BoxFit.cover,
@@ -170,7 +157,6 @@ class _ChatListScreenState extends State<ChatListScreen> {
               ),
             ),
             const SizedBox(width: 10),
-            // অ্যাপের শর্ট নেম
             const Text(
               'FYBTT',
               style: TextStyle(
@@ -203,7 +189,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
                     child: Padding(
                       padding: const EdgeInsets.all(20.0),
                       child: Text(
-                        'Something went wrong.\n${snapshot.error}',
+                        'Something went wrong.',
                         textAlign: TextAlign.center,
                         style: const TextStyle(fontSize: 14, color: Colors.red),
                       ),
@@ -215,60 +201,98 @@ class _ChatListScreenState extends State<ChatListScreen> {
                   return _buildEmptyState();
                 }
 
-                final allDocs = snapshot.data!.docs;
-                final filteredDocs = allDocs.where((doc) {
-                  final data = doc.data() as Map<String, dynamic>;
-                  return _matchesSearch(data);
-                }).toList();
-
-                if (filteredDocs.isEmpty) {
-                  return _buildNoSearchResult();
-                }
+                final chatDocs = snapshot.data!.docs;
 
                 return ListView.builder(
                   padding: const EdgeInsets.fromLTRB(12, 12, 12, 100),
-                  itemCount: filteredDocs.length,
+                  itemCount: chatDocs.length,
                   itemBuilder: (context, index) {
-                    final doc = filteredDocs[index];
-                    final data = doc.data() as Map<String, dynamic>;
-
-                    final bool isGroup = data['isGroup'] == true;
-                    final String name = (data['teacherName'] ??
-                            data['groupName'] ??
-                            data['name'] ??
-                            (isGroup ? 'Group Chat' : 'Teacher Chat'))
-                        .toString();
+                    final doc = chatDocs[index];
+                    final chatData = doc.data() as Map<String, dynamic>;
+                    final bool isGroup = chatData['isGroup'] == true;
 
                     final String lastMessage =
-                        (data['lastMessage'] ?? 'No messages yet').toString();
-
-                    final String imageUrl =
-                        (data['teacherImage'] ??
-                                data['groupImage'] ??
-                                data['photoUrl'] ??
-                                '')
-                            .toString();
+                        (chatData['lastMessage'] ?? 'No messages yet').toString();
 
                     final Timestamp? lastTime =
-                        data['lastMessageTime'] as Timestamp?;
+                        chatData['lastMessageTime'] as Timestamp?;
 
                     final int unreadCount =
-                        (data['unreadCount'] ?? 0) is int
-                            ? data['unreadCount'] as int
-                            : int.tryParse('${data['unreadCount']}') ?? 0;
+                        (chatData['unreadCount'] ?? 0) is int
+                            ? chatData['unreadCount'] as int
+                            : int.tryParse('${chatData['unreadCount']}') ?? 0;
 
-                    final bool isOnline = data['isOnline'] == true;
+                    if (isGroup) {
+                      final String groupName = (chatData['groupName'] ?? 'Group Chat').toString();
+                      final String groupImageUrl = (chatData['groupImage'] ?? '').toString();
 
-                    return _ChatCard(
-                      name: name,
-                      lastMessage: lastMessage,
-                      timeText: _formatTime(lastTime),
-                      unreadCount: unreadCount,
-                      imageUrl: imageUrl,
-                      isOnline: isOnline,
-                      isGroup: isGroup,
-                      onTap: () => _openChat(data, doc.id),
-                    );
+                      if (!_matchesSearch(chatData, groupName)) {
+                        return const SizedBox.shrink();
+                      }
+
+                      return _ChatCard(
+                        name: groupName,
+                        lastMessage: lastMessage,
+                        timeText: _formatTime(lastTime),
+                        unreadCount: unreadCount,
+                        imageUrl: groupImageUrl,
+                        isOnline: false,
+                        isGroup: true,
+                        onTap: () => _openChat(
+                          chatData: chatData, 
+                          chatDocId: doc.id,
+                          receiverName: groupName,
+                          receiverId: '',
+                        ),
+                      );
+                    } else {
+                      final List<dynamic> participants = chatData['participants'] ?? [];
+                      participants.remove(widget.currentUserId);
+                      if (participants.isEmpty) return const SizedBox.shrink();
+
+                      final String receiverId = participants.first.toString();
+
+                      return FutureBuilder<DocumentSnapshot>(
+                        future: FirebaseFirestore.instance
+                            .collection('users')
+                            .doc(receiverId)
+                            .get(),
+                        builder: (context, userSnapshot) {
+                          if (!userSnapshot.hasData || !userSnapshot.data!.exists) {
+                            return const SizedBox.shrink();
+                          }
+
+                          final userData = userSnapshot.data!.data() as Map<String, dynamic>;
+                          final String receiverName = (userData['name'] ??
+                                  userData['fullName'] ??
+                                  userData['studentName'] ??
+                                  'User')
+                              .toString();
+                          final String receiverImageUrl = (userData['profileImageUrl'] ?? userData['photoUrl'] ?? '').toString();
+                          final bool isOnline = userData['isOnline'] == true;
+
+                          if (!_matchesSearch(chatData, receiverName)) {
+                            return const SizedBox.shrink();
+                          }
+
+                          return _ChatCard(
+                            name: receiverName,
+                            lastMessage: lastMessage,
+                            timeText: _formatTime(lastTime),
+                            unreadCount: unreadCount,
+                            imageUrl: receiverImageUrl,
+                            isOnline: isOnline,
+                            isGroup: false,
+                            onTap: () => _openChat(
+                              chatData: chatData, 
+                              chatDocId: doc.id,
+                              receiverName: receiverName,
+                              receiverId: receiverId,
+                            ),
+                          );
+                        },
+                      );
+                    }
                   },
                 );
               },
@@ -279,11 +303,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
       floatingActionButton: FloatingActionButton(
         backgroundColor: const Color(0xFF112B44),
         onPressed: () {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Open new chat / search teacher screen here'),
-            ),
-          );
+          //Snack Bar logic updated if required
         },
         child: const Icon(Icons.message_outlined, color: Colors.white),
       ),
@@ -344,7 +364,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
         ),
         const SizedBox(height: 10),
         Text(
-          'Your teacher and group conversations will appear here.',
+          'Your conversations will appear here.',
           textAlign: TextAlign.center,
           style: TextStyle(
             fontSize: 15,
@@ -500,7 +520,8 @@ class _ChatCard extends StatelessWidget {
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             border: Border.all(
-              color: const Color(0xFF22C55E),
+              // অনলাইন থাকলে সবুজ বর্ডার, অফলাইন থাকলে সাধারণ বর্ডার
+              color: isOnline ? const Color(0xFF22C55E) : Colors.grey.shade300,
               width: 2.4,
             ),
           ),
@@ -519,7 +540,7 @@ class _ChatCard extends StatelessWidget {
             ),
           ),
         ),
-        if (isOnline)
+        if (isOnline && !isGroup)
           Positioned(
             right: 2,
             bottom: 2,
