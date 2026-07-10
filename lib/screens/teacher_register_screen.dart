@@ -69,37 +69,28 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
   }
 
   Future<void> _getCurrentLocation() async {
-  setState(() => _isLoading = true);
+    setState(() => _isLoading = true);
 
-  try {
-    final position = await LocationService.getCurrentLocation();
-
-    _locationController.text =
-        "${position.latitude}, ${position.longitude}";
-
-  } catch (e) {
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text("Location error: $e"),
-      ),
-    );
-
-  } finally {
-
-    setState(() => _isLoading = false);
-
+    try {
+      final position = await LocationService.getCurrentLocation();
+      _locationController.text = "${position.latitude}, ${position.longitude}";
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Location error: $e")),
+      );
+    } finally {
+      setState(() => _isLoading = false);
+    }
   }
-}
- 
-Future<bool> _checkUserIdExists(String userId) async {
-  final result = await FirebaseFirestore.instance
-      .collection('users')
-      .where('username', isEqualTo: userId)
-      .get();
 
-  return result.docs.isNotEmpty;
-}
+  Future<bool> _checkUserIdExists(String userId) async {
+    final result = await FirebaseFirestore.instance
+        .collection('users')
+        .where('username', isEqualTo: userId)
+        .get();
+
+    return result.docs.isNotEmpty;
+  }
 
   Future<String> _processAndUpload(File file, String path) async {
     File? compressedFile = await ImageHelper.compressImage(file);
@@ -111,26 +102,16 @@ Future<bool> _checkUserIdExists(String userId) async {
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
- 
-final userId = _usernameController.text.trim().toLowerCase();
 
-final exists = await _checkUserIdExists(userId);
+    final userId = _usernameController.text.trim().toLowerCase();
+    final exists = await _checkUserIdExists(userId);
 
-if (exists) {
-
-  ScaffoldMessenger.of(context).showSnackBar(
-    const SnackBar(
-      content: Text("User ID already exists"),
-      backgroundColor: Colors.red,
-    ),
-  );
-
-  return;
-}
-
-    if (_profileImage == null || _qualificationCertificate == null || _idProofImage == null) {
+    if (exists) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please upload all required documents.')),
+        const SnackBar(
+          content: Text("User ID already exists"),
+          backgroundColor: Colors.red,
+        ),
       );
       return;
     }
@@ -154,9 +135,33 @@ if (exists) {
 
       final String uid = userCredential.user!.uid;
 
-      final profileUrl = await _processAndUpload(_profileImage!, 'teachers/$uid/profile.jpg');
-      final certUrl = await _processAndUpload(_qualificationCertificate!, 'teachers/$uid/certificate.jpg');
-      final idProofUrl = await _processAndUpload(_idProofImage!, 'teachers/$uid/id_proof.jpg');
+      // ছবি সিলেক্ট করা থাকলে আপলোড হবে, না থাকলে খালি স্ট্রিং স্টোর হবে
+      String profileUrl = "";
+      if (_profileImage != null) {
+        try {
+          profileUrl = await _processAndUpload(_profileImage!, 'teachers/$uid/profile.jpg');
+        } catch (e) {
+          debugPrint("Profile image upload failed: $e");
+        }
+      }
+
+      String certUrl = "";
+      if (_qualificationCertificate != null) {
+        try {
+          certUrl = await _processAndUpload(_qualificationCertificate!, 'teachers/$uid/certificate.jpg');
+        } catch (e) {
+          debugPrint("Certificate upload failed: $e");
+        }
+      }
+
+      String idProofUrl = "";
+      if (_idProofImage != null) {
+        try {
+          idProofUrl = await _processAndUpload(_idProofImage!, 'teachers/$uid/id_proof.jpg');
+        } catch (e) {
+          debugPrint("ID Proof upload failed: $e");
+        }
+      }
 
       await FirebaseFirestore.instance.collection('teachers').doc(uid).set({
         'uid': uid,
@@ -174,15 +179,12 @@ if (exists) {
         'createdAt': FieldValue.serverTimestamp(),
       });
 
-await FirebaseFirestore.instance
-    .collection('users')
-.doc(uid)
-    .set({
-  'uid': uid,
-  'username': userId,
-  'role': 'teacher',
-  'createdAt': FieldValue.serverTimestamp(),
-});
+      await FirebaseFirestore.instance.collection('users').doc(uid).set({
+        'uid': uid,
+        'username': userId,
+        'role': 'teacher',
+        'createdAt': FieldValue.serverTimestamp(),
+      });
 
       if (mounted) {
         showDialog(
@@ -252,21 +254,20 @@ await FirebaseFirestore.instance
                               decoration: const InputDecoration(labelText: 'Full Name', border: OutlineInputBorder(), floatingLabelBehavior: FloatingLabelBehavior.auto),
                               validator: (val) => _validateField(val, "Full Name"),
                             ),
-const SizedBox(height: 10),
-
-TextFormField(
-  controller: _usernameController,
-  decoration: const InputDecoration(
-    labelText: 'User ID',
-    border: OutlineInputBorder(),
-  ),
-  validator: (value){
-    if(value == null || value.trim().isEmpty){
-      return "User ID required";
-    }
-    return null;
-  },
-),
+                            const SizedBox(height: 10),
+                            TextFormField(
+                              controller: _usernameController,
+                              decoration: const InputDecoration(
+                                labelText: 'User ID',
+                                border: OutlineInputBorder(),
+                              ),
+                              validator: (value){
+                                if(value == null || value.trim().isEmpty){
+                                  return "User ID required";
+                                }
+                                return null;
+                              },
+                            ),
                             const SizedBox(height: 10),
                             TextFormField(
                               controller: _emailController, 
@@ -289,7 +290,6 @@ TextFormField(
                               validator: (val) => _validateField(val, "Phone Number"),
                             ),
                             const SizedBox(height: 10),
-
                             TextFormField(
                               controller: _locationController,
                               decoration: InputDecoration(
@@ -328,12 +328,12 @@ TextFormField(
                       ),
                     ),
                     ListTile(
-                      title: const Text("Upload Qualification Certificate"),
+                      title: const Text("Upload Qualification Certificate (Optional)"),
                       trailing: IconButton(icon: const Icon(Icons.upload_file), onPressed: () => _pickImage((f) => setState(() => _qualificationCertificate = f))),
                       subtitle: Text(_qualificationCertificate != null ? "File Selected" : "No file selected"),
                     ),
                     ListTile(
-                      title: const Text("Upload ID Proof (NID/Passport)"),
+                      title: const Text("Upload ID Proof - NID/Passport/Aadhaar (Optional)"),
                       trailing: IconButton(icon: const Icon(Icons.upload_file), onPressed: () => _pickImage((f) => setState(() => _idProofImage = f))),
                       subtitle: Text(_idProofImage != null ? "File Selected" : "No file selected"),
                     ),
@@ -369,4 +369,3 @@ TextFormField(
     );
   }
 }
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    
