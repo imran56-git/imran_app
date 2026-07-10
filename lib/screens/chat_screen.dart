@@ -191,7 +191,7 @@ class _ChatScreenState extends State<ChatScreen> {
         'chatId': widget.chatId,
         'teacherId': widget.currentUserId, // Assuming student Id is currentUserId
         'studentId': widget.receiverId,
-        'teacherName': _currentUserName, // Assuming current user is student or teacher
+        'teacherName': widget.teacherName, // Assuming current user is student or teacher
         'studentName': widget.teacherName, // Assuming current user is teacher
         'teacherImage': _senderImageUrl,
         'studentImage': _receiverImageUrl,
