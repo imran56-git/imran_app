@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'chat_screen.dart';
-import 'teacher_profile_screen.dart';
+import 'chat_screen.dart'; // Ensure you have this file
+import 'teacher_profile_screen.dart'; // Ensure you have this file
 
 class TeacherHomeScreen extends StatefulWidget {
   const TeacherHomeScreen({super.key});
@@ -12,17 +12,20 @@ class TeacherHomeScreen extends StatefulWidget {
 class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
   int _selectedIndex = 0;
 
+  // A list of screens to show in the IndexedStack
   final List<Widget> _screens = [
-        // Ensure you pass the required arguments here
-            const ChatScreen(
-                  teacherName: "Student",
-                        chatId: "sample_chat_id",
-                              currentUserId: "teacher_id",
-                                    receiverId: "student_id",
-                                        ),
-                                            const TeacherProfileScreen(),
-                                              ];
-  
+    // This will open the chat screen from TeacherHomeScreen
+    const ChatScreen(
+      // REQUIRED ARGUMENTS you asked for:
+      teacherId: "teacher_id_from_home",
+      teacherName: "Teacher Name From Home",
+      teacherImage: "https://example.com/teacher_image.jpg",
+      studentId: "student_id_from_home",
+      studentName: "Student Name From Home",
+      studentImage: "https://example.com/student_image.jpg",
+    ),
+    const TeacherProfileScreen(),
+  ];
 
   final List<String> _titles = [
     "Student Messages",
