@@ -1,3 +1,4 @@
+import 'dart:ui'; // BackdropFilter এর জন্য প্রয়োজন
 import 'package:flutter/material.dart';
 import '../../models/reminder_model.dart';
 import '../../services/reminder_service.dart';
@@ -25,13 +26,58 @@ class _ReminderScreenState extends State<ReminderScreen> {
   Map<String, dynamic>? _foundStudent;
   bool _isSearching = false;
   bool _isSending = false;
-  String _selectedMonth = 'July';
+  late String _selectedMonth; // ডাইনামিক কারেন্ট মান্থের জন্য late ব্যবহার করা হয়েছে
   DateTime _selectedDueDate = DateTime.now().add(const Duration(days: 5));
 
   final List<String> _months = [
     'January', 'February', 'March', 'April', 'May', 'June',
     'July', 'August', 'September', 'October', 'November', 'December'
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    // স্বয়ংক্রিয়ভাবে বর্তমান মাসের নাম সিলেক্ট করার লজিক
+    _selectedMonth = _months[DateTime.now().month - 1];
+  }
+
+  // স্টুডেন্ট না পাওয়া গেলে সুন্দর অ্যানিমেটেড ব্লার পপআপ
+  void _showErrorPopup(String title, String message) {
+    showGeneralDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: '',
+      transitionDuration: const Duration(milliseconds: 300),
+      pageBuilder: (context, a1, a2) => const SizedBox(),
+      transitionBuilder: (context, anim, a2, child) {
+        return BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5), // প্রফেশনাল ব্লার এফেক্ট
+          child: ScaleTransition(
+            scale: Tween<double>(begin: 0.85, end: 1.0).animate(CurvedAnimation(parent: anim, curve: Curves.easeOutBack)),
+            child: FadeTransition(
+              opacity: anim,
+              child: AlertDialog(
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 20, color: Colors.redAccent)),
+                content: Text(message, style: const TextStyle(fontSize: 15, color: Colors.black87)),
+                actions: [
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.blue[800],
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('OK', style: TextStyle(fontWeight: FontWeight.bold)),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
 
   void _searchStudent() async {
     final searchId = _searchController.text.trim();
@@ -49,12 +95,12 @@ class _ReminderScreenState extends State<ReminderScreen> {
         _isSearching = false;
       });
       if (student == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Student not found! Check the ID.')),
-        );
+        // স্ন্যাকবারের পরিবর্তে নতুন অ্যানিমেটেড ব্লার পপআপ শো করা হবে
+        _showErrorPopup('Student Not Found', 'Please check the Student User ID and try again.');
       }
     } catch (e) {
       setState(() => _isSearching = false);
+      _showErrorPopup('Error', 'Something went wrong while searching.');
     }
   }
 
@@ -93,6 +139,7 @@ class _ReminderScreenState extends State<ReminderScreen> {
       }
     } catch (e) {
       setState(() => _isSending = false);
+      _showErrorPopup('Failed', 'Could not send the reminder. Try again.');
     }
   }
 
