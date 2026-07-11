@@ -339,7 +339,8 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
                             isMe: isMe,
                             timestamp: data['timestamp'] as Timestamp?,
                             messageId: messageModel.messageId,
-                            type: type, // <--- এখানে বাধ্যতামূলক 'type' প্যারামিটারটি যুক্ত করে দেওয়া হলো
+                            type: type,
+                            isTyping: false,
                             onDeleteForMe: () {},
                             onDeleteForEveryone: () {},
                             onReact: (emoji) {},
