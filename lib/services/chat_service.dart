@@ -35,7 +35,7 @@ class _ChatScreenState extends State<ChatScreen> {
   final ChatService _chatService = ChatService();
   final MediaService _mediaService = MediaService();
   final ScrollController _scrollController = ScrollController();
-  
+
   MessageModel? _replyingMessage;
   bool _isRecording = false;
 
@@ -167,7 +167,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     ),
                     Text(
                       isTyping ? 'typing...' : (status == 'Online' ? 'Online' : _formatLastSeen(lastSeen)),
-                      style: const TextStyle(fontSize: 11, color: Colors.whiteBF),
+                      style: const TextStyle(fontSize: 11, color: ChatColors.whiteBF), // Colors.whiteBF থেকে ChatColors.whiteBF ফিক্সড
                     ),
                   ],
                 );
