@@ -135,6 +135,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
     }
   }
 
+  // প্রফেশনাল ব্লার ব্যাকগ্রাউন্ডসহ অ্যানিমেটেড পপআপ (লগআউট ও ডিলিট উভয়ের জন্য কাজ করবে)
   void _showAnimatedPopup({
     required String title,
     required String message,
@@ -150,7 +151,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
       pageBuilder: (context, a1, a2) => const SizedBox(),
       transitionBuilder: (context, anim, a2, child) {
         return BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
+          filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5), // সুন্দর ব্যাকগ্রাউন্ড ব্লার
           child: ScaleTransition(
             scale: Tween<double>(begin: 0.85, end: 1.0).animate(CurvedAnimation(parent: anim, curve: Curves.easeOutBack)),
             child: FadeTransition(
@@ -172,8 +173,8 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                     ),
                     onPressed: () {
-                      Navigator.pop(context);
-                      onConfirm();
+                      Navigator.pop(context); // পপআপটি বন্ধ করবে
+                      onConfirm(); // মূল ফাংশন (Sign Out বা Delete) কল করবে
                     },
                     child: Text(confirmText, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                   ),
@@ -289,9 +290,41 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
         if (val == 'edit') {
           setState(() => isEditing = true);
         } else if (val == 'signout') {
-          _showAnimatedPopup(title: 'Sign Out', message: 'Are you sure?', confirmText: 'Confirm', onConfirm: () async => await _auth.signOut());
+          // লগআউট প্রসেস এখানে সম্পূর্ণ ফিক্সড
+          _showAnimatedPopup(
+            title: 'Sign Out', 
+            message: 'Are you sure you want to sign out?', 
+            confirmText: 'Confirm', 
+            onConfirm: () async {
+              try {
+                await _auth.signOut();
+                if (mounted) {
+                  // লগআউট হওয়ার পর স্ক্রিন রিফ্রেশ করে একদম শুরুর রুট/লগইন স্ক্রিনে নিয়ে যাবে
+                  Navigator.of(context).popUntil((route) => route.isFirst);
+                }
+              } catch (e) {
+                debugPrint("Sign out failed: $e");
+              }
+            }
+          );
         } else if (val == 'delete') {
-          _showAnimatedPopup(title: 'Delete Account', message: 'This will permanently delete your account.\nAre you sure?', confirmText: 'Delete', isDelete: true, onConfirm: () {});
+          // অ্যাকাউন্ট ডিলিট করার অ্যাকশনও যুক্ত করা হলো
+          _showAnimatedPopup(
+            title: 'Delete Account', 
+            message: 'This will permanently delete your account.\nAre you sure?', 
+            confirmText: 'Delete', 
+            isDelete: true, 
+            onConfirm: () async {
+              try {
+                await _auth.currentUser?.delete();
+                if (mounted) {
+                  Navigator.of(context).popUntil((route) => route.isFirst);
+                }
+              } catch (e) {
+                debugPrint("Delete account failed: $e");
+              }
+            }
+          );
         }
       },
       itemBuilder: (ctx) => [
