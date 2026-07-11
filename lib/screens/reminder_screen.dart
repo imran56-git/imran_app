@@ -267,7 +267,7 @@ class _ReminderScreenState extends State<ReminderScreen> {
                                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                               ),
                               child: Row(
-                                mainAxisAlignment: MainAxisAlignment.between,
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween, // এখানে ভুল সংশোধন করে spaceBetween করা হয়েছে
                                 children: [
                                   Text('${_selectedDueDate.day}/${_selectedDueDate.month}/${_selectedDueDate.year}', style: const TextStyle(fontSize: 14)),
                                   const Icon(Icons.calendar_today, size: 18),
