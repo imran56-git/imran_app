@@ -1,51 +1,45 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'screens/chat_list_screen.dart';
+import 'utils/chat_colors.dart';
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp();
+  runApp(const MainApp());
+}
 
 class MainApp extends StatelessWidget {
   const MainApp({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
-        title: const Text(
-          'Find Your Best Teacher Today',
-          style: TextStyle(fontWeight: FontWeight.bold),
+    return MaterialApp(
+      title: 'Find Your Best Teacher Today',
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(
+        useMaterial3: true,
+        primaryColor: ChatColors.primaryApp,
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: ChatColors.primaryApp,
+          primary: ChatColors.primaryApp,
+          secondary: ChatColors.primaryDark,
+          background: Colors.white,
         ),
-        backgroundColor: Colors.teal,
-        centerTitle: true,
-        elevation: 3,
+        appBarTheme: const AppBarTheme(
+          backgroundColor: ChatColors.appBarLight,
+          elevation: 0,
+          iconTheme: IconThemeData(color: Colors.white),
+          titleTextStyle: TextStyle(
+            color: Colors.white,
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
       ),
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: const [
-            Icon(
-              Icons.school,
-              size: 80,
-              color: Colors.teal,
-            ),
-            SizedBox(height: 20),
-            Text(
-              'Welcome to Find Your Best Teacher Today!',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.w500,
-                color: Colors.black87,
-              ),
-            ),
-            SizedBox(height: 10),
-            Text(
-              'Let’s begin your learning journey.',
-              style: TextStyle(
-                fontSize: 16,
-                fontStyle: FontStyle.italic,
-                color: Colors.grey,
-              ),
-            ),
-          ],
-        ),
+      home: const ChatListScreen(
+        currentUserId: 'YOUR_CURRENT_USER_ID',
+        currentUserName: 'YOUR_CURRENT_USER_NAME',
       ),
     );
   }
