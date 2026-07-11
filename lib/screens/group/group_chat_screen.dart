@@ -1,14 +1,14 @@
 import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_sound/flutter_sound.dart';
-import 'package:image_picker/image_picker.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:permission_handler/permission_handler.dart';
-import 'package:uuid/uuid.dart';
-
+import '../../services/chat_service.dart';
+import '../../services/media_service.dart';
+import '../../widgets/chat_input_bar.dart';
+import '../../widgets/attachment_bottom_sheet.dart';
+import '../../widgets/reply_message_widget.dart';
 import '../../widgets/message_bubble.dart';
+import '../../models/message_model.dart';
+import '../../utils/chat_colors.dart';
 
 class GroupChatScreen extends StatefulWidget {
   final String groupName;
@@ -29,26 +29,17 @@ class GroupChatScreen extends StatefulWidget {
 }
 
 class _GroupChatScreenState extends State<GroupChatScreen> {
-  final TextEditingController _messageController = TextEditingController();
+  final ChatService _chatService = ChatService();
+  final MediaService _mediaService = MediaService();
   final ScrollController _scrollController = ScrollController();
-  final FlutterSoundRecorder _recorder = FlutterSoundRecorder();
-  final ImagePicker _picker = ImagePicker();
-
+  
+  MessageModel? _replyingMessage;
   bool _isRecording = false;
-  String? _recordedFilePath;
   String _backgroundImage = 'assets/images/chat_bg.png';
 
   @override
-  void initState() {
-    super.initState();
-    _initRecorder();
-  }
-
-  @override
   void dispose() {
-    _messageController.dispose();
     _scrollController.dispose();
-    _recorder.closeRecorder();
     super.dispose();
   }
 
@@ -59,161 +50,67 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
     return FileImage(File(_backgroundImage));
   }
 
-  Future<void> _initRecorder() async {
-    final status = await Permission.microphone.request();
-    if (status != PermissionStatus.granted) return;
-
-    if (!_recorder.isStopped && !_recorder.isRecording) return;
-
-    await _recorder.openRecorder();
-  }
-
-  Future<void> _changeWallpaper() async {
-    final image = await _picker.pickImage(source: ImageSource.gallery);
-    if (image != null && mounted) {
-      setState(() => _backgroundImage = image.path);
+  void _handleSendMessage(String text, String type) {
+    _chatService.sendGroupMessage(
+      groupId: widget.groupId,
+      senderId: widget.currentUserId,
+      message: text,
+      type: type,
+      replyToMessageId: _replyingMessage?.messageId,
+    );
+    if (_replyingMessage != null) {
+      setState(() => _replyingMessage = null);
     }
+    _scrollToBottom();
   }
 
-  Future<void> _startRecording() async {
-    try {
-      if (_isRecording) return;
-
-      final tempDir = await getTemporaryDirectory();
-      final path = '${tempDir.path}/${const Uuid().v4()}.aac';
-
-      await _recorder.startRecorder(toFile: path);
-
-      if (!mounted) return;
-      setState(() {
-        _isRecording = true;
-        _recordedFilePath = path;
-      });
-    } catch (e) {
-      debugPrint('Start recording error: $e');
-    }
-  }
-
-  Future<void> _stopAndSendVoice() async {
-    try {
-      if (!_isRecording) return;
-
-      final recordedPath = await _recorder.stopRecorder();
-
-      if (!mounted) return;
-      setState(() => _isRecording = false);
-
-      final path = recordedPath ?? _recordedFilePath;
-      if (path == null) return;
-
-      final file = File(path);
-      if (!await file.exists()) return;
-
-      final fileName = '${DateTime.now().millisecondsSinceEpoch}.aac';
-      final ref = FirebaseStorage.instance
-          .ref()
-          .child('group_voice')
-          .child(widget.groupId)
-          .child(fileName);
-
-      final uploadTask = await ref.putFile(
-        file,
-        SettableMetadata(contentType: 'audio/aac'),
+  void _scrollToBottom() {
+    if (_scrollController.hasClients) {
+      _scrollController.animateTo(
+        0.0,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
       );
-
-      final url = await uploadTask.ref.getDownloadURL();
-      await _sendToFirestore(content: url, type: 'audio');
-
-      if (await file.exists()) {
-        await file.delete();
-      }
-
-      _recordedFilePath = null;
-    } catch (e) {
-      debugPrint('Stop/send voice error: $e');
-      if (mounted) {
-        setState(() => _isRecording = false);
-      }
     }
   }
 
-  Future<void> _sendTextMessage() async {
-    final text = _messageController.text.trim();
-    if (text.isEmpty) return;
-
-    await _sendToFirestore(content: text, type: 'text');
-    _messageController.clear();
-
-    if (mounted) {
-      setState(() {});
-    }
-  }
-
-  Future<void> _sendToFirestore({
-    required String content,
-    required String type,
-  }) async {
-    await FirebaseFirestore.instance
-        .collection('groups')
-        .doc(widget.groupId)
-        .collection('messages')
-        .add({
-      'senderId': widget.currentUserId,
-      'senderName': widget.currentUserName,
-      'content': content,
-      'timestamp': FieldValue.serverTimestamp(),
-      'type': type,
-      'isSeen': false,
-    });
-  }
-
-  Future<void> _deleteMessageForEveryone(String messageId) async {
-    await FirebaseFirestore.instance
-        .collection('groups')
-        .doc(widget.groupId)
-        .collection('messages')
-        .doc(messageId)
-        .delete();
-  }
-
-  Future<void> _showEditDialog(String messageId, String oldText) async {
-    final controller = TextEditingController(text: oldText);
-
-    final result = await showDialog<String>(
+  void _showAttachmentBottomSheet() {
+    showModalBottomSheet(
       context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Edit Message'),
-        content: TextField(
-          controller: controller,
-          maxLines: 4,
-          decoration: const InputDecoration(
-            hintText: 'Update your message',
-            border: OutlineInputBorder(),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, controller.text.trim()),
-            child: const Text('Save'),
-          ),
-        ],
+      backgroundColor: Colors.transparent,
+      builder: (context) => AttachmentBottomSheet(
+        onDocumentTap: () => _pickAndSendMedia('document'),
+        onCameraTap: () => _pickAndSendMedia('camera_image'),
+        onGalleryTap: () => _pickAndSendMedia('image'),
+        onAudioTap: () => _pickAndSendMedia('audio'),
+        onLocationTap: () {},
+        onContactTap: () {},
       ),
     );
+  }
 
-    if (result != null && result.isNotEmpty) {
-      await FirebaseFirestore.instance
-          .collection('groups')
-          .doc(widget.groupId)
-          .collection('messages')
-          .doc(messageId)
-          .update({
-        'content': result,
-        'edited': true,
-      });
+  Future<void> _pickAndSendMedia(String type) async {
+    File? file;
+    if (type == 'image') {
+      file = await _mediaService.pickImageFromGallery();
+    } else if (type == 'camera_image') {
+      file = await _mediaService.captureImageFromCamera();
+      type = 'image';
+    } else if (type == 'document') {
+      file = await _mediaService.pickDocument();
+    } else if (type == 'audio') {
+      file = await _mediaService.pickAudio();
+    }
+
+    if (file != null) {
+      final String? url = await _mediaService.uploadMedia(
+        file: file,
+        chatId: widget.groupId,
+        mediaType: type,
+      );
+      if (url != null) {
+        _handleSendMessage(url, type);
+      }
     }
   }
 
@@ -257,116 +154,89 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
     );
 
     if (selected == 'edit') {
-      await _showEditDialog(messageId, text);
+      _showEditDialog(messageId, text);
     } else if (selected == 'delete_all') {
-      await _deleteMessageForEveryone(messageId);
+      await FirebaseFirestore.instance
+          .collection('groups')
+          .doc(widget.groupId)
+          .collection('messages')
+          .doc(messageId)
+          .update({
+        'content': 'This message was deleted',
+        'type': 'text',
+        'isDeletedForEveryone': true,
+      });
     } else if (selected == 'delete_me') {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Delete for me is not connected yet.'),
-          ),
-        );
-      }
+      await FirebaseFirestore.instance
+          .collection('groups')
+          .doc(widget.groupId)
+          .collection('messages')
+          .doc(messageId)
+          .update({
+        'deletedForUsers': FieldValue.arrayUnion([widget.currentUserId]),
+      });
     }
   }
 
-  Widget _buildInputArea() {
-    final hasText = _messageController.text.trim().isNotEmpty;
-
-    return SafeArea(
-      top: false,
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(8, 8, 8, 10),
-        color: Colors.transparent,
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            Expanded(
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(28),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.05),
-                      blurRadius: 6,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: Row(
-                  children: [
-                    IconButton(
-                      onPressed: () {},
-                      icon: const Icon(
-                        Icons.emoji_emotions_outlined,
-                        color: Colors.grey,
-                      ),
-                    ),
-                    Expanded(
-                      child: TextField(
-                        controller: _messageController,
-                        minLines: 1,
-                        maxLines: 5,
-                        textCapitalization: TextCapitalization.sentences,
-                        onChanged: (_) => setState(() {}),
-                        decoration: const InputDecoration(
-                          hintText: 'Message',
-                          border: InputBorder.none,
-                        ),
-                      ),
-                    ),
-                    IconButton(
-                      onPressed: () {},
-                      icon: const Icon(
-                        Icons.attach_file,
-                        color: Colors.grey,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(width: 6),
-            GestureDetector(
-              onLongPressStart: hasText ? null : (_) => _startRecording(),
-              onLongPressEnd: hasText ? null : (_) => _stopAndSendVoice(),
-              child: CircleAvatar(
-                radius: 24,
-                backgroundColor: const Color(0xFF128C7E),
-                child: IconButton(
-                  onPressed: hasText ? _sendTextMessage : null,
-                  icon: Icon(
-                    hasText ? Icons.send : (_isRecording ? Icons.stop : Icons.mic),
-                    color: Colors.white,
-                  ),
-                ),
-              ),
-            ),
-          ],
+  Future<void> _showEditDialog(String messageId, String oldText) async {
+    final controller = TextEditingController(text: oldText);
+    final result = await showDialog<String>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Edit Message'),
+        content: TextField(
+          controller: controller,
+          maxLines: 4,
+          decoration: const InputDecoration(
+            hintText: 'Update your message',
+            border: OutlineInputBorder(),
+          ),
         ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, controller.text.trim()),
+            child: const Text('Save'),
+          ),
+        ],
       ),
     );
+
+    if (result != null && result.isNotEmpty) {
+      await FirebaseFirestore.instance
+          .collection('groups')
+          .doc(widget.groupId)
+          .collection('messages')
+          .doc(messageId)
+          .update({
+        'content': result,
+        'isEdited': true,
+        'editTimestamp': FieldValue.serverTimestamp(),
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final backgroundProvider = _buildBackgroundProvider();
-
     return Scaffold(
-      backgroundColor: const Color(0xFFECE5DD),
+      backgroundColor: ChatColors.bgLight,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF075E54),
+        backgroundColor: ChatColors.appBarLight,
         elevation: 0,
         titleSpacing: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          onPressed: () => Navigator.pop(context),
+        ),
         title: Row(
           children: [
             const CircleAvatar(
-              radius: 20,
+              radius: 18,
               backgroundColor: Colors.white24,
-              child: Icon(Icons.group, color: Colors.white),
+              child: Icon(Icons.groups, color: Colors.white),
             ),
             const SizedBox(width: 10),
             Expanded(
@@ -376,15 +246,11 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
                   Text(
                     widget.groupName,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 17,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.white,
-                    ),
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
                   ),
                   const Text(
                     'Group chat',
-                    style: TextStyle(fontSize: 12, color: Colors.white70),
+                    style: TextStyle(fontSize: 11, color: Colors.white70),
                   ),
                 ],
               ),
@@ -392,30 +258,16 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
           ],
         ),
         actions: [
-          PopupMenuButton<String>(
-            onSelected: (value) {
-              if (value == 'wallpaper') {
-                _changeWallpaper();
-              }
-            },
-            itemBuilder: (context) => const [
-              PopupMenuItem<String>(
-                value: 'wallpaper',
-                child: Text('Change Wallpaper'),
-              ),
-              PopupMenuItem<String>(
-                value: 'info',
-                child: Text('Group Info'),
-              ),
-            ],
+          IconButton(
             icon: const Icon(Icons.more_vert, color: Colors.white),
+            onPressed: () {},
           ),
         ],
       ),
       body: Container(
         decoration: BoxDecoration(
           image: DecorationImage(
-            image: backgroundProvider,
+            image: _buildBackgroundProvider(),
             fit: BoxFit.cover,
           ),
         ),
@@ -423,65 +275,60 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
           children: [
             Expanded(
               child: StreamBuilder<QuerySnapshot>(
-                stream: FirebaseFirestore.instance
-                    .collection('groups')
-                    .doc(widget.groupId)
-                    .collection('messages')
-                    .orderBy('timestamp', descending: true)
-                    .snapshots(),
+                stream: _chatService.getGroupMessagesStream(widget.groupId),
                 builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(child: CircularProgressIndicator());
+                  if (!snapshot.hasData) {
+                    return const Center(child: CircularProgressIndicator(color: ChatColors.primaryApp));
                   }
 
-                  if (snapshot.hasError) {
-                    return const Center(
-                      child: Text('Failed to load messages'),
-                    );
-                  }
-
-                  if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                    return const Center(
-                      child: Text(
-                        'No messages yet',
-                        style: TextStyle(
-                          color: Colors.black54,
-                          fontSize: 15,
-                        ),
-                      ),
-                    );
-                  }
+                  final docs = snapshot.data!.docs;
 
                   return ListView.builder(
                     controller: _scrollController,
                     reverse: true,
-                    padding: const EdgeInsets.only(top: 10, bottom: 10),
-                    itemCount: snapshot.data!.docs.length,
+                    itemCount: docs.length,
                     itemBuilder: (context, index) {
-                      final doc = snapshot.data!.docs[index];
-                      final data = doc.data() as Map<String, dynamic>;
+                      final data = docs[index].data() as Map<String, dynamic>;
+                      
+                      final List<dynamic> deletedUsers = data['deletedForUsers'] ?? [];
+                      if (deletedUsers.contains(widget.currentUserId)) {
+                        return const SizedBox.shrink();
+                      }
 
-                      final String message = (data['content'] ?? '').toString();
-                      final String type = (data['type'] ?? 'text').toString();
+                      final messageText = (data['content'] ?? data['message'] ?? '').toString();
+                      final type = (data['type'] ?? 'text').toString();
                       final bool isMe = data['senderId'] == widget.currentUserId;
+
+                      final messageModel = MessageModel(
+                        messageId: docs[index].id,
+                        senderId: data['senderId'] ?? '',
+                        receiverId: widget.groupId,
+                        message: messageText,
+                        type: type,
+                        status: 'seen',
+                        isDeletedForEveryone: data['isDeletedForEveryone'] ?? false,
+                        deletedForUsers: List<String>.from(deletedUsers),
+                        starredBy: List<String>.from(data['starredBy'] ?? []),
+                        reactions: Map<String, String>.from(data['reactions'] ?? {}),
+                        timestamp: data['timestamp'] != null ? (data['timestamp'] as Timestamp).toDate() : null,
+                      );
 
                       return GestureDetector(
                         onLongPress: () => _showOptions(
-                          messageId: doc.id,
-                          text: message,
+                          messageId: docs[index].id,
+                          text: messageText,
                           isMe: isMe,
                           type: type,
                         ),
                         child: MessageBubble(
-                          message: message,
+                          message: messageModel,
                           isMe: isMe,
-                          timestamp: data['timestamp'] as Timestamp?,
-                          messageId: doc.id,
-                          type: type == 'voice' ? 'audio' : type,
-                          isTyping: false,
-                          uploadVoiceMessage: () {},
-                          isSeen: data['isSeen'] ?? false,
-                          isDelivered: true,
+                          onSwipeToReply: () {
+                            setState(() => _replyingMessage = messageModel);
+                          },
+                          onDeleteForMe: () {},
+                          onDeleteForEveryone: () {},
+                          onReact: (emoji) {},
                         ),
                       );
                     },
@@ -489,7 +336,22 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
                 },
               ),
             ),
-            _buildInputArea(),
+            if (_replyingMessage != null)
+              ReplyMessageWidget(
+                messageSenderName: _replyingMessage!.senderId == widget.currentUserId ? 'You' : widget.currentUserName,
+                messageText: _replyingMessage!.message,
+                messageType: _replyingMessage!.type,
+                onCancelReply: () => setState(() => _replyingMessage = null),
+              ),
+            ChatInputBar(
+              onSendMessage: _handleSendMessage,
+              onAttachmentPressed: _showAttachmentBottomSheet,
+              onStartRecording: () => setState(() => _isRecording = true),
+              onStopRecording: () => setState(() => _isRecording = false),
+              onTypingStatusChanged: (_) {},
+              isBlocked: false,
+              isRecording: _isRecording,
+            ),
           ],
         ),
       ),
