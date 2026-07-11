@@ -6,7 +6,11 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../utils/image_utils.dart';
+import '../utils/chat_colors.dart';
+import '../widgets/success_toast.dart';
 import 'location_picker_screen.dart';
+import 'tuition_management_screen.dart';
+import 'live/join_live_screen.dart';
 
 class TeacherProfileScreen extends StatefulWidget {
   final String? teacherId;
@@ -122,7 +126,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
         'locations': teacherLocations,
       });
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Profile Updated!')));
+        SuccessToast.show(context, 'Updated Successfully');
         setState(() => isEditing = false);
         fetchTeacherData();
       }
@@ -222,37 +226,64 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
-        title: const Text('Teacher Profile', style: TextStyle(fontWeight: FontWeight.bold)),
-        backgroundColor: Colors.blue[800],
-        foregroundColor: Colors.white,
-        centerTitle: true,
-        actions: [if (widget.teacherId == null) _buildMenu()],
-      ),
-      body: isLoading ? const Center(child: CircularProgressIndicator()) : SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            _buildProfileImage(),
-            const SizedBox(height: 15),
-            _buildNameWithBadge(),
-            const SizedBox(height: 8),
-            if (!isEditing) _buildFollowStats(),
-            if (widget.teacherId != null) _buildFollowButton(),
-            const SizedBox(height: 25),
-            isEditing ? _buildEditForm() : _buildViewProfile(),
-            if (widget.teacherId == null && !isEditing) _buildToolsAndPayment(),
-            if (isEditing) _buildSaveCancelButtons(),
-          ],
-        ),
+      backgroundColor: const Color(0xFFF7F9FC),
+      body: isLoading ? const Center(child: CircularProgressIndicator()) : CustomScrollView(
+        slivers: [
+          SliverAppBar(
+            expandedHeight: 210,
+            pinned: true,
+            backgroundColor: Colors.blue[800],
+            elevation: 0,
+            centerTitle: true,
+            title: const Text('Teacher Profile', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+            leading: widget.teacherId != null ? IconButton(
+              icon: const Icon(Icons.arrow_back, color: Colors.white),
+              onPressed: () => Navigator.pop(context),
+            ) : null,
+            actions: [if (widget.teacherId == null) _buildMenu()],
+            flexibleSpace: FlexibleSpaceBar(
+              background: Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [Colors.blue[900]!, Colors.blue[700]!],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          SliverToBoxAdapter(
+            child: Transform.translate(
+              offset: const Offset(0, -60),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Column(
+                  children: [
+                    _buildProfileImage(),
+                    const SizedBox(height: 15),
+                    _buildNameWithBadge(),
+                    const SizedBox(height: 8),
+                    if (!isEditing) _buildFollowStats(),
+                    if (widget.teacherId != null) _buildFollowButton(),
+                    const SizedBox(height: 25),
+                    isEditing ? _buildEditForm() : _buildViewProfile(),
+                    if (widget.teacherId == null && !isEditing) _buildDashboardSection(),
+                    if (widget.teacherId == null && !isEditing) _buildToolsAndPayment(),
+                    if (isEditing) _buildSaveCancelButtons(),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
 
   Widget _buildMenu() {
     return PopupMenuButton<String>(
-      icon: const Icon(Icons.more_vert),
+      icon: const Icon(Icons.more_vert, color: Colors.white),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
       onSelected: (val) {
         if (val == 'edit') {
@@ -279,7 +310,16 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
         if (picked != null) setState(() => _selectedImage = File(picked.path));
       } : null,
       child: Stack(children: [
-        CircleAvatar(radius: 65, backgroundColor: Colors.blue[50], backgroundImage: _selectedImage != null ? FileImage(_selectedImage!) : (url != null ? NetworkImage(url) : null) as ImageProvider?),
+        Container(
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.white, width: 4),
+            boxShadow: [
+              BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 10, offset: const Offset(0, 5)),
+            ],
+          ),
+          child: CircleAvatar(radius: 60, backgroundColor: Colors.blue[50], backgroundImage: _selectedImage != null ? FileImage(_selectedImage!) : (url != null ? NetworkImage(url) : null) as ImageProvider?),
+        ),
         if (isEditing) Positioned(bottom: 0, right: 0, child: CircleAvatar(backgroundColor: Colors.blue[800], radius: 20, child: const Icon(Icons.camera_alt, color: Colors.white, size: 18))),
       ]),
     );
@@ -287,7 +327,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
 
   Widget _buildNameWithBadge() {
     return Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-      Text(_nameController.text.isEmpty ? "No Name" : _nameController.text, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+      Text(_nameController.text.isEmpty ? "No Name" : _nameController.text, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Color(0xFF1B1B1B))),
       if (teacherData?['isVerified'] ?? false) const Padding(padding: EdgeInsets.only(left: 6), child: Icon(Icons.verified, color: Colors.blue, size: 22)),
     ]);
   }
@@ -296,9 +336,9 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
     return StreamBuilder<QuerySnapshot>(
       stream: _firestore.collection('follows').where('teacherId', isEqualTo: targetUID).snapshots(),
       builder: (context, snap) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
         decoration: BoxDecoration(color: Colors.blue[50], borderRadius: BorderRadius.circular(20)),
-        child: Text('Followers: ${snap.data?.docs.length ?? 0}', style: TextStyle(color: Colors.blue[800], fontWeight: FontWeight.bold)),
+        child: Text('Followers: ${snap.data?.docs.length ?? 0}', style: TextStyle(color: Colors.blue[800], fontWeight: FontWeight.bold, fontSize: 13)),
       ),
     );
   }
@@ -317,18 +357,109 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
 
   Widget _buildViewProfile() {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      _infoTile("Bio", _bioController.text, Icons.description_outlined),
-      _infoTile("Teaching Class", _classController.text, Icons.school_outlined),
-      _infoTile("Gender", gender ?? "Not set", Icons.wc_outlined),
-      const SizedBox(height: 15),
-      const Text("Teaching Areas (Locations)", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+      _buildMaterial3Card("Bio", _bioController.text, Icons.description_outlined, const Color(0xFF3B82F6)),
+      _buildMaterial3Card("Teaching Class", _classController.text, Icons.school_outlined, const Color(0xFF10B981)),
+      _buildMaterial3Card("Gender", gender ?? "Not set", Icons.wc_outlined, const Color(0xFFF59E0B)),
+      const SizedBox(height: 20),
+      const Text("Teaching Areas (Locations)", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Color(0xFF1B1B1B))),
       const SizedBox(height: 8),
-      Wrap(spacing: 8, children: teacherLocations.map((l) => Chip(label: Text((l is Map) ? (l['address'] ?? "Unknown") : l.toString()), avatar: const Icon(Icons.location_on, size: 16))).toList()),
-      const Divider(height: 30),
-      const Text("Subjects", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+      Wrap(spacing: 8, children: teacherLocations.map((l) => Chip(label: Text((l is Map) ? (l['address'] ?? "Unknown") : l.toString()), avatar: const Icon(Icons.location_on, size: 16), backgroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), side: BorderSide(color: Colors.grey.shade200))).toList()),
+      const SizedBox(height: 20),
+      const Text("Subjects", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Color(0xFF1B1B1B))),
       const SizedBox(height: 8),
-      Wrap(spacing: 8, children: selectedSubjects.map((s) => Chip(label: Text(s), backgroundColor: Colors.blue[50])).toList()),
+      Wrap(spacing: 8, children: selectedSubjects.map((s) => Chip(label: Text(s), backgroundColor: Colors.blue[50], side: BorderSide.none, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)))).toList()),
     ]);
+  }
+
+  Widget _buildMaterial3Card(String title, String value, IconData icon, Color accentColor) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 8, offset: const Offset(0, 4)),
+        ],
+      ),
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        leading: Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(color: accentColor.withOpacity(0.1), borderRadius: BorderRadius.circular(12)),
+          child: Icon(icon, color: accentColor, size: 24),
+        ),
+        title: Text(title, style: TextStyle(fontSize: 12, color: Colors.grey.shade500, fontWeight: FontWeight.bold)),
+        subtitle: Padding(
+          padding: const EdgeInsets.only(top: 4.0),
+          child: Text(value.isEmpty ? "Not set" : value, style: const TextStyle(fontSize: 15, color: Color(0xFF1B1B1B), fontWeight: FontWeight.w600)),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDashboardSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.symmetric(vertical: 16),
+          child: Text("Teacher Dashboard", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17, color: Color(0xFF1B1B1B))),
+        ),
+        GridView.count(
+          crossAxisCount: 2,
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          mainAxisSpacing: 12,
+          crossAxisSpacing: 12,
+          childAspectRatio: 1.4,
+          children: [
+            _buildDashboardCard("Total Students", "12", Icons.people_alt_outlined, Colors.purple),
+            _buildDashboardCard("Today's Classes", "3", Icons.calendar_today_outlined, Colors.orange),
+            _buildDashboardCard("Pending Payments", "₹4,500", Icons.account_balance_wallet_outlined, Colors.red),
+            _buildDashboardCard("Live Classes", "Active", Icons.sensors_outlined, Colors.green),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDashboardCard(String title, String value, IconData icon, Color color) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [
+          BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 6, offset: const Offset(0, 3)),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(14.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.between,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(12)),
+                  child: Icon(icon, color: color, size: 20),
+                ),
+              ],
+            ),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(value, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1B1B1B))),
+                const SizedBox(height: 2),
+                Text(title, style: TextStyle(fontSize: 12, color: Colors.grey.shade500, fontWeight: FontWeight.w500)),
+              ],
+            )
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _buildEditForm() {
@@ -373,14 +504,36 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
 
   Widget _buildToolsAndPayment() {
     return Column(children: [
-      const Divider(height: 40),
-      Card(elevation: 2, child: ListTile(leading: const Icon(Icons.videocam, color: Colors.red), title: const Text("Go Live"), trailing: const Icon(Icons.chevron_right), onTap: () {})),
-      const SizedBox(height: 12),
-      Card(elevation: 3, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)), child: ListTile(leading: const Icon(Icons.receipt_long, color: Colors.indigo, size: 28), title: const Text("Payment Confirmations", style: TextStyle(fontWeight: FontWeight.bold)), trailing: const Icon(Icons.chevron_right), onTap: _showPaymentDisabledPopup)),
+      const SizedBox(height: 16),
+      Card(elevation: 1, color: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)), child: ListTile(leading: const Icon(Icons.videocam, color: Colors.red), title: const Text("Go Live", style: TextStyle(fontWeight: FontWeight.w600)), trailing: const Icon(Icons.chevron_right), onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => JoinLiveScreen(
+              currentUserId: _auth.currentUser?.uid ?? '',
+              currentUserName: _nameController.text.isEmpty ? 'Teacher' : _nameController.text,
+              isTeacher: true,
+            ),
+          ),
+        );
+      })),
+      const SizedBox(height: 8),
+      Card(elevation: 1, color: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)), child: ListTile(leading: const Icon(Icons.assignment_turned_in, color: Colors.teal), title: const Text("Tuition Management", style: TextStyle(fontWeight: FontWeight.w600)), trailing: const Icon(Icons.chevron_right), onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => TuitionManagementScreen(
+              currentUserId: _auth.currentUser?.uid ?? '',
+              currentUserName: _nameController.text.isEmpty ? 'Teacher' : _nameController.text,
+            ),
+          ),
+        );
+      })),
+      const SizedBox(height: 8),
+      Card(elevation: 1, color: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)), child: ListTile(leading: const Icon(Icons.receipt_long, color: Colors.indigo, size: 24), title: const Text("Payment Confirmations", style: TextStyle(fontWeight: FontWeight.w600)), trailing: const Icon(Icons.chevron_right), onTap: _showPaymentDisabledPopup)),
     ]);
   }
 
-  Widget _infoTile(String l, String v, IconData i) => ListTile(leading: Icon(i, color: Colors.blue[800]), title: Text(l, style: const TextStyle(fontSize: 12, color: Colors.grey)), subtitle: Text(v.isEmpty ? "Not set" : v, style: const TextStyle(fontSize: 16, color: Colors.black, fontWeight: FontWeight.w500)));
   Widget _editField(String l, TextEditingController c, IconData i, {int maxLines = 1}) => Padding(padding: const EdgeInsets.only(bottom: 15), child: TextField(controller: c, maxLines: maxLines, decoration: InputDecoration(labelText: l, prefixIcon: Icon(i), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))))));
 }
 
