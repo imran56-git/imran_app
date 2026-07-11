@@ -105,7 +105,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
             chatId: chatId,
             currentUserId: widget.currentUserId,
             receiverId: receiverId,
-            receiverName: receiverName,
+            receiverName: receiverName, // ChatScreen এর কন্সট্রাক্টরের সাথে ম্যাচ করা হলো
             receiverImage: receiverImage,
           ),
         ),
