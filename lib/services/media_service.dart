@@ -85,7 +85,8 @@ class MediaService {
     return null;
   }
 
-  Future<File?> compressImage(File file) async {
+  // এটিকে অ-নাল File রিটার্ন টাইপ করে দেওয়া হলো যাতে অ্যাসাইনমেন্টে ভুল না হয়
+  Future<File> compressImage(File file) async {
     try {
       final tempDir = await getTemporaryDirectory();
       final targetPath = path.join(
@@ -101,7 +102,7 @@ class MediaService {
         return File(result.path);
       }
     } catch (_) {}
-    return file;
+    return file; // ফেইল করলে বা নাল হলে ওরিজিনাল ফাইল ব্যাক করবে
   }
 
   Future<String?> uploadMedia({
@@ -112,7 +113,7 @@ class MediaService {
     try {
       File fileToUpload = file;
       if (mediaType == 'image') {
-        fileToUpload = await compressImage(file);
+        fileToUpload = await compressImage(file); // এখন আর টাইপ মিসম্যাচ এরর হবে না
       }
       final String fileName = '${DateTime.now().millisecondsSinceEpoch}${path.extension(fileToUpload.path)}';
       final Reference ref = _storage.ref().child('chatMedia').child(chatId).child(mediaType).child(fileName);
