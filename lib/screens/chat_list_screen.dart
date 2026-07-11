@@ -72,6 +72,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
     return '${date.day}/${date.month}/${date.year}';
   }
 
+  // আপডেট করা মেথড
   void _openChat({
     required Map<String, dynamic> chatData,
     required String chatDocId,
@@ -105,8 +106,8 @@ class _ChatListScreenState extends State<ChatListScreen> {
             chatId: chatId,
             currentUserId: widget.currentUserId,
             receiverId: receiverId,
-            receiverName: receiverName, // ChatScreen এর কন্সট্রাক্টরের সাথে ম্যাচ করা হলো
-            receiverImage: receiverImage,
+            teacherName: receiverName, // এখানে receiverName-কে teacherName প্যারামিটারে পাঠানো হলো
+            // যদি ChatScreen-এ receiverImage বা অন্য কিছু রিসিভ করার জায়গা থাকে, সেটা এখানে যোগ করুন
           ),
         ),
       );
