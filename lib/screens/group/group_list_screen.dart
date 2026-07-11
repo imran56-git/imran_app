@@ -1,188 +1,359 @@
-import 'package:flutter/material.dart';
+import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:intl/intl.dart'; 
-import 'create_group_screen.dart';
-import 'group_chat_screen.dart';
+import 'package:flutter/material.dart';
+import '../../services/chat_service.dart';
+import '../../services/media_service.dart';
+import '../../widgets/chat_input_bar.dart';
+import '../../widgets/attachment_bottom_sheet.dart';
+import '../../widgets/reply_message_widget.dart';
+import '../../widgets/message_bubble.dart';
+import '../../models/message_model.dart';
+import '../../utils/chat_colors.dart';
 
-class GroupListScreen extends StatefulWidget {
+class GroupChatScreen extends StatefulWidget {
+  final String groupName;
+  final String groupId;
   final String currentUserId;
   final String currentUserName;
 
-  const GroupListScreen({
-    super.key, 
-    required this.currentUserId, 
-    required this.currentUserName
+  const GroupChatScreen({
+    super.key,
+    required this.groupName,
+    required this.groupId,
+    required this.currentUserId,
+    required this.currentUserName,
   });
 
   @override
-  State<GroupListScreen> createState() => _GroupListScreenState();
+  State<GroupChatScreen> createState() => _GroupChatScreenState();
 }
 
-class _GroupListScreenState extends State<GroupListScreen> {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  String _searchQuery = "";
+class _GroupChatScreenState extends State<GroupChatScreen> {
+  final ChatService _chatService = ChatService();
+  final MediaService _mediaService = MediaService();
+  final ScrollController _scrollController = ScrollController();
+  
+  MessageModel? _replyingMessage;
+  bool _isRecording = false;
+  String _backgroundImage = 'assets/images/chat_bg.png';
 
-  // Formats timestamp into a readable string (Today's time or Previous date)
-  String _formatDateTime(Timestamp? timestamp) {
-    if (timestamp == null) return "";
-    DateTime date = timestamp.toDate();
-    DateTime now = DateTime.now();
-    
-    if (date.day == now.day && date.month == now.month && date.year == now.year) {
-      return DateFormat.jm().format(date); // Output: 10:30 AM
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  ImageProvider _buildBackgroundProvider() {
+    if (_backgroundImage.startsWith('assets/')) {
+      return AssetImage(_backgroundImage);
     }
-    return DateFormat('dd/MM/yy').format(date); // Output: 04/04/26
+    return FileImage(File(_backgroundImage));
+  }
+
+  void _handleSendMessage(String text, String type) {
+    _chatService.sendGroupMessage(
+      groupId: widget.groupId,
+      senderId: widget.currentUserId,
+      message: text,
+      type: type,
+      replyToMessageId: _replyingMessage?.messageId,
+    );
+    if (_replyingMessage != null) {
+      setState(() => _replyingMessage = null);
+    }
+    _scrollToBottom();
+  }
+
+  void _scrollToBottom() {
+    if (_scrollController.hasClients) {
+      _scrollController.animateTo(
+        0.0,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+      );
+    }
+  }
+
+  void _showAttachmentBottomSheet() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => AttachmentBottomSheet(
+        onDocumentTap: () => _pickAndSendMedia('document'),
+        onCameraTap: () => _pickAndSendMedia('camera_image'),
+        onGalleryTap: () => _pickAndSendMedia('image'),
+        onAudioTap: () => _pickAndSendMedia('audio'),
+        onLocationTap: () {},
+        onContactTap: () {},
+      ),
+    );
+  }
+
+  Future<void> _pickAndSendMedia(String type) async {
+    File? file;
+    if (type == 'image') {
+      file = await _mediaService.pickImageFromGallery();
+    } else if (type == 'camera_image') {
+      file = await _mediaService.captureImageFromCamera();
+      type = 'image';
+    } else if (type == 'document') {
+      file = await _mediaService.pickDocument();
+    } else if (type == 'audio') {
+      file = await _mediaService.pickAudio();
+    }
+
+    if (file != null) {
+      final String? url = await _mediaService.uploadMedia(
+        file: file,
+        chatId: widget.groupId,
+        mediaType: type,
+      );
+      if (url != null) {
+        _handleSendMessage(url, type);
+      }
+    }
+  }
+
+  Future<void> _showOptions({
+    required String messageId,
+    required String text,
+    required bool isMe,
+    required String type,
+  }) async {
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: Wrap(
+            children: [
+              if (isMe && type == 'text')
+                ListTile(
+                  leading: const Icon(Icons.edit),
+                  title: const Text('Edit Message'),
+                  onTap: () => Navigator.pop(context, 'edit'),
+                ),
+              ListTile(
+                leading: const Icon(Icons.delete_outline),
+                title: const Text('Delete for me'),
+                onTap: () => Navigator.pop(context, 'delete_me'),
+              ),
+              if (isMe)
+                ListTile(
+                  leading: const Icon(Icons.delete_forever_outlined),
+                  title: const Text('Delete for everyone'),
+                  onTap: () => Navigator.pop(context, 'delete_all'),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+
+    if (selected == 'edit') {
+      _showEditDialog(messageId, text);
+    } else if (selected == 'delete_all') {
+      await FirebaseFirestore.instance
+          .collection('groups')
+          .doc(widget.groupId)
+          .collection('messages')
+          .doc(messageId)
+          .update({
+        'content': 'This message was deleted',
+        'type': 'text',
+        'isDeletedForEveryone': true,
+      });
+    } else if (selected == 'delete_me') {
+      await FirebaseFirestore.instance
+          .collection('groups')
+          .doc(widget.groupId)
+          .collection('messages')
+          .doc(messageId)
+          .update({
+        'deletedForUsers': FieldValue.arrayUnion([widget.currentUserId]),
+      });
+    }
+  }
+
+  Future<void> _showEditDialog(String messageId, String oldText) async {
+    final controller = TextEditingController(text: oldText);
+    final result = await showDialog<String>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Edit Message'),
+        content: TextField(
+          controller: controller,
+          maxLines: 4,
+          decoration: const InputDecoration(
+            hintText: 'Update your message',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, controller.text.trim()),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+
+    if (result != null && result.isNotEmpty) {
+      await FirebaseFirestore.instance
+          .collection('groups')
+          .doc(widget.groupId)
+          .collection('messages')
+          .doc(messageId)
+          .update({
+        'content': result,
+        'isEdited': true,
+        'editTimestamp': FieldValue.serverTimestamp(),
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: ChatColors.bgLight,
       appBar: AppBar(
-        title: const Text(
-          'Groups', 
-          style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)
+        backgroundColor: ChatColors.appBarLight,
+        elevation: 0,
+        titleSpacing: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          onPressed: () => Navigator.pop(context),
         ),
-        backgroundColor: Colors.white,
-        elevation: 0.5,
+        title: Row(
+          children: [
+            const CircleAvatar(
+              radius: 18,
+              backgroundColor: Colors.white24,
+              child: Icon(Icons.groups, color: Colors.white),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    widget.groupName,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+                  ),
+                  const Text(
+                    'Group chat',
+                    style: TextStyle(fontSize: 11, color: Colors.white70),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.more_vert, color: Colors.black),
+            icon: const Icon(Icons.more_vert, color: Colors.white),
             onPressed: () {},
           ),
         ],
       ),
-      body: Column(
-        children: [
-          // Search Bar Implementation
-          Padding(
-            padding: const EdgeInsets.all(12.0),
-            child: TextField(
-              onChanged: (value) => setState(() => _searchQuery = value.toLowerCase()),
-              decoration: InputDecoration(
-                hintText: "Search your groups...",
-                prefixIcon: const Icon(Icons.search, size: 20),
-                filled: true,
-                fillColor: Colors.grey[100],
-                contentPadding: const EdgeInsets.symmetric(vertical: 0),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(30),
-                  borderSide: BorderSide.none,
-                ),
+      body: Container(
+        decoration: BoxDecoration(
+          image: DecorationImage(
+            image: _buildBackgroundProvider(),
+            fit: BoxFit.cover,
+          ),
+        ),
+        child: Column(
+          children: [
+            Expanded(
+              child: StreamBuilder<QuerySnapshot>(
+                stream: _chatService.getGroupMessagesStream(widget.groupId),
+                builder: (context, snapshot) {
+                  if (!snapshot.hasData) {
+                    return const Center(child: CircularProgressIndicator(color: ChatColors.primaryApp));
+                  }
+
+                  final docs = snapshot.data!.docs;
+
+                  return ListView.builder(
+                    controller: _scrollController,
+                    reverse: true,
+                    itemCount: docs.length,
+                    itemBuilder: (context, index) {
+                      final data = docs[index].data() as Map<String, dynamic>;
+                      
+                      final List<dynamic> deletedUsers = data['deletedForUsers'] ?? [];
+                      if (deletedUsers.contains(widget.currentUserId)) {
+                        return const SizedBox.shrink();
+                      }
+
+                      final messageText = (data['content'] ?? data['message'] ?? '').toString();
+                      final type = (data['type'] ?? 'text').toString();
+                      final bool isMe = data['senderId'] == widget.currentUserId;
+
+                      final messageModel = MessageModel(
+                        messageId: docs[index].id,
+                        senderId: data['senderId'] ?? '',
+                        receiverId: widget.groupId,
+                        message: messageText,
+                        type: type,
+                        status: 'seen',
+                        isDeletedForEveryone: data['isDeletedForEveryone'] ?? false,
+                        deletedForUsers: List<String>.from(deletedUsers),
+                        starredBy: List<String>.from(data['starredBy'] ?? []),
+                        reactions: Map<String, String>.from(data['reactions'] ?? {}),
+                        timestamp: data['timestamp'] != null ? (data['timestamp'] as Timestamp).toDate() : null,
+                      );
+
+                      return GestureDetector(
+                        onLongPress: () => _showOptions(
+                          messageId: docs[index].id,
+                          text: messageText,
+                          isMe: isMe,
+                          type: type,
+                        ),
+                        child: MessageBubble(
+                          message: messageModel,
+                          isMe: isMe,
+                          onSwipeToReply: () {
+                            setState(() => _replyingMessage = messageModel);
+                          },
+                          onDeleteForMe: () {},
+                          onDeleteForEveryone: () {},
+                          onReact: (emoji) {},
+                        ),
+                      );
+                    },
+                  );
+                },
               ),
             ),
-          ),
-          
-          Expanded(
-            child: StreamBuilder<QuerySnapshot>(
-              // Fetching only groups where the current user is a member
-              stream: _firestore
-                  .collection('groups')
-                  .where('members', arrayContains: widget.currentUserId)
-                  .orderBy('lastMessageTime', descending: true)
-                  .snapshots(),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator(color: Color(0xFF128C7E)));
-                }
-
-                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                  return _buildEmptyPlaceholder();
-                }
-
-                // Filtering list based on search query
-                var groupDocs = snapshot.data!.docs.where((doc) {
-                  return doc['name'].toString().toLowerCase().contains(_searchQuery);
-                }).toList();
-
-                return ListView.separated(
-                  itemCount: groupDocs.length,
-                  separatorBuilder: (context, index) => const Divider(height: 1, indent: 75, color: Color(0xFFEEEEEE)),
-                  itemBuilder: (context, index) {
-                    var data = groupDocs[index].data() as Map<String, dynamic>;
-                    
-                    return ListTile(
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                      leading: CircleAvatar(
-                        radius: 28,
-                        backgroundColor: Colors.grey[200],
-                        backgroundImage: (data['groupImageUrl'] != null && data['groupImageUrl'] != "") 
-                            ? NetworkImage(data['groupImageUrl']) 
-                            : null,
-                        child: (data['groupImageUrl'] == null || data['groupImageUrl'] == "") 
-                            ? const Icon(Icons.groups, color: Colors.grey, size: 30) 
-                            : null,
-                      ),
-                      title: Text(
-                        data['name'] ?? 'Unknown Group',
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                      ),
-                      subtitle: Text(
-                        data['lastMessage'] ?? "Start a conversation...",
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(color: Colors.blueGrey, fontSize: 14),
-                      ),
-                      trailing: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          Text(
-                            _formatDateTime(data['lastMessageTime'] as Timestamp?),
-                            style: const TextStyle(fontSize: 11, color: Colors.grey),
-                          ),
-                          const SizedBox(height: 4),
-                          // Optional: Unread message badge can be placed here
-                        ],
-                      ),
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => GroupChatScreen(
-                              groupId: data['id'],
-                              groupName: data['name'],
-                              currentUserId: widget.currentUserId,
-                              currentUserName: widget.currentUserName,
-                            ),
-                          ),
-                        );
-                      },
-                    );
-                  },
-                );
-              },
+            if (_replyingMessage != null)
+              ReplyMessageWidget(
+                messageSenderName: _replyingMessage!.senderId == widget.currentUserId ? 'You' : widget.currentUserName,
+                messageText: _replyingMessage!.message,
+                messageType: _replyingMessage!.type,
+                onCancelReply: () => setState(() => _replyingMessage = null),
+              ),
+            ChatInputBar(
+              onSendMessage: _handleSendMessage,
+              onAttachmentPressed: _showAttachmentBottomSheet,
+              onStartRecording: () => setState(() => _isRecording = true),
+              onStopRecording: () => setState(() => _isRecording = false),
+              onTypingStatusChanged: (_) {},
+              isBlocked: false,
+              isRecording: _isRecording,
             ),
-          ),
-        ],
-      ),
-      floatingActionButton: FloatingActionButton(
-        backgroundColor: const Color(0xFF128C7E),
-        elevation: 4,
-        onPressed: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (context) => CreateGroupScreen(teacherId: widget.currentUserId)),
-          );
-        },
-        child: const Icon(Icons.message, color: Colors.white),
-      ),
-    );
-  }
-
-  // Placeholder for when no groups are found
-  Widget _buildEmptyPlaceholder() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.chat_bubble_outline, size: 100, color: Colors.grey[200]),
-          const SizedBox(height: 15),
-          const Text(
-            "No active groups found", 
-            style: TextStyle(color: Colors.grey, fontSize: 16, fontWeight: FontWeight.w500)
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
