@@ -8,7 +8,6 @@ import '../../widgets/attachment_bottom_sheet.dart';
 import '../../widgets/reply_message_widget.dart';
 import '../../widgets/message_bubble.dart';
 import '../../models/message_model.dart';
-import '../../utils/chat_colors.dart';
 
 class GroupChatScreen extends StatefulWidget {
   final String groupName;
@@ -35,7 +34,7 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
 
   MessageModel? _replyingMessage;
   bool _isRecording = false;
-  String _backgroundImage = 'assets/images/chat_bg.png';
+  final String _backgroundImage = 'assets/images/chat_bg.png';
 
   @override
   void dispose() {
@@ -124,7 +123,7 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
       context: context,
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (context) {
         return SafeArea(
@@ -132,19 +131,19 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
             children: [
               if (isMe && type == 'text')
                 ListTile(
-                  leading: const Icon(Icons.edit),
-                  title: const Text('Edit Message'),
+                  leading: Icon(Icons.edit, color: Colors.blue[800]),
+                  title: const Text('Edit Message', style: TextStyle(fontWeight: FontWeight.w500)),
                   onTap: () => Navigator.pop(context, 'edit'),
                 ),
               ListTile(
-                leading: const Icon(Icons.delete_outline),
-                title: const Text('Delete for me'),
+                leading: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                title: const Text('Delete for me', style: TextStyle(fontWeight: FontWeight.w500)),
                 onTap: () => Navigator.pop(context, 'delete_me'),
               ),
               if (isMe)
                 ListTile(
-                  leading: const Icon(Icons.delete_forever_outlined),
-                  title: const Text('Delete for everyone'),
+                  leading: const Icon(Icons.delete_forever_outlined, color: Colors.red),
+                  title: const Text('Delete for everyone', style: TextStyle(fontWeight: FontWeight.w500, color: Colors.red)),
                   onTap: () => Navigator.pop(context, 'delete_all'),
                 ),
             ],
@@ -183,21 +182,31 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
     final result = await showDialog<String>(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text('Edit Message'),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Edit Message', style: TextStyle(fontWeight: FontWeight.bold)),
         content: TextField(
           controller: controller,
-          maxLines: 4,
-          decoration: const InputDecoration(
+          maxLines: 3,
+          decoration: InputDecoration(
             hintText: 'Update your message',
-            border: OutlineInputBorder(),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(color: Colors.blue[800]!, width: 2),
+            ),
           ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+            child: Text('Cancel', style: TextStyle(color: Colors.grey[600])),
           ),
           ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.blue[800],
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
             onPressed: () => Navigator.pop(context, controller.text.trim()),
             child: const Text('Save'),
           ),
@@ -222,23 +231,23 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: ChatColors.bgLight,
+      backgroundColor: const Color(0xFFF4F6F9), // লাইট থিমের জন্য মডার্ন ব্যাকগ্রাউন্ড কালার
       appBar: AppBar(
-        backgroundColor: ChatColors.appBarLight,
-        elevation: 0,
+        backgroundColor: Colors.blue[900], // প্রিমিয়াম ব্লু থিম কালার
+        elevation: 1,
         titleSpacing: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white, size: 20),
           onPressed: () => Navigator.pop(context),
         ),
         title: Row(
           children: [
-            const CircleAvatar(
-              radius: 18,
-              backgroundColor: Colors.white24,
-              child: Icon(Icons.groups, color: Colors.white),
+            CircleAvatar(
+              radius: 20,
+              backgroundColor: Colors.white.withOpacity(0.2),
+              child: const Icon(Icons.groups_rounded, color: Colors.white, size: 22),
             ),
-            const SizedBox(width: 10),
+            const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -246,11 +255,11 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
                   Text(
                     widget.groupName,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white, letterSpacing: 0.2),
                   ),
-                  const Text(
-                    'Group chat',
-                    style: TextStyle(fontSize: 11, color: Colors.white70),
+                  Text(
+                    'Tap for group info',
+                    style: TextStyle(fontSize: 11, color: Colors.white.withOpacity(0.75)),
                   ),
                 ],
               ),
@@ -259,16 +268,18 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.more_vert, color: Colors.white),
+            icon: const Icon(Icons.more_vert_rounded, color: Colors.white),
             onPressed: () {},
           ),
         ],
       ),
       body: Container(
         decoration: BoxDecoration(
+          color: const Color(0xFFF4F6F9),
           image: DecorationImage(
             image: _buildBackgroundProvider(),
             fit: BoxFit.cover,
+            opacity: 0.06, // ব্যাকগ্রাউন্ড ইমেজটিকে হালকা ব্লার ও প্রফেশনাল ভাইব দেওয়ার জন্য ওল্ড ডিজাইন পরিবর্তন
           ),
         ),
         child: Column(
@@ -278,7 +289,7 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
                 stream: _chatService.getGroupMessagesStream(widget.groupId),
                 builder: (context, snapshot) {
                   if (!snapshot.hasData) {
-                    return const Center(child: CircularProgressIndicator(color: ChatColors.primaryApp));
+                    return Center(child: CircularProgressIndicator(color: Colors.blue[800]));
                   }
 
                   final docs = snapshot.data!.docs;
@@ -286,6 +297,7 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
                   return ListView.builder(
                     controller: _scrollController,
                     reverse: true,
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     itemCount: docs.length,
                     itemBuilder: (context, index) {
                       final data = docs[index].data() as Map<String, dynamic>;
@@ -320,13 +332,17 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
                           isMe: isMe,
                           type: type,
                         ),
-                        child: MessageBubble(
-                          message: messageModel,
-                          isMe: isMe,
-                          timestamp: data['timestamp'] as Timestamp?, // এখানে বাধ্যতামূলক 'timestamp' প্যারামিটারটি যুক্ত করা হলো
-                          onDeleteForMe: () {},
-                          onDeleteForEveryone: () {},
-                          onReact: (emoji) {},
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 4),
+                          child: MessageBubble(
+                            message: messageModel,
+                            isMe: isMe,
+                            timestamp: data['timestamp'] as Timestamp?,
+                            messageId: messageModel.messageId, // এখানে বাধ্যতামূলক 'messageId' প্যারামিটারটি নিখুঁতভাবে যুক্ত করা হলো
+                            onDeleteForMe: () {},
+                            onDeleteForEveryone: () {},
+                            onReact: (emoji) {},
+                          ),
                         ),
                       );
                     },
@@ -335,20 +351,35 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
               ),
             ),
             if (_replyingMessage != null)
-              ReplyMessageWidget(
-                messageSenderName: _replyingMessage!.senderId == widget.currentUserId ? 'You' : widget.currentUserName,
-                messageText: _replyingMessage!.message,
-                messageType: _replyingMessage!.type,
-                onCancelReply: () => setState(() => _replyingMessage = null),
+              Container(
+                color: Colors.white,
+                child: ReplyMessageWidget(
+                  messageSenderName: _replyingMessage!.senderId == widget.currentUserId ? 'You' : widget.currentUserName,
+                  messageText: _replyingMessage!.message,
+                  messageType: _replyingMessage!.type,
+                  onCancelReply: () => setState(() => _replyingMessage = null),
+                ),
               ),
-            ChatInputBar(
-              onSendMessage: _handleSendMessage,
-              onAttachmentPressed: _showAttachmentBottomSheet,
-              onStartRecording: () => setState(() => _isRecording = true),
-              onStopRecording: () => setState(() => _isRecording = false),
-              onTypingStatusChanged: (_) {},
-              isBlocked: false,
-              isRecording: _isRecording,
+            Container(
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black12,
+                    blurRadius: 4,
+                    offset: Offset(0, -1),
+                  )
+                ]
+              ),
+              child: ChatInputBar(
+                onSendMessage: _handleSendMessage,
+                onAttachmentPressed: _showAttachmentBottomSheet,
+                onStartRecording: () => setState(() => _isRecording = true),
+                onStopRecording: () => setState(() => _isRecording = false),
+                onTypingStatusChanged: (_) {},
+                isBlocked: false,
+                isRecording: _isRecording,
+              ),
             ),
           ],
         ),
