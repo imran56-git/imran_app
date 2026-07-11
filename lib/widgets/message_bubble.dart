@@ -13,6 +13,12 @@ class MessageBubble extends StatefulWidget {
   final bool isSeen;
   final bool isDelivered;
 
+  // অন্য ফাইলগুলোর সাথে কম্প্যাটিবিলিটি (সামঞ্জস্য) বজায় রাখার জন্য এই প্যারামিটারগুলো যোগ করা হলো
+  final VoidCallback? onDeleteForMe;
+  final VoidCallback? onDeleteForEveryone;
+  final Function(String)? onReact;
+  final VoidCallback? onSwipeToReply;
+
   const MessageBubble({
     super.key,
     required this.message,
@@ -24,6 +30,10 @@ class MessageBubble extends StatefulWidget {
     required this.uploadVoiceMessage,
     this.isSeen = false,
     this.isDelivered = true,
+    this.onDeleteForMe,
+    this.onDeleteForEveryone,
+    this.onReact,
+    this.onSwipeToReply,
   });
 
   @override
