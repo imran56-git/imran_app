@@ -231,9 +231,9 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF4F6F9), // লাইট থিমের জন্য মডার্ন ব্যাকগ্রাউন্ড কালার
+      backgroundColor: const Color(0xFFF4F6F9),
       appBar: AppBar(
-        backgroundColor: Colors.blue[900], // প্রিমিয়াম ব্লু থিম কালার
+        backgroundColor: Colors.blue[900],
         elevation: 1,
         titleSpacing: 0,
         leading: IconButton(
@@ -279,7 +279,7 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
           image: DecorationImage(
             image: _buildBackgroundProvider(),
             fit: BoxFit.cover,
-            opacity: 0.06, // ব্যাকগ্রাউন্ড ইমেজটিকে হালকা ব্লার ও প্রফেশনাল ভাইব দেওয়ার জন্য ওল্ড ডিজাইন পরিবর্তন
+            opacity: 0.06,
           ),
         ),
         child: Column(
@@ -338,7 +338,8 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
                             message: messageModel,
                             isMe: isMe,
                             timestamp: data['timestamp'] as Timestamp?,
-                            messageId: messageModel.messageId, // এখানে বাধ্যতামূলক 'messageId' প্যারামিটারটি নিখুঁতভাবে যুক্ত করা হলো
+                            messageId: messageModel.messageId,
+                            type: type, // <--- এখানে বাধ্যতামূলক 'type' প্যারামিটারটি যুক্ত করে দেওয়া হলো
                             onDeleteForMe: () {},
                             onDeleteForEveryone: () {},
                             onReact: (emoji) {},
