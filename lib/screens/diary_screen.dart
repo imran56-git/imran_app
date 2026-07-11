@@ -1,473 +1,329 @@
-import 'dart:io';
-import 'dart:ui';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
-import '../utils/image_utils.dart';
-import '../utils/chat_colors.dart';
-import '../widgets/success_toast.dart';
-import 'location_picker_screen.dart';
-import 'tuition_management_screen.dart';
-import 'live/join_live_screen.dart';
+import '../../models/diary_model.dart';
+import '../../models/attendance_model.dart';
+import '../../services/diary_service.dart';
+import '../../services/attendance_service.dart';
+import '../../services/reminder_service.dart';
+import '../../widgets/success_toast.dart';
 
-class TeacherProfileScreen extends StatefulWidget {
-  final String? teacherId;
-  const TeacherProfileScreen({super.key, this.teacherId});
+class DiaryScreen extends StatefulWidget {
+  final String currentUserId;
+  final String currentUserName;
+
+  const DiaryScreen({
+    super.key,
+    required this.currentUserId,
+    required this.currentUserName,
+  });
 
   @override
-  State<TeacherProfileScreen> createState() => _TeacherProfileScreenState();
+  State<DiaryScreen> createState() => _DiaryScreenState();
 }
 
-class _TeacherProfileScreenState extends State<TeacherProfileScreen> with TickerProviderStateMixin {
-  final FirebaseAuth _auth = FirebaseAuth.instance;
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final FirebaseStorage _storage = FirebaseStorage.instance;
-  final ImagePicker _picker = ImagePicker();
+class _DiaryScreenState extends State<DiaryScreen> {
+  final DiaryService _diaryService = DiaryService();
+  final AttendanceService _attendanceService = AttendanceService();
+  final ReminderService _reminderService = ReminderService();
 
-  Map<String, dynamic>? teacherData;
-  bool isLoading = true, isEditing = false, isFollowing = false;
-  File? _selectedImage;
+  final TextEditingController _searchController = TextEditingController();
+  final TextEditingController _subjectController = TextEditingController();
+  final TextEditingController _topicController = TextEditingController();
+  final TextEditingController _homeworkController = TextEditingController();
+  final TextEditingController _noteController = TextEditingController();
 
-  final TextEditingController _nameController = TextEditingController();
-  final TextEditingController _phoneController = TextEditingController();
-  final TextEditingController _classController = TextEditingController();
-  final TextEditingController _bioController = TextEditingController();
-  final TextEditingController _subjectSearchController = TextEditingController();
+  Map<String, dynamic>? _foundStudent;
+  bool _isSearching = false;
+  bool _isSaving = false;
 
-  String? gender;
-  List<String> selectedSubjects = [];
-  List<dynamic> teacherLocations = [];
+  DateTime _selectedDate = DateTime.now();
+  String _attendanceStatus = 'Present';
 
-  String get targetUID => widget.teacherId ?? _auth.currentUser?.uid ?? "";
+  final List<String> _attendanceStates = ['Present', 'Absent', 'Late', 'Holiday'];
+  final List<String> _months = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+  ];
 
-  @override
-  void initState() {
-    super.initState();
-    fetchTeacherData();
-    checkFollowStatus();
-  }
+  void _searchStudent() async {
+    final searchId = _searchController.text.trim();
+    if (searchId.isEmpty) return;
 
-  Future<void> fetchTeacherData() async {
-    if (targetUID.isEmpty) return;
+    setState(() {
+      _isSearching = true;
+      _foundStudent = null;
+    });
+
     try {
-      final doc = await _firestore.collection('teachers').doc(targetUID).get();
-      if (doc.exists && mounted) {
-        setState(() {
-          teacherData = doc.data();
-          _nameController.text = teacherData?['name'] ?? '';
-          _phoneController.text = teacherData?['phone'] ?? '';
-          _classController.text = teacherData?['class'] ?? '';
-          _bioController.text = teacherData?['bio'] ?? '';
-          gender = teacherData?['gender'];
-          selectedSubjects = List<String>.from(teacherData?['subjects'] ?? []);
-          teacherLocations = List.from(teacherData?['locations'] ?? []);
-          isLoading = false;
-        });
-      }
-    } catch (e) {
-      if (mounted) setState(() => isLoading = false);
-    }
-  }
-
-  void checkFollowStatus() async {
-    final currentUID = _auth.currentUser?.uid;
-    if (currentUID == null || widget.teacherId == null) return;
-    final doc = await _firestore.collection('follows').doc('${currentUID}_${widget.teacherId}').get();
-    if (mounted) setState(() => isFollowing = doc.exists);
-  }
-
-  void toggleFollow() async {
-    final currentUID = _auth.currentUser?.uid;
-    if (currentUID == null || widget.teacherId == null) return;
-    final docRef = _firestore.collection('follows').doc('${currentUID}_${widget.teacherId}');
-    try {
-      isFollowing ? await docRef.delete() : await docRef.set({
-          'teacherId': widget.teacherId,
-          'studentId': currentUID,
-          'timestamp': FieldValue.serverTimestamp(),
-        });
-      checkFollowStatus();
-    } catch (e) {
-      debugPrint('$e');
-    }
-  }
-
-  void _openMapPicker() async {
-    final List<Map<String, dynamic>>? results = await Navigator.push(
-      context, MaterialPageRoute(builder: (context) => const LocationPickerScreen()),
-    );
-    if (results != null && results.isNotEmpty) {
-      setState(() => teacherLocations.addAll(results));
-    }
-  }
-
-  Future<void> updateTeacherProfile() async {
-    final uid = _auth.currentUser?.uid;
-    if (uid == null) return;
-    setState(() => isLoading = true);
-    try {
-      String? imageUrl = teacherData?['profileImageUrl'];
-      if (_selectedImage != null) {
-        File? compressedFile = await ImageHelper.compressImage(_selectedImage!);
-        final ref = _storage.ref().child('teachers/$uid/profile.jpg');
-        await ref.putFile(compressedFile ?? _selectedImage!);
-        imageUrl = await ref.getDownloadURL();
-      }
-      await _firestore.collection('teachers').doc(uid).update({
-        'name': _nameController.text.trim(),
-        'phone': _phoneController.text.trim(),
-        'class': _classController.text.trim(),
-        'bio': _bioController.text.trim(),
-        'gender': gender,
-        'profileImageUrl': imageUrl,
-        'subjects': selectedSubjects,
-        'locations': teacherLocations,
+      final student = await _reminderService.searchStudentById(searchId);
+      setState(() {
+        _foundStudent = student;
+        _isSearching = false;
       });
-      if (mounted) {
-        SuccessToast.show(context, 'Updated Successfully');
-        setState(() => isEditing = false);
-        fetchTeacherData();
+      if (student == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Student not found! Check the ID.')),
+          );
+        }
       }
-    } catch (e) { 
-      if (mounted) setState(() => isLoading = false); 
+    } catch (e) {
+      if (mounted) setState(() => _isSearching = false);
     }
   }
 
-  void _showAnimatedPopup({
-    required String title,
-    required String message,
-    required String confirmText,
-    required VoidCallback onConfirm,
-    bool isDelete = false,
-  }) {
-    showGeneralDialog(
-      context: context,
-      barrierDismissible: true,
-      barrierLabel: '',
-      transitionDuration: const Duration(milliseconds: 300),
-      pageBuilder: (context, a1, a2) => const SizedBox(),
-      transitionBuilder: (context, anim, a2, child) {
-        return BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
-          child: ScaleTransition(
-            scale: Tween<double>(begin: 0.85, end: 1.0).animate(CurvedAnimation(parent: anim, curve: Curves.easeOutBack)),
-            child: FadeTransition(
-              opacity: anim,
-              child: AlertDialog(
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 22)),
-                content: Text(message, style: const TextStyle(fontSize: 16, color: Colors.black87)),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: const Text('Cancel', style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold, fontSize: 16)),
-                  ),
-                  ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: isDelete ? Colors.red : Colors.blue[800],
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    ),
-                    onPressed: () {
-                      Navigator.pop(context);
-                      onConfirm();
-                    },
-                    child: Text(confirmText, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
+  void _saveDiaryAndAttendance() async {
+    if (_foundStudent == null || _subjectController.text.isEmpty) return;
 
-  void _showPaymentDisabledPopup() {
-    showGeneralDialog(
-      context: context,
-      barrierDismissible: true,
-      barrierLabel: '',
-      transitionDuration: const Duration(milliseconds: 250),
-      pageBuilder: (context, a1, a2) => const SizedBox(),
-      transitionBuilder: (context, anim, a2, child) {
-        return ScaleTransition(
-          scale: Tween<double>(begin: 0.9, end: 1.0).animate(CurvedAnimation(parent: anim, curve: Curves.easeOut)),
-          child: FadeTransition(
-            opacity: anim,
-            child: AlertDialog(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: const [
-                  Text('This service is currently disabled.', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                  SizedBox(height: 10),
-                  Text('We are working on this feature.', style: TextStyle(color: Colors.grey, fontSize: 14)),
-                  Text('It will be available in a future update.', style: TextStyle(color: Colors.grey, fontSize: 14)),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('OK', style: TextStyle(fontWeight: FontWeight.bold)),
-                )
-              ],
-            ),
-          ),
-        );
-      },
-    );
+    setState(() => _isSaving = true);
+
+    try {
+      final String diaryId = DateTime.now().millisecondsSinceEpoch.toString();
+      final String currentMonth = _months[_selectedDate.month - 1];
+
+      final diary = DiaryModel(
+        diaryId: diaryId,
+        studentName: _foundStudent!['name'] ?? 'Student',
+        studentId: _foundStudent!['uid'] ?? '',
+        teacherId: widget.currentUserId,
+        month: currentMonth,
+        date: _selectedDate,
+        subject: _subjectController.text.trim(),
+        topicCovered: _topicController.text.trim(),
+        homework: _homeworkController.text.trim(),
+        privateNote: _noteController.text.trim(),
+      );
+
+      final attendance = AttendanceModel(
+        attendanceId: diaryId,
+        studentId: _foundStudent!['uid'] ?? '',
+        studentName: _foundStudent!['name'] ?? 'Student',
+        teacherId: widget.currentUserId,
+        date: _selectedDate,
+        status: _attendanceStatus,
+      );
+
+      await _diaryService.saveDiaryEntry(diary);
+      await _attendanceService.saveAttendance(attendance);
+
+      if (mounted) {
+        SuccessToast.show(context, 'Diary Saved Successfully');
+        setState(() {
+          _foundStudent = null;
+          _searchController.clear();
+          _subjectController.clear();
+          _topicController.clear();
+          _homeworkController.clear();
+          _noteController.clear();
+          _attendanceStatus = 'Present';
+          _isSaving = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _isSaving = false);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF7F9FC),
-      body: isLoading ? const Center(child: CircularProgressIndicator()) : CustomScrollView(
-        slivers: [
-          SliverAppBar(
-            expandedHeight: 210,
-            pinned: true,
-            backgroundColor: Colors.blue[800],
-            elevation: 0,
-            centerTitle: true,
-            title: const Text('Teacher Profile', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
-            leading: widget.teacherId != null ? IconButton(
-              icon: const Icon(Icons.arrow_back, color: Colors.white),
-              onPressed: () => Navigator.pop(context),
-            ) : null,
-            actions: [if (widget.teacherId == null) _buildMenu()],
-            flexibleSpace: FlexibleSpaceBar(
-              background: Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [Colors.blue[900]!, Colors.blue[700]!],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
+      appBar: AppBar(
+        title: const Text('My Diary', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+        backgroundColor: Colors.blue[800],
+        foregroundColor: Colors.white,
+        elevation: 0,
+        centerTitle: true,
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 8, offset: const Offset(0, 4))],
+              ),
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Select Student', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF1B1B1B))),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _searchController,
+                          decoration: InputDecoration(
+                            hintText: 'Enter Student User ID',
+                            prefixIcon: const Icon(Icons.tag),
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                            contentPadding: const EdgeInsets.symmetric(vertical: 14),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.blue[800],
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        onPressed: _isSearching ? null : _searchStudent,
+                        child: _isSearching 
+                            ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                            : const Icon(Icons.search),
+                      ),
+                    ],
                   ),
-                ),
+                ],
               ),
             ),
-          ),
-          SliverToBoxAdapter(
-            child: Transform.translate(
-              offset: const Offset(0, -60),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
+            if (_foundStudent != null) ...[
+              const SizedBox(height: 20),
+              Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 8, offset: const Offset(0, 4))],
+                ),
+                padding: const EdgeInsets.all(16),
                 child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _buildProfileImage(),
-                    const SizedBox(height: 15),
-                    _buildNameWithBadge(),
-                    const SizedBox(height: 8),
-                    if (!isEditing) _buildFollowStats(),
-                    if (widget.teacherId != null) _buildFollowButton(),
-                    const SizedBox(height: 25),
-                    isEditing ? _buildEditForm() : _buildViewProfile(),
-                    if (widget.teacherId == null && !isEditing) _buildDashboardSection(),
-                    if (widget.teacherId == null && !isEditing) _buildToolsAndPayment(),
-                    if (isEditing) _buildSaveCancelButtons(),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Student: ${_foundStudent!['name'] ?? 'No Name'}',
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Color(0xFF1B1B1B)),
+                        ),
+                        InkWell(
+                          onTap: () async {
+                            final picked = await showDatePicker(
+                              context: context,
+                              initialDate: _selectedDate,
+                              firstDate: DateTime.now().subtract(const Duration(days: 365)),
+                              lastDate: DateTime.now().add(const Duration(days: 30)),
+                            );
+                            if (picked != null) setState(() => _selectedDate = picked);
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            decoration: BoxDecoration(color: Colors.blue[50], borderRadius: BorderRadius.circular(10)),
+                            child: Row(
+                              children: [
+                                Icon(Icons.calendar_today, size: 14, color: Colors.blue[800]),
+                                const SizedBox(width: 6),
+                                Text(
+                                  '${_selectedDate.day}/${_selectedDate.month}/${_selectedDate.year}',
+                                  style: TextStyle(color: Colors.blue[800], fontWeight: FontWeight.bold, fontSize: 13),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const Divider(height: 24),
+                    const Text('Attendance Status', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.black54)),
+                    const SizedBox(height: 10),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: _attendanceStates.map((state) {
+                        final isSelected = _attendanceStatus == state;
+                        Color btnColor = Colors.grey.shade200;
+                        Color textColor = Colors.black87;
+                        if (isSelected) {
+                          if (state == 'Present') { btnColor = const Color(0xFF10B981); textColor = Colors.white; }
+                          if (state == 'Absent') { btnColor = const Color(0xFFEF4444); textColor = Colors.white; }
+                          if (state == 'Late') { btnColor = const Color(0xFFF59E0B); textColor = Colors.white; }
+                          if (state == 'Holiday') { btnColor = const Color(0xFF3B82F6); textColor = Colors.white; }
+                        }
+                        return Expanded(
+                          child: GestureDetector(
+                            onTap: () => setState(() => _attendanceStatus = state),
+                            child: Container(
+                              margin: const EdgeInsets.symmetric(horizontal: 4),
+                              padding: const EdgeInsets.symmetric(vertical: 10),
+                              decoration: BoxDecoration(color: btnColor, borderRadius: BorderRadius.circular(10)),
+                              child: Center(
+                                child: Text(
+                                  state,
+                                  style: TextStyle(color: textColor, fontWeight: FontWeight.bold, fontSize: 13),
+                                ),
+                              ),
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                    const Divider(height: 32),
+                    TextField(
+                      controller: _subjectController,
+                      decoration: InputDecoration(
+                        labelText: 'Subject',
+                        prefixIcon: const Icon(Icons.book_outlined),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: _topicController,
+                      decoration: InputDecoration(
+                        labelText: 'Topic Covered',
+                        prefixIcon: const Icon(Icons.assignment_outlined),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: _homeworkController,
+                      maxLines: 2,
+                      decoration: InputDecoration(
+                        labelText: 'Homework Assigned',
+                        prefixIcon: const Icon(Icons.edit_note_outlined),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: _noteController,
+                      maxLines: 2,
+                      decoration: InputDecoration(
+                        labelText: 'Private Note (Only for you)',
+                        prefixIcon: const Icon(Icons.lock_outline),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                    ),
                   ],
                 ),
               ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildMenu() {
-    return PopupMenuButton<String>(
-      icon: const Icon(Icons.more_vert, color: Colors.white),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-      onSelected: (val) {
-        if (val == 'edit') {
-          setState(() => isEditing = true);
-        } else if (val == 'signout') {
-          _showAnimatedPopup(
-            title: 'Sign Out', 
-            message: 'Are you sure you want to sign out?', 
-            confirmText: 'Confirm', 
-            onConfirm: () async {
-              try {
-                await _auth.signOut();
-                if (mounted) {
-                  Navigator.of(context).popUntil((route) => route.isFirst);
-                }
-              } catch (e) {
-                debugPrint("Sign out failed: $e");
-              }
-            }
-          );
-        } else if (val == 'delete') {
-          _showAnimatedPopup(
-            title: 'Delete Account', 
-            message: 'This will permanently delete your account.\nAre you sure?', 
-            confirmText: 'Delete', 
-            isDelete: true, 
-            onConfirm: () async {
-              try {
-                await _auth.currentUser?.delete();
-                if (mounted) {
-                  Navigator.of(context).popUntil((route) => route.isFirst);
-                }
-              } catch (e) {
-                debugPrint("Delete account failed: $e");
-              }
-            }
-          );
-        }
-      },
-      itemBuilder: (ctx) => [
-        const PopupMenuItem(value: 'edit', child: Row(children: [Icon(Icons.edit_outlined, size: 20), SizedBox(width: 10), Text('Edit Profile')])),
-        const PopupMenuItem(value: 'signout', child: Row(children: [Icon(Icons.logout, size: 20, color: Colors.orange), SizedBox(width: 10), Text('Sign Out')])),
-        const PopupMenuItem(value: 'delete', child: Row(children: [Icon(Icons.delete_forever, size: 20, color: Colors.red), SizedBox(width: 10), Text('Delete Account', style: TextStyle(color: Colors.red))])),
-      ],
-    );
-  }
-
-  Widget _buildProfileImage() {
-    final url = teacherData?['profileImageUrl'];
-    return GestureDetector(
-      onTap: isEditing ? () async {
-        final picked = await _picker.pickImage(source: ImageSource.gallery, imageQuality: 80);
-        if (picked != null) setState(() => _selectedImage = File(picked.path));
-      } : null,
-      child: Stack(children: [
-        Container(
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            border: Border.all(color: Colors.white, width: 4),
-            boxShadow: [
-              BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 10, offset: const Offset(0, 5)),
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                height: 52,
+                child: ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF10B981),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    elevation: 2,
+                  ),
+                  onPressed: _isSaving || _subjectController.text.isEmpty ? null : _saveDiaryAndAttendance,
+                  icon: const Icon(Icons.save_rounded),
+                  label: _isSaving 
+                      ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5))
+                      : const Text('SAVE DIARY ENTRY', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, letterSpacing: 0.5)),
+                ),
+              ),
             ],
-          ),
-          child: CircleAvatar(radius: 60, backgroundColor: Colors.blue[50], backgroundImage: _selectedImage != null ? FileImage(_selectedImage!) : (url != null ? NetworkImage(url) : null) as ImageProvider?),
-        ),
-        if (isEditing) Positioned(bottom: 0, right: 0, child: CircleAvatar(backgroundColor: Colors.blue[800], radius: 20, child: const Icon(Icons.camera_alt, color: Colors.white, size: 18))),
-      ]),
-    );
-  }
-
-  Widget _buildNameWithBadge() {
-    return Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-      Text(_nameController.text.isEmpty ? "No Name" : _nameController.text, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Color(0xFF1B1B1B))),
-      if (teacherData?['isVerified'] ?? false) const Padding(padding: EdgeInsets.only(left: 6), child: Icon(Icons.verified, color: Colors.blue, size: 22)),
-    ]);
-  }
-
-  Widget _buildFollowStats() {
-    return StreamBuilder<QuerySnapshot>(
-      stream: _firestore.collection('follows').where('teacherId', isEqualTo: targetUID).snapshots(),
-      builder: (context, snap) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-        decoration: BoxDecoration(color: Colors.blue[50], borderRadius: BorderRadius.circular(20)),
-        child: Text('Followers: ${snap.data?.docs.length ?? 0}', style: TextStyle(color: Colors.blue[800], fontWeight: FontWeight.bold, fontSize: 13)),
-      ),
-    );
-  }
-
-  Widget _buildFollowButton() {
-    return Padding(
-      padding: const EdgeInsets.only(top: 15),
-      child: ElevatedButton.icon(
-        onPressed: toggleFollow,
-        icon: Icon(isFollowing ? Icons.check : Icons.person_add),
-        label: Text(isFollowing ? 'Following' : 'Follow Teacher'),
-        style: ElevatedButton.styleFrom(backgroundColor: isFollowing ? Colors.green : Colors.blue[800], foregroundColor: Colors.white, minimumSize: const Size(180, 45)),
-      ),
-    );
-  }
-
-  Widget _buildViewProfile() {
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      _buildMaterial3Card("Bio", _bioController.text, Icons.description_outlined, const Color(0xFF3B82F6)),
-      _buildMaterial3Card("Teaching Class", _classController.text, Icons.school_outlined, const Color(0xFF10B981)),
-      _buildMaterial3Card("Gender", gender ?? "Not set", Icons.wc_outlined, const Color(0xFFF59E0B)),
-      const SizedBox(height: 20),
-      const Text("Teaching Areas (Locations)", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Color(0xFF1B1B1B))),
-      const SizedBox(height: 8),
-      Wrap(spacing: 8, children: teacherLocations.map((l) => Chip(label: Text((l is Map) ? (l['address'] ?? "Unknown") : l.toString()), avatar: const Icon(Icons.location_on, size: 16), backgroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), side: BorderSide(color: Colors.grey.shade200))).toList()),
-      const SizedBox(height: 20),
-      const Text("Subjects", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Color(0xFF1B1B1B))),
-      const SizedBox(height: 8),
-      Wrap(spacing: 8, children: selectedSubjects.map((s) => Chip(label: Text(s), backgroundColor: Colors.blue[50], side: BorderSide.none, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)))).toList()),
-    ]);
-  }
-
-  Widget _buildMaterial3Card(String title, String value, IconData icon, Color accentColor) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 8, offset: const Offset(0, 4)),
-        ],
-      ),
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-        leading: Container(
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(color: accentColor.withOpacity(0.1), borderRadius: BorderRadius.circular(12)),
-          child: Icon(icon, color: accentColor, size: 24),
-        ),
-        title: Text(title, style: TextStyle(fontSize: 12, color: Colors.grey.shade500, fontWeight: FontWeight.bold)),
-        subtitle: Padding(
-          padding: const EdgeInsets.only(top: 4.0),
-          child: Text(value.isEmpty ? "Not set" : value, style: const TextStyle(fontSize: 15, color: Color(0xFF1B1B1B), fontWeight: FontWeight.w600)),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildDashboardSection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Padding(
-          padding: EdgeInsets.symmetric(vertical: 16),
-          child: Text("Teacher Dashboard", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17, color: Color(0xFF1B1B1B))),
-        ),
-        GridView.count(
-          crossAxisCount: 2,
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          mainAxisSpacing: 12,
-          crossAxisSpacing: 12,
-          childAspectRatio: 1.4,
-          children: [
-            _buildDashboardCard("Total Students", "12", Icons.people_alt_outlined, Colors.purple),
-            _buildDashboardCard("Today's Classes", "3", Icons.calendar_today_outlined, Colors.orange),
-            _buildDashboardCard("Pending Payments", "₹4,500", Icons.account_balance_wallet_outlined, Colors.red),
-            _buildDashboardCard("Live Classes", "Active", Icons.sensors_outlined, Colors.green),
           ],
         ),
-      ],
+      ),
     );
   }
-
-  Widget _buildDashboardCard(String title, String value, IconData icon, Color color) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 6, offset: const Offset(0, 3)),
-        ],
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(14.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-              
+}
