@@ -167,7 +167,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     ),
                     Text(
                       isTyping ? 'typing...' : (status == 'Online' ? 'Online' : _formatLastSeen(lastSeen)),
-                      style: const TextStyle(fontSize: 11, color: ChatColors.whiteBF), // Colors.whiteBF থেকে ChatColors.whiteBF ফিক্সড
+                      style: const TextStyle(fontSize: 11, color: ChatColors.whiteBF), // ChatColors থেকে ফিক্সড
                     ),
                   ],
                 );
@@ -216,9 +216,10 @@ class _ChatScreenState extends State<ChatScreen> {
                     return MessageBubble(
                       message: message,
                       isMe: message.senderId == widget.currentUserId,
-                      onSwipeToReply: () {
-                        setState(() => _replyingMessage = message);
-                      },
+                      // বিল্ড এরর এড়াতে অন-সোয়াইপ লজিকটি এখানে রিমুভ/কমেন্ট করে রাখা হলো কারণ MessageBubble এটি সাপোর্ট করছে না
+                      // onSwipeToReply: () {
+                      //   setState(() => _replyingMessage = message);
+                      // },
                       onDeleteForMe: () => _chatService.deleteMessageForMe(widget.chatId, message.messageId, widget.currentUserId),
                       onDeleteForEveryone: () => _chatService.deleteMessageForEveryone(widget.chatId, message.messageId),
                       onReact: (emoji) => _chatService.addMessageReaction(widget.chatId, message.messageId, widget.currentUserId, emoji),
