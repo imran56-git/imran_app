@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../widgets/tuition_cards.dart';
 import 'reminder_screen.dart';
-import 'diary_screen.dart';
+import 'package:find_your_best_teacher_today/screens/diary_screen.dart';
 
 class TuitionManagementScreen extends StatelessWidget {
   final String currentUserId;
