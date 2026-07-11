@@ -70,7 +70,7 @@ class AttachmentBottomSheet extends StatelessWidget {
           ),
           const SizedBox(height: 24),
           GridView.count(
-            crossCount: 3,
+            crossAxisCount: 3, // crossCount থেকে বদলে crossAxisCount করা হলো
             shrinkWrap: true,
             mainAxisSpacing: 20,
             crossAxisSpacing: 10,
