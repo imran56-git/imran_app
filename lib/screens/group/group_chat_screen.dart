@@ -114,10 +114,8 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
   }
 
   Future<void> _showOptions({
-    required String messageId,
-    required String text,
+    required MessageModel message,
     required bool isMe,
-    required String type,
   }) async {
     final selected = await showModalBottomSheet<String>(
       context: context,
@@ -129,7 +127,12 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
         return SafeArea(
           child: Wrap(
             children: [
-              if (isMe && type == 'text')
+              ListTile(
+                leading: Icon(Icons.reply_rounded, color: Colors.blue[800]),
+                title: const Text('Reply', style: TextStyle(fontWeight: FontWeight.w500)),
+                onTap: () => Navigator.pop(context, 'reply'),
+              ),
+              if (isMe && message.type == 'text' && !message.isDeletedForEveryone)
                 ListTile(
                   leading: Icon(Icons.edit, color: Colors.blue[800]),
                   title: const Text('Edit Message', style: TextStyle(fontWeight: FontWeight.w500)),
@@ -140,7 +143,7 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
                 title: const Text('Delete for me', style: TextStyle(fontWeight: FontWeight.w500)),
                 onTap: () => Navigator.pop(context, 'delete_me'),
               ),
-              if (isMe)
+              if (isMe && !message.isDeletedForEveryone)
                 ListTile(
                   leading: const Icon(Icons.delete_forever_outlined, color: Colors.red),
                   title: const Text('Delete for everyone', style: TextStyle(fontWeight: FontWeight.w500, color: Colors.red)),
@@ -152,14 +155,16 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
       },
     );
 
-    if (selected == 'edit') {
-      _showEditDialog(messageId, text);
+    if (selected == 'reply') {
+      setState(() => _replyingMessage = message);
+    } else if (selected == 'edit') {
+      _showEditDialog(message.messageId, message.message);
     } else if (selected == 'delete_all') {
       await FirebaseFirestore.instance
           .collection('groups')
           .doc(widget.groupId)
           .collection('messages')
-          .doc(messageId)
+          .doc(message.messageId)
           .update({
         'content': 'This message was deleted',
         'type': 'text',
@@ -170,7 +175,7 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
           .collection('groups')
           .doc(widget.groupId)
           .collection('messages')
-          .doc(messageId)
+          .doc(message.messageId)
           .update({
         'deletedForUsers': FieldValue.arrayUnion([widget.currentUserId]),
       });
@@ -311,6 +316,13 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
                       final type = (data['type'] ?? 'text').toString();
                       final bool isMe = data['senderId'] == widget.currentUserId;
 
+                      // নিরাপদ উপায়ে টাইমস্ট্যাম্প পার্স করা
+                      dynamic rawTimestamp = data['timestamp'];
+                      Timestamp? messageTimestamp;
+                      if (rawTimestamp is Timestamp) {
+                        messageTimestamp = rawTimestamp;
+                      }
+
                       final messageModel = MessageModel(
                         messageId: docs[index].id,
                         senderId: data['senderId'] ?? '',
@@ -322,26 +334,24 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
                         deletedForUsers: List<String>.from(deletedUsers),
                         starredBy: List<String>.from(data['starredBy'] ?? []),
                         reactions: Map<String, String>.from(data['reactions'] ?? {}),
-                        timestamp: data['timestamp'] != null ? (data['timestamp'] as Timestamp).toDate() : null,
+                        timestamp: messageTimestamp?.toDate(),
                       );
 
                       return GestureDetector(
                         onLongPress: () => _showOptions(
-                          messageId: docs[index].id,
-                          text: messageText,
+                          message: messageModel,
                           isMe: isMe,
-                          type: type,
                         ),
                         child: Padding(
                           padding: const EdgeInsets.symmetric(vertical: 4),
                           child: MessageBubble(
-                            message: messageModel,
+                            message: messageText, 
                             isMe: isMe,
-                            timestamp: data['timestamp'] as Timestamp?,
+                            timestamp: messageTimestamp,
                             messageId: messageModel.messageId,
                             type: type,
                             isTyping: false,
-                            uploadVoiceMessage: () {}, // <--- এখানে নতুন রিকোয়ার্ড প্যারামিটারটি যুক্ত করা হলো
+                            uploadVoiceMessage: () {},
                             onDeleteForMe: () {},
                             onDeleteForEveryone: () {},
                             onReact: (emoji) {},
