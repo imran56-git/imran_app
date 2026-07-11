@@ -341,6 +341,7 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
                             messageId: messageModel.messageId,
                             type: type,
                             isTyping: false,
+                            uploadVoiceMessage: () {}, // <--- এখানে নতুন রিকোয়ার্ড প্যারামিটারটি যুক্ত করা হলো
                             onDeleteForMe: () {},
                             onDeleteForEveryone: () {},
                             onReact: (emoji) {},
