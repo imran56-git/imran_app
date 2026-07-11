@@ -254,7 +254,7 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
                   ),
                 ],
               ),
-                ),
+            ),
           ],
         ),
         actions: [
@@ -323,10 +323,7 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
                         child: MessageBubble(
                           message: messageModel,
                           isMe: isMe,
-                          // MessageBubble উইজেট onSwipeToReply সাপোর্ট না করায় এরর এড়াতে এটি কমেন্ট করা হলো
-                          // onSwipeToReply: () {
-                          //   setState(() => _replyingMessage = messageModel);
-                          // },
+                          timestamp: data['timestamp'] as Timestamp?, // এখানে বাধ্যতামূলক 'timestamp' প্যারামিটারটি যুক্ত করা হলো
                           onDeleteForMe: () {},
                           onDeleteForEveryone: () {},
                           onReact: (emoji) {},
