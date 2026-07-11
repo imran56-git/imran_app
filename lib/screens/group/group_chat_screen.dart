@@ -32,7 +32,7 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
   final ChatService _chatService = ChatService();
   final MediaService _mediaService = MediaService();
   final ScrollController _scrollController = ScrollController();
-  
+
   MessageModel? _replyingMessage;
   bool _isRecording = false;
   String _backgroundImage = 'assets/images/chat_bg.png';
@@ -50,7 +50,7 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
     return FileImage(File(_backgroundImage));
   }
 
-  void _handleSendMessage(String text, String type) {
+  void _handleSendMessage(String text, String type, {Map<String, dynamic>? mediaData}) {
     _chatService.sendGroupMessage(
       groupId: widget.groupId,
       senderId: widget.currentUserId,
@@ -254,7 +254,7 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
                   ),
                 ],
               ),
-            ),
+                ),
           ],
         ),
         actions: [
@@ -289,7 +289,7 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
                     itemCount: docs.length,
                     itemBuilder: (context, index) {
                       final data = docs[index].data() as Map<String, dynamic>;
-                      
+
                       final List<dynamic> deletedUsers = data['deletedForUsers'] ?? [];
                       if (deletedUsers.contains(widget.currentUserId)) {
                         return const SizedBox.shrink();
@@ -323,9 +323,10 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
                         child: MessageBubble(
                           message: messageModel,
                           isMe: isMe,
-                          onSwipeToReply: () {
-                            setState(() => _replyingMessage = messageModel);
-                          },
+                          // MessageBubble উইজেট onSwipeToReply সাপোর্ট না করায় এরর এড়াতে এটি কমেন্ট করা হলো
+                          // onSwipeToReply: () {
+                          //   setState(() => _replyingMessage = messageModel);
+                          // },
                           onDeleteForMe: () {},
                           onDeleteForEveryone: () {},
                           onReact: (emoji) {},
