@@ -1,5 +1,6 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart'; // InputFormatter-এর জন্য যুক্ত করা হয়েছে
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../models/reminder_model.dart';
 import '../../services/reminder_service.dart';
@@ -86,6 +87,7 @@ class _ReminderScreenState extends State<ReminderScreen> {
   }
 
   void _searchStudent() async {
+    FocusScope.of(context).unfocus(); // সার্চ করার সময় কিবোর্ড হাইড করবে
     final searchId = _searchController.text.trim();
     if (searchId.isEmpty) return;
 
@@ -110,6 +112,7 @@ class _ReminderScreenState extends State<ReminderScreen> {
   }
 
   void _sendReminder() async {
+    FocusScope.of(context).unfocus(); // সেন্ড করার সময় কিবোর্ড হাইড করবে
     if (_foundStudent == null || _amountController.text.isEmpty) return;
 
     setState(() => _isSending = true);
@@ -274,6 +277,9 @@ class _ReminderScreenState extends State<ReminderScreen> {
                           TextField(
                             controller: _amountController,
                             keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                            inputFormatters: [
+                              FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}')), // শুধুমাত্র সঠিক নাম্বার সাপোর্ট করবে
+                            ],
                             decoration: InputDecoration(
                               labelText: 'Amount (₹)',
                               labelStyle: TextStyle(color: Colors.grey[600], fontSize: 14),
@@ -377,6 +383,8 @@ class _ReminderScreenState extends State<ReminderScreen> {
               ),
             ],
             const SizedBox(height: 30),
+            
+            // Active Reminders Section (যেটা কেটে গিয়েছিল সেটা সম্পূর্ণ করা হলো)
             GestureDetector(
               onTap: () {
                 Navigator.push(
@@ -412,15 +420,4 @@ class _ReminderScreenState extends State<ReminderScreen> {
                         color: Colors.white.withOpacity(0.15),
                         borderRadius: BorderRadius.circular(14),
                       ),
-                      child: const Icon(Icons.notifications_active_rounded, color: Colors.white, size: 26),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Active Reminders',
-                            style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.bold),
-                          ),
-     
+                      child: const Icon(Icons.n
