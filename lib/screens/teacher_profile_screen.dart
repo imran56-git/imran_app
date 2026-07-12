@@ -434,18 +434,6 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
     );
   }
 
-  Widget _buildFollowButton() {
-    return Padding(
-      padding: const EdgeInsets.only(top: 15),
-      child: ElevatedButton.icon(
-        onPressed: toggleFollow,
-        icon: Icon(isFollowing ? Icons.check : Icons.person_add),
-        label: Text(isFollowing ? 'Following' : 'Follow Teacher'),
-        style: ElevatedButton.styleFrom(backgroundColor: isFollowing ? Colors.green : Colors.blue[800], foregroundColor: Colors.white, minimumSize: const Size(180, 45)),
-      ),
-    );
-  }
-
   Widget _buildViewProfile() {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       _buildMaterial3Card("Bio", _bioController.text, Icons.description_outlined, const Color(0xFF3B82F6)),
@@ -516,7 +504,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
             StreamBuilder<QuerySnapshot>(
               stream: _firestore.collection('live_classes').where('teacherId', isEqualTo: targetUID).snapshots(),
               builder: (context, snapshot) {
-                int classCount = snapshot.hasData ? snapshot.data!.docs.length : 0; // আপনার শিডিউল লজিক অনুযায়ী ফিল্টার করতে পারেন
+                int classCount = snapshot.hasData ? snapshot.data!.docs.length : 0;
                 return _buildDashboardCard("Today's Classes", "$classCount", Icons.calendar_today_outlined, Colors.orange);
               },
             ),
@@ -649,7 +637,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
   Widget _editField(String l, TextEditingController c, IconData i, {int maxLines = 1, TextInputType keyboardType = TextInputType.text}) => Padding(padding: const EdgeInsets.only(bottom: 15), child: TextField(controller: c, maxLines: maxLines, keyboardType: keyboardType, decoration: InputDecoration(labelText: l, prefixIcon: Icon(i), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))))));
 }
 
-// স্ক্রিনশটের মতো নিখুঁত বাঁকানো অবতল শেপ তৈরি করার কাস্টম ক্লিপার
+// স্ক্রিনশটের মতো নিখুঁত বাঁকানো অবতল শেপ তৈরি করার কাস্টম ক্লিপার (ফিক্সড মেথড)
 class HeaderCurveClipper extends CustomClipper<Path> {
   @override
   Path getClip(Size size) {
@@ -657,7 +645,8 @@ class HeaderCurveClipper extends CustomClipper<Path> {
     path.lineTo(0, size.height - 45);
     Offset controlPoint = Offset(size.width / 2, size.height + 15);
     Offset endPoint = Offset(size.width, size.height - 45);
-    path.quadraticBezierTo(controlPoint.dx, controlPoint.dy, endPoint.dx, endPoint.endY);
+    // endPoint.endY পরিবর্তন করে ফ্লাটার স্ট্যান্ডার্ড endPoint.dy করা হয়েছে
+    path.quadraticBezierTo(controlPoint.dx, controlPoint.dy, endPoint.dx, endPoint.dy);
     path.lineTo(size.width, 0);
     path.close();
     return path;
