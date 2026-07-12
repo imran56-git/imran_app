@@ -1,5 +1,7 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../services/reminder_service.dart';
 import '../../widgets/success_toast.dart';
 import 'diary_history_screen.dart';
@@ -20,6 +22,7 @@ class DiaryScreen extends StatefulWidget {
 
 class _DiaryScreenState extends State<DiaryScreen> {
   final ReminderService _reminderService = ReminderService();
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   final TextEditingController _searchController = TextEditingController();
   final TextEditingController _subjectController = TextEditingController();
@@ -36,10 +39,10 @@ class _DiaryScreenState extends State<DiaryScreen> {
   String _attendanceStatus = 'Present';
   String _feeStatus = 'NO';
 
-  double _monthlyFee = 1000.0;
-  double _previousPending = 3000.0;
+  double _monthlyFee = 0.0;
+  double _previousPending = 0.0;
   double _paidAmount = 0.0;
-  double _remainingPending = 3000.0;
+  double _remainingPending = 0.0;
 
   final List<String> _attendanceStates = ['Present', 'Absent', 'Late', 'Holiday'];
   final List<String> _months = [
@@ -52,20 +55,47 @@ class _DiaryScreenState extends State<DiaryScreen> {
   void initState() {
     super.initState();
     _selectedMonth = _months[DateTime.now().month - 1];
-    _calculateBalances();
   }
 
-  void _calculateBalances() {
-    if (_feeStatus == 'YES') {
-      _paidAmount = double.tryParse(_amountController.text.trim()) ?? 0.0;
-      _remainingPending = (_previousPending + _monthlyFee) - _paidAmount;
-    } else {
-      _paidAmount = 0.0;
-      _remainingPending = _previousPending + _monthlyFee;
+  // ফায়ারস্টোর থেকে লাইভ ফি ব্যালেন্স লোড করার মেথড
+  void _fetchStudentFeeStructure(String studentId) async {
+    try {
+      // monthly_fee কালেকশন থেকে স্টুডেন্টের কারেন্ট ব্যালেন্স চেক
+      final feeDoc = await _firestore.collection('monthly_fee').doc(studentId).get();
+      if (feeDoc.exists && feeDoc.data() != null) {
+        final data = feeDoc.data()!;
+        setState(() {
+          _monthlyFee = (data['monthlyFee'] ?? 1000.0).toDouble();
+          _previousPending = (data['pendingAmount'] ?? 0.0).toDouble();
+          _calculateBalances();
+        });
+      } else {
+        // নতুন স্টুডেন্ট হলে ডিফল্ট সেটআপ
+        setState(() {
+          _monthlyFee = 1000.0;
+          _previousPending = 0.0;
+          _calculateBalances();
+        });
+      }
+    } catch (e) {
+      debugPrint("Error fetching fee structure: $e");
     }
   }
 
+  void _calculateBalances() {
+    setState(() {
+      if (_feeStatus == 'YES') {
+        _paidAmount = double.tryParse(_amountController.text.trim()) ?? 0.0;
+        _remainingPending = (_previousPending + _monthlyFee) - _paidAmount;
+      } else {
+        _paidAmount = 0.0;
+        _remainingPending = _previousPending + _monthlyFee;
+      }
+    });
+  }
+
   void _searchStudent() async {
+    FocusScope.of(context).unfocus();
     final searchId = _searchController.text.trim();
     if (searchId.isEmpty) return;
 
@@ -80,7 +110,9 @@ class _DiaryScreenState extends State<DiaryScreen> {
         _foundStudent = student;
         _isSearching = false;
       });
-      if (student == null) {
+      if (student != null) {
+        _fetchStudentFeeStructure(searchId);
+      } else {
         _showErrorPopup('Student Not Found', 'Please check the Student User ID and try again.');
       }
     } catch (e) {
@@ -107,10 +139,7 @@ class _DiaryScreenState extends State<DiaryScreen> {
               opacity: anim,
               child: AlertDialog(
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                title: Text(
-                  title,
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 20, color: Colors.redAccent),
-                ),
+                title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 20, color: Colors.redAccent)),
                 content: Text(message, style: const TextStyle(fontSize: 15, color: Colors.black87)),
                 actions: [
                   ElevatedButton(
@@ -131,16 +160,72 @@ class _DiaryScreenState extends State<DiaryScreen> {
     );
   }
 
-  void _saveLocalDiary() async {
+  // ফায়ারস্টোর প্রোডাকশন রাইট ইঞ্জিন (ব্যাচ ট্রানজেকশন)
+  void _saveDiaryToFirebase() async {
     if (_foundStudent == null || _subjectController.text.isEmpty) return;
 
     setState(() => _isSaving = true);
+    final studentId = _foundStudent!['uid'] ?? '';
+    final String entryId = _firestore.collection('diary').doc().id;
+
+    final batch = _firestore.batch();
 
     try {
-      await Future.delayed(const Duration(milliseconds: 800));
+      // ১. মূল ডায়েরি কালেকশনে ডেটা রাইট
+      final diaryRef = _firestore.collection('diary').doc(entryId);
+      batch.set(diaryRef, {
+        'diaryId': entryId,
+        'studentId': studentId,
+        'studentName': _foundStudent!['name'] ?? 'Student',
+        'teacherId': widget.currentUserId,
+        'teacherName': widget.currentUserName,
+        'date': Timestamp.fromDate(_selectedDate),
+        'attendanceStatus': _attendanceStatus,
+        'subject': _subjectController.text.trim(),
+        'topicCovered': _topicController.text.trim(),
+        'homework': _homeworkController.text.trim(),
+        'month': _selectedMonth,
+        'feeStatus': _feeStatus,
+        // বাগ ১৩ সিকিউরিটি ফিক্স: প্রাইভেট নোট আলাদা প্রটেকশন ব্লকে রাখা হলো
+        'privateNote': _noteController.text.trim(),
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+
+      // ২. monthly_fee লেজার রিয়াল-টাইম ব্যালেন্স আপডেট
+      final feeRef = _firestore.collection('monthly_fee').doc(studentId);
+      batch.set(feeRef, {
+        'studentId': studentId,
+        'studentName': _foundStudent!['name'] ?? 'Student',
+        'monthlyFee': _monthlyFee,
+        'pendingAmount': _remainingPending,
+        'totalPaid': FieldValue.increment(_paidAmount),
+        'lastUpdated': FieldValue.serverTimestamp(),
+        // ১২ মাসের ট্র্যাকিং লেজার রিয়াল-টাইম মেপিং
+        'feeStatus12Months.$_selectedMonth': _feeStatus,
+      }, SetOptions(merge: true));
+
+      // ৩. বাগ ৮ ফিক্স: ফি রিসিভড হলে পেমেন্ট হিস্ট্রি জেনারেট
+      if (_feeStatus == 'YES' && _paidAmount > 0) {
+        final paymentId = _firestore.collection('payment_history').doc().id;
+        final paymentRef = _firestore.collection('payment_history').doc(paymentId);
+        batch.set(paymentRef, {
+          'paymentId': paymentId,
+          'studentId': studentId,
+          'studentName': _foundStudent!['name'] ?? 'Student',
+          'teacherId': widget.currentUserId,
+          'teacherName': widget.currentUserName,
+          'amount': _paidAmount,
+          'month': _selectedMonth,
+          'date': Timestamp.fromDate(_selectedDate),
+          'timestamp': FieldValue.serverTimestamp(),
+        });
+      }
+
+      // ব্যাচ ট্রানজেকশন কমিট
+      await batch.commit();
 
       if (mounted) {
-        SuccessToast.show(context, 'Diary Saved Locally in Phone');
+        SuccessToast.show(context, 'Diary & Fee Saved Successfully');
         setState(() {
           _foundStudent = null;
           _searchController.clear();
@@ -151,12 +236,14 @@ class _DiaryScreenState extends State<DiaryScreen> {
           _amountController.clear();
           _attendanceStatus = 'Present';
           _feeStatus = 'NO';
+          _paidAmount = 0.0;
+          _remainingPending = 0.0;
           _isSaving = false;
         });
       }
     } catch (e) {
       setState(() => _isSaving = false);
-      _showErrorPopup('Failed', 'Could not save diary entry.');
+      _showErrorPopup('Failed', 'Database Write Failed. Try Again.');
     }
   }
 
@@ -204,18 +291,9 @@ class _DiaryScreenState extends State<DiaryScreen> {
                             prefixIcon: Icon(Icons.tag_rounded, color: Colors.blue[800], size: 22),
                             filled: true,
                             fillColor: const Color(0xFFF8FAFC),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(14),
-                              borderSide: BorderSide(color: Colors.grey.shade200),
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(14),
-                              borderSide: BorderSide(color: Colors.grey.shade200),
-                            ),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(14),
-                              borderSide: BorderSide(color: Colors.blue.shade400, width: 1.5),
-                            ),
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: Colors.grey.shade200)),
+                            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: Colors.grey.shade200)),
+                            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: Colors.blue.shade400, width: 1.5)),
                             contentPadding: const EdgeInsets.symmetric(vertical: 14),
                           ),
                         ),
@@ -239,7 +317,6 @@ class _DiaryScreenState extends State<DiaryScreen> {
                 ],
               ),
             ),
-
             if (_foundStudent != null) ...[
               const SizedBox(height: 24),
               TweenAnimationBuilder<double>(
@@ -272,16 +349,9 @@ class _DiaryScreenState extends State<DiaryScreen> {
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Text(
-                                      _foundStudent!['name'] ?? 'No Name',
-                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17, color: Color(0xFF1B1B1B)),
-                                    ),
+                                    Text(_foundStudent!['name'] ?? 'No Name', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17, color: Color(0xFF1B1B1B))),
                                     const SizedBox(height: 3),
-                                    Text(
-                                      _foundStudent!['uid'] ?? 'No ID',
-                                      style: TextStyle(fontSize: 12, color: Colors.grey[500], fontFamily: 'monospace'),
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
+                                    Text(_foundStudent!['uid'] ?? 'No ID', style: TextStyle(fontSize: 12, color: Colors.grey[500], fontFamily: 'monospace'), overflow: TextOverflow.ellipsis),
                                   ],
                                 ),
                               ),
@@ -302,20 +372,14 @@ class _DiaryScreenState extends State<DiaryScreen> {
                                     children: [
                                       Icon(Icons.calendar_today_rounded, size: 14, color: Colors.blue[800]),
                                       const SizedBox(width: 6),
-                                      Text(
-                                        '${_selectedDate.day}/${_selectedDate.month}/${_selectedDate.year}',
-                                        style: TextStyle(color: Colors.blue[800], fontWeight: FontWeight.bold, fontSize: 13),
-                                      ),
+                                      Text('${_selectedDate.day}/${_selectedDate.month}/${_selectedDate.year}', style: TextStyle(color: Colors.blue[800], fontWeight: FontWeight.bold, fontSize: 13)),
                                     ],
                                   ),
                                 ),
                               ),
                             ],
                           ),
-                          const Padding(
-                            padding: EdgeInsets.symmetric(vertical: 16.0),
-                            child: Divider(height: 1, thickness: 1, color: Color(0xFFF1F5F9)),
-                          ),
+                          const Padding(padding: EdgeInsets.symmetric(vertical: 16.0), child: Divider(height: 1, thickness: 1, color: Color(0xFFF1F5F9))),
                           const Text('Attendance Status', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.black54)),
                           const SizedBox(height: 12),
                           Row(
@@ -342,34 +406,24 @@ class _DiaryScreenState extends State<DiaryScreen> {
                                       borderRadius: BorderRadius.circular(12),
                                       boxShadow: isSelected ? [BoxShadow(color: btnColor.withOpacity(0.3), blurRadius: 8, offset: const Offset(0, 4))] : null,
                                     ),
-                                    child: Center(
-                                      child: Text(
-                                        state,
-                                        style: TextStyle(color: textColor, fontWeight: FontWeight.bold, fontSize: 13),
-                                      ),
-                                    ),
+                                    child: Center(child: Text(state, style: TextStyle(color: textColor, fontWeight: FontWeight.bold, fontSize: 13))),
                                   ),
                                 ),
                               );
                             }).toList(),
                           ),
-                          const Padding(
-                            padding: EdgeInsets.symmetric(vertical: 16.0),
-                            child: Divider(height: 1, thickness: 1, color: Color(0xFFF1F5F9)),
-                          ),
+                          const Padding(padding: EdgeInsets.symmetric(vertical: 16.0), child: Divider(height: 1, thickness: 1, color: Color(0xFFF1F5F9))),
                           Row(
                             children: [
                               Expanded(
                                 child: DropdownButtonFormField<String>(
                                   value: _selectedMonth,
-                                  decoration: InputDecoration(
-                                    labelText: 'Select Month',
-                                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
-                                  ),
+                                  decoration: InputDecoration(labelText: 'Select Month', border: OutlineInputBorder(borderRadius: BorderRadius.circular(14))),
                                   items: _months.map((m) => DropdownMenuItem(value: m, child: Text(m))).toList(),
                                   onChanged: (val) {
                                     setState(() {
                                       _selectedMonth = val!;
+                                      _calculateBalances();
                                     });
                                   },
                                 ),
@@ -378,10 +432,7 @@ class _DiaryScreenState extends State<DiaryScreen> {
                               Expanded(
                                 child: DropdownButtonFormField<String>(
                                   value: _feeStatus,
-                                  decoration: InputDecoration(
-                                    labelText: 'Fee Received?',
-                                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
-                                  ),
+                                  decoration: InputDecoration(labelText: 'Fee Received?', border: OutlineInputBorder(borderRadius: BorderRadius.circular(14))),
                                   items: ['YES', 'NO'].map((status) => DropdownMenuItem(value: status, child: Text(status))).toList(),
                                   onChanged: (val) {
                                     setState(() {
@@ -398,16 +449,13 @@ class _DiaryScreenState extends State<DiaryScreen> {
                             TextField(
                               controller: _amountController,
                               keyboardType: TextInputType.number,
+                              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                               decoration: InputDecoration(
                                 labelText: 'Enter Received Amount (₹)',
                                 prefixIcon: Icon(Icons.currency_rupee_rounded, color: Colors.blue[800]),
                                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
                               ),
-                              onChanged: (_) {
-                                setState(() {
-                                  _calculateBalances();
-                                });
-                              },
+                              onChanged: (_) => _calculateBalances(),
                             ),
                           ],
                           const SizedBox(height: 16),
@@ -426,10 +474,7 @@ class _DiaryScreenState extends State<DiaryScreen> {
                               ],
                             ),
                           ),
-                          const Padding(
-                            padding: EdgeInsets.symmetric(vertical: 16.0),
-                            child: Divider(height: 1, thickness: 1, color: Color(0xFFF1F5F9)),
-                          ),
+                          const Padding(padding: EdgeInsets.symmetric(vertical: 16.0), child: Divider(height: 1, thickness: 1, color: Color(0xFFF1F5F9))),
                           TextField(
                             controller: _subjectController,
                             decoration: InputDecoration(
@@ -492,7 +537,7 @@ class _DiaryScreenState extends State<DiaryScreen> {
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                           elevation: 2,
                         ),
-                        onPressed: _isSaving || _subjectController.text.isEmpty ? null : _saveLocalDiary,
+                        onPressed: _isSaving || _subjectController.text.isEmpty ? null : _saveDiaryToFirebase,
                         icon: _isSaving ? const SizedBox.shrink() : const Icon(Icons.save_rounded, size: 20),
                         label: _isSaving 
                             ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5))
@@ -508,9 +553,7 @@ class _DiaryScreenState extends State<DiaryScreen> {
               onTap: () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(
-                    builder: (context) => const DiaryHistoryScreen(),
-                  ),
+                  MaterialPageRoute(builder: (context) => const DiaryHistoryScreen()),
                 );
               },
               child: Container(
@@ -522,23 +565,14 @@ class _DiaryScreenState extends State<DiaryScreen> {
                     end: Alignment.bottomRight,
                   ),
                   borderRadius: BorderRadius.circular(20),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.blue.withOpacity(0.25),
-                      blurRadius: 15,
-                      offset: const Offset(0, 6),
-                    )
-                  ],
+                  boxShadow: [BoxShadow(color: Colors.blue.withOpacity(0.25), blurRadius: 15, offset: const Offset(0, 6))],
                 ),
                 padding: const EdgeInsets.all(20),
                 child: Row(
                   children: [
                     Container(
                       padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.15),
-                        borderRadius: BorderRadius.circular(14),
-                      ),
+                      decoration: BoxDecoration(color: Colors.white.withOpacity(0.15), borderRadius: BorderRadius.circular(14)),
                       child: const Icon(Icons.auto_stories_rounded, color: Colors.white, size: 26),
                     ),
                     const SizedBox(width: 16),
@@ -546,15 +580,9 @@ class _DiaryScreenState extends State<DiaryScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text(
-                            'Diary History',
-                            style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.bold),
-                          ),
+                          const Text('Diary History', style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.bold)),
                           const SizedBox(height: 4),
-                          Text(
-                            'Search, filter and update entries locally',
-                            style: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 13),
-                          ),
+                          Text('Search, filter and update entries globally', style: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 13)),
                         ],
                       ),
                     ),
