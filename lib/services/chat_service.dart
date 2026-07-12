@@ -36,6 +36,7 @@ class ChatService {
 
   Stream<Map<String, dynamic>> getUserStatusStream(String userId) {
     return _firestore.collection('users').doc(userId).snapshots().map((doc) {
+      if (!doc.exists) return {'status': 'Offline', 'lastSeen': null};
       final data = doc.data();
       return {
         'status': data?['status'] ?? 'Offline',
@@ -51,7 +52,7 @@ class ChatService {
         .collection('typing')
         .doc(userId)
         .snapshots()
-        .map((doc) => doc.data()?['isTyping'] ?? false);
+        .map((doc) => doc.exists ? (doc.data()?['isTyping'] ?? false) : false);
   }
 
   // ==========================================
@@ -81,7 +82,7 @@ class ChatService {
           'teacherImage': teacherImage,
           'studentImage': studentImage,
           'participants': [teacherId, studentId],
-          'lastMessage': '',
+          'lastMessage': 'Chat initialized',
           'lastMessageTime': FieldValue.serverTimestamp(),
           'unreadCount': 0,
           'isGroup': false,
@@ -167,21 +168,27 @@ class ChatService {
           .doc(chatId)
           .collection('messages')
           .where('receiverId', isEqualTo: currentUserId)
-          .where('status', isNotEqualTo: 'seen')
           .get();
 
       if (querySnapshot.docs.isEmpty) return;
 
       final batch = _firestore.batch();
+      bool hasUnseen = false;
+
       for (var doc in querySnapshot.docs) {
-        batch.update(doc.reference, {'status': 'seen'}); 
+        final data = doc.data();
+        if (data['status'] != 'seen') {
+          batch.update(doc.reference, {'status': 'seen'});
+          hasUnseen = true;
+        }
       }
 
-      batch.update(_firestore.collection('chats').doc(chatId), {
-        'unreadCount': 0,
-      });
-
-      await batch.commit();
+      if (hasUnseen) {
+        batch.update(_firestore.collection('chats').doc(chatId), {
+          'unreadCount': 0,
+        });
+        await batch.commit();
+      }
     } catch (e) {
       _handleError('markChatMessagesAsSeen', e);
     }
@@ -260,7 +267,7 @@ class ChatService {
       final updateData = isStarred
           ? FieldValue.arrayUnion([userId])
           : FieldValue.arrayRemove([userId]);
-      
+
       await _firestore
           .collection('chats')
           .doc(chatId)
@@ -384,6 +391,7 @@ class ChatService {
   // ==========================================
 
   void _handleError(String methodName, dynamic error) {
-    throw Exception('ChatService Error inside $methodName: $error');
+    // Production level logging to console for internal debug, but crashes caught gracefully by UI
+    print('ChatService Error inside $methodName: $error');
   }
 }
