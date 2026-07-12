@@ -99,17 +99,20 @@ class _LoginScreenState extends State<LoginScreen> {
       final data = userDoc.data() ?? {};
       final userType = (data['userType'] ?? data['role'] ?? 'student').toString();
 
-      Navigator.pushReplacement(
+      // pushAndRemoveUntil ব্যবহার করে আগের সব হিস্ট্রি ডিলিট করে দেওয়া হলো
+      Navigator.pushAndRemoveUntil(
         context,
         MaterialPageRoute(
           builder: (_) => userType == 'teacher'
               ? const TeacherHomeScreen()
               : StudentHomeScreen(currentUserId: user.uid),
         ),
+        (route) => false, // এটি সমস্ত পূর্ববর্তী স্ক্রিন মেমোরি থেকে মুছে ফেলে
       );
       return;
     }
 
+    // নতুন ইউজার হলে ফায়ারস্টোরে ডেটা সেট করা হচ্ছে
     await _firestore.collection('users').doc(user.uid).set({
       'uid': user.uid,
       'email': user.email,
@@ -120,11 +123,13 @@ class _LoginScreenState extends State<LoginScreen> {
 
     if (!mounted) return;
 
-    Navigator.pushReplacement(
+    // নতুন স্টুডেন্টের জন্যও ব্যাক-স্ট্যাক ক্লিয়ার করে দেওয়া হলো
+    Navigator.pushAndRemoveUntil(
       context,
       MaterialPageRoute(
         builder: (_) => StudentHomeScreen(currentUserId: user.uid),
       ),
+      (route) => false,
     );
   }
 
@@ -238,20 +243,20 @@ class _LoginScreenState extends State<LoginScreen> {
                             child: OutlinedButton.icon(
                               onPressed: _handleGoogleSignIn,
                               icon: const Icon(
-                                Icons.g_mobiledata_rounded,
-                                size: 30,
-                                color: Colors.red,
+                                  Icons.g_mobiledata_rounded,
+                                  size: 30,
+                                  color: Colors.red,
+                                ),
+                                label: const Text('Continue with Google'),
                               ),
-                              label: const Text('Continue with Google'),
                             ),
-                          ),
-                        ],
-                      ),
-              ],
+                          ],
+                        ),
+                ],
+              ),
             ),
           ),
         ),
-      ),
-    );
+      );
+    }
   }
-}
