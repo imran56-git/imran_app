@@ -135,11 +135,12 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
     }
   }
 
+  // এনিমেশন ডায়ালগ ফিক্স করা হয়েছে (পপ আপ অ্যাকশন ইস্যু সলভড)
   void _showAnimatedPopup({
     required String title,
     required String message,
     required String confirmText,
-    required VoidCallback onConfirm,
+    required Future<void> Function() onConfirm,
     bool isDelete = false,
   }) {
     showGeneralDialog(
@@ -148,7 +149,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
       barrierLabel: '',
       transitionDuration: const Duration(milliseconds: 300),
       pageBuilder: (context, a1, a2) => const SizedBox(),
-      transitionBuilder: (context, anim, a2, child) {
+      transitionBuilder: (dialogContext, anim, a2, child) {
         return BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
           child: ScaleTransition(
@@ -161,7 +162,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
                 content: Text(message, style: const TextStyle(fontSize: 16, color: Colors.black87)),
                 actions: [
                   TextButton(
-                    onPressed: () => Navigator.pop(context),
+                    onPressed: () => Navigator.pop(dialogContext),
                     child: const Text('Cancel', style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold, fontSize: 16)),
                   ),
                   ElevatedButton(
@@ -171,9 +172,9 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                     ),
-                    onPressed: () {
-                      Navigator.pop(context);
-                      onConfirm();
+                    onPressed: () async {
+                      Navigator.pop(dialogContext); // প্রথমে ডায়ালগ বন্ধ হবে
+                      await onConfirm(); // এরপর রুট কনটেক্সট থেকে নেভিগেশন রান করবে
                     },
                     child: Text(confirmText, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                   ),
@@ -200,10 +201,10 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
             opacity: anim,
             child: AlertDialog(
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              content: Column(
+              content: const Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
-                children: const [
+                children: [
                   Text('This service is currently disabled.', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                   SizedBox(height: 10),
                   Text('We are working on this feature.', style: TextStyle(color: Colors.grey, fontSize: 14)),
@@ -312,6 +313,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
             isDelete: true, 
             onConfirm: () async {
               try {
+                await _firestore.collection('teachers').doc(targetUID).delete();
                 await _auth.currentUser?.delete();
                 if (mounted) {
                   Navigator.of(context).popUntil((route) => route.isFirst);
@@ -387,6 +389,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
   Widget _buildViewProfile() {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       _buildMaterial3Card("Bio", _bioController.text, Icons.description_outlined, const Color(0xFF3B82F6)),
+      _buildMaterial3Card("Phone Number", _phoneController.text, Icons.phone_outlined, Colors.deepPurple),
       _buildMaterial3Card("Teaching Class", _classController.text, Icons.school_outlined, const Color(0xFF10B981)),
       _buildMaterial3Card("Gender", gender ?? "Not set", Icons.wc_outlined, const Color(0xFFF59E0B)),
       const SizedBox(height: 20),
@@ -491,13 +494,38 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
     );
   }
 
+  // আপগ্রেড করা এডিট ফর্ম (জেন্ডার সিলেক্টর এবং মোবাইল নাম্বার এড করা হয়েছে)
   Widget _buildEditForm() {
     final query = _subjectSearchController.text.trim();
     final list = _subjects.where((s) => s.toLowerCase().contains(query.toLowerCase())).toList();
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       _editField("Full Name", _nameController, Icons.person),
+      _editField("Mobile Number", _phoneController, Icons.phone, keyboardType: TextInputType.phone),
       _editField("Bio", _bioController, Icons.info, maxLines: 3),
       _editField("Teaching Class", _classController, Icons.book),
+      
+      // জেন্ডার সিলেকশন UI (রেডিও বাটন স্টাইল)
+      const Text("Gender", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+      const SizedBox(height: 6),
+      Row(children: [
+        Radio<String>(
+          value: 'Male',
+          groupValue: gender,
+          activeColor: Colors.blue[800],
+          onChanged: (val) => setState(() => gender = val),
+        ),
+        const Text('Male', style: TextStyle(fontSize: 15)),
+        const SizedBox(width: 15),
+        Radio<String>(
+          value: 'Female',
+          groupValue: gender,
+          activeColor: Colors.blue[800],
+          onChanged: (val) => setState(() => gender = val),
+        ),
+        const Text('Female', style: TextStyle(fontSize: 15)),
+      ]),
+      const SizedBox(height: 15),
+
       const Text("Add Teaching Areas", style: TextStyle(fontWeight: FontWeight.bold)),
       Wrap(spacing: 8, children: teacherLocations.map((loc) => Chip(label: Text((loc is Map) ? (loc['address'] ?? "Unknown") : loc.toString()), onDeleted: () => setState(() => teacherLocations.remove(loc)))).toList()),
       TextButton.icon(onPressed: _openMapPicker, icon: const Icon(Icons.map_outlined), label: const Text("Pick Locations")),
@@ -563,7 +591,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
     ]);
   }
 
-  Widget _editField(String l, TextEditingController c, IconData i, {int maxLines = 1}) => Padding(padding: const EdgeInsets.only(bottom: 15), child: TextField(controller: c, maxLines: maxLines, decoration: InputDecoration(labelText: l, prefixIcon: Icon(i), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))))));
+  Widget _editField(String l, TextEditingController c, IconData i, {int maxLines = 1, TextInputType keyboardType = TextInputType.text}) => Padding(padding: const EdgeInsets.only(bottom: 15), child: TextField(controller: c, maxLines: maxLines, keyboardType: keyboardType, decoration: InputDecoration(labelText: l, prefixIcon: Icon(i), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))))));
 }
 
 const List<String> _subjects = [
