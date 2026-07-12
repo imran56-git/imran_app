@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'chat_screen.dart'; // Ensure you have this file
-import 'teacher_profile_screen.dart'; // Ensure you have this file
+import 'chat_screen.dart'; 
+import 'teacher_profile_screen.dart'; 
 
 class TeacherHomeScreen extends StatefulWidget {
   const TeacherHomeScreen({super.key});
@@ -12,16 +12,15 @@ class TeacherHomeScreen extends StatefulWidget {
 class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
   int _selectedIndex = 0;
 
-  // A list of screens to show in the IndexedStack
   final List<Widget> _screens = [
-  const ChatScreen(
-    teacherName: "Student",
-    chatId: "sample_chat_id",
-    currentUserId: "teacher_id_from_home",
-    receiverId: "student_id_from_home",
-  ),
-  const TeacherProfileScreen(),
-];
+    const ChatScreen(
+      teacherName: "Student",
+      chatId: "sample_chat_id",
+      currentUserId: "teacher_id_from_home",
+      receiverId: "student_id_from_home",
+    ),
+    const TeacherProfileScreen(),
+  ];
 
   final List<String> _titles = [
     "Student Messages",
@@ -30,26 +29,31 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // প্রোফাইল স্ক্রিন (Index 1) সিলেক্ট থাকলে হোমের AppBar হাইড থাকবে, 
+    // কারণ প্রোফাইল স্ক্রিনের নিজের সুন্দর কাস্টম হেডার আছে।
+    final bool showAppBar = _selectedIndex == 0;
+
     return Scaffold(
       backgroundColor: const Color(0xFFF4F7FA),
-      appBar: AppBar(
-        title: Text(
-          _titles[_selectedIndex],
-          style: const TextStyle(
-            fontWeight: FontWeight.bold,
-            color: Color(0xFF1A1C1E),
-          ),
-        ),
-        backgroundColor: Colors.white,
-        elevation: 0,
-        actions: [
-          if (_selectedIndex == 0)
-            IconButton(
-              icon: const Icon(Icons.search, color: Colors.black87),
-              onPressed: () {},
-            ),
-        ],
-      ),
+      appBar: showAppBar
+          ? AppBar(
+              title: Text(
+                _titles[_selectedIndex],
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF1A1C1E),
+                ),
+              ),
+              backgroundColor: Colors.white,
+              elevation: 0,
+              actions: [
+                IconButton(
+                  icon: const Icon(Icons.search, color: Colors.black87),
+                  onPressed: () {},
+                ),
+              ],
+            )
+          : null, // প্রোফাইলে গেলে হোমের AppBar উধাও
       body: IndexedStack(
         index: _selectedIndex,
         children: _screens,
