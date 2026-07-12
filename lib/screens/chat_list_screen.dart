@@ -17,6 +17,7 @@ class ChatListScreen extends StatefulWidget {
 }
 
 class _ChatListScreenState extends State<ChatListScreen> {
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final TextEditingController _searchController = TextEditingController();
   String _searchText = '';
   String _currentUserName = 'User';
@@ -26,20 +27,20 @@ class _ChatListScreenState extends State<ChatListScreen> {
     super.initState();
     _loadCurrentUserName();
     _searchController.addListener(() {
-      setState(() {
-        _searchText = _searchController.text.trim().toLowerCase();
-      });
+      if (mounted) {
+        setState(() {
+          _searchText = _searchController.text.trim().toLowerCase();
+        });
+      }
     });
   }
 
   Future<void> _loadCurrentUserName() async {
     try {
-      final doc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(widget.currentUserId)
-          .get();
+      final doc = await _firestore.collection('users').doc(widget.currentUserId).get();
+      if (!doc.exists || !mounted) return;
       final data = doc.data();
-      if (data == null || !mounted) return;
+      if (data == null) return;
       setState(() {
         _currentUserName = (data['name'] ??
                 data['fullName'] ??
@@ -72,7 +73,6 @@ class _ChatListScreenState extends State<ChatListScreen> {
     return '${date.day}/${date.month}/${date.year}';
   }
 
-  // আপডেট করা মেথড
   void _openChat({
     required Map<String, dynamic> chatData,
     required String chatDocId,
@@ -106,8 +106,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
             chatId: chatId,
             currentUserId: widget.currentUserId,
             receiverId: receiverId,
-            teacherName: receiverName, // এখানে receiverName-কে teacherName প্যারামিটারে পাঠানো হলো
-            // যদি ChatScreen-এ receiverImage বা অন্য কিছু রিসিভ করার জায়গা থাকে, সেটা এখানে যোগ করুন
+            teacherName: receiverName,
           ),
         ),
       );
@@ -130,7 +129,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
         elevation: 0,
         automaticallyImplyLeading: false,
         title: const Text(
-          'WhatsApp',
+          'Chats',
           style: TextStyle(
             color: Colors.white,
             fontSize: 20,
@@ -154,10 +153,9 @@ class _ChatListScreenState extends State<ChatListScreen> {
           _buildSearchBar(),
           Expanded(
             child: StreamBuilder<QuerySnapshot>(
-              stream: FirebaseFirestore.instance
+              stream: _firestore
                   .collection('chats')
                   .where('participants', arrayContains: widget.currentUserId)
-                  .orderBy('lastMessageTime', descending: true)
                   .snapshots(),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
@@ -166,7 +164,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
                 if (snapshot.hasError) {
                   return const Center(
                     child: Text(
-                      'Something went wrong.',
+                      'Failed to load chats.',
                       style: TextStyle(fontSize: 14, color: Colors.red),
                     ),
                   );
@@ -175,7 +173,18 @@ class _ChatListScreenState extends State<ChatListScreen> {
                   return _buildEmptyState();
                 }
 
+                // ইনডেক্সিং এরর এড়াতে মেমোরিতে সর্ট করা হচ্ছে যাতে কম্পোজিট ইনডেক্স ছাড়া অ্যাপ ক্র্যাশ না করে
                 final chatDocs = snapshot.data!.docs;
+                chatDocs.sort((a, b) {
+                  final aData = a.data() as Map<String, dynamic>;
+                  final bData = b.data() as Map<String, dynamic>;
+                  final aTime = aData['lastMessageTime'] as Timestamp?;
+                  final bTime = bData['lastMessageTime'] as Timestamp?;
+                  if (aTime == null && bTime == null) return 0;
+                  if (aTime == null) return 1;
+                  if (bTime == null) return -1;
+                  return bTime.compareTo(aTime);
+                });
 
                 return ListView.builder(
                   itemCount: chatDocs.length,
@@ -218,43 +227,55 @@ class _ChatListScreenState extends State<ChatListScreen> {
                       if (participantsList.isEmpty) return const SizedBox.shrink();
                       final String receiverId = participantsList.first;
 
-                      return StreamBuilder<DocumentSnapshot>(
-                        stream: FirebaseFirestore.instance
-                            .collection('users')
-                            .doc(receiverId)
-                            .snapshots(),
-                        builder: (context, userSnapshot) {
-                          if (!userSnapshot.hasData || !userSnapshot.data!.exists) {
-                            return const SizedBox.shrink();
-                          }
-                          final userData = userSnapshot.data!.data() as Map<String, dynamic>;
-                          final String receiverName = (userData['name'] ??
-                                  userData['fullName'] ??
-                                  userData['studentName'] ??
-                                  'User')
-                              .toString();
-                          final String receiverImageUrl = (userData['profileImageUrl'] ?? userData['photoUrl'] ?? '').toString();
-                          final String userStatus = userData['status'] ?? 'Offline';
-                          final bool isOnline = userStatus == 'Online';
+                      // কোড সেফটি ও নাল ভ্যালু প্রোটেকশন হ্যান্ডলিং
+                      final String receiverNameFallback = widget.currentUserId == chatData['teacherId']
+                          ? (chatData['studentName'] ?? 'Student').toString()
+                          : (chatData['teacherName'] ?? 'Teacher').toString();
+                      final String receiverImageFallback = widget.currentUserId == chatData['teacherId']
+                          ? (chatData['studentImage'] ?? '').toString()
+                          : (chatData['teacherImage'] ?? '').toString();
 
-                          if (!_matchesSearch(chatData, receiverName)) {
+                      return StreamBuilder<DocumentSnapshot>(
+                        stream: _firestore.collection('users').doc(receiverId).snapshots(),
+                        builder: (context, userSnapshot) {
+                          String finalName = receiverNameFallback;
+                          String finalImageUrl = receiverImageFallback;
+                          bool isOnline = false;
+
+                          if (userSnapshot.hasData && userSnapshot.data!.exists) {
+                            final userData = userSnapshot.data!.data() as Map<String, dynamic>?;
+                            if (userData != null) {
+                              finalName = (userData['name'] ??
+                                      userData['fullName'] ??
+                                      userData['studentName'] ??
+                                      receiverNameFallback)
+                                  .toString();
+                              finalImageUrl = (userData['profileImageUrl'] ??
+                                      userData['photoUrl'] ??
+                                      receiverImageFallback)
+                                  .toString();
+                              isOnline = (userData['status'] ?? 'Offline') == 'Online';
+                            }
+                          }
+
+                          if (!_matchesSearch(chatData, finalName)) {
                             return const SizedBox.shrink();
                           }
 
                           return _ChatCard(
-                            name: receiverName,
+                            name: finalName,
                             lastMessage: lastMessage,
                             timeText: _formatTime(lastTime),
                             unreadCount: unreadCount,
-                            imageUrl: receiverImageUrl,
+                            imageUrl: finalImageUrl,
                             isOnline: isOnline,
                             isGroup: false,
                             onTap: () => _openChat(
                               chatData: chatData,
                               chatDocId: doc.id,
-                              receiverName: receiverName,
+                              receiverName: finalName,
                               receiverId: receiverId,
-                              receiverImage: receiverImageUrl,
+                              receiverImage: finalImageUrl,
                             ),
                           );
                         },
@@ -266,11 +287,6 @@ class _ChatListScreenState extends State<ChatListScreen> {
             ),
           ),
         ],
-      ),
-      floatingActionButton: FloatingActionButton(
-        backgroundColor: ChatColors.primaryApp,
-        onPressed: () {},
-        child: const Icon(Icons.chat, color: Colors.white),
       ),
     );
   }
