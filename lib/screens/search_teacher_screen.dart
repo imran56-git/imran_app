@@ -10,6 +10,8 @@ class TeacherSearchScreen extends StatefulWidget {
 }
 
 class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
+  // কন্ট্রোলারস (UID সার্চ ফিল্ড সহ)
+  final TextEditingController _uidController = TextEditingController();
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _subjectController = TextEditingController();
   final TextEditingController _locationController = TextEditingController();
@@ -18,33 +20,46 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
   List<DocumentSnapshot> searchResults = [];
   bool _isSearching = false;
 
+  // ডাইনামিক সার্চ ফাংশন
   void _searchTeachers() async {
     setState(() => _isSearching = true);
-    Query query = FirebaseFirestore.instance.collection('teachers');
-
-    if (_nameController.text.trim().isNotEmpty) {
-      query = query.where('name', isEqualTo: _nameController.text.trim());
-    }
-    if (_subjectController.text.trim().isNotEmpty) {
-      query = query.where(
-        'subjects',
-        arrayContains: _subjectController.text.trim(),
-      );
-    }
-    if (_locationController.text.trim().isNotEmpty) {
-      query = query.where(
-        'location',
-        isEqualTo: _locationController.text.trim(),
-      );
-    }
-    if (_experienceController.text.trim().isNotEmpty) {
-      final exp = int.tryParse(_experienceController.text.trim());
-      if (exp != null) {
-        query = query.where('experience', isGreaterThanOrEqualTo: exp);
-      }
-    }
+    
+    final String uidInput = _uidController.text.trim();
+    final String nameInput = _nameController.text.trim();
+    final String subjectInput = _subjectController.text.trim();
+    final String locationInput = _locationController.text.trim();
+    final String expInput = _experienceController.text.trim();
 
     try {
+      // বাগ ১৪ ফিক্স: ইউজার যদি UID/Reg ID দিয়ে সার্চ করতে চায়, তবে সরাসরি ডকুমেন্ট গেট হবে (সবচেয়ে ফাস্ট ও ইনডেক্স মুক্ত)
+      if (uidInput.isNotEmpty) {
+        final doc = await FirebaseFirestore.instance.collection('teachers').doc(uidInput).get();
+        setState(() {
+          searchResults = doc.exists ? [doc] : [];
+          _isSearching = false;
+        });
+        return;
+      }
+
+      // অন্যথায় মাল্টিপল ক্রাইটেরিয়া অনুযায়ী কুয়েরি বিল্ড হবে
+      Query query = FirebaseFirestore.instance.collection('teachers');
+
+      if (nameInput.isNotEmpty) {
+        query = query.where('name', isEqualTo: nameInput);
+      }
+      if (locationInput.isNotEmpty) {
+        query = query.where('location', isEqualTo: locationInput);
+      }
+      if (subjectInput.isNotEmpty) {
+        query = query.where('subjects', arrayContains: subjectInput);
+      }
+      if (expInput.isNotEmpty) {
+        final exp = int.tryParse(expInput);
+        if (exp != null) {
+          query = query.where('experience', isGreaterThanOrEqualTo: exp);
+        }
+      }
+
       final snapshot = await query.get();
       setState(() {
         searchResults = snapshot.docs;
@@ -53,25 +68,40 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
     } catch (e) {
       setState(() => _isSearching = false);
       if (mounted) {
+        // ফায়ারবেস ইনডেক্স এরর বা অন্য কোনো প্রবলেম কনসোলে প্রপারলি ট্র্যাক করার জন্য
+        debugPrint("Firestore Search Error: $e");
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Error fetching data.")),
+          SnackBar(
+            content: Text("Search failed: Please check indexing or inputs."),
+            backgroundColor: Colors.redAccent,
+          ),
         );
       }
     }
+  }
+
+  // সার্চ ফিল্ড ক্লিয়ার করার অপশন
+  void _clearFilters() {
+    _uidController.clear();
+    _nameController.clear();
+    _subjectController.clear();
+    _locationController.clear();
+    _experienceController.clear();
+    setState(() {
+      searchResults.clear();
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF8F9FA),
-      // সাদা টেক্সট মুছে অ্যাপ বার এ লোগো ও নাম বসানো হয়েছে
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
         automaticallyImplyLeading: false,
         title: Row(
           children: [
-            // Rounded Corner অ্যাপ লোগো
             ClipRRect(
               borderRadius: BorderRadius.circular(10),
               child: Image.asset(
@@ -79,11 +109,11 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
                 width: 32,
                 height: 32,
                 fit: BoxFit.cover,
-                errorBuilder: (context, error, stackTrace) => const Icon(Icons.apps, color: Color(0xFF1A237E), size: 32),
+                errorBuilder: (context, error, stackTrace) => 
+                    const Icon(Icons.school, color: Color(0xFF1A237E), size: 32),
               ),
             ),
             const SizedBox(width: 10),
-            // লোগোর ডান পাশে অ্যাপের শর্ট নেম
             const Text(
               'FYBTT', 
               style: TextStyle(
@@ -95,27 +125,42 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
             ),
           ],
         ),
+        actions: [
+          if (searchResults.isNotEmpty || _uidController.text.isNotEmpty || _nameController.text.isNotEmpty)
+            IconButton(
+              icon: const Icon(Icons.refresh, color: Colors.black),
+              onPressed: _clearFilters,
+              tooltip: "Clear Filters",
+            )
+        ],
       ),
       body: SafeArea(
         child: Column(
           children: [
-            _buildAdvancedSearchPanel(),
-
             Expanded(
-              child: _isSearching
-                  ? const Center(
-                      child: CircularProgressIndicator(
-                        color: Color(0xFF1A237E),
-                      ),
-                    )
-                  : searchResults.isEmpty
-                      ? _buildNoResultsView()
-                      : ListView.builder(
-                          padding: const EdgeInsets.all(16),
-                          itemCount: searchResults.length,
-                          itemBuilder: (context, index) =>
-                              _buildTeacherCard(searchResults[index]),
-                        ),
+              child: SingleChildScrollView(
+                physics: const ClampingScrollPhysics(),
+                child: Column(
+                  children: [
+                    _buildAdvancedSearchPanel(),
+                    _isSearching
+                        ? const Padding(
+                            padding: EdgeInsets.only(top: 50),
+                            child: Center(child: CircularProgressIndicator(color: Color(0xFF1A237E))),
+                          )
+                        : searchResults.isEmpty
+                            ? _buildNoResultsView()
+                            : ListView.builder(
+                                padding: const EdgeInsets.all(16),
+                                shrinkWrap: true, // Scroll衝突 এড়ানোর জন্য
+                                physics: const NeverScrollableScrollPhysics(),
+                                itemCount: searchResults.length,
+                                itemBuilder: (context, index) =>
+                                    _buildTeacherCard(searchResults[index]),
+                              ),
+                  ],
+                ),
+              ),
             ),
           ],
         ),
@@ -128,13 +173,10 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
       padding: const EdgeInsets.fromLTRB(20, 15, 20, 20),
       decoration: const BoxDecoration(
         color: Color(0xFF1A237E),
-        borderRadius: BorderRadius.vertical(
-          bottom: Radius.circular(30),
-        ),
+        borderRadius: BorderRadius.vertical(bottom: Radius.circular(30)),
       ),
       child: Column(
         children: [
-          // "Find Your Teacher" লেখাটি সাদা জায়গা থেকে সরিয়ে এখানে কালারের ভেতরে নিয়ে আসা হয়েছে
           const Center(
             child: Text(
               "Find Your Teacher",
@@ -146,7 +188,27 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
               ),
             ),
           ),
-          const SizedBox(height: 18), // লেখার নিচে সামঞ্জস্যপূর্ণ স্পেস
+          const SizedBox(height: 18),
+
+          // বাগ ১৪ ফিক্স: Firebase UID / Registration ID সার্চ ইনপুট
+          _customSearchField(
+            "Search by Firebase UID / Reg ID",
+            _uidController,
+            Icons.vpn_key_outlined,
+          ),
+          const SizedBox(height: 10),
+          
+          const Row(
+            children: [
+              Expanded(child: Divider(color: Colors.white24, thickness: 1)),
+              Padding(
+                padding: EdgeInsets.symmetric(horizontal: 10),
+                child: Text("OR USE FILTERS", style: TextStyle(color: Colors.white54, fontSize: 11, fontWeight: FontWeight.bold)),
+              ),
+              Expanded(child: Divider(color: Colors.white24, thickness: 1)),
+            ],
+          ),
+          const SizedBox(height: 10),
 
           _customSearchField(
             "Teacher's Name",
@@ -174,7 +236,6 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
               ),
             ],
           ),
-
           const SizedBox(height: 12),
 
           _customSearchField(
@@ -183,27 +244,25 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
             Icons.history,
             isNumber: true,
           ),
-
           const SizedBox(height: 20),
 
           SizedBox(
             width: double.infinity,
             height: 55,
             child: ElevatedButton(
-              onPressed: _searchTeachers,
+              onPressed: () {
+                FocusScope.of(context).unfocus(); // সার্চের সময় কিবোর্ড ডাউন করা
+                _searchTeachers();
+              },
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFFFFB300),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(15),
-                ),
+                foregroundColor: Colors.black,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                elevation: 2,
               ),
               child: const Text(
                 "SEARCH TEACHERS",
-                style: TextStyle(
-                  color: Colors.black,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 16,
-                ),
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
               ),
             ),
           ),
@@ -232,12 +291,19 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
           borderRadius: BorderRadius.circular(15),
           borderSide: BorderSide.none,
         ),
+        contentPadding: const EdgeInsets.symmetric(vertical: 16),
       ),
     );
   }
 
   Widget _buildTeacherCard(DocumentSnapshot doc) {
-    final data = doc.data() as Map<String, dynamic>;
+    // সেফ টাইপ কাস্টিং
+    final data = doc.data() as Map<String, dynamic>? ?? {};
+
+    // বাগ ১৫ ফিক্স: মাল্টিপল ফিল্ড চেক যাতে নাম কোন অবস্থাতেই "Unknown" না আসে
+    final String teacherName = data['name'] ?? data['displayName'] ?? 'No Name Provided';
+    final String location = data['location'] ?? 'Location N/A';
+    final int experience = data['experience'] is int ? data['experience'] : (int.tryParse(data['experience']?.toString() ?? '0') ?? 0);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 15),
@@ -247,53 +313,49 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withOpacity(0.04),
             blurRadius: 10,
+            offset: const Offset(0, 4),
           ),
         ],
       ),
       child: Column(
         children: [
           ListTile(
+            contentPadding: EdgeInsets.zero,
             leading: CircleAvatar(
               radius: 30,
               backgroundColor: Colors.indigo.shade50,
-              child: const Icon(
-                Icons.person,
-                size: 35,
-                color: Color(0xFF1A237E),
-              ),
+              child: const Icon(Icons.person, size: 35, color: Color(0xFF1A237E)),
             ),
             title: Text(
-              data['name'] ?? 'Unknown',
-              style: const TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 18,
-              ),
+              teacherName,
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.blackDE),
             ),
-            subtitle: Text(
-              "${data['location'] ?? 'N/A'} • ${data['experience'] ?? '0'} Years Exp.",
+            subtitle: Padding(
+              padding: const EdgeInsets.only(top: 5),
+              child: Text("$location • $experience Years Exp.", style: TextStyle(color: Colors.grey.shade600)),
             ),
           ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) =>
-                      TeacherProfileScreen(teacherId: doc.id),
-                ),
-              );
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF1A237E),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
+          const SizedBox(height: 5),
+          SizedBox(
+            width: double.infinity,
+            height: 45,
+            child: ElevatedButton(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => TeacherProfileScreen(teacherId: doc.id),
+                  ),
+                );
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF1A237E),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               ),
-            ),
-            child: const Text(
-              "View Profile",
-              style: TextStyle(color: Colors.white),
+              child: const Text("View Profile", style: TextStyle(fontWeight: FontWeight.bold)),
             ),
           ),
         ],
@@ -302,13 +364,21 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
   }
 
   Widget _buildNoResultsView() {
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: const [
-        Icon(Icons.search_off, size: 80, color: Colors.grey),
-        SizedBox(height: 10),
-        Text("No teachers found."),
-      ],
+    return Padding(
+      padding: const EdgeInsets.only(top: 60),
+      child: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.search_off_rounded, size: 80, color: Colors.grey.shade400),
+            const SizedBox(height: 15),
+            Text(
+              "No teachers found.", 
+              style: TextStyle(fontSize: 16, color: Colors.grey.shade600, fontWeight: FontWeight.w500)
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
