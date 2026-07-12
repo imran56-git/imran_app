@@ -1,8 +1,10 @@
-import 'dart:ui'; // BackdropFilter এর জন্য প্রয়োজন
+import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../models/reminder_model.dart';
 import '../../services/reminder_service.dart';
 import '../../widgets/success_toast.dart';
+import 'active_reminders_screen.dart';
 
 class ReminderScreen extends StatefulWidget {
   final String currentUserId;
@@ -40,7 +42,6 @@ class _ReminderScreenState extends State<ReminderScreen> {
     _selectedMonth = _months[DateTime.now().month - 1];
   }
 
-  // স্টুডেন্ট না পাওয়া গেলে সুন্দর অ্যানিমেটেড ব্লার পপআপ
   void _showErrorPopup(String title, String message) {
     showGeneralDialog(
       context: context,
@@ -168,7 +169,6 @@ class _ReminderScreenState extends State<ReminderScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // সার্চ প্যানেল কার্ড
             Container(
               decoration: BoxDecoration(
                 color: Colors.white,
@@ -228,7 +228,6 @@ class _ReminderScreenState extends State<ReminderScreen> {
               ),
             ),
 
-            // অ্যানিমেটেড কন্টেন্ট প্যানেল (স্টুডেন্ট ডাটা লোড হলে এক্সপ্যান্ড হবে)
             if (_foundStudent != null) ...[
               const SizedBox(height: 24),
               TweenAnimationBuilder<double>(
@@ -245,7 +244,6 @@ class _ReminderScreenState extends State<ReminderScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // স্টুডেন্ট ডিটেইলস ও ইনপুট কার্ড
                     Container(
                       decoration: BoxDecoration(
                         color: Colors.white,
@@ -266,7 +264,7 @@ class _ReminderScreenState extends State<ReminderScreen> {
                             title: Text(_foundStudent!['name'] ?? 'No Name', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17, color: Color(0xFF1B1B1B))),
                             subtitle: Padding(
                               padding: const EdgeInsets.only(top: 4.0),
-                              child: Text(_foundStudent!['email'] ?? 'No Email', style: TextStyle(fontSize: 13, color: Colors.grey[600])),
+                              child: Text(_foundStudent!['uid'] ?? 'No ID', style: TextStyle(fontSize: 13, color: Colors.grey[600])),
                             ),
                           ),
                           const Padding(
@@ -335,12 +333,8 @@ class _ReminderScreenState extends State<ReminderScreen> {
                       ),
                     ),
                     const SizedBox(height: 24),
-
-                    // মেসেজ প্রিভিউ টাইটেল
                     const Text('Message Preview', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF1B1B1B))),
                     const SizedBox(height: 10),
-
-                    // চ্যাট-বাবল স্টাইলড প্রিভিউ প্যানেল (ফিক্সড কালার সহ)
                     Container(
                       width: double.infinity,
                       decoration: BoxDecoration(
@@ -357,13 +351,10 @@ class _ReminderScreenState extends State<ReminderScreen> {
                         "Due Date: ${_selectedDueDate.day}/${_selectedDueDate.month}/${_selectedDueDate.year}\n\n"
                         "Please complete the payment at your earliest convenience.\n"
                         "Thank you.",
-                        // Colors.slate[800] পরিবর্তন করে Colors.blueGrey[800] করা হয়েছে
                         style: TextStyle(fontSize: 14, color: Colors.blueGrey[800], height: 1.4, fontFamily: 'monospace'),
                       ),
                     ),
                     const SizedBox(height: 28),
-
-                    // অ্যাকশন বাটন
                     SizedBox(
                       width: double.infinity,
                       height: 54,
@@ -385,9 +376,51 @@ class _ReminderScreenState extends State<ReminderScreen> {
                 ),
               ),
             ],
-          ],
-        ),
-      ),
-    );
-  }
-}
+            const SizedBox(height: 30),
+            GestureDetector(
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => ActiveRemindersScreen(teacherId: widget.currentUserId),
+                  ),
+                );
+              },
+              child: Container(
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [Colors.blue[800]!, Colors.blue[600]!],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.blue.withOpacity(0.25),
+                      blurRadius: 15,
+                      offset: const Offset(0, 6),
+                    )
+                  ],
+                ),
+                padding: const EdgeInsets.all(20),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.15),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: const Icon(Icons.notifications_active_rounded, color: Colors.white, size: 26),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Active Reminders',
+                            style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.bold),
+                          ),
+     
