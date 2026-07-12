@@ -16,11 +16,9 @@ class TuitionManagementScreen extends StatefulWidget {
   State<TuitionManagementScreen> createState() => _TuitionManagementScreenState();
 }
 
-class _TeacherProfileScreenState extends State<TuitionManagementScreen> with TickerProviderStateMixin {
-  // ভবিষ্যতের এনিমেশন বা স্টেটের জন্য স্টেটফুল উইজেট করা হলো
-}
-
-class _TuitionManagementScreenState extends State<TuitionManagementScreen> {
+class _TuitionManagementScreenState extends State<TuitionManagementScreen> with TickerProviderStateMixin {
+  // ভবিষ্যতের এনিমেশন বা স্টেটের জন্য TickerProviderStateMixin টি এখানে যুক্ত রাখা হলো
+  
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -82,7 +80,7 @@ class _TuitionManagementScreenState extends State<TuitionManagementScreen> {
             ),
             const SizedBox(height: 28),
 
-            // কার্ড ১: ফ্রি রিমাইন্ডার (ফি কালেকশন অ্যালার্ট)
+            // CARD 1: Free Reminder
             _buildAnimatedCard(
               delay: 150,
               child: TuitionHubCard(
@@ -106,7 +104,7 @@ class _TuitionManagementScreenState extends State<TuitionManagementScreen> {
             ),
             const SizedBox(height: 16),
 
-            // কার্ড ২: মাই ডায়েরি (অ্যাটেন্ডেন্স ও হোমওয়ার্ক ট্র্যাকার)
+            // CARD 2: My Diary
             _buildAnimatedCard(
               delay: 300,
               child: TuitionHubCard(
@@ -145,7 +143,7 @@ class _TuitionManagementScreenState extends State<TuitionManagementScreen> {
         child: Transform.translate(
           offset: Offset(0, (1 - value) * 30),
           child: child,
-                    ),
+        ),
       ),
       child: child,
     );
