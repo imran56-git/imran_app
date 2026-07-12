@@ -26,7 +26,6 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
   final FirebaseStorage _storage = FirebaseStorage.instance;
   final ImagePicker _picker = ImagePicker();
 
-  // গ্লোয়িং অ্যানিমেশনের জন্য কন্ট্রোলার
   late AnimationController _glowController;
   late Animation<double> _glowAnimation;
 
@@ -52,7 +51,6 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
     fetchTeacherData();
     checkFollowStatus();
 
-    // চমকানো (Glowing Effect) অ্যানিমেশন সেটআপ
     _glowController = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 2),
@@ -250,83 +248,104 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
 
   @override
   Widget build(BuildContext context) {
+    double headerHeight = 170.0;
+    double profileRadius = 56.0;
+
     return Scaffold(
       backgroundColor: const Color(0xFFF7F9FC),
-      body: isLoading ? const Center(child: CircularProgressIndicator()) : CustomScrollView(
-        physics: const BouncingScrollPhysics(),
-        slivers: [
-          SliverAppBar(
-            expandedHeight: 220,
-            pinned: true,
-            backgroundColor: Colors.blue[800],
-            elevation: 0,
-            centerTitle: true,
-            title: const Text('My Profile', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 20)),
-            leading: widget.teacherId != null ? IconButton(
-              icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
-              onPressed: () => Navigator.pop(context),
-            ) : null,
-            actions: [if (widget.teacherId == null) _buildMenu(), const SizedBox(width: 8)],
-            flexibleSpace: FlexibleSpaceBar(
-              background: AnimatedBuilder(
-                animation: _glowAnimation,
-                builder: (context, child) {
-                  return ClipPath(
-                    clipper: HeaderCurveClipper(),
-                    child: Container(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [Colors.blue[900]!, Colors.blue[700]!],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
+      body: isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : SafeArea(
+              top: false,
+              child: SingleChildScrollView(
+                physics: const BouncingScrollPhysics(),
+                child: Column(
+                  children: [
+                    Stack(
+                      clipBehavior: Clip.none,
+                      alignment: Alignment.center,
+                      children: [
+                        AnimatedBuilder(
+                          animation: _glowAnimation,
+                          builder: (context, child) {
+                            return ClipPath(
+                              clipper: HeaderCurveClipper(),
+                              child: Container(
+                                height: headerHeight,
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    colors: [Colors.blue[900]!, Colors.blue[700]!],
+                                    begin: Alignment.topLeft,
+                                    end: Alignment.bottomRight,
+                                  ),
+                                ),
+                                child: Stack(
+                                  children: [
+                                    Positioned(
+                                      top: 50,
+                                      left: 24,
+                                      child: Icon(Icons.blur_on_rounded, color: Colors.white.withOpacity(_glowAnimation.value * 0.28), size: 55),
+                                    ),
+                                    Positioned(
+                                      top: 45,
+                                      right: 24,
+                                      child: Icon(Icons.blur_on_rounded, color: Colors.white.withOpacity(_glowAnimation.value * 0.24), size: 55),
+                                    ),
+                                    Positioned(
+                                      top: 40,
+                                      left: 0,
+                                      right: 0,
+                                      child: Row(
+                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          widget.teacherId != null
+                                              ? IconButton(
+                                                  icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
+                                                  onPressed: () => Navigator.pop(context),
+                                                )
+                                              : const SizedBox(width: 48),
+                                          const Text(
+                                            'My Profile',
+                                            style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 19),
+                                          ),
+                                          widget.teacherId == null ? _buildMenu() : const SizedBox(width: 48),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
                         ),
-                      ),
-                      child: Stack(
+                        Positioned(
+                          top: headerHeight - profileRadius - 10,
+                          child: _buildProfileImage(profileRadius),
+                        ),
+                      ],
+                    ),
+                    SizedBox(height: profileRadius + 12),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Column(
                         children: [
-                          // ব্যাকগ্রাউন্ডের গ্লোয়িং কণা ইফেক্ট (যা প্রতি সেকেন্ডে রেসপনসিভ উপায়ে চমকাবে)
-                          Positioned(
-                            top: 40,
-                            left: 30,
-                            child: Icon(Icons.blur_on_rounded, color: Colors.white.withOpacity(_glowAnimation.value * 0.25), size: 60),
-                          ),
-                          Positioned(
-                            bottom: 80,
-                            right: 40,
-                            child: Icon(Icons.blur_on_rounded, color: Colors.white.withOpacity(_glowAnimation.value * 0.2), size: 80),
-                          ),
+                          _buildNameWithBadge(),
+                          const SizedBox(height: 8),
+                          if (!isEditing) _buildFollowStats(),
+                          if (widget.teacherId != null) _buildFollowButton(),
+                          const SizedBox(height: 24),
+                          isEditing ? _buildEditForm() : _buildViewProfile(),
+                          if (widget.teacherId == null && !isEditing) _buildDashboardSection(),
+                          if (widget.teacherId == null && !isEditing) _buildToolsAndPayment(),
+                          if (isEditing) _buildSaveCancelButtons(),
                         ],
                       ),
                     ),
-                  );
-                },
-              ),
-            ),
-          ),
-          SliverToBoxAdapter(
-            child: Transform.translate(
-              offset: const Offset(0, -65),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Column(
-                  children: [
-                    _buildProfileImage(),
-                    const SizedBox(height: 15),
-                    _buildNameWithBadge(),
-                    const SizedBox(height: 8),
-                    if (!isEditing) _buildFollowStats(),
-                    if (widget.teacherId != null) _buildFollowButton(),
-                    const SizedBox(height: 25),
-                    isEditing ? _buildEditForm() : _buildViewProfile(),
-                    if (widget.teacherId == null && !isEditing) _buildDashboardSection(),
-                    if (widget.teacherId == null && !isEditing) _buildToolsAndPayment(),
-                    if (isEditing) _buildSaveCancelButtons(),
+                    const SizedBox(height: 24),
                   ],
                 ),
               ),
             ),
-          ),
-        ],
-      ),
     );
   }
 
@@ -381,7 +400,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
     );
   }
 
-  Widget _buildProfileImage() {
+  Widget _buildProfileImage(double radius) {
     final url = teacherData?['profileImageUrl'];
     return GestureDetector(
       onTap: isEditing ? () async {
@@ -397,7 +416,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
               BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 12, offset: const Offset(0, 6)),
             ],
           ),
-          child: CircleAvatar(radius: 56, backgroundColor: Colors.blue[50], backgroundImage: _selectedImage != null ? FileImage(_selectedImage!) : (url != null ? NetworkImage(url) : null) as ImageProvider?),
+          child: CircleAvatar(radius: radius, backgroundColor: Colors.blue[50], backgroundImage: _selectedImage != null ? FileImage(_selectedImage!) : (url != null ? NetworkImage(url) : null) as ImageProvider?),
         ),
         if (isEditing) Positioned(bottom: 0, right: 0, child: CircleAvatar(backgroundColor: Colors.blue[800], radius: 18, child: const Icon(Icons.camera_alt_rounded, color: Colors.white, size: 16))),
       ]),
@@ -421,7 +440,6 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
       ),
     );
   }
-
   Widget _buildFollowButton() {
     return Padding(
       padding: const EdgeInsets.only(top: 15),
@@ -434,7 +452,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
     );
   }
 
-  Widget _buildViewProfile() {
+ Widget _buildViewProfile() {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       _buildMaterial3Card("Bio", _bioController.text, Icons.description_outlined, const Color(0xFF3B82F6)),
       _buildMaterial3Card("Phone Number", _phoneController.text, Icons.phone_outlined, Colors.deepPurple),
@@ -475,7 +493,6 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
     );
   }
 
-  // --- ফায়ারস্টোর রিয়েল-টাইম ড্যাশবোর্ড সেকশন ---
   Widget _buildDashboardSection() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -492,7 +509,6 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
           crossAxisSpacing: 12,
           childAspectRatio: 1.4,
           children: [
-            // ১. রিয়েল-টাইম টোটাল স্টুডেন্টস কাউন্টার
             StreamBuilder<QuerySnapshot>(
               stream: _firestore.collection('teachers').doc(targetUID).collection('students').snapshots(),
               builder: (context, snapshot) {
@@ -500,7 +516,6 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
                 return _buildDashboardCard("Total Students", "$count", Icons.people_alt_outlined, Colors.purple);
               },
             ),
-            // ২. টুডেস ক্লাস কাউন্টার
             StreamBuilder<QuerySnapshot>(
               stream: _firestore.collection('live_classes').where('teacherId', isEqualTo: targetUID).snapshots(),
               builder: (context, snapshot) {
@@ -508,7 +523,6 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
                 return _buildDashboardCard("Today's Classes", "$classCount", Icons.calendar_today_outlined, Colors.orange);
               },
             ),
-            // ৩. রিয়েল-টাইম পেন্ডিং পেমেন্ট ক্যালকুলেশন
             StreamBuilder<QuerySnapshot>(
               stream: _firestore.collection('payment_reminders').where('teacherId', isEqualTo: targetUID).where('status', isEqualTo: 'pending').snapshots(),
               builder: (context, snapshot) {
@@ -522,7 +536,6 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
                 return _buildDashboardCard("Pending Payments", "₹${totalPending.toStringAsFixed(0)}", Icons.account_balance_wallet_outlined, Colors.red);
               },
             ),
-            // ৪. লাইভ ক্লাস অ্যাক্টিভ স্ট্যাটাস ট্র্যাকার
             StreamBuilder<QuerySnapshot>(
               stream: _firestore.collection('live_classes').where('teacherId', isEqualTo: targetUID).where('isLive', isEqualTo: true).snapshots(),
               builder: (context, snapshot) {
@@ -634,18 +647,16 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
     ]);
   }
 
-  Widget _editField(String l, TextEditingController c, IconData i, {int maxLines = 1, TextInputType keyboardType = TextInputType.text}) => Padding(padding: const EdgeInsets.only(bottom: 15), child: TextField(controller: c, maxLines: maxLines, keyboardType: keyboardType, decoration: InputDecoration(labelText: l, prefixIcon: Icon(i), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))))));
+  Widget _buildEditField(String l, TextEditingController c, IconData i, {int maxLines = 1, TextInputType keyboardType = TextInputType.text}) => Padding(padding: const EdgeInsets.only(bottom: 15), child: TextField(controller: c, maxLines: maxLines, keyboardType: keyboardType, decoration: InputDecoration(labelText: l, prefixIcon: Icon(i), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))))));
 }
 
-// স্ক্রিনশটের মতো নিখুঁত বাঁকানো অবতল শেপ তৈরি করার কাস্টম ক্লিপার (ফিক্সড মেথড)
 class HeaderCurveClipper extends CustomClipper<Path> {
   @override
   Path getClip(Size size) {
     Path path = Path();
-    path.lineTo(0, size.height - 45);
+    path.lineTo(0, size.height - 35);
     Offset controlPoint = Offset(size.width / 2, size.height + 15);
-    Offset endPoint = Offset(size.width, size.height - 45);
-    // endPoint.endY পরিবর্তন করে ফ্লাটার স্ট্যান্ডার্ড endPoint.dy করা হয়েছে
+    Offset endPoint = Offset(size.width, size.height - 35);
     path.quadraticBezierTo(controlPoint.dx, controlPoint.dy, endPoint.dx, endPoint.dy);
     path.lineTo(size.width, 0);
     path.close();
