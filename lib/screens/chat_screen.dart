@@ -26,6 +26,7 @@ class ChatScreen extends StatefulWidget {
 }
 
 class _ChatScreenState extends State<ChatScreen> {
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final ImagePicker _picker = ImagePicker();
@@ -62,26 +63,18 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<void> _loadUserImages() async {
     try {
-      final senderDoc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(widget.currentUserId)
-          .get();
-      final receiverDoc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(widget.receiverId)
-          .get();
+      final senderDoc = await _firestore.collection('users').doc(widget.currentUserId).get();
+      final receiverDoc = await _firestore.collection('users').doc(widget.receiverId).get();
 
       if (mounted) {
         setState(() {
-          _senderImageUrl =
-              (senderDoc.data() as Map<String, dynamic>?)?['profileImageUrl'] ??
-                  '';
-          _receiverImageUrl =
-              (receiverDoc.data() as Map<String, dynamic>?)?['profileImageUrl'] ??
-                  '';
-          _receiverName =
-              (receiverDoc.data() as Map<String, dynamic>?)?['teacherName'] ??
-                  widget.teacherName;
+          _senderImageUrl = (senderDoc.data() as Map<String, dynamic>?)?['profileImageUrl'] ??
+              (senderDoc.data() as Map<String, dynamic>?)?['photoUrl'] ?? '';
+          _receiverImageUrl = (receiverDoc.data() as Map<String, dynamic>?)?['profileImageUrl'] ??
+              (receiverDoc.data() as Map<String, dynamic>?)?['photoUrl'] ?? '';
+          _receiverName = (receiverDoc.data() as Map<String, dynamic>?)?['name'] ??
+              (receiverDoc.data() as Map<String, dynamic>?)?['fullName'] ??
+              widget.teacherName;
         });
       }
     } catch (e) {
@@ -91,15 +84,10 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<void> _loadBlockedStatus() async {
     try {
-      final doc = await FirebaseFirestore.instance
-          .collection('chats')
-          .doc(widget.chatId)
-          .get();
-
+      final doc = await _firestore.collection('chats').doc(widget.chatId).get();
       if (doc.exists) {
         final data = doc.data() as Map<String, dynamic>?;
         final blockedBy = data?['blockedBy'] as List<dynamic>?;
-
         if (mounted) {
           setState(() {
             _isBlocked = blockedBy?.contains(widget.currentUserId) ?? false;
@@ -137,13 +125,13 @@ class _ChatScreenState extends State<ChatScreen> {
     if ((type == 'text' && text.trim().isEmpty) || _isBlocked) return;
 
     final messageText = text.trim();
-    final batch = FirebaseFirestore.instance.batch();
+    
+    // মেসেজ পাঠানোর আগে চ্যাট ইনিশিয়ালাইজ নিশ্চিত করা হচ্ছে
+    await _checkAndCreateChat();
 
-    final messageRef = FirebaseFirestore.instance
-        .collection('chats')
-        .doc(widget.chatId)
-        .collection('messages')
-        .doc();
+    final batch = _firestore.batch();
+    final chatRef = _firestore.collection('chats').doc(widget.chatId);
+    final messageRef = chatRef.collection('messages').doc();
 
     batch.set(messageRef, {
       'message': messageText,
@@ -154,18 +142,14 @@ class _ChatScreenState extends State<ChatScreen> {
       'isSeen': false,
     });
 
-    final chatRef =
-        FirebaseFirestore.instance.collection('chats').doc(widget.chatId);
-
     batch.update(chatRef, {
-      'lastMessage': messageText,
+      'lastMessage': type == 'text' ? messageText : '[$type]',
       'lastMessageTime': FieldValue.serverTimestamp(),
       'unreadCount': FieldValue.increment(1),
     });
 
     try {
       await batch.commit();
-
       if (type == 'text') {
         _messageController.clear();
         if (mounted) {
@@ -178,29 +162,27 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _checkAndCreateChat() async {
-    final chatDoc = await FirebaseFirestore.instance
-        .collection('chats')
-        .doc(widget.chatId)
-        .get();
-
-    if (!chatDoc.exists) {
-      await FirebaseFirestore.instance
-          .collection('chats')
-          .doc(widget.chatId)
-          .set({
-        'chatId': widget.chatId,
-        'teacherId': widget.currentUserId, // Assuming student Id is currentUserId
-        'studentId': widget.receiverId,
-        'teacherName': widget.teacherName, // Assuming current user is student or teacher
-        'studentName': widget.teacherName, // Assuming current user is teacher
-        'teacherImage': _senderImageUrl,
-        'studentImage': _receiverImageUrl,
-        'participants': [widget.currentUserId, widget.receiverId],
-        'lastMessage': '',
-        'lastMessageTime': FieldValue.serverTimestamp(),
-        'unreadCount': 0,
-        'blockedBy': [],
-      });
+    try {
+      final chatDoc = await _firestore.collection('chats').doc(widget.chatId).get();
+      if (!chatDoc.exists) {
+        await _firestore.collection('chats').doc(widget.chatId).set({
+          'chatId': widget.chatId,
+          'teacherId': widget.currentUserId,
+          'studentId': widget.receiverId,
+          'teacherName': widget.teacherName,
+          'studentName': _receiverName ?? widget.teacherName,
+          'teacherImage': _senderImageUrl ?? '',
+          'studentImage': _receiverImageUrl ?? '',
+          'participants': [widget.currentUserId, widget.receiverId],
+          'lastMessage': 'Chat initialized',
+          'lastMessageTime': FieldValue.serverTimestamp(),
+          'unreadCount': 0,
+          'isGroup': false,
+          'blockedBy': [],
+        });
+      }
+    } catch (e) {
+      debugPrint('Error initializing chat room: $e');
     }
   }
 
@@ -209,13 +191,10 @@ class _ChatScreenState extends State<ChatScreen> {
 
     try {
       if (_isRecording) {
-        final audioUrl =
-            await _voiceHandler.stopAndUploadRecording(widget.chatId);
-
+        final audioUrl = await _voiceHandler.stopAndUploadRecording(widget.chatId);
         if (mounted) {
           setState(() => _isRecording = false);
         }
-
         if (audioUrl != null && audioUrl.isNotEmpty) {
           await _sendMessage(audioUrl, 'audio');
         }
@@ -227,7 +206,6 @@ class _ChatScreenState extends State<ChatScreen> {
       }
     } catch (e) {
       debugPrint('Recording error: $e');
-
       if (mounted) {
         setState(() => _isRecording = false);
         ScaffoldMessenger.of(context).showSnackBar(
@@ -239,7 +217,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<void> _markMessagesAsSeen() async {
     try {
-      final query = await FirebaseFirestore.instance
+      final query = await _firestore
           .collection('chats')
           .doc(widget.chatId)
           .collection('messages')
@@ -247,13 +225,14 @@ class _ChatScreenState extends State<ChatScreen> {
           .where('isSeen', isEqualTo: false)
           .get();
 
-      final batch = FirebaseFirestore.instance.batch();
+      if (query.docs.isEmpty) return;
+
+      final batch = _firestore.batch();
       for (final doc in query.docs) {
         batch.update(doc.reference, {'isSeen': true});
       }
 
-      final chatRef =
-          FirebaseFirestore.instance.collection('chats').doc(widget.chatId);
+      final chatRef = _firestore.collection('chats').doc(widget.chatId);
       batch.update(chatRef, {'unreadCount': 0});
 
       await batch.commit();
@@ -264,23 +243,24 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<void> _clearChat() async {
     try {
-      final messagesRef = FirebaseFirestore.instance
-          .collection('chats')
-          .doc(widget.chatId)
-          .collection('messages');
-
+      final messagesRef = _firestore.collection('chats').doc(widget.chatId).collection('messages');
       final snapshot = await messagesRef.get();
 
-      final batch = FirebaseFirestore.instance.batch();
+      final batch = _firestore.batch();
       for (final doc in snapshot.docs) {
         batch.delete(doc.reference);
       }
+
+      batch.update(_firestore.collection('chats').doc(widget.chatId), {
+        'lastMessage': 'Chat cleared',
+        'unreadCount': 0,
+      });
 
       await batch.commit();
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Chat cleared')),
+          const SnackBar(content: Text('Chat cleared successfully')),
         );
       }
     } catch (e) {
@@ -316,11 +296,11 @@ class _ChatScreenState extends State<ChatScreen> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
-        title: Text(_isBlocked ? 'Unblock Teacher' : 'Block Teacher'),
+        title: Text(_isBlocked ? 'Unblock' : 'Block'),
         content: Text(
           _isBlocked
-              ? 'Do you want to unblock this teacher?'
-              : 'Do you want to block this teacher?',
+              ? 'Do you want to unblock this user?'
+              : 'Do you want to block this user?',
         ),
         actions: [
           TextButton(
@@ -341,23 +321,17 @@ class _ChatScreenState extends State<ChatScreen> {
             ? FieldValue.arrayRemove([widget.currentUserId])
             : FieldValue.arrayUnion([widget.currentUserId]);
 
-        await FirebaseFirestore.instance
-            .collection('chats')
-            .doc(widget.chatId)
-            .update({'blockedBy': blockedByUpdate});
+        await _firestore.collection('chats').doc(widget.chatId).update({'blockedBy': blockedByUpdate});
 
         setState(() => _isBlocked = !_isBlocked);
 
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(_isBlocked ? 'Teacher blocked' : 'Teacher unblocked'),
+            content: Text(_isBlocked ? 'User blocked' : 'User unblocked'),
           ),
         );
       } catch (e) {
         debugPrint('Block error: $e');
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Block error: $e')),
-        );
       }
     }
   }
@@ -368,7 +342,7 @@ class _ChatScreenState extends State<ChatScreen> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text('Report Teacher'),
+        title: const Text('Report'),
         content: TextField(
           controller: controller,
           maxLines: 3,
@@ -391,7 +365,7 @@ class _ChatScreenState extends State<ChatScreen> {
     );
 
     if (confirm == true && controller.text.trim().isNotEmpty) {
-      await FirebaseFirestore.instance.collection('reports').add({
+      await _firestore.collection('reports').add({
         'chatId': widget.chatId,
         'reportedUserId': widget.receiverId,
         'reportedBy': widget.currentUserId,
@@ -459,9 +433,7 @@ class _ChatScreenState extends State<ChatScreen> {
                         setState(() => _isEmojiVisible = !_isEmojiVisible);
                       },
                       icon: Icon(
-                        _isEmojiVisible
-                            ? Icons.keyboard
-                            : Icons.emoji_emotions_outlined,
+                        _isEmojiVisible ? Icons.keyboard : Icons.emoji_emotions_outlined,
                         color: Colors.grey[700],
                       ),
                     ),
@@ -475,6 +447,9 @@ class _ChatScreenState extends State<ChatScreen> {
                           hintText: 'Type a message',
                           border: InputBorder.none,
                         ),
+                        onTap: () {
+                          if (_isEmojiVisible) setState(() => _isEmojiVisible = false);
+                        },
                       ),
                     ),
                   ],
@@ -490,9 +465,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     ? null
                     : () {
                         if (_isTyping) {
-                          _checkAndCreateChat().then((_) {
-                            _sendMessage(_messageController.text, 'text');
-                          });
+                          _sendMessage(_messageController.text, 'text');
                         } else {
                           _toggleRecording();
                         }
@@ -517,12 +490,9 @@ class _ChatScreenState extends State<ChatScreen> {
       padding: const EdgeInsets.all(10),
       color: Colors.red.shade50,
       child: const Text(
-        'You blocked this teacher. You can unblock from the top menu.',
+        'This chat is blocked. You can manage block status from the top menu.',
         textAlign: TextAlign.center,
-        style: TextStyle(
-          color: Colors.red,
-          fontWeight: FontWeight.w600,
-        ),
+        style: TextStyle(color: Colors.red, fontWeight: FontWeight.w600),
       ),
     );
   }
@@ -546,8 +516,7 @@ class _ChatScreenState extends State<ChatScreen> {
             CircleAvatar(
               radius: 20,
               backgroundColor: Colors.white24,
-              backgroundImage: (_receiverImageUrl != null &&
-                      _receiverImageUrl!.isNotEmpty)
+              backgroundImage: (_receiverImageUrl != null && _receiverImageUrl!.isNotEmpty)
                   ? NetworkImage(_receiverImageUrl!)
                   : null,
               child: (_receiverImageUrl == null || _receiverImageUrl!.isEmpty)
@@ -559,11 +528,7 @@ class _ChatScreenState extends State<ChatScreen> {
               child: Text(
                 _receiverName ?? widget.teacherName,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 17,
-                  fontWeight: FontWeight.w600,
-                ),
+                style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w600),
               ),
             ),
           ],
@@ -580,40 +545,26 @@ class _ChatScreenState extends State<ChatScreen> {
           PopupMenuButton<String>(
             onSelected: _handleMenu,
             itemBuilder: (context) => [
-              const PopupMenuItem<String>(
-                value: 'background',
-                child: Text('Change Chat Background'),
-              ),
-              const PopupMenuItem<String>(
-                value: 'clear',
-                child: Text('Clear Chat'),
-              ),
+              const PopupMenuItem<String>(value: 'background', child: Text('Change Chat Background')),
+              const PopupMenuItem<String>(value: 'clear', child: Text('Clear Chat')),
               PopupMenuItem<String>(
                 value: 'block',
-                child: Text(_isBlocked ? 'Unblock Teacher' : 'Block Teacher'),
+                child: Text(_isBlocked ? 'Unblock User' : 'Block User'),
               ),
-              const PopupMenuItem<String>(
-                value: 'report',
-                child: Text('Report Teacher'),
-              ),
+              const PopupMenuItem<String>(value: 'report', child: Text('Report User')),
             ],
             icon: const Icon(Icons.more_vert, color: Colors.white),
           ),
         ],
       ),
       body: Container(
-        decoration: BoxDecoration(
-          image: DecorationImage(
-            image: bgProvider,
-            fit: BoxFit.cover,
-          ),
-        ),
+        decoration: BoxDecoration(image: DecorationImage(image: bgProvider, fit: BoxFit.cover)),
         child: Column(
           children: [
             _buildBlockedBanner(),
             Expanded(
               child: StreamBuilder<QuerySnapshot>(
-                stream: FirebaseFirestore.instance
+                stream: _firestore
                     .collection('chats')
                     .doc(widget.chatId)
                     .collection('messages')
@@ -621,33 +572,29 @@ class _ChatScreenState extends State<ChatScreen> {
                     .snapshots(),
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(child: CircularProgressIndicator());
+                    return const Center(child: CircularProgressIndicator(color: Color(0xFF128C7E)));
                   }
 
                   if (snapshot.hasError) {
                     return const Center(
-                      child: Text('Something went wrong'),
+                      child: Text('Failed to load messages.', style: TextStyle(color: Colors.red)),
                     );
                   }
 
                   if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
                     return const Center(
-                      child: Text(
-                        'No messages yet',
-                        style: TextStyle(color: Colors.black54, fontSize: 15),
-                      ),
+                      child: Text('No messages yet', style: TextStyle(color: Colors.black54, fontSize: 15)),
                     );
                   }
 
                   return ListView.builder(
                     controller: _scrollController,
                     reverse: true,
-                    padding: const EdgeInsets.only(top: 10, bottom: 10),
+                    padding: const EdgeInsets.symmetric(vertical: 10),
                     itemCount: snapshot.data!.docs.length,
                     itemBuilder: (context, index) {
                       final doc = snapshot.data!.docs[index];
                       final data = doc.data() as Map<String, dynamic>;
-
                       final bool isMe = data['senderId'] == widget.currentUserId;
 
                       return MessageBubble(
@@ -686,10 +633,6 @@ class _ChatScreenState extends State<ChatScreen> {
                       emojiSizeMax: 28,
                       backgroundColor: Colors.white,
                     ),
-                    skinToneConfig: const SkinToneConfig(),
-                    categoryViewConfig: const CategoryViewConfig(),
-                    bottomActionBarConfig: const BottomActionBarConfig(),
-                    searchViewConfig: const SearchViewConfig(),
                   ),
                 ),
               ),
