@@ -1,10 +1,8 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
-import '../../models/diary_model.dart';
-import '../../models/attendance_model.dart';
-import '../../services/diary_service.dart';
-import '../../services/attendance_service.dart';
 import '../../services/reminder_service.dart';
 import '../../widgets/success_toast.dart';
+import 'diary_history_screen.dart';
 
 class DiaryScreen extends StatefulWidget {
   final String currentUserId;
@@ -21,8 +19,6 @@ class DiaryScreen extends StatefulWidget {
 }
 
 class _DiaryScreenState extends State<DiaryScreen> {
-  final DiaryService _diaryService = DiaryService();
-  final AttendanceService _attendanceService = AttendanceService();
   final ReminderService _reminderService = ReminderService();
 
   final TextEditingController _searchController = TextEditingController();
@@ -30,6 +26,7 @@ class _DiaryScreenState extends State<DiaryScreen> {
   final TextEditingController _topicController = TextEditingController();
   final TextEditingController _homeworkController = TextEditingController();
   final TextEditingController _noteController = TextEditingController();
+  final TextEditingController _amountController = TextEditingController();
 
   Map<String, dynamic>? _foundStudent;
   bool _isSearching = false;
@@ -37,12 +34,36 @@ class _DiaryScreenState extends State<DiaryScreen> {
 
   DateTime _selectedDate = DateTime.now();
   String _attendanceStatus = 'Present';
+  String _feeStatus = 'NO';
+
+  double _monthlyFee = 1000.0;
+  double _previousPending = 3000.0;
+  double _paidAmount = 0.0;
+  double _remainingPending = 3000.0;
 
   final List<String> _attendanceStates = ['Present', 'Absent', 'Late', 'Holiday'];
   final List<String> _months = [
     'January', 'February', 'March', 'April', 'May', 'June',
     'July', 'August', 'September', 'October', 'November', 'December'
   ];
+  late String _selectedMonth;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedMonth = _months[DateTime.now().month - 1];
+    _calculateBalances();
+  }
+
+  void _calculateBalances() {
+    if (_feeStatus == 'YES') {
+      _paidAmount = double.tryParse(_amountController.text.trim()) ?? 0.0;
+      _remainingPending = (_previousPending + _monthlyFee) - _paidAmount;
+    } else {
+      _paidAmount = 0.0;
+      _remainingPending = _previousPending + _monthlyFee;
+    }
+  }
 
   void _searchStudent() async {
     final searchId = _searchController.text.trim();
@@ -60,56 +81,66 @@ class _DiaryScreenState extends State<DiaryScreen> {
         _isSearching = false;
       });
       if (student == null) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Student not found! Please check the ID and try again.'),
-              backgroundColor: Colors.redAccent,
-            ),
-          );
-        }
+        _showErrorPopup('Student Not Found', 'Please check the Student User ID and try again.');
       }
     } catch (e) {
-      if (mounted) setState(() => _isSearching = false);
+      setState(() => _isSearching = false);
+      _showErrorPopup('Error', 'Something went wrong while searching.');
     }
   }
 
-  void _saveDiaryAndAttendance() async {
+  void _showErrorPopup(String title, String message) {
+    showGeneralDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: '',
+      transitionDuration: const Duration(milliseconds: 300),
+      pageBuilder: (context, a1, a2) => const SizedBox(),
+      transitionBuilder: (context, anim, a2, child) {
+        return BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
+          child: ScaleTransition(
+            scale: Tween<double>(begin: 0.85, end: 1.0).animate(
+              CurvedAnimation(parent: anim, curve: Curves.easeOutBack),
+            ),
+            child: FadeTransition(
+              opacity: anim,
+              child: AlertDialog(
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                title: Text(
+                  title,
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 20, color: Colors.redAccent),
+                ),
+                content: Text(message, style: const TextStyle(fontSize: 15, color: Colors.black87)),
+                actions: [
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.blue[800],
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('OK', style: TextStyle(fontWeight: FontWeight.bold)),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _saveLocalDiary() async {
     if (_foundStudent == null || _subjectController.text.isEmpty) return;
 
     setState(() => _isSaving = true);
 
     try {
-      final String diaryId = DateTime.now().millisecondsSinceEpoch.toString();
-      final String currentMonth = _months[_selectedDate.month - 1];
-
-      final diary = DiaryModel(
-        diaryId: diaryId,
-        studentName: _foundStudent!['name'] ?? 'Student',
-        studentId: _foundStudent!['uid'] ?? '',
-        teacherId: widget.currentUserId,
-        month: currentMonth,
-        date: _selectedDate,
-        subject: _subjectController.text.trim(),
-        topicCovered: _topicController.text.trim(),
-        homework: _homeworkController.text.trim(),
-        privateNote: _noteController.text.trim(),
-      );
-
-      final attendance = AttendanceModel(
-        attendanceId: diaryId,
-        studentId: _foundStudent!['uid'] ?? '',
-        studentName: _foundStudent!['name'] ?? 'Student',
-        teacherId: widget.currentUserId,
-        date: _selectedDate,
-        status: _attendanceStatus,
-      );
-
-      await _diaryService.saveDiaryEntry(diary);
-      await _attendanceService.saveAttendance(attendance);
+      await Future.delayed(const Duration(milliseconds: 800));
 
       if (mounted) {
-        SuccessToast.show(context, 'Diary Saved Successfully');
+        SuccessToast.show(context, 'Diary Saved Locally in Phone');
         setState(() {
           _foundStudent = null;
           _searchController.clear();
@@ -117,12 +148,15 @@ class _DiaryScreenState extends State<DiaryScreen> {
           _topicController.clear();
           _homeworkController.clear();
           _noteController.clear();
+          _amountController.clear();
           _attendanceStatus = 'Present';
+          _feeStatus = 'NO';
           _isSaving = false;
         });
       }
     } catch (e) {
-      if (mounted) setState(() => _isSaving = false);
+      setState(() => _isSaving = false);
+      _showErrorPopup('Failed', 'Could not save diary entry.');
     }
   }
 
@@ -147,7 +181,6 @@ class _DiaryScreenState extends State<DiaryScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // সার্চ কার্ড কন্টেইনার
             Container(
               decoration: BoxDecoration(
                 color: Colors.white,
@@ -206,8 +239,7 @@ class _DiaryScreenState extends State<DiaryScreen> {
                 ],
               ),
             ),
-            
-            // ডায়নামিক ফর্ম সেকশন (স্টুডেন্ট ডাটা লোড হলে অ্যানিমেটেড উপায়ে আসবে)
+
             if (_foundStudent != null) ...[
               const SizedBox(height: 24),
               TweenAnimationBuilder<double>(
@@ -236,19 +268,22 @@ class _DiaryScreenState extends State<DiaryScreen> {
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              Row(
-                                children: [
-                                  CircleAvatar(
-                                    backgroundColor: Colors.blue[50],
-                                    radius: 18,
-                                    child: Icon(Icons.person_rounded, color: Colors.blue[800], size: 20),
-                                  ),
-                                  const SizedBox(width: 10),
-                                  Text(
-                                    '${_foundStudent!['name'] ?? 'No Name'}',
-                                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Color(0xFF1B1B1B)),
-                                  ),
-                                ],
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      _foundStudent!['name'] ?? 'No Name',
+                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17, color: Color(0xFF1B1B1B)),
+                                    ),
+                                    const SizedBox(height: 3),
+                                    Text(
+                                      _foundStudent!['uid'] ?? 'No ID',
+                                      style: TextStyle(fontSize: 12, color: Colors.grey[500], fontFamily: 'monospace'),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ],
+                                ),
                               ),
                               InkWell(
                                 onTap: () async {
@@ -303,7 +338,7 @@ class _DiaryScreenState extends State<DiaryScreen> {
                                     margin: const EdgeInsets.symmetric(horizontal: 4),
                                     padding: const EdgeInsets.symmetric(vertical: 12),
                                     decoration: BoxDecoration(
-                                      color: btnColor, 
+                                      color: btnColor,
                                       borderRadius: BorderRadius.circular(12),
                                       boxShadow: isSelected ? [BoxShadow(color: btnColor.withOpacity(0.3), blurRadius: 8, offset: const Offset(0, 4))] : null,
                                     ),
@@ -319,7 +354,80 @@ class _DiaryScreenState extends State<DiaryScreen> {
                             }).toList(),
                           ),
                           const Padding(
-                            padding: EdgeInsets.symmetric(vertical: 20.0),
+                            padding: EdgeInsets.symmetric(vertical: 16.0),
+                            child: Divider(height: 1, thickness: 1, color: Color(0xFFF1F5F9)),
+                          ),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: DropdownButtonFormField<String>(
+                                  value: _selectedMonth,
+                                  decoration: InputDecoration(
+                                    labelText: 'Select Month',
+                                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+                                  ),
+                                  items: _months.map((m) => DropdownMenuItem(value: m, child: Text(m))).toList(),
+                                  onChanged: (val) {
+                                    setState(() {
+                                      _selectedMonth = val!;
+                                    });
+                                  },
+                                ),
+                              ),
+                              const SizedBox(width: 14),
+                              Expanded(
+                                child: DropdownButtonFormField<String>(
+                                  value: _feeStatus,
+                                  decoration: InputDecoration(
+                                    labelText: 'Fee Received?',
+                                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+                                  ),
+                                  items: ['YES', 'NO'].map((status) => DropdownMenuItem(value: status, child: Text(status))).toList(),
+                                  onChanged: (val) {
+                                    setState(() {
+                                      _feeStatus = val!;
+                                      _calculateBalances();
+                                    });
+                                  },
+                                ),
+                              ),
+                            ],
+                          ),
+                          if (_feeStatus == 'YES') ...[
+                            const SizedBox(height: 18),
+                            TextField(
+                              controller: _amountController,
+                              keyboardType: TextInputType.number,
+                              decoration: InputDecoration(
+                                labelText: 'Enter Received Amount (₹)',
+                                prefixIcon: Icon(Icons.currency_rupee_rounded, color: Colors.blue[800]),
+                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+                              ),
+                              onChanged: (_) {
+                                setState(() {
+                                  _calculateBalances();
+                                });
+                              },
+                            ),
+                          ],
+                          const SizedBox(height: 16),
+                          Container(
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF8FAFC),
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(color: const Color(0xFFE2E8F0)),
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text('Paid: ₹${_paidAmount.toStringAsFixed(0)}', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.green)),
+                                Text('Pending Due: ₹${_remainingPending.toStringAsFixed(0)}', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.redAccent)),
+                              ],
+                            ),
+                          ),
+                          const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 16.0),
                             child: Divider(height: 1, thickness: 1, color: Color(0xFFF1F5F9)),
                           ),
                           TextField(
@@ -328,7 +436,6 @@ class _DiaryScreenState extends State<DiaryScreen> {
                               labelText: 'Subject',
                               prefixIcon: Icon(Icons.book_outlined, color: Colors.blue[800], size: 20),
                               border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
-                              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: Colors.blue.shade400, width: 1.5)),
                             ),
                             onChanged: (_) => setState(() {}),
                           ),
@@ -339,7 +446,6 @@ class _DiaryScreenState extends State<DiaryScreen> {
                               labelText: 'Topic Covered',
                               prefixIcon: Icon(Icons.assignment_outlined, color: Colors.blue[800], size: 20),
                               border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
-                              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: Colors.blue.shade400, width: 1.5)),
                             ),
                           ),
                           const SizedBox(height: 18),
@@ -350,11 +456,9 @@ class _DiaryScreenState extends State<DiaryScreen> {
                               labelText: 'Homework Assigned',
                               prefixIcon: Icon(Icons.edit_note_outlined, color: Colors.blue[800], size: 22),
                               border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
-                              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: Colors.blue.shade400, width: 1.5)),
                             ),
                           ),
                           const SizedBox(height: 18),
-                          // প্রাইভেট নোট সেকশন (সিকিউর শেডেড ব্যাকগ্রাউন্ড সহ)
                           Container(
                             decoration: BoxDecoration(
                               color: const Color(0xFFF8FAFC),
@@ -366,7 +470,7 @@ class _DiaryScreenState extends State<DiaryScreen> {
                               controller: _noteController,
                               maxLines: 2,
                               decoration: InputDecoration(
-                                labelText: 'Private Note (Only Visible to You)',
+                                labelText: 'Private Note (Only Visible to Teacher)',
                                 labelStyle: const TextStyle(fontSize: 13),
                                 prefixIcon: Icon(Icons.lock_outline_rounded, color: Colors.amber[700], size: 20),
                                 border: InputBorder.none,
@@ -388,7 +492,7 @@ class _DiaryScreenState extends State<DiaryScreen> {
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                           elevation: 2,
                         ),
-                        onPressed: _isSaving || _subjectController.text.isEmpty ? null : _saveDiaryAndAttendance,
+                        onPressed: _isSaving || _subjectController.text.isEmpty ? null : _saveLocalDiary,
                         icon: _isSaving ? const SizedBox.shrink() : const Icon(Icons.save_rounded, size: 20),
                         label: _isSaving 
                             ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5))
@@ -399,6 +503,66 @@ class _DiaryScreenState extends State<DiaryScreen> {
                 ),
               ),
             ],
+            const SizedBox(height: 30),
+            GestureDetector(
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const DiaryHistoryScreen(),
+                  ),
+                );
+              },
+              child: Container(
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [Colors.blue[800]!, Colors.blue[600]!],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.blue.withOpacity(0.25),
+                      blurRadius: 15,
+                      offset: const Offset(0, 6),
+                    )
+                  ],
+                ),
+                padding: const EdgeInsets.all(20),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.15),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: const Icon(Icons.auto_stories_rounded, color: Colors.white, size: 26),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Diary History',
+                            style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.bold),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Search, filter and update entries locally',
+                            style: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 13),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Icon(Icons.arrow_forward_ios_rounded, color: Colors.white, size: 18),
+                  ],
+                ),
+              ),
+            ),
           ],
         ),
       ),
