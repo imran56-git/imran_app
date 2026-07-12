@@ -66,45 +66,36 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
         ),
       ];
     }
-
-    if (_selectedIndex == 2) {  
-      return [  
-        IconButton(  
-          tooltip: 'Settings',  
-          icon: const Icon(Icons.settings_outlined, color: Color(0xFF1A237E)),  
-          onPressed: () {  
-            ScaffoldMessenger.of(context).showSnackBar(  
-              const SnackBar(content: Text('Open settings screen here')),
-            );  
-          },  
-        ),  
-      ];  
-    }  
     return [];
   }
 
   @override
   Widget build(BuildContext context) {
     final bool showFab = _selectedIndex != 2;
+    // প্রোফাইল স্ক্রিন (Index 2) সিলেক্ট থাকলে হোমের AppBar হাইড থাকবে 
+    // যাতে চাইল্ড প্রোফাইল স্ক্রিনের নিজস্ব হেডার/ডিজাইন সুন্দরভাবে পায়।
+    final bool showAppBar = _selectedIndex != 2; 
 
     return Scaffold(  
       backgroundColor: const Color(0xFFF4F7FA),  
-      appBar: AppBar(  
-        backgroundColor: Colors.white,  
-        elevation: 0,  
-        scrolledUnderElevation: 0,  
-        centerTitle: false,  
-        titleSpacing: 16,  
-        title: Text(  
-          _titles[_selectedIndex],  
-          style: const TextStyle(  
-            color: Color(0xFF1A1C1E),  
-            fontWeight: FontWeight.w800,  
-            fontSize: 22,  
-          ),  
-        ),  
-        actions: _buildAppBarActions(),  
-      ),  
+      appBar: showAppBar  
+          ? AppBar(  
+              backgroundColor: Colors.white,  
+              elevation: 0,  
+              scrolledUnderElevation: 0,  
+              centerTitle: false,  
+              titleSpacing: 16,  
+              title: Text(  
+                _titles[_selectedIndex],  
+                style: const TextStyle(  
+                  color: Color(0xFF1A1C1E),  
+                  fontWeight: FontWeight.w800,  
+                  fontSize: 22,  
+                ),  
+              ),  
+              actions: _buildAppBarActions(),  
+            )  
+          : null, // প্রোফাইলে গেলে ডবল অ্যাপ বার রোধ করতে এটি null করা হলো  
 
       body: IndexedStack(  
         index: _selectedIndex,  
