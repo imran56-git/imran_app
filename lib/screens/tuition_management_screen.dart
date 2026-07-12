@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'reminder_screen.dart';
-import 'diary_screen.dart'; // আপনার ডিরেক্টরি অনুযায়ী পাথ এডজাস্ট করা হয়েছে
+import 'diary_screen.dart';
 
 class TuitionManagementScreen extends StatefulWidget {
   final String currentUserId;
@@ -17,8 +17,8 @@ class TuitionManagementScreen extends StatefulWidget {
 }
 
 class _TuitionManagementScreenState extends State<TuitionManagementScreen> with TickerProviderStateMixin {
-  // ভবিষ্যতের এনিমেশন বা স্টেটের জন্য TickerProviderStateMixin টি এখানে যুক্ত রাখা হলো
-  
+  // ভবিষ্যতের ডাইনামিক অ্যানিমেশন কন্ট্রোলার বা রিয়াল-টাইম ড্যাশবোর্ড ওভারভিউ চেকের জন্য TickerProviderStateMixin অক্ষুণ্ণ রাখা হলো
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -46,11 +46,11 @@ class _TuitionManagementScreenState extends State<TuitionManagementScreen> with 
             // প্রিমিয়াম অ্যানিমেটেড হেডার সেকশন
             TweenAnimationBuilder<double>(
               tween: Tween(begin: 0.0, end: 1.0),
-              duration: const Duration(milliseconds: 400),
+              duration: const Duration(milliseconds: 350),
               builder: (context, value, child) => Opacity(
                 opacity: value,
                 child: Transform.translate(
-                  offset: Offset(0, (1 - value) * 15),
+                  offset: Offset(0, (1 - value) * 12),
                   child: child,
                 ),
               ),
@@ -82,7 +82,7 @@ class _TuitionManagementScreenState extends State<TuitionManagementScreen> with 
 
             // CARD 1: Free Reminder
             _buildAnimatedCard(
-              delay: 150,
+              delay: 100,
               child: TuitionHubCard(
                 title: 'Free Reminder',
                 subtitle: 'Send professional tuition fee alerts to students.',
@@ -106,7 +106,7 @@ class _TuitionManagementScreenState extends State<TuitionManagementScreen> with 
 
             // CARD 2: My Diary
             _buildAnimatedCard(
-              delay: 300,
+              delay: 200,
               child: TuitionHubCard(
                 title: 'My Diary',
                 subtitle: 'Track homework, topics covered, and attendance.',
@@ -136,12 +136,12 @@ class _TuitionManagementScreenState extends State<TuitionManagementScreen> with 
   Widget _buildAnimatedCard({required int delay, required Widget child}) {
     return TweenAnimationBuilder<double>(
       tween: Tween(begin: 0.0, end: 1.0),
-      duration: Duration(milliseconds: 400 + delay),
+      duration: Duration(milliseconds: 350 + delay),
       curve: Curves.easeOutCubic,
       builder: (context, value, child) => Opacity(
         opacity: value,
         child: Transform.translate(
-          offset: Offset(0, (1 - value) * 30),
+          offset: Offset(0, (1 - value) * 20),
           child: child,
         ),
       ),
@@ -181,9 +181,9 @@ class TuitionHubCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 12,
-            offset: const Offset(0, 6),
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
           ),
         ],
       ),
@@ -192,7 +192,7 @@ class TuitionHubCard extends StatelessWidget {
         child: InkWell(
           onTap: onTap,
           borderRadius: BorderRadius.circular(20),
-          splashColor: iconColor.withOpacity(0.05),
+          splashColor: iconColor.withOpacity(0.06),
           highlightColor: iconColor.withOpacity(0.02),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 22),
@@ -208,7 +208,7 @@ class TuitionHubCard extends StatelessWidget {
                   child: Icon(
                     icon,
                     color: iconColor,
-                    size: 28,
+                    size: 26,
                   ),
                 ),
                 const SizedBox(width: 18),
@@ -220,7 +220,7 @@ class TuitionHubCard extends StatelessWidget {
                       Text(
                         title,
                         style: const TextStyle(
-                          fontSize: 18,
+                          fontSize: 17,
                           fontWeight: FontWeight.bold,
                           color: Color(0xFF1B1B1B),
                         ),
@@ -241,7 +241,7 @@ class TuitionHubCard extends StatelessWidget {
                 Icon(
                   Icons.arrow_forward_ios_rounded,
                   color: Colors.grey.shade400,
-                  size: 16,
+                  size: 14,
                 ),
               ],
             ),
