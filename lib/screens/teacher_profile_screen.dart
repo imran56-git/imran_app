@@ -4,7 +4,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart'; // ক্লিপবোর্ডে কপি করার জন্য যুক্ত করা হয়েছে
 import 'package:image_picker/image_picker.dart';
+import 'package:shared_preferences/shared_preferences.dart'; // সেশন ডাটা ক্লিয়ার করার জন্য
 import '../utils/image_utils.dart';
 import '../utils/chat_colors.dart';
 import '../widgets/success_toast.dart';
@@ -115,6 +117,12 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
     } catch (e) {
       debugPrint('$e');
     }
+  }
+
+  // সেশন ক্লিয়ার করার হেল্পার মেথড (লগআউট বাগ ৩ ফিক্স)
+  Future<void> _clearLocalSession() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.clear();
   }
 
   void _openMapPicker() async {
@@ -331,9 +339,14 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
                         children: [
                           _buildNameWithBadge(),
                           const SizedBox(height: 8),
+                          
+                          // বাগ ১৬ ফিক্স: প্রফেশনাল মেটেরিয়াল UID কার্ড লেআউট ডিজাইন
+                          _buildUidIdentityCard(),
+                          const SizedBox(height: 10),
+                          
                           if (!isEditing) _buildFollowStats(),
                           if (widget.teacherId != null) _buildFollowButton(),
-                          const SizedBox(height: 24),
+                          const SizedBox(height: 20),
                           isEditing ? _buildEditForm() : _buildViewProfile(),
                           if (widget.teacherId == null && !isEditing) _buildDashboardSection(),
                           if (widget.teacherId == null && !isEditing) _buildToolsAndPayment(),
@@ -346,6 +359,58 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
                 ),
               ),
             ),
+    );
+  }
+
+  // বাগ ১৬ ফিচার: ক্লিপবোর্ড কপি অ্যাকশন সহ সুন্দর UID কার্ড
+  Widget _buildUidIdentityCard() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      maxWidth: 320,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade200),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 4)],
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text("TEACHER UID", style: TextStyle(color: Colors.grey.shade500, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 0.5)),
+                const SizedBox(height: 2),
+                Text(
+                  targetUID,
+                  style: const TextStyle(color: Colors.blackDE, fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 0.2),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          InkWell(
+            onTap: () {
+              Clipboard.setData(ClipboardData(text: targetUID));
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: const Text("Teacher UID Copied!"),
+                  behavior: SnackBarBehavior.floating,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+              );
+            },
+            borderRadius: BorderRadius.circular(8),
+            child: Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(8)),
+              child: Icon(Icons.copy_all_rounded, color: Colors.blue.shade800, size: 18),
+            ),
+          )
+        ],
+      ),
     );
   }
 
@@ -364,6 +429,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
             onConfirm: () async {
               try {
                 await _auth.signOut();
+                await _clearLocalSession(); // সেশন ক্লিন
                 if (mounted) {
                   Navigator.of(context).popUntil((route) => route.isFirst);
                 }
@@ -382,6 +448,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
               try {
                 await _firestore.collection('teachers').doc(targetUID).delete();
                 await _auth.currentUser?.delete();
+                await _clearLocalSession(); // সেশন ক্লিন
                 if (mounted) {
                   Navigator.of(context).popUntil((route) => route.isFirst);
                 }
@@ -440,6 +507,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
       ),
     );
   }
+
   Widget _buildFollowButton() {
     return Padding(
       padding: const EdgeInsets.only(top: 15),
@@ -452,7 +520,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
     );
   }
 
- Widget _buildViewProfile() {
+  Widget _buildViewProfile() {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       _buildMaterial3Card("Bio", _bioController.text, Icons.description_outlined, const Color(0xFF3B82F6)),
       _buildMaterial3Card("Phone Number", _phoneController.text, Icons.phone_outlined, Colors.deepPurple),
@@ -583,7 +651,9 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
 
   Widget _buildEditForm() {
     final query = _subjectSearchController.text.trim();
+    // কম্পাইল ফিক্স: গ্লোবাল লিস্ট অ্যাক্সেস নিশ্চিত করা হয়েছে
     final list = _subjects.where((s) => s.toLowerCase().contains(query.toLowerCase())).toList();
+    
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       _editField("Full Name", _nameController, Icons.person),
       _editField("Mobile Number", _phoneController, Icons.phone, keyboardType: TextInputType.phone),
