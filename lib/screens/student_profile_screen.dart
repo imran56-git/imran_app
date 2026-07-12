@@ -4,7 +4,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart'; // ক্লিপবোর্ডে কপি করার জন্য যুক্ত করা হয়েছে
 import 'package:image_picker/image_picker.dart';
+import 'package:shared_preferences/shared_preferences.dart'; // সেশন ডাটা রিমুভ করার জন্য
 
 class StudentProfileScreen extends StatefulWidget {
   const StudentProfileScreen({super.key});
@@ -65,6 +67,12 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
     if (picked != null && mounted) setState(() => _selectedImage = File(picked.path));
   }
 
+  // SharedPreferences সেশন ক্লিয়ার করার জন্য হেল্পার মেথড
+  Future<void> _clearLocalSession() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.clear(); // সম্পূর্ণ লোকাল সেশন মেমোরি ফ্লাশ
+  }
+
   Future _handleDeleteAccount() async {
     final ok = await confirm('Delete Account', 'This will permanently delete your account.\n\nAre you sure?', confirmText: 'Delete', danger: true);
     if (ok != true) return;
@@ -72,10 +80,14 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
       final user = _auth.currentUser; if (user == null) return;
       final uid = user.uid;
       setState(() => isLoading = true);
+      
       await _firestore.collection('students').doc(uid).delete();
       await _firestore.collection('usernames').doc(uid).delete().catchError((_) {});
       await _storage.ref('students/$uid/profile.jpg').delete().catchError((_) {});
+      
+      await _clearLocalSession(); // সেশন রিমুভ
       await user.delete();
+      
       if (mounted) Navigator.pushNamedAndRemoveUntil(context, '/login', (_) => false);
     } catch (e) {
       setState(() => isLoading = false);
@@ -87,7 +99,9 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
 
   Future _handleSignOut() async {
     if (await confirm('Sign Out', 'Are you sure?') == true) {
+      setState(() => isLoading = true);
       await _auth.signOut();
+      await _clearLocalSession(); // সেশন রিমুভ
       if (mounted) Navigator.pushNamedAndRemoveUntil(context, '/login', (_) => false);
     }
   }
@@ -133,16 +147,23 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
           'This service is currently disabled.\n\nIt will be available in a future update.\nThank you for your patience.',
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('OK'),
-          ),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK')),
         ],
       ),
     );
   }
 
-  void _snack(String msg) { if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg))); }
+  void _snack(String msg) { 
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(msg),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        )
+      ); 
+    } 
+  }
 
   ImageProvider? get _profileImage {
     if (_selectedImage != null) return FileImage(_selectedImage!);
@@ -166,7 +187,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
                 width: 32,
                 height: 32,
                 fit: BoxFit.cover,
-                errorBuilder: (context, error, stackTrace) => const Icon(Icons.apps, color: Colors.white, size: 32),
+                errorBuilder: (context, error, stackTrace) => const Icon(Icons.school, color: Colors.white, size: 32),
               ),
             ),
             const SizedBox(width: 10),
@@ -193,7 +214,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
           )
         ],
       ),
-      body: isLoading ? const Center(child: CircularProgressIndicator()) : SingleChildScrollView(
+      body: isLoading ? const Center(child: CircularProgressIndicator(color: Color(0xFF1E4C7A))) : SingleChildScrollView(
         child: AnimatedSwitcher(
           duration: const Duration(milliseconds: 400), 
           child: Column(key: ValueKey(_triggerAnimation), children: [
@@ -205,33 +226,83 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
     );
   }
 
-  Widget _buildHeader() => FadeInDown(
-    child: Container(
-      width: double.infinity, padding: const EdgeInsets.only(bottom: 30, top: 15),
-      decoration: const BoxDecoration(color: Color(0xFF1E4C7A), borderRadius: BorderRadius.only(bottomLeft: Radius.circular(35), bottomRight: Radius.circular(35))),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.center, children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24),
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: const Text(
-              'Profile', 
-              style: TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.bold, letterSpacing: 0.5)
+  Widget _buildHeader() {
+    final currentUid = _auth.currentUser?.uid ?? 'N/A';
+    
+    return FadeInDown(
+      child: Container(
+        width: double.infinity, padding: const EdgeInsets.only(bottom: 25, top: 15),
+        decoration: const BoxDecoration(color: Color(0xFF1E4C7A), borderRadius: BorderRadius.only(bottomLeft: Radius.circular(35), bottomRight: Radius.circular(35))),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.center, children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: const Text(
+                'Profile', 
+                style: TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.bold, letterSpacing: 0.5)
+              ),
             ),
           ),
-        ),
-        const SizedBox(height: 20),
-        Stack(alignment: Alignment.center, children: [
-          CircleAvatar(radius: 55, backgroundColor: const Color(0xFFA2E8DD), backgroundImage: _profileImage, child: _profileImage == null ? const Icon(Icons.person, size: 65, color: Colors.white) : null),
-          if (isEditing) Positioned(bottom: 0, right: 0, child: InkWell(onTap: _pickProfileImage, child: Container(padding: const EdgeInsets.all(8), decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle, boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 4)]), child: const Icon(Icons.camera_alt, color: Color(0xFF1E4C7A), size: 20)))),
+          const SizedBox(height: 15),
+          Stack(alignment: Alignment.center, children: [
+            CircleAvatar(radius: 52, backgroundColor: const Color(0xFFA2E8DD), backgroundImage: _profileImage, child: _profileImage == null ? const Icon(Icons.person, size: 60, color: Colors.white) : null),
+            if (isEditing) Positioned(bottom: 0, right: 0, child: InkWell(onTap: _pickProfileImage, child: Container(padding: const EdgeInsets.all(8), decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle, boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 4)]), child: const Icon(Icons.camera_alt, color: Color(0xFF1E4C7A), size: 18)))),
+          ]),
+          const SizedBox(height: 12),
+          Text(_name.text.isEmpty ? "No Name Added" : _name.text, style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 4),
+          Text(_bio.text.isEmpty ? "No Bio Added" : _bio.text, style: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 13), textAlign: TextAlign.center),
+          const SizedBox(height: 15),
+          
+          // বাগ ১৬ ফিক্স: Firebase UID / Registration ID কার্ড কপি মেকানিজম সহ
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 30),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.12),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.white.withOpacity(0.2)),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text("REGISTRATION ID / UID", style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 0.5)),
+                        const SizedBox(height: 2),
+                        Text(
+                          currentUid,
+                          style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 0.3),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  InkWell(
+                    onTap: () {
+                      Clipboard.setData(ClipboardData(text: currentUid));
+                      _snack("ID Copied to Clipboard!");
+                    },
+                    borderRadius: BorderRadius.circular(8),
+                    child: Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(color: Colors.white.withOpacity(0.15), borderRadius: BorderRadius.circular(8)),
+                      child: const Icon(Icons.copy_all_rounded, color: Color(0xFFA2E8DD), size: 18),
+                    ),
+                  )
+                ],
+              ),
+            ),
+          )
         ]),
-        const SizedBox(height: 15),
-        Text(_name.text.isEmpty ? "No Name Added" : _name.text, style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)),
-        const SizedBox(height: 5),
-        Text(_bio.text.isEmpty ? "No Bio Added" : _bio.text, style: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 14)),
-      ]),
-    ),
-  );
+      ),
+    );
+  }
 
   Widget _buildCard(IconData icon, String value) => Expanded(
     child: Container(
@@ -243,7 +314,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
 
   Widget _buildProfileDetails() => FadeInUp(
     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      const SizedBox(height: 15),
+      const SizedBox(height: 10),
       Row(children: [_buildCard(Icons.school, studentClass ?? "Not Added"), const SizedBox(width: 15), _buildCard(Icons.location_on, _location.text.isEmpty ? "Not Added" : _location.text)]),
       const SizedBox(height: 25),
       const Text("Interested Subjects", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black87)),
@@ -286,7 +357,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
     const SizedBox(height: 20),
     const Text("Interested Subjects", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
     const SizedBox(height: 10),
-    
+
     Row(
       children: [
         Expanded(
@@ -334,7 +405,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
       ]
     ),
     const SizedBox(height: 30),
-    Row(children: [Expanded(child: OutlinedButton(onPressed: () { setState(() { isEditing = false; _selectedImage = null; }); _customSubjectController.clear(); fetchStudentData(); }, child: const Text("Cancel"))), const SizedBox(width: 12), Expanded(child: ElevatedButton(onPressed: updateStudentProfile, child: const Text("Save Changes")))]),
+    Row(children: [Expanded(child: OutlinedButton(onPressed: () { setState(() { isEditing = false; _selectedImage = null; }); _customSubjectController.clear(); fetchStudentData(); }, child: const Text("Cancel"))), const SizedBox(width: 12), Expanded(child: ElevatedButton(onPressed: updateStudentProfile, style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1E4C7A), foregroundColor: Colors.white), child: const Text("Save Changes")))]),
     const SizedBox(height: 25),
   ]);
 
