@@ -227,7 +227,7 @@ class _ReminderScreenState extends State<ReminderScreen> {
                 ],
               ),
             ),
-            
+
             // অ্যানিমেটেড কন্টেন্ট প্যানেল (স্টুডেন্ট ডাটা লোড হলে এক্সপ্যান্ড হবে)
             if (_foundStudent != null) ...[
               const SizedBox(height: 24),
@@ -335,12 +335,12 @@ class _ReminderScreenState extends State<ReminderScreen> {
                       ),
                     ),
                     const SizedBox(height: 24),
-                    
+
                     // মেসেজ প্রিভিউ টাইটেল
                     const Text('Message Preview', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF1B1B1B))),
                     const SizedBox(height: 10),
-                    
-                    // চ্যাট-বাবল স্টাইলড প্রিভিউ প্যানেল
+
+                    // চ্যাট-বাবল স্টাইলড প্রিভিউ প্যানেল (ফিক্সড কালার সহ)
                     Container(
                       width: double.infinity,
                       decoration: BoxDecoration(
@@ -357,11 +357,12 @@ class _ReminderScreenState extends State<ReminderScreen> {
                         "Due Date: ${_selectedDueDate.day}/${_selectedDueDate.month}/${_selectedDueDate.year}\n\n"
                         "Please complete the payment at your earliest convenience.\n"
                         "Thank you.",
-                        style: TextStyle(fontSize: 14, color: Colors.slate[800], height: 1.4, fontFamily: 'monospace'),
+                        // Colors.slate[800] পরিবর্তন করে Colors.blueGrey[800] করা হয়েছে
+                        style: TextStyle(fontSize: 14, color: Colors.blueGrey[800], height: 1.4, fontFamily: 'monospace'),
                       ),
                     ),
                     const SizedBox(height: 28),
-                    
+
                     // অ্যাকশন বাটন
                     SizedBox(
                       width: double.infinity,
