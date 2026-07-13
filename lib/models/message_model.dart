@@ -4,7 +4,7 @@ class MessageModel {
   final String messageId;
   final String senderId;
   final String receiverId;
-  final String message;
+  final String content; // Naming Convention সিঙ্ক করার জন্য 'message' থেকে 'content' করা হলো
   final DateTime? timestamp;
   final String type;
   final String status;
@@ -21,7 +21,7 @@ class MessageModel {
     required this.messageId,
     required this.senderId,
     required this.receiverId,
-    required this.message,
+    required this.content,
     this.timestamp,
     required this.type,
     required this.status,
@@ -40,9 +40,11 @@ class MessageModel {
       messageId: map['messageId'] ?? '',
       senderId: map['senderId'] ?? '',
       receiverId: map['receiverId'] ?? '',
-      message: map['message'] ?? '',
+      content: map['content'] ?? map['message'] ?? '', // ওল্ড ডেটাবেস সেফটির জন্য ব্যাকআপ রাখা হলো
       timestamp: map['timestamp'] != null
-          ? (map['timestamp'] as Timestamp).toDate()
+          ? (map['timestamp'] is Timestamp 
+              ? (map['timestamp'] as Timestamp).toDate() 
+              : DateTime.tryParse(map['timestamp'].toString()))
           : null,
       type: map['type'] ?? 'text',
       status: map['status'] ?? 'sent',
@@ -53,7 +55,9 @@ class MessageModel {
       replyToMessageId: map['replyToMessageId'],
       isEdited: map['isEdited'] ?? false,
       editTimestamp: map['editTimestamp'] != null
-          ? (map['editTimestamp'] as Timestamp).toDate()
+          ? (map['editTimestamp'] is Timestamp 
+              ? (map['editTimestamp'] as Timestamp).toDate() 
+              : DateTime.tryParse(map['editTimestamp'].toString()))
           : null,
       mediaMetaData: map['mediaMetaData'] != null
           ? Map<String, dynamic>.from(map['mediaMetaData'])
@@ -66,10 +70,10 @@ class MessageModel {
       'messageId': messageId,
       'senderId': senderId,
       'receiverId': receiverId,
-      'message': message,
+      'content': content,
       'timestamp': timestamp != null
           ? Timestamp.fromDate(timestamp!)
-          : FieldValue.serverTimestamp(),
+          : FieldValue.serverTimestamp(), // রিয়েল-টাইম সার্ভার টাইমস্ট্যাম্প
       'type': type,
       'status': status,
       'isDeletedForEveryone': isDeletedForEveryone,
