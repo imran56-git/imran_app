@@ -1,7 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'teacher_profile_screen.dart';
-// ফিক্সড: রিলেটিভ পাথ বাগ দূর করতে মডিউলার ডিরেক্টরি ইম্পোর্ট সিঙ্ক করা হলো (#13)
+// আপনার অরিজিনাল ম্যাপ ফাইলটি ইম্পোর্ট করা হলো
 import 'teaching_areas_map_screen.dart'; 
 
 class TeacherSearchScreen extends StatefulWidget {
@@ -12,7 +12,6 @@ class TeacherSearchScreen extends StatefulWidget {
 }
 
 class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
-  // টেক্সট কন্ট্রোলারের লিসেনার দিয়ে রিয়াল-টাইম সার্চ ট্র্যাকিং
   final TextEditingController _uidController = TextEditingController();
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _subjectController = TextEditingController();
@@ -20,9 +19,8 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
   final TextEditingController _experienceController = TextEditingController();
   final TextEditingController _classController = TextEditingController();
 
-  // উন্নত ফিল্টার স্ট্যাটাস ভেরিয়েবল
   String _selectedGender = 'All';
-  String _selectedMode = 'All'; // All, Online, Offline
+  String _selectedMode = 'All'; 
 
   String _uidQuery = '';
   String _nameQuery = '';
@@ -34,7 +32,6 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
   @override
   void initState() {
     super.initState();
-    // প্রত্যেকটি ফিল্ডে টাইপিং শুরু করলেই যেন রিয়াল-টাইম আপডেট হয় (#8)
     _uidController.addListener(() => setState(() => _uidQuery = _uidController.text.trim().toLowerCase()));
     _nameController.addListener(() => setState(() => _nameQuery = _nameController.text.trim().toLowerCase()));
     _subjectController.addListener(() => setState(() => _subjectQuery = _subjectController.text.trim().toLowerCase()));
@@ -77,7 +74,6 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF4F6F9),
-      // ফিক্সড: ক্লিন এবং একক মেটেরিয়াল ৩ অ্যাপবার (ডুপ্লিকেট লোগো ও হেডার বাগ ফিক্সড) (#1)
       appBar: AppBar(
         backgroundColor: const Color(0xFF1E4C7A),
         elevation: 0,
@@ -125,7 +121,6 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
                   return _buildNoResultsView();
                 }
 
-                // ক্লায়েন্ট-সাইড রিয়াল-টাইম মাল্টি-ফিল্ড ফিল্টারিং ইঞ্জিন (সুপারফাস্ট ও নো-ক্র্যাশ) (#8, #14)
                 final filteredDocs = snapshot.data!.docs.where((doc) {
                   final data = doc.data() as Map<String, dynamic>? ?? {};
                   final docId = doc.id.toLowerCase();
@@ -134,24 +129,19 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
                   final location = (data['location'] ?? '').toString().toLowerCase();
                   final gender = (data['gender'] ?? 'Male').toString();
                   final teachingMode = (data['teachingMode'] ?? 'Offline').toString();
-                  
-                  // কন্ডিশনাল টাইপ কাস্টিং সেফটি মেকানিজম
+
                   final List subjects = data['subjects'] is List ? data['subjects'] : [];
                   final List classes = data['classes'] is List ? data['classes'] : [];
                   final int exp = data['experience'] is int ? data['experience'] : (int.tryParse(data['experience']?.toString() ?? '0') ?? 0);
 
-                  // টেক্সট ফিল্ড কন্ডিশন ম্যাচিং (#8)
                   bool matchesUid = _uidQuery.isEmpty || docId.contains(_uidQuery);
                   bool matchesName = _nameQuery.isEmpty || name.contains(_nameQuery);
                   bool matchesLocation = _locationQuery.isEmpty || location.contains(_locationQuery);
                   bool matchesSubject = _subjectQuery.isEmpty || subjects.any((s) => s.toString().toLowerCase().contains(_subjectQuery));
                   bool matchesClass = _classQuery.isEmpty || classes.any((c) => c.toString().toLowerCase().contains(_classQuery));
-
-                  // ড্রপডাউন কন্ডিশন ম্যাচিং (#14)
                   bool matchesGender = _selectedGender == 'All' || gender.toLowerCase() == _selectedGender.toLowerCase();
                   bool matchesMode = _selectedMode == 'All' || teachingMode.toLowerCase() == _selectedMode.toLowerCase();
 
-                  // এক্সপেরিয়েন্স কন্ডিশন ম্যাচিং (#14)
                   bool matchesExp = true;
                   if (_expQuery.isNotEmpty) {
                     final targetExp = int.tryParse(_expQuery);
@@ -214,7 +204,6 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
             children: [
               Expanded(child: _customSearchField("Min Exp (Years)", _experienceController, Icons.history_toggle_off_rounded, isNumber: true)),
               const SizedBox(width: 10),
-              // জেন্ডার ড্রপডাউন ফিল্টার (#14)
               Expanded(
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -234,7 +223,6 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
                 ),
               ),
               const SizedBox(width: 10),
-              // অনলাইন/অফলাইন মোড ড্রপডাউন ফিল্টার (#14)
               Expanded(
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -319,14 +307,14 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
                             style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xFF1B1B1B)),
                           ),
                         ),
-                        // ফিক্সড: নামের পাশে ম্যাপ বাটন এবং ক্লাশ-ফ্রি নেভিগেশন ডিফাইন করা হলো (#10, #13)
+                        // ফিক্সড: আপনার রিয়েল 'MapScreen' ক্লাস এবং সঠিক প্যারামিটার এখানে পাস করা হলো
                         IconButton(
                           icon: const Icon(Icons.map_rounded, color: Colors.teal, size: 22),
                           onPressed: () {
                             Navigator.push(
                               context,
                               MaterialPageRoute(
-                                builder: (_) => TeachingAreasMapScreen(
+                                builder: (_) => MapScreen(
                                   teacherId: doc.id,
                                   teacherName: teacherName,
                                 ),
@@ -352,7 +340,6 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
           const SizedBox(height: 12),
           const Divider(height: 1, color: Color(0xFFF1F5F9)),
           const SizedBox(height: 10),
-          // ফিক্সড: বাটন লেআউট ওভারফ্লো-ফ্রি এবং সাইজ স্ট্যান্ডার্ডাইজেশন (#9, #15)
           Row(
             children: [
               Expanded(
