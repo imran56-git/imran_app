@@ -140,7 +140,7 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
                     'FYBTT',
                     style: TextStyle(
                       color: Color(0xFF1E4C7A),  
-                      fontWeight: FontWeight.black,  
+                      fontWeight: FontWeight.w900,  
                       fontSize: 20,
                       letterSpacing: 0.5,
                     ),
