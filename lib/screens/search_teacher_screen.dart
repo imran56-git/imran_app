@@ -125,7 +125,7 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
               'FYBTT', 
               style: TextStyle(
                 color: Color(0xFF1E4C7A), 
-                fontWeight: FontWeight.black, 
+                fontWeight: FontWeight.w900, 
                 fontSize: 19, 
                 letterSpacing: 0.5
               )
@@ -214,7 +214,7 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
               Expanded(child: Divider(color: Colors.white24, thickness: 1)),
               Padding(
                 padding: EdgeInsets.symmetric(horizontal: 12),
-                child: Text("OR USE FILTERS", style: TextStyle(color: Colors.white64, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 0.5)),
+                child: Text("OR USE FILTERS", style: TextStyle(color: Colors.white60, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 0.5)),
               ),
               Expanded(child: Divider(color: Colors.white24, thickness: 1)),
             ],
