@@ -34,7 +34,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
       await FirebaseAuth.instance.sendPasswordResetEmail(
         email: _emailController.text.trim(),
       );
-      
+
       _showMessage("A password reset link has been sent to your email.", isSuccess: true);
 
       // লিংক যাওয়ার পর ৩ সেকেন্ড পর স্ক্রিন সেফটি মেথডে ব্যাক করবে
@@ -102,7 +102,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 const SizedBox(height: 10),
-                
+
                 // অ্যাপ ব্র্যান্ডিং লগো এবং নেম (FYBTT)
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -123,7 +123,8 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                       'FYBTT',
                       style: TextStyle(
                         fontSize: 24,
-                        fontWeight: FontWeight.black,
+                        // বাগ ফিক্স: FontWeight.black এর বদলে প্রফেশনাল FontWeight.w900 ব্যবহার করা হলো
+                        fontWeight: FontWeight.w900,
                         color: Color(0xFF1E4C7A),
                         letterSpacing: 1.0,
                       ),
@@ -161,7 +162,8 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                   padding: const EdgeInsets.symmetric(horizontal: 10),
                   child: Text(
                     'Enter your registered email address below. We will send you a secure link to reset your password.',
-                    textAlign: Center,
+                    // বাগ ফিক্স: উইজেট 'Center' টাইপো সরিয়ে 'TextAlign.center' করা হলো
+                    textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 14,
                       color: Colors.grey.shade600,
