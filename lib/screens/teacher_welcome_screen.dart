@@ -51,7 +51,7 @@ class TeacherWelcomeScreen extends StatelessWidget {
               'Welcome to Find Your Best Teacher Today!',
               style: TextStyle(
                 fontSize: 22,
-                fontWeight: FontWeight.black,
+                fontWeight: FontWeight.w900,
                 color: Color(0xFF1A1C1E),
                 letterSpacing: 0.3,
               ),
