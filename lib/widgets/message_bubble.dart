@@ -1,277 +1,346 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:audioplayers/audioplayers.dart';
+import '../models/message_model.dart'; 
 import '../services/chat_service.dart';
+import '../widgets/success_toast.dart';
 
-class ChatInputBar extends StatefulWidget {
+class MessageBubble extends StatefulWidget {
+  final MessageModel message; 
+  final bool isMe;
   final String chatRoomId;
-  final String senderId;
-  final String receiverId;
-  final Function(bool) onTypingChanged;
-  final String? replyToMessageId;
-  final String? replyToText;
-  final VoidCallback? onCancelReply;
+  final String currentUserId;
+  final Function(MessageModel) onReplyPressed; 
 
-  const ChatInputBar({
+  const MessageBubble({
     super.key,
+    required this.message,
+    required this.isMe,
     required this.chatRoomId,
-    required this.senderId,
-    required this.receiverId,
-    required this.onTypingChanged,
-    this.replyToMessageId,
-    this.replyToText,
-    this.onCancelReply,
+    required this.currentUserId,
+    required this.onReplyPressed,
   });
 
   @override
-  State<ChatInputBar> createState() => _ChatInputBarState();
+  State<MessageBubble> createState() => _MessageBubbleState();
 }
 
-class _ChatInputBarState extends State<ChatInputBar> {
-  final TextEditingController _controller = TextEditingController();
+class _MessageBubbleState extends State<MessageBubble> {
+  late final AudioPlayer _audioPlayer;
   final ChatService _chatService = ChatService();
-  bool _isTyping = false;
+  bool _isPlaying = false;
 
   @override
   void initState() {
     super.initState();
-    _controller.addListener(_onTextChanged);
+    _audioPlayer = AudioPlayer();
+    _audioPlayer.onPlayerComplete.listen((event) {
+      if (mounted) setState(() => _isPlaying = false);
+    });
   }
 
   @override
   void dispose() {
-    if (_isTyping) {
-      _chatService.updateTypingStatus(widget.chatRoomId, widget.senderId, false);
-    }
-    _controller.removeListener(_onTextChanged);
-    _controller.dispose();
+    _audioPlayer.dispose();
     super.dispose();
   }
 
-  void _onTextChanged() {
-    final bool typing = _controller.text.trim().isNotEmpty;
-    if (_isTyping != typing) {
-      setState(() => _isTyping = typing);
-      widget.onTypingChanged(_isTyping);
-      _chatService.updateTypingStatus(widget.chatRoomId, widget.senderId, _isTyping);
+  String _formatTime(DateTime? date) {
+    if (date == null) return ''; 
+    final hour = date.hour % 12 == 0 ? 12 : date.hour % 12;
+    final minute = date.minute.toString().padLeft(2, '0');
+    final amPm = date.hour >= 12 ? 'PM' : 'AM';
+    return '$hour:$minute $amPm';
+  }
+
+  Future<void> _toggleAudio() async {
+    if (widget.message.content.trim().isEmpty) return;
+    try {
+      if (_isPlaying) {
+        await _audioPlayer.stop();
+        if (mounted) setState(() => _isPlaying = false);
+      } else {
+        await _audioPlayer.stop();
+        await _audioPlayer.play(UrlSource(widget.message.content));
+        if (mounted) setState(() => _isPlaying = true);
+      }
+    } catch (e) {
+      debugPrint('Audio play error: $e');
+      if (mounted) setState(() => _isPlaying = false);
     }
   }
 
-  void _showAttachmentBottomSheet() {
+  Widget _buildStatusIcon() {
+    if (!widget.isMe) return const SizedBox.shrink();
+    final status = widget.message.status.toLowerCase();
+
+    if (status == 'seen' || status == 'read') {
+      return const Icon(Icons.done_all, size: 16, color: Colors.blue);
+    }
+    if (status == 'delivered') {
+      return const Icon(Icons.done_all, size: 16, color: Colors.grey);
+    }
+    return const Icon(Icons.done, size: 16, color: Colors.grey);
+  }
+
+  Widget _buildAudioBubble() {
+    return InkWell(
+      onTap: _toggleAudio,
+      borderRadius: BorderRadius.circular(14),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          CircleAvatar(
+            radius: 18,
+            backgroundColor: const Color(0xFF006653),
+            child: Icon(_isPlaying ? Icons.pause : Icons.play_arrow, color: Colors.white, size: 20),
+          ),
+          const SizedBox(width: 10),
+          Container(
+            width: 120, height: 4,
+            decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(10)),
+          ),
+          const SizedBox(width: 8),
+          Icon(Icons.mic, size: 18, color: widget.isMe ? Colors.black54 : Colors.grey),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildImageBubble() {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: Image.network(
+        widget.message.content,
+        width: 200,
+        height: 200,
+        fit: BoxFit.cover,
+        errorBuilder: (context, error, stackTrace) => Container(
+          width: 200, height: 200,
+          color: Colors.grey.shade200,
+          child: const Icon(Icons.broken_image_outlined, color: Colors.grey),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDocumentBubble() {
+    final fileName = widget.message.mediaMetaData?['fileName'] ?? "Document File";
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(color: Colors.black.withOpacity(0.05), borderRadius: BorderRadius.circular(12)),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.description_rounded, color: Colors.redAccent, size: 32),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  fileName, 
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.black87),
+                ),
+                const SizedBox(height: 2),
+                const Text("Tap to view / download", style: TextStyle(fontSize: 11, color: Colors.black54)),
+              ],
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.download_for_offline_rounded, color: Color(0xFF006653)), 
+            onPressed: () {},
+          )
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLocationBubble() {
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(color: Colors.black.withOpacity(0.05), borderRadius: BorderRadius.circular(12)),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.location_on_rounded, color: Colors.teal, size: 32),
+          const SizedBox(width: 10),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text("Shared Location", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.black87)),
+                SizedBox(height: 2),
+                Text("Tap to open map", style: TextStyle(fontSize: 11, color: Colors.black54)),
+              ],
+            ),
+          ),
+          Icon(Icons.open_in_new_rounded, color: Colors.grey.shade600, size: 18),
+        ],
+      ),
+    );
+  }
+
+  void _showLongPressMenu(BuildContext context) {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
       builder: (context) => Container(
         margin: const EdgeInsets.all(16),
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: Colors.white, 
-          borderRadius: BorderRadius.circular(24),
-        ),
+        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(24)),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text(
-              "Send Document / Media", 
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            if (widget.message.type == 'text' && !widget.message.isDeletedForEveryone)
+              ListWhiteTiles(
+                leading: const Icon(Icons.copy_rounded, color: Colors.black87),
+                title: const Text('Copy Text'),
+                onTap: () {
+                  Clipboard.setData(ClipboardData(text: widget.message.content));
+                  Navigator.pop(context);
+                  SuccessToast.show(context, "Copied to Clipboard");
+                },
+              ),
+            if (!widget.message.isDeletedForEveryone)
+              ListWhiteTiles(
+                leading: const Icon(Icons.reply_rounded, color: Colors.black87),
+                title: const Text('Reply'),
+                onTap: () {
+                  Navigator.pop(context);
+                  widget.onReplyPressed(widget.message);
+                },
+              ),
+            ListWhiteTiles(
+              leading: const Icon(Icons.delete_outline_rounded, color: Colors.red),
+              title: const Text('Delete for Me', style: TextStyle(color: Colors.red)),
+              onTap: () async {
+                Navigator.pop(context);
+                await _chatService.deleteMessageForMe(widget.chatRoomId, widget.message.messageId, widget.currentUserId);
+              },
             ),
-            const SizedBox(height: 20),
-            GridView.count(
-              crossAxisCount: 3,
-              shrinkWrap: true,
-              mainAxisSpacing: 16,
-              crossAxisSpacing: 16,
-              children: [
-                _attachmentTile(Icons.image, "Gallery", Colors.purple, 'image'),
-                _attachmentTile(Icons.description, "Document", Colors.blue, 'document'),
-                _attachmentTile(Icons.audiotrack, "Audio", Colors.orange, 'audio'),
-                _attachmentTile(Icons.video_library, "Video", Colors.red, 'video'),
-                _attachmentTile(Icons.location_on, "Location", Colors.teal, 'location'),
-                _attachmentTile(Icons.mic, "Voice", Colors.green, 'voice'),
-              ],
-            ),
+            if (widget.isMe && !widget.message.isDeletedForEveryone)
+              ListWhiteTiles(
+                leading: const Icon(Icons.delete_forever_rounded, color: Colors.red),
+                title: const Text('Delete for Everyone', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+                onTap: () async {
+                  Navigator.pop(context);
+                  await _chatService.deleteMessageForEveryone(widget.chatRoomId, widget.message.messageId);
+                },
+              ),
           ],
         ),
       ),
     );
   }
 
-  Widget _attachmentTile(IconData icon, String label, Color color, String type) {
-    return InkWell(
-      onTap: () async {
-        Navigator.pop(context);
-        String mockUrl = "https://firebasestorage.googleapis.com/v0/b/mock/o/$type";
-
-        if (type == 'location') {
-          await _chatService.sendLocation(
-            widget.chatRoomId, 
-            widget.senderId, 
-            widget.receiverId, 
-            22.5726, 
-            88.3639,
-          );
-        } else if (type == 'document') {
-          await _chatService.sendDocument(
-            widget.chatRoomId, 
-            widget.senderId, 
-            widget.receiverId, 
-            mockUrl, 
-            "Document.pdf",
-          );
-        } else if (type == 'image') {
-          await _chatService.sendImage(widget.chatRoomId, widget.senderId, widget.receiverId, mockUrl);
-        } else if (type == 'video') {
-          await _chatService.sendVideo(widget.chatRoomId, widget.senderId, widget.receiverId, mockUrl);
-        } else if (type == 'audio') {
-          await _chatService.sendAudio(widget.chatRoomId, widget.senderId, widget.receiverId, mockUrl);
-        } else if (type == 'voice') {
-          await _chatService.sendVoice(widget.chatRoomId, widget.senderId, widget.receiverId, mockUrl);
-        }
-      },
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          CircleAvatar(
-            radius: 26, 
-            backgroundColor: color.withOpacity(0.1), 
-            child: Icon(icon, color: color, size: 24),
-          ),
-          const SizedBox(height: 6),
-          Text(label, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
-        ],
-      ),
-    );
-  }
-
-  void _handleSend() async {
-    final text = _controller.text.trim();
-    if (text.isEmpty) return;
-
-    final String? currentReplyId = widget.replyToMessageId;
-
-    _controller.clear();
-    setState(() => _isTyping = false);
-    widget.onTypingChanged(false);
-    _chatService.updateTypingStatus(widget.chatRoomId, widget.senderId, false);
-
-    if (widget.onCancelReply != null) {
-      widget.onCancelReply!();
-    }
-
-    await _chatService.sendMessage(
-      chatId: widget.chatRoomId,
-      senderId: widget.senderId,
-      receiverId: widget.receiverId,
-      message: text,
-      type: 'text',
-      replyToMessageId: currentReplyId,
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (widget.replyToMessageId != null && widget.replyToText != null)
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: Colors.grey.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(12),
-              border: const Border(left: BorderSide(color: Color(0xFF006653), width: 4)),
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        "Reply to Message",
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold, 
-                          color: Color(0xFF006653), 
-                          fontSize: 12,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        widget.replyToText!,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(color: Colors.black.withOpacity(0.87), fontSize: 14),
-                      ),
-                    ],
-                  ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.close, size: 18, color: Colors.grey),
-                  onPressed: widget.onCancelReply,
-                ),
-              ],
-            ),
-          ),
+    if (widget.message.deletedForUsers.contains(widget.currentUserId)) {
+      return const SizedBox.shrink();
+    }
 
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 6.0),
-          child: Row(
+    final bubbleColor = widget.isMe ? const Color(0xFFE7FFDB) : Colors.white; 
+    final msgType = widget.message.type.toLowerCase();
+
+    return Align(
+      alignment: widget.isMe ? Alignment.centerRight : Alignment.centerLeft,
+      child: GestureDetector(
+        onLongPress: () => _showLongPressMenu(context), 
+        child: Container(
+          margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
+          decoration: BoxDecoration(
+            color: bubbleColor,
+            borderRadius: BorderRadius.only(
+              topLeft: const Radius.circular(16),
+              topRight: const Radius.circular(16),
+              bottomLeft: Radius.circular(widget.isMe ? 16 : 4),
+              bottomRight: Radius.circular(widget.isMe ? 4 : 16),
+            ),
+            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 4, offset: const Offset(0, 1))],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Expanded(
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(25.0),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.05), 
-                        blurRadius: 5, 
-                        offset: const Offset(0, 1),
-                      ),
-                    ],
+              if (widget.message.isDeletedForEveryone)
+                const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.block, size: 14, color: Colors.grey),
+                    SizedBox(width: 4),
+                    Text(
+                      "This message was deleted", 
+                      style: TextStyle(fontSize: 14, color: Colors.grey, fontStyle: FontStyle.italic),
+                    ),
+                  ],
+                )
+              else ...[
+                if (widget.message.replyToMessageId != null)
+                  Container(
+                    padding: const EdgeInsets.all(6),
+                    margin: const EdgeInsets.only(bottom: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(0.04),
+                      borderRadius: BorderRadius.circular(8),
+                      border: const Border(left: BorderSide(color: Color(0xFF006653), width: 3)),
+                    ),
+                    child: const Text(
+                      "Replied to a message",
+                      style: TextStyle(fontSize: 12, color: Colors.black54, fontWeight: FontWeight.w500),
+                    ),
                   ),
-                  child: Row(
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.emoji_emotions_outlined, color: Colors.grey),
-                        onPressed: () {}, 
-                      ),
-                      Expanded(
-                        child: TextField(
-                          controller: _controller,
-                          minLines: 1,
-                          maxLines: 5,
-                          decoration: const InputDecoration(
-                            hintText: 'Message',
-                            border: InputBorder.none,
-                            contentPadding: EdgeInsets.symmetric(vertical: 10.0, horizontal: 4),
-                          ),
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.collections_rounded, color: Colors.grey),
-                        onPressed: _showAttachmentBottomSheet,
-                      ),
-                    ],
+
+                if (msgType == 'audio' || msgType == 'voice')
+                  _buildAudioBubble()
+                else if (msgType == 'image')
+                  _buildImageBubble()
+                else if (msgType == 'document' || msgType == 'file')
+                  _buildDocumentBubble()
+                else if (msgType == 'location')
+                  _buildLocationBubble()
+                else
+                  Text(widget.message.content, style: const TextStyle(fontSize: 15, color: Colors.black87, height: 1.25)),
+              ],
+
+              const SizedBox(height: 4),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  const Spacer(),
+                  Text(
+                    _formatTime(widget.message.timestamp),
+                    style: TextStyle(fontSize: 10, color: Colors.grey.shade600),
                   ),
-                ),
-              ),
-              const SizedBox(width: 6.0),
-              GestureDetector(
-                onTap: _isTyping ? _handleSend : null,
-                child: CircleAvatar(
-                  radius: 22,
-                  backgroundColor: const Color(0xFF006653),
-                  child: Icon(
-                    _isTyping ? Icons.send : Icons.mic,
-                    color: Colors.white,
-                    size: 20,
-                  ),
-                ),
+                  if (widget.isMe) ...[
+                    const SizedBox(width: 4),
+                    _buildStatusIcon(),
+                  ],
+                ],
               ),
             ],
           ),
         ),
-      ],
+      ),
     );
+  }
+}
+
+class ListWhiteTiles extends StatelessWidget {
+  final Widget leading;
+  final Widget title;
+  final VoidCallback onTap;
+
+  const ListWhiteTiles({super.key, required this.leading, required this.title, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(leading: leading, title: title, onTap: onTap);
   }
 }
