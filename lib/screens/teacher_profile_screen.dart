@@ -13,7 +13,7 @@ import '../widgets/success_toast.dart';
 import 'location_picker_screen.dart';
 import 'tuition_management_screen.dart';
 import 'live/join_live_screen.dart';
-import 'notification_screen.dart'; // নতুন ক্রিয়েট করা নোটিফিকেশন স্ক্রিন
+import 'notification_screen.dart';
 
 class TeacherProfileScreen extends StatefulWidget {
   final String currentUserId;
@@ -107,7 +107,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
   void checkFollowRequestStatus() async {
     final currentUID = _auth.currentUser?.uid;
     if (currentUID == null || isOwnProfile) return;
-    
+
     final doc = await _firestore.collection('follow_requests').doc('${currentUID}_${widget.currentUserId}').get();
     if (mounted) {
       if (doc.exists) {
@@ -121,7 +121,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
   void checkUnreadNotifications() async {
     final currentUID = _auth.currentUser?.uid;
     if (currentUID == null) return;
-    
+
     _firestore.collection('notifications')
       .where('receiverId', isEqualTo: currentUID)
       .where('isRead', isEqualTo: false)
@@ -139,7 +139,6 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
     final requestDocRef = _firestore.collection('follow_requests').doc('${currentUID}_${widget.currentUserId}');
 
     if (requestStatus == 'none') {
-      // স্টুডেন্টের নিজের ডেটা জানার জন্য
       final studentDoc = await _firestore.collection('students').doc(currentUID).get();
       final studentData = studentDoc.data() ?? {};
 
@@ -152,7 +151,6 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
         'timestamp': FieldValue.serverTimestamp(),
       });
 
-      // প্রোফেশনাল ফলো নোটিফিকেশন পুশ
       await _firestore.collection('notifications').add({
         'receiverId': widget.currentUserId,
         'senderId': currentUID,
@@ -166,7 +164,6 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
 
       SuccessToast.show(context, 'Follow request sent!');
     } else {
-      // আনফলো বা রিকোয়েস্ট উইথড্র লজিক
       await requestDocRef.delete();
       SuccessToast.show(context, 'Unfollowed / Request removed');
     }
@@ -497,314 +494,4 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
           itemBuilder: (ctx) => isOwnProfile 
             ? [
                 const PopupMenuItem(value: 'edit', child: Row(children: [Icon(Icons.edit_outlined, size: 20), SizedBox(width: 10), Text('Edit Profile')])),
-                const PopupMenuItem(value: 'notifications', child: Row(children: [Icon(Icons.notifications_none_rounded, size: 20), SizedBox(width: 10), Text('Notifications')])),
-                const PopupMenuItem(value: 'share', child: Row(children: [Icon(Icons.share_outlined, size: 20), SizedBox(width: 10), Text('Share Profile')])),
-                const PopupMenuItem(value: 'signout', child: Row(children: [Icon(Icons.logout, size: 20, color: Colors.orange), SizedBox(width: 10), Text('Sign Out')])),
-              ]
-            : [
-                const PopupMenuItem(value: 'notifications', child: Row(children: [Icon(Icons.notifications_none_rounded, size: 20), SizedBox(width: 10), Text('Notifications')])),
-                const PopupMenuItem(value: 'share', child: Row(children: [Icon(Icons.share_outlined, size: 20), SizedBox(width: 10), Text('Share Profile')])),
-                const PopupMenuItem(value: 'report', child: Row(children: [Icon(Icons.report_problem_outlined, size: 20, color: Colors.red), SizedBox(width: 10), Text('Report User', style: TextStyle(color: Colors.red))])),
-                const PopupMenuItem(value: 'block', child: Row(children: [Icon(Icons.block_flipped, size: 20, color: Colors.red), SizedBox(width: 10), Text('Block User', style: TextStyle(color: Colors.red))])),
-              ],
-        ),
-        if (hasUnreadNotifications)
-          Positioned(
-            right: 12,
-            top: 12,
-            child: Container(
-              width: 8,
-              height: 8,
-              decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle),
-            ),
-          )
-      ],
-    );
-  }
-
-  Widget _buildProfileImage(double radius) {
-    final url = teacherData?['profileImageUrl'];
-    return GestureDetector(
-      onTap: isEditing ? () async {
-        final picked = await _picker.pickImage(source: ImageSource.gallery, imageQuality: 80);
-        if (picked != null) setState(() => _selectedImage = File(picked.path));
-      } : null,
-      child: Stack(children: [
-        Container(
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            border: Border.all(color: Colors.white, width: 4),
-            boxShadow: [
-              BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 12, offset: const Offset(0, 6)),
-            ],
-          ),
-          child: CircleAvatar(radius: radius, backgroundColor: Colors.blue[50], backgroundImage: _selectedImage != null ? FileImage(_selectedImage!) : (url != null ? NetworkImage(url) : null) as ImageProvider?),
-        ),
-        if (isEditing) Positioned(bottom: 0, right: 0, child: CircleAvatar(backgroundColor: Colors.blue[800], radius: 18, child: const Icon(Icons.camera_alt_rounded, color: Colors.white, size: 16))),
-      ]),
-    );
-  }
-
-  Widget _buildNameWithBadge() {
-    return Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-      Text(_nameController.text.isEmpty ? "No Name" : _nameController.text, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Color(0xFF1B1B1B))),
-      if (teacherData?['isVerified'] ?? false) const Padding(padding: EdgeInsets.only(left: 6), child: Icon(Icons.verified, color: Colors.blue, size: 20)),
-    ]);
-  }
-
-  Widget _buildFollowStats() {
-    return StreamBuilder<QuerySnapshot>(
-      stream: _firestore.collection('follow_requests').where('teacherId', isEqualTo: widget.currentUserId).where('status', isEqualTo: 'accepted').snapshots(),
-      builder: (context, snap) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-        decoration: BoxDecoration(color: Colors.blue[50], borderRadius: BorderRadius.circular(20)),
-        child: Text('Followers: ${snap.data?.docs.length ?? 0}', style: TextStyle(color: Colors.blue[800], fontWeight: FontWeight.bold, fontSize: 13)),
-      ),
-    );
-  }
-
-  Widget _buildFollowButton() {
-    String label = 'Follow Teacher';
-    Color btnColor = Colors.blue[800]!;
-    IconData icon = Icons.person_add;
-
-    if (requestStatus == 'pending') {
-      label = 'Requested';
-      btnColor = Colors.orange;
-      icon = Icons.hourglass_empty;
-    } else if (requestStatus == 'accepted') {
-      label = 'Following';
-      btnColor = Colors.green;
-      icon = Icons.check;
-    }
-
-    return Padding(
-      padding: const EdgeInsets.only(top: 15),
-      child: ElevatedButton.icon(
-        onPressed: triggerFollowAction,
-        icon: Icon(icon),
-        label: Text(label),
-        style: ElevatedButton.styleFrom(backgroundColor: btnColor, foregroundColor: Colors.white, minimumSize: const Size(180, 45)),
-      ),
-    );
-  }
-
-  Widget _buildViewProfile() {
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      _buildMaterial3Card("Bio", _bioController.text, Icons.description_outlined, const Color(0xFF3B82F6)),
-      _buildMaterial3Card("Phone Number", isOwnProfile ? _phoneController.text : "Hidden for Privacy", Icons.phone_outlined, Colors.deepPurple),
-      _buildMaterial3Card("Teaching Class", _classController.text, Icons.school_outlined, const Color(0xFF10B981)),
-      _buildMaterial3Card("Gender", isOwnProfile ? (gender ?? "Not set") : "Hidden for Privacy", Icons.wc_outlined, const Color(0xFFF59E0B)),
-      const SizedBox(height: 18),
-      const Text("Teaching Areas (Locations)", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xFF1B1B1B))),
-      const SizedBox(height: 8),
-      Wrap(spacing: 8, children: teacherLocations.map((l) => Chip(label: Text((l is Map) ? (l['address'] ?? "Unknown") : l.toString()), avatar: const Icon(Icons.location_on, size: 14, color: Colors.red), backgroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), side: BorderSide(color: Colors.grey.shade200))).toList()),
-      const SizedBox(height: 18),
-      const Text("Subjects", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xFF1B1B1B))),
-      const SizedBox(height: 8),
-      Wrap(spacing: 8, children: selectedSubjects.map((s) => Chip(label: Text(s), backgroundColor: Colors.blue[50], side: BorderSide.none, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)))).toList()),
-    ]);
-  }
-
-  Widget _buildMaterial3Card(String title, String value, IconData icon, Color accentColor) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 8, offset: const Offset(0, 4))],
-      ),
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-        leading: Container(
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(color: accentColor.withOpacity(0.1), borderRadius: BorderRadius.circular(12)),
-          child: Icon(icon, color: accentColor, size: 22),
-        ),
-        title: Text(title, style: TextStyle(fontSize: 11, color: Colors.grey.shade500, fontWeight: FontWeight.bold)),
-        subtitle: Padding(
-          padding: const EdgeInsets.only(top: 2.0),
-          child: Text(value.isEmpty ? "Not set" : value, style: const TextStyle(fontSize: 15, color: Color(0xFF1B1B1B), fontWeight: FontWeight.w600)),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildDashboardSection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Padding(
-          padding: EdgeInsets.symmetric(vertical: 18),
-          child: Text("Teacher Dashboard", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Color(0xFF1B1B1B))),
-        ),
-        GridView.count(
-          crossAxisCount: 2,
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          mainAxisSpacing: 12,
-          crossAxisSpacing: 12,
-          childAspectRatio: 1.4,
-          children: [
-            StreamBuilder<QuerySnapshot>(
-              stream: _firestore.collection('follow_requests').where('teacherId', isEqualTo: widget.currentUserId).where('status', isEqualTo: 'accepted').snapshots(),
-              builder: (context, snapshot) {
-                int count = snapshot.hasData ? snapshot.data!.docs.length : 0;
-                return _buildDashboardCard("Total Students", "$count", Icons.people_alt_outlined, Colors.purple);
-              },
-            ),
-            StreamBuilder<QuerySnapshot>(
-              stream: _firestore.collection('live_classes').where('teacherId', isEqualTo: widget.currentUserId).snapshots(),
-              builder: (context, snapshot) {
-                int classCount = snapshot.hasData ? snapshot.data!.docs.length : 0;
-                return _buildDashboardCard("Today's Classes", "$classCount", Icons.calendar_today_outlined, Colors.orange);
-              },
-            ),
-            StreamBuilder<QuerySnapshot>(
-              stream: _firestore.collection('payment_reminders').where('teacherId', isEqualTo: widget.currentUserId).where('status', isEqualTo: 'pending').snapshots(),
-              builder: (context, snapshot) {
-                double totalPending = 0;
-                if (snapshot.hasData) {
-                  for (var doc in snapshot.data!.docs) {
-                    final data = doc.data() as Map<String, dynamic>;
-                    totalPending += (double.tryParse(data['amount'].toString()) ?? 0);
-                  }
-                }
-                return _buildDashboardCard("Pending Payments", "₹${totalPending.toStringAsFixed(0)}", Icons.account_balance_wallet_outlined, Colors.red);
-              },
-            ),
-            StreamBuilder<QuerySnapshot>(
-              stream: _firestore.collection('live_classes').where('teacherId', isEqualTo: widget.currentUserId).where('isLive', isEqualTo: true).snapshots(),
-              builder: (context, snapshot) {
-                bool isLiveActive = snapshot.hasData && snapshot.data!.docs.isNotEmpty;
-                return _buildDashboardCard("Live Classes", isLiveActive ? "Active" : "Inactive", Icons.sensors_outlined, isLiveActive ? Colors.green : Colors.grey);
-              },
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _buildDashboardCard(String title, String value, IconData icon, Color color) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.015), blurRadius: 8, offset: const Offset(0, 4))],
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(14.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(12)),
-              child: Icon(icon, color: color, size: 18),
-            ),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(value, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1B1B1B))),
-                const SizedBox(height: 2),
-                Text(title, style: TextStyle(fontSize: 12, color: Colors.grey.shade500, fontWeight: FontWeight.w500)),
-              ],
-            )
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildEditForm() {
-    final query = _subjectSearchController.text.trim();
-    final list = _subjects.where((s) => s.toLowerCase().contains(query.toLowerCase())).toList();
-
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      _editField("Full Name", _nameController, Icons.person),
-      _editField("Mobile Number", _phoneController, Icons.phone, keyboardType: TextInputType.phone),
-      _editField("Bio", _bioController, Icons.info, maxLines: 3),
-      _editField("Teaching Class", _classController, Icons.book),
-      const Text("Gender", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-      const SizedBox(height: 6),
-      Row(children: [
-        Radio<String>(value: 'Male', groupValue: gender, activeColor: Colors.blue[800], onChanged: (val) => setState(() => gender = val)),
-        const Text('Male', style: TextStyle(fontSize: 15)),
-        const SizedBox(width: 15),
-        Radio<String>(value: 'Female', groupValue: gender, activeColor: Colors.blue[800], onChanged: (val) => setState(() => gender = val)),
-        const Text('Female', style: TextStyle(fontSize: 15)),
-      ]),
-      const SizedBox(height: 15),
-      const Text("Add Teaching Areas", style: TextStyle(fontWeight: FontWeight.bold)),
-      Wrap(spacing: 8, children: teacherLocations.map((loc) => Chip(label: Text((loc is Map) ? (loc['address'] ?? "Unknown") : loc.toString()), onDeleted: () => setState(() => teacherLocations.remove(loc)))).toList()),
-      TextButton.icon(onPressed: _openMapPicker, icon: const Icon(Icons.map_outlined), label: const Text("Pick Locations")),
-      const Divider(),
-      const Text("Select Subjects", style: TextStyle(fontWeight: FontWeight.bold)),
-      const SizedBox(height: 10),
-      TextField(
-        controller: _subjectSearchController,
-        decoration: InputDecoration(
-          hintText: "Search subjects...", prefixIcon: const Icon(Icons.search),
-          suffixIcon: (query.isNotEmpty && list.isEmpty) ? IconButton(icon: const Icon(Icons.add, color: Colors.green), onPressed: () {
-            if (!selectedSubjects.contains(query)) { setState(() { selectedSubjects.add(query); _subjectSearchController.clear(); }); }
-          }) : null,
-          border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12)))
-        ),
-        onChanged: (_) => setState(() {}),
-      ),
-      const SizedBox(height: 10),
-      SizedBox(height: 200, child: ListView(children: list.map((s) => CheckboxListTile(title: Text(s), value: selectedSubjects.contains(s), onChanged: (v) => setState(() => v! ? selectedSubjects.add(s) : selectedSubjects.remove(s)))).toList())),
-    ]);
-  }
-
-  Widget _buildSaveCancelButtons() {
-    return Padding(
-      padding: const EdgeInsets.only(top: 20),
-      child: Row(children: [
-        Expanded(child: OutlinedButton(style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 15), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))), onPressed: () => setState(() => isEditing = false), child: const Text("CANCEL", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey)))),
-        const SizedBox(width: 10),
-        Expanded(child: ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: Colors.blue[800], foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), padding: const EdgeInsets.symmetric(vertical: 15)), onPressed: updateTeacherProfile, child: const Text("SAVE CHANGES", style: TextStyle(fontWeight: FontWeight.bold)))),
-      ]),
-    );
-  }
-
-  Widget _buildToolsAndPayment() {
-    return Column(children: [
-      const SizedBox(height: 16),
-      Card(elevation: 0, color: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: const BorderSide(color: Color(0xFFF1F5F9))), child: ListTile(leading: const Icon(Icons.videocam_rounded, color: Colors.red), title: const Text("Go Live", style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)), trailing: const Icon(Icons.chevron_right_rounded), onTap: () {
-        Navigator.push(context, MaterialPageRoute(builder: (context) => JoinLiveScreen(currentUserId: _auth.currentUser?.uid ?? '', currentUserName: _nameController.text.isEmpty ? 'Teacher' : _nameController.text, isTeacher: true)));
-      })),
-      const SizedBox(height: 4),
-      Card(elevation: 0, color: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: const BorderSide(color: Color(0xFFF1F5F9))), child: ListTile(leading: const Icon(Icons.assignment_turned_in_rounded, color: Colors.teal), title: const Text("Tuition Management", style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)), trailing: const Icon(Icons.chevron_right_rounded), onTap: () {
-        Navigator.push(context, MaterialPageRoute(builder: (context) => TuitionManagementScreen(currentUserId: _auth.currentUser?.uid ?? '', currentUserName: _nameController.text.isEmpty ? 'Teacher' : _nameController.text)));
-      })),
-      const SizedBox(height: 4),
-      Card(elevation: 0, color: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: const BorderSide(color: Color(0xFFF1F5F9))), child: ListTile(leading: const Icon(Icons.receipt_long_rounded, color: Colors.indigo, size: 22), title: const Text("Payment Confirmations", style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)), trailing: const Icon(Icons.chevron_right_rounded), onTap: _showPaymentDisabledPopup)),
-    ]);
-  }
-
-  Widget _editField(String l, TextEditingController c, IconData i, {int maxLines = 1, TextInputType keyboardType = TextInputType.text}) => Padding(padding: const EdgeInsets.only(bottom: 15), child: TextField(controller: c, maxLines: maxLines, keyboardType: keyboardType, decoration: InputDecoration(labelText: l, prefixIcon: Icon(i), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))))));
-}
-
-class HeaderCurveClipper extends CustomClipper<Path> {
-  @override
-  Path getClip(Size size) {
-    Path path = Path();
-    path.lineTo(0, size.height - 35);
-    Offset controlPoint = Offset(size.width / 2, size.height + 15);
-    Offset endPoint = Offset(size.width, size.height - 35);
-    path.quadraticBezierTo(controlPoint.dx, controlPoint.dy, endPoint.dx, endPoint.dy);
-    path.lineTo(size.width, 0);
-    path.close();
-    return path;
-  }
-
-  @override
-  bool shouldReclip(CustomClipper<Path> oldClipper) => false;
-}
-
-const List<String> _subjects = [
-  'Bengali', 'English', 'Mathematics', 'General Science', 'Social Studies', 'ICT (Information & Tech)', 'Class1-8 all subjects', 'Physics', 'Chemistry', 'Biology', 'Higher Mathematics', 'Accounting', 'Business Studies', 'Finance & Banking', 'Geography & Environment', 'History', 'Civics & Citizenship', 'Economics', 'Physics 1st/2nd Paper', 'Chemistry 1st/2nd Paper', 'Biology 1st/2nd Paper', 'Higher Math 1st/2nd Paper', 'Statistics', 'Management', 'Marketing', 'Computer Science', 'App Development (Flutter)', 'Graphic Design', 'Cyber Security', 'Robotics', 'Data Science', 'UI/UX Design', 'Fine Arts', 'Music', 'Photography', 'Agriculture', 'IELTS/GRE Preparation'
-];
+                const PopupMenuItem(value: 'notifications', child: Row(children: [Icon(Icons.notifications_none_rounded, s
