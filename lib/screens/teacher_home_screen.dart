@@ -16,17 +16,13 @@ class TeacherHomeScreen extends StatefulWidget {
 
 class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
   int _selectedIndex = 0;
-  late final List<Widget> _screens;
 
-  @override
-  void initState() {
-    super.initState();
-    // বাগ ফিক্স: হার্ডকোড চ্যাট স্ক্রিন সরিয়ে রিয়েল-টাইম চ্যাট লিস্ট সিঙ্ক করা হলো
-    _screens = [
-      ChatListScreen(currentUserId: widget.currentUserId),
-      TeacherProfileScreen(currentUserId: widget.currentUserId), // প্রোফাইল স্ক্রিনে আইডি পাস
-    ];
-  }
+  // বাগ ফিক্স: late final স্ক্রিন লিস্টকে গেটার মেথডে কনভার্ট করা হলো 
+  // যাতে প্যারেন্ট উইজেট থেকে আইডি আপডেট হলে চাইল্ড স্ক্রিনগুলোও রিয়েল-টাইম আইডি পায় এবং ক্র্যাশ না করে।
+  List<Widget> get _screens => [
+        ChatListScreen(currentUserId: widget.currentUserId),
+        TeacherProfileScreen(currentUserId: widget.currentUserId), // প্রোফাইল স্ক্রিনে আইডি পাস
+      ];
 
   void _onTabTapped(int index) {
     if (_selectedIndex == index) return;
@@ -87,12 +83,12 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
               ],
             )
           : null,
-          
+
       body: IndexedStack(
         index: _selectedIndex,
         children: _screens,
       ),
-      
+
       // Floating Action Button অ্যাকশন ফিক্স
       floatingActionButton: _selectedIndex == 0 
         ? FloatingActionButton(
