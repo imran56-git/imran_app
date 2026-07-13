@@ -5,10 +5,12 @@ import '../../widgets/success_toast.dart';
 
 class DiaryHistoryScreen extends StatefulWidget {
   final String currentUserId;
+  final String currentUserName; // ফিক্সড: টিচার নেম রিসিভ করার জন্য প্রপার্টি যুক্ত করা হলো
 
   const DiaryHistoryScreen({
     super.key,
     required this.currentUserId,
+    required this.currentUserName, // ফিক্সড: কনস্ট্রাক্টর প্যারামিটার সিঙ্ক করা হলো
   });
 
   @override
@@ -18,7 +20,7 @@ class DiaryHistoryScreen extends StatefulWidget {
 class _DiaryHistoryScreenState extends State<DiaryHistoryScreen> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final TextEditingController _searchController = TextEditingController();
-  
+
   String _selectedFilter = 'All';
   String _searchQuery = '';
   final List<String> _filters = ['All', 'Present', 'Absent', 'Fees Pending'];
@@ -113,7 +115,7 @@ class _DiaryHistoryScreenState extends State<DiaryHistoryScreen> {
                           final String month = diaryData['month'] ?? 'January';
 
                           final batch = _firestore.batch();
-                          
+
                           // ১. ডায়েরি কালেকশন এন্ট্রি আপডেট
                           batch.update(_firestore.collection('diary').doc(diaryId), {
                             'attendanceStatus': localAttendance,
@@ -247,7 +249,6 @@ class _DiaryHistoryScreenState extends State<DiaryHistoryScreen> {
                   );
                 }
 
-                // ক্লায়েন্ট-সাইড ফিল্টারিং লজিক (সার্চ কুয়েরি + চিপস ফিল্টার)
                 final filteredDocs = snapshot.data!.docs.where((doc) {
                   final data = doc.data() as Map<String, dynamic>;
                   final studentName = (data['studentName'] ?? '').toString().toLowerCase();
@@ -255,10 +256,8 @@ class _DiaryHistoryScreenState extends State<DiaryHistoryScreen> {
                   final attendance = data['attendanceStatus'] ?? 'Present';
                   final feeStatus = data['feeStatus'] ?? 'NO';
 
-                  // ১. সার্চ ম্যাচিং
                   final matchesSearch = studentName.contains(_searchQuery) || studentId.contains(_searchQuery);
 
-                  // ২. ক্যাটাগরি চিপস ম্যাচিং
                   bool matchesFilter = true;
                   if (_selectedFilter == 'Present') matchesFilter = attendance == 'Present';
                   if (_selectedFilter == 'Absent') matchesFilter = attendance == 'Absent';
@@ -282,14 +281,13 @@ class _DiaryHistoryScreenState extends State<DiaryHistoryScreen> {
                     final attendance = data['attendanceStatus'] ?? 'Present';
                     final feeStatus = data['feeStatus'] ?? 'NO';
                     final dateTimestamp = data['date'] as Timestamp?;
-                    
+
                     String formattedDate = '';
                     if (dateTimestamp != null) {
                       final date = dateTimestamp.toDate();
                       formattedDate = '${date.day}/${date.month}/${date.year}';
                     }
 
-                    // কালার স্কিম কনফিগারেশন
                     Color attendanceColor = Colors.green;
                     if (attendance == 'Absent') attendanceColor = Colors.red;
                     if (attendance == 'Late') attendanceColor = Colors.orange;
