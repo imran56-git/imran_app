@@ -43,6 +43,13 @@ class _ReminderScreenState extends State<ReminderScreen> {
     _selectedMonth = _months[DateTime.now().month - 1];
   }
 
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _amountController.dispose();
+    super.dispose();
+  }
+
   void _showErrorPopup(String title, String message) {
     showGeneralDialog(
       context: context,
@@ -383,8 +390,8 @@ class _ReminderScreenState extends State<ReminderScreen> {
               ),
             ],
             const SizedBox(height: 30),
-            
-            // Active Reminders Section (যেটা কেটে গিয়েছিল সেটা সম্পূর্ণ করা হলো)
+
+            // Active Reminders Section
             GestureDetector(
               onTap: () {
                 Navigator.push(
@@ -446,3 +453,7 @@ class _ReminderScreenState extends State<ReminderScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
