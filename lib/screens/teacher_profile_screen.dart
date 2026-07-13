@@ -15,8 +15,12 @@ import 'tuition_management_screen.dart';
 import 'live/join_live_screen.dart';
 
 class TeacherProfileScreen extends StatefulWidget {
-  final String? teacherId;
-  const TeacherProfileScreen({super.key, this.teacherId});
+  final String currentUserId;
+  
+  const TeacherProfileScreen({
+    super.key, 
+    required this.currentUserId,
+  });
 
   @override
   State<TeacherProfileScreen> createState() => _TeacherProfileScreenState();
@@ -45,7 +49,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
   List<String> selectedSubjects = [];
   List<dynamic> teacherLocations = [];
 
-  String get targetUID => widget.teacherId ?? _auth.currentUser?.uid ?? "";
+  bool get isOwnProfile => widget.currentUserId == (_auth.currentUser?.uid ?? "");
 
   @override
   void initState() {
@@ -75,9 +79,9 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
   }
 
   Future<void> fetchTeacherData() async {
-    if (targetUID.isEmpty) return;
+    if (widget.currentUserId.isEmpty) return;
     try {
-      final doc = await _firestore.collection('teachers').doc(targetUID).get();
+      final doc = await _firestore.collection('teachers').doc(widget.currentUserId).get();
       if (doc.exists && mounted) {
         setState(() {
           teacherData = doc.data();
@@ -98,18 +102,18 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
 
   void checkFollowStatus() async {
     final currentUID = _auth.currentUser?.uid;
-    if (currentUID == null || widget.teacherId == null) return;
-    final doc = await _firestore.collection('follows').doc('${currentUID}_${widget.teacherId}').get();
+    if (currentUID == null || isOwnProfile) return;
+    final doc = await _firestore.collection('follows').doc('${currentUID}_${widget.currentUserId}').get();
     if (mounted) setState(() => isFollowing = doc.exists);
   }
 
   void toggleFollow() async {
     final currentUID = _auth.currentUser?.uid;
-    if (currentUID == null || widget.teacherId == null) return;
-    final docRef = _firestore.collection('follows').doc('${currentUID}_${widget.teacherId}');
+    if (currentUID == null || isOwnProfile) return;
+    final docRef = _firestore.collection('follows').doc('${currentUID}_${widget.currentUserId}');
     try {
       isFollowing ? await docRef.delete() : await docRef.set({
-          'teacherId': widget.teacherId,
+          'teacherId': widget.currentUserId,
           'studentId': currentUID,
           'timestamp': FieldValue.serverTimestamp(),
         });
@@ -196,7 +200,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
                   ),
                   ElevatedButton(
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: isDelete ? Colors.red : const Color(0xFF1565C0), // ফিক্সড কালার এরর
+                      backgroundColor: isDelete ? Colors.red : const Color(0xFF1565C0),
                       foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -305,17 +309,17 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
                                       child: Row(
                                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                         children: [
-                                          widget.teacherId != null
+                                          !isOwnProfile
                                               ? IconButton(
                                                   icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
                                                   onPressed: () => Navigator.pop(context),
                                                 )
                                               : const SizedBox(width: 48),
                                           const Text(
-                                            'My Profile',
+                                            'Profile Details',
                                             style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 19),
                                           ),
-                                          widget.teacherId == null ? _buildMenu() : const SizedBox(width: 48),
+                                          isOwnProfile ? _buildMenu() : const SizedBox(width: 48),
                                         ],
                                       ),
                                     ),
@@ -343,11 +347,11 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
                           const SizedBox(height: 10),
 
                           if (!isEditing) _buildFollowStats(),
-                          if (widget.teacherId != null) _buildFollowButton(),
+                          if (!isOwnProfile) _buildFollowButton(),
                           const SizedBox(height: 20),
                           isEditing ? _buildEditForm() : _buildViewProfile(),
-                          if (widget.teacherId == null && !isEditing) _buildDashboardSection(),
-                          if (widget.teacherId == null && !isEditing) _buildToolsAndPayment(),
+                          if (isOwnProfile && !isEditing) _buildDashboardSection(),
+                          if (isOwnProfile && !isEditing) _buildToolsAndPayment(),
                           if (isEditing) _buildSaveCancelButtons(),
                         ],
                       ),
@@ -380,8 +384,8 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
                 Text("TEACHER UID", style: TextStyle(color: Colors.grey.shade500, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 0.5)),
                 const SizedBox(height: 2),
                 Text(
-                  targetUID,
-                  style: const TextStyle(color: Colors.black87, fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 0.2), // টাইপো ফিক্স করা হয়েছে
+                  widget.currentUserId,
+                  style: const TextStyle(color: Colors.black87, fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 0.2),
                   overflow: TextOverflow.ellipsis,
                 ),
               ],
@@ -390,7 +394,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
           const SizedBox(width: 10),
           InkWell(
             onTap: () {
-              Clipboard.setData(ClipboardData(text: targetUID));
+              Clipboard.setData(ClipboardData(text: widget.currentUserId));
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
                   content: const Text("Teacher UID Copied!"),
@@ -443,7 +447,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
             isDelete: true, 
             onConfirm: () async {
               try {
-                await _firestore.collection('teachers').doc(targetUID).delete();
+                await _firestore.collection('teachers').doc(widget.currentUserId).delete();
                 await _auth.currentUser?.delete();
                 await _clearLocalSession(); 
                 if (mounted) {
@@ -496,7 +500,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
 
   Widget _buildFollowStats() {
     return StreamBuilder<QuerySnapshot>(
-      stream: _firestore.collection('follows').where('teacherId', isEqualTo: targetUID).snapshots(),
+      stream: _firestore.collection('follows').where('teacherId', isEqualTo: widget.currentUserId).snapshots(),
       builder: (context, snap) => Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
         decoration: BoxDecoration(color: Colors.blue[50], borderRadius: BorderRadius.circular(20)),
@@ -575,21 +579,21 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
           childAspectRatio: 1.4,
           children: [
             StreamBuilder<QuerySnapshot>(
-              stream: _firestore.collection('teachers').doc(targetUID).collection('students').snapshots(),
+              stream: _firestore.collection('teachers').doc(widget.currentUserId).collection('students').snapshots(),
               builder: (context, snapshot) {
                 int count = snapshot.hasData ? snapshot.data!.docs.length : 0;
                 return _buildDashboardCard("Total Students", "$count", Icons.people_alt_outlined, Colors.purple);
               },
             ),
             StreamBuilder<QuerySnapshot>(
-              stream: _firestore.collection('live_classes').where('teacherId', isEqualTo: targetUID).snapshots(),
+              stream: _firestore.collection('live_classes').where('teacherId', isEqualTo: widget.currentUserId).snapshots(),
               builder: (context, snapshot) {
                 int classCount = snapshot.hasData ? snapshot.data!.docs.length : 0;
                 return _buildDashboardCard("Today's Classes", "$classCount", Icons.calendar_today_outlined, Colors.orange);
               },
             ),
             StreamBuilder<QuerySnapshot>(
-              stream: _firestore.collection('payment_reminders').where('teacherId', isEqualTo: targetUID).where('status', isEqualTo: 'pending').snapshots(),
+              stream: _firestore.collection('payment_reminders').where('teacherId', isEqualTo: widget.currentUserId).where('status', isEqualTo: 'pending').snapshots(),
               builder: (context, snapshot) {
                 double totalPending = 0;
                 if (snapshot.hasData) {
@@ -602,7 +606,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
               },
             ),
             StreamBuilder<QuerySnapshot>(
-              stream: _firestore.collection('live_classes').where('teacherId', isEqualTo: targetUID).where('isLive', isEqualTo: true).snapshots(),
+              stream: _firestore.collection('live_classes').where('teacherId', isEqualTo: widget.currentUserId).where('isLive', isEqualTo: true).snapshots(),
               builder: (context, snapshot) {
                 bool isLiveActive = snapshot.hasData && snapshot.data!.docs.isNotEmpty;
                 return _buildDashboardCard("Live Classes", isLiveActive ? "Active" : "Inactive", Icons.sensors_outlined, isLiveActive ? Colors.green : Colors.grey);
@@ -713,7 +717,6 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
     ]);
   }
 
-  // ফিক্সড মেথড নেম: _buildEditField থেকে _editField এ রূপান্তর করা হলো
   Widget _editField(String l, TextEditingController c, IconData i, {int maxLines = 1, TextInputType keyboardType = TextInputType.text}) => Padding(padding: const EdgeInsets.only(bottom: 15), child: TextField(controller: c, maxLines: maxLines, keyboardType: keyboardType, decoration: InputDecoration(labelText: l, prefixIcon: Icon(i), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))))));
 }
 
