@@ -33,7 +33,6 @@ class _ChatScreenState extends State<ChatScreen> {
   final ScrollController _scrollController = ScrollController();
   Stream<List<MessageModel>>? _messageStream;
 
-  // রিপ্লাই স্টেট ট্র্যাকিং এর ভেরিয়েবল
   String? _replyToMessageId;
   String? _replyToText;
 
@@ -53,7 +52,6 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   void _initChatStream() {
-    // ChatService থেকে জেনেরিক ও টাইপ-সেফ মেসেজ স্ট্রিম নেওয়া হচ্ছে (রুল ৪ পূরণ)
     _messageStream = _chatService.getMessages(widget.chatRoomId);
   }
 
@@ -136,7 +134,6 @@ class _ChatScreenState extends State<ChatScreen> {
                           );
                         }
 
-                        // ChatService এর getUserStatusStream ব্যবহার করে স্ট্যাটাস হ্যান্ডলিং
                         return StreamBuilder<Map<String, dynamic>>(
                           stream: _chatService.getUserStatusStream(widget.receiverId, !widget.isTeacher),
                           builder: (context, statusSnapshot) {
@@ -214,8 +211,7 @@ class _ChatScreenState extends State<ChatScreen> {
                           );
                         }
 
-                        // স্ক্রিনে নতুন মেসেজ ঢোকার সাথে সাথে রিড স্ট্যাটাস ট্রিগার করা
-                        _markMessagesAsRead();
+                        WidgetsBinding.instance.addPostFrameCallback((_) => _markMessagesAsRead());
 
                         return ListView.builder(
                           controller: _scrollController,
