@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'chat_list_screen.dart'; // চ্যাট স্ক্রিনের বদলে চ্যাট লিস্ট স্ক্রিন ইম্পোর্ট
+import 'chat_list_screen.dart'; 
 import 'teacher_profile_screen.dart'; 
 
 class TeacherHomeScreen extends StatefulWidget {
-  final String currentUserId; // বাগ ফিক্স: টিচারের আইডি ডায়নামিক করার জন্য প্যারামিটার যুক্ত
+  final String currentUserId; 
 
   const TeacherHomeScreen({
     super.key,
@@ -17,11 +17,12 @@ class TeacherHomeScreen extends StatefulWidget {
 class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
   int _selectedIndex = 0;
 
-  // বাগ ফিক্স: late final স্ক্রিন লিস্টকে গেটার মেথডে কনভার্ট করা হলো 
-  // যাতে প্যারেন্ট উইজেট থেকে আইডি আপডেট হলে চাইল্ড স্ক্রিনগুলোও রিয়েল-টাইম আইডি পায় এবং ক্র্যাশ না করে।
   List<Widget> get _screens => [
-        ChatListScreen(currentUserId: widget.currentUserId),
-        TeacherProfileScreen(currentUserId: widget.currentUserId), // প্রোফাইল স্ক্রিনে আইডি পাস
+        ChatListScreen(
+          currentUserId: widget.currentUserId,
+          isTeacher: true,
+        ),
+        TeacherProfileScreen(currentUserId: widget.currentUserId), 
       ];
 
   void _onTabTapped(int index) {
@@ -31,11 +32,10 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // প্রোফাইল স্ক্রিন (Index 1) সিলেক্ট থাকলে হোমের AppBar হাইড থাকবে
     final bool showAppBar = _selectedIndex == 0;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF7F9FC), // অ্যাপের স্ট্যান্ডার্ড ব্যাকগ্রাউন্ড সিঙ্ক
+      backgroundColor: const Color(0xFFF7F9FC), 
       appBar: showAppBar
           ? AppBar(
               backgroundColor: Colors.white,
@@ -43,7 +43,6 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
               scrolledUnderElevation: 0,
               centerTitle: false,
               titleSpacing: 20,
-              // FYBTT ব্র্যান্ড লগো এবং নেম ইন্টিগ্রেশন
               title: Row(
                 children: [
                   ClipRRect(
@@ -89,10 +88,9 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
         children: _screens,
       ),
 
-      // Floating Action Button অ্যাকশন ফিক্স
       floatingActionButton: _selectedIndex == 0 
         ? FloatingActionButton(
-            backgroundColor: const Color(0xFF1E4C7A), // ব্র্যান্ড কালার সিঙ্ক
+            backgroundColor: const Color(0xFF1E4C7A), 
             elevation: 4,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
             onPressed: () {
@@ -123,7 +121,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
             backgroundColor: Colors.white,
             elevation: 0,
             type: BottomNavigationBarType.fixed,
-            selectedItemColor: const Color(0xFF1E4C7A), // ওল্ড গ্রিন কালার চেঞ্জড
+            selectedItemColor: const Color(0xFF1E4C7A), 
             unselectedItemColor: Colors.grey.shade400,
             selectedLabelStyle: const TextStyle(
               fontWeight: FontWeight.bold,
