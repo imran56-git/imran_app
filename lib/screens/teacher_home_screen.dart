@@ -61,7 +61,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                     'FYBTT Teacher',
                     style: TextStyle(
                       color: Color(0xFF1E4C7A),  
-                      fontWeight: FontWeight.black,  
+                      fontWeight: FontWeight.w900,  
                       fontSize: 19,
                       letterSpacing: 0.5,
                     ),
