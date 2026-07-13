@@ -27,7 +27,8 @@ class ActiveRemindersScreen extends StatelessWidget {
       body: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance
             .collection('reminders')
-            .where('teacherId', ==: teacherId)
+            // বাগ ফিক্স: ফায়ারস্টোরের নতুন সিনট্যাক্স অনুযায়ী 'isEqualTo' ব্যবহার করা হলো
+            .where('teacherId', isEqualTo: teacherId)
             .snapshots(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
