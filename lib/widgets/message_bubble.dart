@@ -3,17 +3,24 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:audioplayers/audioplayers.dart';
-import '../models/message_model.dart'; // আপনার ডিরেক্টরি অনুযায়ী মডেল পাথ
+import '../models/message_model.dart'; 
+import '../services/chat_service.dart';
 import '../widgets/success_toast.dart';
 
 class MessageBubble extends StatefulWidget {
-  final MessageModel message; // আলাদা প্যারামিটার বাদ দিয়ে অবজেক্ট সিঙ্ক করা হলো
+  final MessageModel message; 
   final bool isMe;
+  final String chatRoomId;
+  final String currentUserId;
+  final Function(MessageModel) onReplyPressed; // রিপ্লাই ফ্লো সিঙ্ক করার জন্য প্যারামিটার যুক্ত করা হলো
 
   const MessageBubble({
     super.key,
     required this.message,
     required this.isMe,
+    required this.chatRoomId,
+    required this.currentUserId,
+    required this.onReplyPressed,
   });
 
   @override
@@ -22,6 +29,7 @@ class MessageBubble extends StatefulWidget {
 
 class _MessageBubbleState extends State<MessageBubble> {
   late final AudioPlayer _audioPlayer;
+  final ChatService _chatService = ChatService();
   bool _isPlaying = false;
 
   @override
@@ -39,7 +47,8 @@ class _MessageBubbleState extends State<MessageBubble> {
     super.dispose();
   }
 
-  String _formatTime(DateTime date) {
+  String _formatTime(DateTime? date) {
+    if (date == null) return ''; // Null Safety হ্যান্ডলিং
     final hour = date.hour % 12 == 0 ? 12 : date.hour % 12;
     final minute = date.minute.toString().padLeft(2, '0');
     final amPm = date.hour >= 12 ? 'PM' : 'AM';
@@ -63,7 +72,6 @@ class _MessageBubbleState extends State<MessageBubble> {
     }
   }
 
-  // হোয়াটসঅ্যাপ স্টাইল ব্লু-টিক / সেন্ট টিক ইন্ডিকেটর
   Widget _buildStatusIcon() {
     if (!widget.isMe) return const SizedBox.shrink();
     final status = widget.message.status.toLowerCase();
@@ -77,7 +85,6 @@ class _MessageBubbleState extends State<MessageBubble> {
     return const Icon(Icons.done, size: 16, color: Colors.grey);
   }
 
-  // ১. ভয়েস মেসেজ বাবল লেআউট
   Widget _buildAudioBubble() {
     return InkWell(
       onTap: _toggleAudio,
@@ -102,7 +109,6 @@ class _MessageBubbleState extends State<MessageBubble> {
     );
   }
 
-  // ২. ইমেজ মেসেজ বাবল লেআউট
   Widget _buildImageBubble() {
     return ClipRRect(
       borderRadius: BorderRadius.circular(12),
@@ -120,8 +126,8 @@ class _MessageBubbleState extends State<MessageBubble> {
     );
   }
 
-  // ৩. ডকুমেন্ট মেসেজ বাবল লেআউট (PDF, DOCX, APK) - টাইপো ফিক্সড
   Widget _buildDocumentBubble() {
+    final fileName = widget.message.mediaMetaData?['fileName'] ?? "Document File";
     return Container(
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(color: Colors.black.withOpacity(0.05), borderRadius: BorderRadius.circular(12)),
@@ -130,23 +136,55 @@ class _MessageBubbleState extends State<MessageBubble> {
         children: [
           const Icon(Icons.description_rounded, color: Colors.redAccent, size: 32),
           const SizedBox(width: 10),
-          const Expanded(
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text("Document File", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.black87)), // blackDE ফিক্সড
-                SizedBox(height: 2),
-                Text("Tap to view / download", style: TextStyle(fontSize: 11, color: Colors.black54)),
+                Text(
+                  fileName, 
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.black87),
+                ),
+                const SizedBox(height: 2),
+                const Text("Tap to view / download", style: TextStyle(fontSize: 11, color: Colors.black54)),
               ],
             ),
           ),
-          IconButton(icon: const Icon(Icons.download_for_offline_rounded, color: Color(0xFF006653)), onPressed: () {})
+          IconButton(
+            icon: const Icon(Icons.download_for_offline_rounded, color: Color(0xFF006653)), 
+            onPressed: () {},
+          )
         ],
       ),
     );
   }
 
-  // লং-প্রেস অ্যাকশন পপআপ মেনু ইঞ্জিন
+  Widget _buildLocationBubble() {
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(color: Colors.black.withOpacity(0.05), borderRadius: BorderRadius.circular(12)),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.location_on_rounded, color: Colors.teal, size: 32),
+          const SizedBox(width: 10),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text("Shared Location", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.black87)),
+                SizedBox(height: 2),
+                Text("Tap to open map", style: TextStyle(fontSize: 11, color: Colors.black54)),
+              ],
+            ),
+          ),
+          Icon(Icons.open_in_new_rounded, color: Colors.grey.shade600, size: 18),
+        ],
+      ),
+    );
+  }
+
   void _showLongPressMenu(BuildContext context) {
     showModalBottomSheet(
       context: context,
@@ -157,7 +195,7 @@ class _MessageBubbleState extends State<MessageBubble> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (widget.message.type == 'text')
+            if (widget.message.type == 'text' && !widget.message.isDeletedForEveryone)
               ListWhiteTiles(
                 leading: const Icon(Icons.copy_rounded, color: Colors.black87),
                 title: const Text('Copy Text'),
@@ -167,25 +205,32 @@ class _MessageBubbleState extends State<MessageBubble> {
                   SuccessToast.show(context, "Copied to Clipboard");
                 },
               ),
-            ListTile(
-              leading: const Icon(Icons.reply_rounded, color: Colors.black87),
-              title: const Text('Reply'),
-              onTap: () => Navigator.pop(context),
-            ),
+            if (!widget.message.isDeletedForEveryone)
+              ListTile(
+                leading: const Icon(Icons.reply_rounded, color: Colors.black87),
+                title: const Text('Reply'),
+                onTap: () {
+                  Navigator.pop(context);
+                  widget.onReplyPressed(widget.message);
+                },
+              ),
             ListTile(
               leading: const Icon(Icons.delete_outline_rounded, color: Colors.red),
               title: const Text('Delete for Me', style: TextStyle(color: Colors.red)),
               onTap: () async {
                 Navigator.pop(context);
+                await _chatService.deleteMessageForMe(widget.chatRoomId, widget.message.messageId, widget.currentUserId);
               },
             ),
-            ListTile(
-              leading: const Icon(Icons.delete_forever_rounded, color: Colors.red),
-              title: const Text('Delete for Everyone', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
-              onTap: () async {
-                Navigator.pop(context);
-              },
-            ),
+            if (widget.isMe && !widget.message.isDeletedForEveryone)
+              ListTile(
+                leading: const Icon(Icons.delete_forever_rounded, color: Colors.red),
+                title: const Text('Delete for Everyone', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+                onTap: () async {
+                  Navigator.pop(context);
+                  await _chatService.deleteMessageForEveryone(widget.chatRoomId, widget.message.messageId);
+                },
+              ),
           ],
         ),
       ),
@@ -194,6 +239,11 @@ class _MessageBubbleState extends State<MessageBubble> {
 
   @override
   Widget build(BuildContext context) {
+    // ডিলিট ফর মি চেক করা হচ্ছে
+    if (widget.message.deletedForUsers.contains(widget.currentUserId)) {
+      return const SizedBox.shrink();
+    }
+
     final bubbleColor = widget.isMe ? const Color(0xFFE7FFDB) : Colors.white; 
     final msgType = widget.message.type.toLowerCase();
 
@@ -219,14 +269,47 @@ class _MessageBubbleState extends State<MessageBubble> {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (msgType == 'audio' || msgType == 'voice')
-                _buildAudioBubble()
-              else if (msgType == 'image')
-                _buildImageBubble()
-              else if (msgType == 'document' || msgType == 'file')
-                _buildDocumentBubble()
-              else
-                Text(widget.message.content, style: const TextStyle(fontSize: 15, color: Colors.black87, height: 1.25)), // blackDE ফিক্সড
+              // যদি মেসেজটি ডিলিট ফর এভরিওয়ান হয়ে থাকে
+              if (widget.message.isDeletedForEveryone)
+                const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.block, size: 14, color: Colors.grey),
+                    SizedBox(width: 4),
+                    Text(
+                      "This message was deleted", 
+                      style: TextStyle(fontSize: 14, color: Colors.grey, strokeAlign: BorderSide.strokeAlignCenter, italic: true),
+                    ),
+                  ],
+                )
+              else ...[
+                // রিপ্লাইড মেসেজের প্রিভিউ বক্স বাবল এর ভেতর দেখানো
+                if (widget.message.replyToMessageId != null)
+                  Container(
+                    padding: const EdgeInsets.all(6),
+                    margin: const EdgeInsets.bottom(6),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(0.04),
+                      borderRadius: BorderRadius.circular(8),
+                      border: const Border(left: BorderSide(color: Color(0xFF006653), width: 3)),
+                    ),
+                    child: const Text(
+                      "Replied to a message",
+                      style: TextStyle(fontSize: 12, color: Colors.black54, fontWeight: FontWeight.w500),
+                    ),
+                  ),
+
+                if (msgType == 'audio' || msgType == 'voice')
+                  _buildAudioBubble()
+                else if (msgType == 'image')
+                  _buildImageBubble()
+                else if (msgType == 'document' || msgType == 'file')
+                  _buildDocumentBubble()
+                else if (msgType == 'location')
+                  _buildLocationBubble()
+                else
+                  Text(widget.message.content, style: const TextStyle(fontSize: 15, color: Colors.black87, height: 1.25)),
+              ],
 
               const SizedBox(height: 4),
               Row(
@@ -252,7 +335,6 @@ class _MessageBubbleState extends State<MessageBubble> {
   }
 }
 
-// লিস্ট ভিউ বা পপআপ মেনু সাপোর্টের জন্য হেল্পার উইজেট
 class ListWhiteTiles extends StatelessWidget {
   final Widget leading;
   final Widget title;
