@@ -9,7 +9,7 @@ class ChatModel {
   final String teacherImage;
   final String studentImage;
   final List<String> participants;
-  final String lastMessage;
+  final String lastMessageContent; // Naming Convention সিঙ্ক করার জন্য 'lastMessage' থেকে 'lastMessageContent' করা হলো
   final DateTime? lastMessageTime;
   final int unreadCount;
   final bool isGroup;
@@ -25,7 +25,7 @@ class ChatModel {
     required this.teacherImage,
     required this.studentImage,
     required this.participants,
-    required this.lastMessage,
+    required this.lastMessageContent,
     this.lastMessageTime,
     required this.unreadCount,
     required this.isGroup,
@@ -43,9 +43,11 @@ class ChatModel {
       teacherImage: map['teacherImage'] ?? '',
       studentImage: map['studentImage'] ?? '',
       participants: List<String>.from(map['participants'] ?? []),
-      lastMessage: map['lastMessage'] ?? '',
+      lastMessageContent: map['lastMessageContent'] ?? map['lastMessage'] ?? '', // ব্যাকওয়ার্ড ডাটাবেস সেফটির জন্য ওল্ড কী সাপোর্ট রাখা হলো
       lastMessageTime: map['lastMessageTime'] != null
-          ? (map['lastMessageTime'] as Timestamp).toDate()
+          ? (map['lastMessageTime'] is Timestamp 
+              ? (map['lastMessageTime'] as Timestamp).toDate() 
+              : DateTime.tryParse(map['lastMessageTime'].toString()))
           : null,
       unreadCount: map['unreadCount'] ?? 0,
       isGroup: map['isGroup'] ?? false,
@@ -64,10 +66,10 @@ class ChatModel {
       'teacherImage': teacherImage,
       'studentImage': studentImage,
       'participants': participants,
-      'lastMessage': lastMessage,
+      'lastMessageContent': lastMessageContent,
       'lastMessageTime': lastMessageTime != null
           ? Timestamp.fromDate(lastMessageTime!)
-          : FieldValue.serverTimestamp(),
+          : FieldValue.serverTimestamp(), // রিয়েল-টাইম ফায়ারস্টোর সার্ভার টাইমস্ট্যাম্প
       'unreadCount': unreadCount,
       'isGroup': isGroup,
       'pinnedBy': pinnedBy,
