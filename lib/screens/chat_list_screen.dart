@@ -1,12 +1,12 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import '../services/chat_service.dart';
 import 'chat_screen.dart';
 import 'group/group_chat_screen.dart';
-import '../../utils/chat_colors.dart';
 
 class ChatListScreen extends StatefulWidget {
   final String currentUserId;
-  final bool isTeacher; // টিচার নাকি স্টুডেন্ট তা ডিটেক্ট করার জন্য কোর প্যারামিটার
+  final bool isTeacher; 
 
   const ChatListScreen({
     super.key,
@@ -19,7 +19,7 @@ class ChatListScreen extends StatefulWidget {
 }
 
 class _ChatListScreenState extends State<ChatListScreen> {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final ChatService _chatService = ChatService();
   final TextEditingController _searchController = TextEditingController();
   String _searchText = '';
   String _currentUserName = 'User';
@@ -39,16 +39,15 @@ class _ChatListScreenState extends State<ChatListScreen> {
 
   Future<void> _loadCurrentUserName() async {
     try {
-      // কালেকশন আর্কিটেকচার অনুযায়ী সেফ ডেটা রিড
-      final targetCollection = widget.isTeacher ? 'teachers' : 'students';
-      final doc = await _firestore.collection(targetCollection).doc(widget.currentUserId).get();
-      if (!doc.exists || !mounted) return;
-      final data = doc.data();
-      if (data == null) return;
-      setState(() {
-        _currentUserName = (data['name'] ?? data['displayName'] ?? 'User').toString();
-      });
-    } catch (_) {}
+      final data = await _chatService.getUserProfile(widget.currentUserId, widget.isTeacher);
+      if (data != null && mounted) {
+        setState(() {
+          _currentUserName = (data['name'] ?? data['displayName'] ?? 'User').toString();
+        });
+      }
+    } catch (e) {
+      debugPrint("Error loading profile: $e");
+    }
   }
 
   @override
@@ -64,7 +63,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
     final isToday = date.year == now.year && date.month == now.month && date.day == now.day;
 
     if (isToday) {
-      final hour = date.hour > 12 ? date.hour - 12 : (date.hour == 0 ? 12 : date.hour);
+      final hour = date.hour % 12 == 0 ? 12 : date.hour % 12;
       final minute = date.minute.toString().padLeft(2, '0');
       final amPm = date.hour >= 12 ? 'PM' : 'AM';
       return '$hour:$minute $amPm';
@@ -95,7 +94,6 @@ class _ChatListScreenState extends State<ChatListScreen> {
         ),
       );
     } else {
-      // পূর্ববর্তী ধাপে রিফ্যাক্টর করা সেফ কনস্ট্রাক্টর ও রুট সিঙ্ক (ব্ল্যাক স্ক্রিন ফিক্সড)
       Navigator.push(
         context,
         MaterialPageRoute(
@@ -124,7 +122,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF006653), // প্রিমিয়াম হোয়াটসঅ্যাপ গ্রিন থিম
+        backgroundColor: const Color(0xFF006653), 
         elevation: 0,
         automaticallyImplyLeading: false,
         title: const Text(
@@ -141,10 +139,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
           _buildSearchBar(),
           Expanded(
             child: StreamBuilder<QuerySnapshot>(
-              stream: _firestore
-                  .collection('chats')
-                  .where('participants', arrayContains: widget.currentUserId)
-                  .snapshots(),
+              stream: _chatService.getUserChatsStream(widget.currentUserId), // ChatService থেকে ডেটা লোড (রুল ৪ সিঙ্ক)
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator(color: Color(0xFF006653)));
@@ -157,8 +152,8 @@ class _ChatListScreenState extends State<ChatListScreen> {
                 }
 
                 final chatDocs = snapshot.data!.docs;
-                
-                // মেমোরি সর্টিং ইঞ্জিন (নো ইনডেক্স ক্র্যাশ)
+
+                // ক্লায়েন্ট-সাইড মেমোরি সর্টিং ইঞ্জিন (Firestore No-Index Crash Protection)
                 chatDocs.sort((a, b) {
                   final aData = a.data() as Map<String, dynamic>;
                   final bData = b.data() as Map<String, dynamic>;
@@ -210,11 +205,9 @@ class _ChatListScreenState extends State<ChatListScreen> {
                       if (participantsList.isEmpty) return const SizedBox.shrink();
                       final String receiverId = participantsList.first;
 
-                      // রোল বেসড ডেডিকেটেড কালেকশন ম্যাপিং (টিচার/স্টুডেন্ট আইডি সেফটি ফলব্যাক)
-                      final targetOppositeCollection = widget.isTeacher ? 'students' : 'teachers';
-
+                      // স্ট্রিম বিল্ডারের ভেতর থেকে ডাইরেক্ট অপোজিট ইউজার প্রোফাইল ডাটা সিঙ্ক (রুল ৫)
                       return StreamBuilder<DocumentSnapshot>(
-                        stream: _firestore.collection(targetOppositeCollection).doc(receiverId).snapshots(),
+                        stream: _chatService.getUserStatusStream(receiverId, !widget.isTeacher),
                         builder: (context, userSnapshot) {
                           String finalName = "User";
                           String finalImageUrl = "";
@@ -337,7 +330,11 @@ class _ChatCard extends StatelessWidget {
               bottom: 2,
               child: Container(
                 width: 12, height: 12,
-                decoration: BoxDecoration(color: const Color(0xFF22C55E), shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 2)),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF22C55E), 
+                  shape: BoxShape.circle, 
+                  border: Border.all(color: Colors.white, width: 2),
+                ),
               ),
             ),
         ],
