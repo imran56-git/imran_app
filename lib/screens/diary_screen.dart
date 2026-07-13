@@ -60,7 +60,6 @@ class _DiaryScreenState extends State<DiaryScreen> {
   // ফায়ারস্টোর থেকে লাইভ ফি ব্যালেন্স লোড করার মেথড
   void _fetchStudentFeeStructure(String studentId) async {
     try {
-      // monthly_fee কালেকশন থেকে স্টুডেন্টের কারেন্ট ব্যালেন্স চেক
       final feeDoc = await _firestore.collection('monthly_fee').doc(studentId).get();
       if (feeDoc.exists && feeDoc.data() != null) {
         final data = feeDoc.data()!;
@@ -70,7 +69,6 @@ class _DiaryScreenState extends State<DiaryScreen> {
           _calculateBalances();
         });
       } else {
-        // নতুন স্টুডেন্ট হলে ডিফল্ট সেটআপ
         setState(() {
           _monthlyFee = 1000.0;
           _previousPending = 0.0;
@@ -171,7 +169,6 @@ class _DiaryScreenState extends State<DiaryScreen> {
     final batch = _firestore.batch();
 
     try {
-      // ১. মূল ডায়েরি কালেকশনে ডেটা রাইট
       final diaryRef = _firestore.collection('diary').doc(entryId);
       batch.set(diaryRef, {
         'diaryId': entryId,
@@ -186,12 +183,10 @@ class _DiaryScreenState extends State<DiaryScreen> {
         'homework': _homeworkController.text.trim(),
         'month': _selectedMonth,
         'feeStatus': _feeStatus,
-        // বাগ ১৩ সিকিউরিটি ফিক্স: প্রাইভেট নোট আলাদা প্রটেকশন ব্লকে রাখা হলো
         'privateNote': _noteController.text.trim(),
         'createdAt': FieldValue.serverTimestamp(),
       });
 
-      // ২. monthly_fee লেজার রিয়াল-টাইম ব্যালেন্স আপডেট
       final feeRef = _firestore.collection('monthly_fee').doc(studentId);
       batch.set(feeRef, {
         'studentId': studentId,
@@ -200,11 +195,9 @@ class _DiaryScreenState extends State<DiaryScreen> {
         'pendingAmount': _remainingPending,
         'totalPaid': FieldValue.increment(_paidAmount),
         'lastUpdated': FieldValue.serverTimestamp(),
-        // ১২ মাসের ট্র্যাকিং লেজার রিয়াল-টাইম মেপিং
         'feeStatus12Months.$_selectedMonth': _feeStatus,
       }, SetOptions(merge: true));
 
-      // ৩. বাগ ৮ ফিক্স: ফি রিসিভড হলে পেমেন্ট হিস্ট্রি জেনারেট
       if (_feeStatus == 'YES' && _paidAmount > 0) {
         final paymentId = _firestore.collection('payment_history').doc().id;
         final paymentRef = _firestore.collection('payment_history').doc(paymentId);
@@ -221,7 +214,6 @@ class _DiaryScreenState extends State<DiaryScreen> {
         });
       }
 
-      // ব্যাচ ট্রানজেকশন কমিট
       await batch.commit();
 
       if (mounted) {
@@ -553,7 +545,13 @@ class _DiaryScreenState extends State<DiaryScreen> {
               onTap: () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (context) => const DiaryHistoryScreen()),
+                  MaterialPageRoute(
+                    // ফিক্সড: ডায়রি হিস্ট্রি স্ক্রিনে প্রয়োজনীয় টিচার আইডি এবং নাম পাঠানো হলো
+                    builder: (context) => DiaryHistoryScreen(
+                      currentUserId: widget.currentUserId,
+                      currentUserName: widget.currentUserName,
+                    ),
+                  ),
                 );
               },
               child: Container(
