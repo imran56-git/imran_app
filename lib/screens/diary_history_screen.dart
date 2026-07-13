@@ -5,12 +5,12 @@ import '../../widgets/success_toast.dart';
 
 class DiaryHistoryScreen extends StatefulWidget {
   final String currentUserId;
-  final String currentUserName; // ফিক্সড: টিচার নেম রিসিভ করার জন্য প্রপার্টি যুক্ত করা হলো
+  final String currentUserName; 
 
   const DiaryHistoryScreen({
     super.key,
     required this.currentUserId,
-    required this.currentUserName, // ফিক্সড: কনস্ট্রাক্টর প্যারামিটার সিঙ্ক করা হলো
+    required this.currentUserName, 
   });
 
   @override
@@ -41,7 +41,7 @@ class _DiaryHistoryScreenState extends State<DiaryHistoryScreen> {
     super.dispose();
   }
 
-  // ডাইনামিক এন্ট্রি আপডেট ডায়ালগ (মেকানিজম)
+  // ডাইনামিক এন্ট্রি আপডেট ডায়ালগ মেকানিজম
   void _showUpdateDialog(Map<String, dynamic> diaryData) {
     String localAttendance = diaryData['attendanceStatus'] ?? 'Present';
     String localFeeStatus = diaryData['feeStatus'] ?? 'NO';
@@ -91,7 +91,10 @@ class _DiaryHistoryScreenState extends State<DiaryHistoryScreen> {
                           contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                         ),
-                        items: ['YES', 'NO'].map((val) => DropdownMenuItem(value: val, child: Text(val))).toList(),
+                        items: const [
+                          DropdownMenuItem(value: 'YES', child: Text('YES')),
+                          DropdownMenuItem(value: 'NO', child: Text('NO')),
+                        ],
                         onChanged: (val) => setDialogState(() => localFeeStatus = val!),
                       ),
                     ],
@@ -133,9 +136,11 @@ class _DiaryHistoryScreenState extends State<DiaryHistoryScreen> {
                             SuccessToast.show(context, 'Entry Updated Successfully');
                           }
                         } catch (e) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Failed to update data')),
-                          );
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Failed to update data')),
+                            );
+                          }
                         }
                       },
                       child: const Text('Save Changes', style: TextStyle(fontWeight: FontWeight.bold)),
@@ -237,7 +242,6 @@ class _DiaryHistoryScreenState extends State<DiaryHistoryScreen> {
               stream: _firestore
                   .collection('diary')
                   .where('teacherId', isEqualTo: widget.currentUserId)
-                  .orderBy('date', descending: true)
                   .snapshots(),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
@@ -249,6 +253,7 @@ class _DiaryHistoryScreenState extends State<DiaryHistoryScreen> {
                   );
                 }
 
+                // ক্লায়েন্ট-সাইড ফিল্টারিং এবং ক্র্যাশ সেফ সর্টিং মেকানিজম
                 final filteredDocs = snapshot.data!.docs.where((doc) {
                   final data = doc.data() as Map<String, dynamic>;
                   final studentName = (data['studentName'] ?? '').toString().toLowerCase();
@@ -265,6 +270,14 @@ class _DiaryHistoryScreenState extends State<DiaryHistoryScreen> {
 
                   return matchesSearch && matchesFilter;
                 }).toList();
+
+                // ডেট অনুযায়ী ডিসেন্ডিং অর্ডারে ম্যানুয়াল সর্টিং (যা ইন্ডেক্স এরর রিমুভ করে)
+                filteredDocs.sort((a, b) {
+                  final aTime = (a.data() as Map<String, dynamic>)['date'] as Timestamp?;
+                  final bTime = (b.data() as Map<String, dynamic>)['date'] as Timestamp?;
+                  if (aTime == null || bTime == null) return 0;
+                  return bTime.compareTo(aTime);
+                });
 
                 if (filteredDocs.isEmpty) {
                   return Center(
