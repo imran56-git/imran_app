@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart'; 
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart'; 
+import 'notification_screen.dart'; // নোটিফিকেশন স্ক্রিন ইমপোর্ট করা হলো
 
 class StudentProfileScreen extends StatefulWidget {
   final String currentUserId;
@@ -41,6 +42,9 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
   final classOptions = const ['Class 1','Class 2','Class 3','Class 4','Class 5','Class 6','Class 7','Class 8','Class 9','Class 10','Class 11','Class 12','College','University','Others'];
   final subjectOptions = const ["Mathematics","Physics","Chemistry","Biology","English","Computer Science","History","Geography"];
 
+  // ইউজারটি নিজের প্রোফাইল দেখছে নাকি অন্য কেউ দেখছে তা চেক করার লজিক
+  bool get isOwnProfile => widget.currentUserId.isEmpty || widget.currentUserId == (_auth.currentUser?.uid ?? "");
+
   @override
   void initState() { super.initState(); fetchStudentData(); }
 
@@ -51,10 +55,10 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
   }
 
   Future fetchStudentData() async {
-    final uid = _auth.currentUser?.uid;
-    if (uid == null) return setState(() => isLoading = false);
+    final targetUid = widget.currentUserId.isNotEmpty ? widget.currentUserId : (_auth.currentUser?.uid ?? "");
+    if (targetUid.isEmpty) return setState(() => isLoading = false);
     try {
-      final data = (await _firestore.collection('students').doc(uid).get()).data() ?? {};
+      final data = (await _firestore.collection('students').doc(targetUid).get()).data() ?? {};
       if (!mounted) return;
       setState(() {
         studentData = data;
@@ -202,7 +206,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
         foregroundColor: Colors.white, 
         elevation: 0,
         scrolledUnderElevation: 0,
-        automaticallyImplyLeading: false, 
+        automaticallyImplyLeading: !isOwnProfile, // নিজের প্রোফাইল না হলে ব্যাক বাটন শো করবে
         title: Row(
           children: [
             ClipRRect(
@@ -228,17 +232,23 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
             onSelected: (v) { 
               if (v == 'edit') setState(() { isEditing = true; _triggerAnimation = !_triggerAnimation; }); 
+              if (v == 'notifications') Navigator.push(context, MaterialPageRoute(builder: (_) => const NotificationScreen()));
               if (v == 'logout') _handleSignOut(); 
               if (v == 'delete') _handleDeleteAccount(); 
               if (v == 'payment') _showServiceUnavailableDialog();
             },
-            itemBuilder: (ctx) => [
-              const PopupMenuItem(value: 'edit', child: Row(children: [Icon(Icons.edit_rounded, size: 18, color: Colors.black54), SizedBox(width: 10), Text('Edit Profile')])), 
-              const PopupMenuItem(value: 'payment', child: Row(children: [Icon(Icons.payment_rounded, size: 18, color: Colors.black54), SizedBox(width: 10), Text('Payment Ticket')])), 
-              const PopupMenuDivider(),
-              const PopupMenuItem(value: 'logout', child: Row(children: [Icon(Icons.logout_rounded, size: 18, color: Colors.black54), SizedBox(width: 10), Text('Sign Out')])), 
-              const PopupMenuItem(value: 'delete', child: Row(children: [Icon(Icons.delete_forever_rounded, size: 18, color: Colors.redAccent), SizedBox(width: 10), Text('Delete Account', style: TextStyle(color: Colors.redAccent))])),
-            ],
+            itemBuilder: (ctx) => isOwnProfile 
+              ? [
+                  const PopupMenuItem(value: 'edit', child: Row(children: [Icon(Icons.edit_rounded, size: 18, color: Colors.black54), SizedBox(width: 10), Text('Edit Profile')])), 
+                  const PopupMenuItem(value: 'notifications', child: Row(children: [Icon(Icons.notifications_active_outlined, size: 18, color: Colors.black54), SizedBox(width: 10), Text('Notifications')])), 
+                  const PopupMenuItem(value: 'payment', child: Row(children: [Icon(Icons.payment_rounded, size: 18, color: Colors.black54), SizedBox(width: 10), Text('Payment Ticket')])), 
+                  const PopupMenuDivider(),
+                  const PopupMenuItem(value: 'logout', child: Row(children: [Icon(Icons.logout_rounded, size: 18, color: Colors.black54), SizedBox(width: 10), Text('Sign Out')])), 
+                  const PopupMenuItem(value: 'delete', child: Row(children: [Icon(Icons.delete_forever_rounded, size: 18, color: Colors.redAccent), SizedBox(width: 10), Text('Delete Account', style: TextStyle(color: Colors.redAccent))])),
+                ]
+              : [
+                  const PopupMenuItem(value: 'notifications', child: Row(children: [Icon(Icons.notifications_active_outlined, size: 18, color: Colors.black54), SizedBox(width: 10), Text('Notifications')])), 
+                ],
           )
         ],
       ),
@@ -268,9 +278,9 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 24),
             child: Align(
               alignment: Alignment.centerLeft,
-              child: const Text(
-                'My Profile', 
-                style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold, letterSpacing: 0.3)
+              child: Text(
+                isOwnProfile ? 'My Profile' : "Student Profile", 
+                style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold, letterSpacing: 0.3)
               ),
             ),
           ),          const SizedBox(height: 15),
@@ -312,8 +322,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
                         ),
                       ],
                     ),
-                  ),
-                  const SizedBox(width: 10),
+                  ),                  const SizedBox(width: 10),
                   InkWell(
                     onTap: () {
                       Clipboard.setData(ClipboardData(text: currentUid));
@@ -357,8 +366,11 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
         padding: const EdgeInsets.all(16), decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.grey.withOpacity(0.1))),
         child: Column(children: [
           _info(Icons.person_outline_rounded, "Name", _name.text), const Divider(height: 1, color: Color(0xFFF1F3F5)),
-          _info(Icons.wc_outlined, "Gender", gender ?? "Not Added"), const Divider(height: 1, color: Color(0xFFF1F3F5)),
-          _info(Icons.phone_android_rounded, "Phone", _phone.text), const Divider(height: 1, color: Color(0xFFF1F3F5)),
+          
+          // মোবাইল এবং জেন্ডার ফিল্ডে প্রাইভেসি প্রটেকশন দেওয়া হলো
+          _info(Icons.wc_outlined, "Gender", isOwnProfile ? (gender ?? "Not Added") : "Hidden for Privacy"), const Divider(height: 1, color: Color(0xFFF1F3F5)),
+          _info(Icons.phone_android_rounded, "Phone", isOwnProfile ? _phone.text : "Hidden for Privacy"), const Divider(height: 1, color: Color(0xFFF1F3F5)),
+          
           _info(Icons.school_outlined, "Class/Grade", studentClass ?? "Not Added"), const Divider(height: 1, color: Color(0xFFF1F3F5)), 
           _info(Icons.history_edu_rounded, "School Name", _school.text), const Divider(height: 1, color: Color(0xFFF1F3F5)),
           _info(Icons.account_balance_rounded, "College Name", _college.text), const Divider(height: 1, color: Color(0xFFF1F3F5)),
