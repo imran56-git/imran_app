@@ -31,43 +31,34 @@ class ChatScreen extends StatefulWidget {
 class _ChatScreenState extends State<ChatScreen> {
   final ChatService _chatService = ChatService();
   final ScrollController _scrollController = ScrollController();
-  Stream<QuerySnapshot>? _messageStream;
+  Stream<List<MessageModel>>? _messageStream;
+
+  // রিপ্লাই স্টেট ট্র্যাকিং এর ভেরিয়েবল
+  String? _replyToMessageId;
+  String? _replyToText;
 
   @override
   void initState() {
     super.initState();
     _initChatStream();
-    _updateTypingStatus(false);
+    _chatService.updateTypingStatus(widget.chatRoomId, widget.currentUserId, false);
+    _markMessagesAsRead();
   }
 
-  // মেমোরি লিক ও ক্র্যাশ বন্ধ করার জন্য ডিসপোজ মেথড ফিক্স
   @override
   void dispose() {
-    _updateTypingStatus(false); // স্ক্রিন লিভ করার সময় স্ট্যাটাস ফলস করা
-    _scrollController.dispose(); // কোর মেমোরি সেফটি ফিক্স
+    _chatService.updateTypingStatus(widget.chatRoomId, widget.currentUserId, false); 
+    _scrollController.dispose(); 
     super.dispose();
   }
 
   void _initChatStream() {
-    try {
-      _messageStream = FirebaseFirestore.instance
-          .collection('chats')
-          .doc(widget.chatRoomId)
-          .collection('messages')
-          .orderBy('timestamp', descending: true)
-          .snapshots();
-    } catch (e) {
-      debugPrint("Stream Initialization Error: $e");
-    }
+    // ChatService থেকে জেনেরিক ও টাইপ-সেফ মেসেজ স্ট্রিম নেওয়া হচ্ছে (রুল ৪ পূরণ)
+    _messageStream = _chatService.getMessages(widget.chatRoomId);
   }
 
-  void _updateTypingStatus(bool isTyping) {
-    FirebaseFirestore.instance
-        .collection('typing')
-        .doc(widget.chatRoomId)
-        .set({
-      widget.currentUserId: isTyping,
-    }, SetOptions(merge: true));
+  void _markMessagesAsRead() async {
+    await _chatService.markAsSeen(widget.chatRoomId, widget.currentUserId);
   }
 
   @override
@@ -76,14 +67,14 @@ class _ChatScreenState extends State<ChatScreen> {
       canPop: false,
       onPopInvokedWithResult: (didPop, result) {
         if (didPop) return;
-        _updateTypingStatus(false);
+        _chatService.updateTypingStatus(widget.chatRoomId, widget.currentUserId, false);
         Navigator.of(context).pop();
       },
       child: Scaffold(
-        backgroundColor: const Color(0xFFF5F7FA), // প্রিমিয়াম ক্লিন ব্যাকগ্রাউন্ড (FYBTT থিম সিঙ্ক)
+        backgroundColor: const Color(0xFFF5F7FA), 
         appBar: AppBar(
           automaticallyImplyLeading: false,
-          backgroundColor: const Color(0xFF1E4C7A), // অ্যাপের সিগনেচার ডিপ ব্লু থিম
+          backgroundColor: const Color(0xFF1E4C7A), 
           titleSpacing: 0,
           scrolledUnderElevation: 0,
           title: Row(
@@ -91,7 +82,7 @@ class _ChatScreenState extends State<ChatScreen> {
               IconButton(
                 icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
                 onPressed: () {
-                  _updateTypingStatus(false);
+                  _chatService.updateTypingStatus(widget.chatRoomId, widget.currentUserId, false);
                   Navigator.pop(context);
                 },
               ),
@@ -139,21 +130,18 @@ class _ChatScreenState extends State<ChatScreen> {
                             'typing...',
                             style: TextStyle(
                               fontSize: 12, 
-                              color: Color(0xFFA2E8DD), // নিয়ন গ্রিন-ব্লু টোন
+                              color: Color(0xFFA2E8DD), 
                               fontWeight: FontWeight.bold
                             ),
                           );
                         }
 
-                        return StreamBuilder<DocumentSnapshot>(
-                          stream: FirebaseFirestore.instance
-                              .collection(widget.isTeacher ? 'students' : 'teachers')
-                              .doc(widget.receiverId)
-                              .snapshots(),
-                          builder: (context, userSnapshot) {
-                            if (userSnapshot.hasData && userSnapshot.data!.exists) {
-                              var userData = userSnapshot.data!.data() as Map<String, dynamic>?;
-                              bool isOnline = userData?['isOnline'] ?? false;
+                        // ChatService এর getUserStatusStream ব্যবহার করে স্ট্যাটাস হ্যান্ডলিং
+                        return StreamBuilder<Map<String, dynamic>>(
+                          stream: _chatService.getUserStatusStream(widget.receiverId, !widget.isTeacher),
+                          builder: (context, statusSnapshot) {
+                            if (statusSnapshot.hasData) {
+                              bool isOnline = statusSnapshot.data!['isOnline'] ?? false;
                               return Text(
                                 isOnline ? 'Online' : 'Offline',
                                 style: TextStyle(
@@ -185,7 +173,7 @@ class _ChatScreenState extends State<ChatScreen> {
             Expanded(
               child: _messageStream == null
                   ? const Center(child: CircularProgressIndicator(color: Color(0xFF1E4C7A), strokeWidth: 3))
-                  : StreamBuilder<QuerySnapshot>(
+                  : StreamBuilder<List<MessageModel>>(
                       stream: _messageStream,
                       builder: (context, snapshot) {
                         if (snapshot.hasError) {
@@ -201,7 +189,9 @@ class _ChatScreenState extends State<ChatScreen> {
                           return const Center(child: CircularProgressIndicator(color: Color(0xFF1E4C7A), strokeWidth: 3));
                         }
 
-                        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                        final messages = snapshot.data;
+
+                        if (messages == null || messages.isEmpty) {
                           return Center(
                             child: Container(
                               padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
@@ -224,23 +214,32 @@ class _ChatScreenState extends State<ChatScreen> {
                           );
                         }
 
-                        final docs = snapshot.data!.docs;
+                        // স্ক্রিনে নতুন মেসেজ ঢোকার সাথে সাথে রিড স্ট্যাটাস ট্রিগার করা
+                        _markMessagesAsRead();
 
                         return ListView.builder(
                           controller: _scrollController,
                           reverse: true, 
                           physics: const BouncingScrollPhysics(),
                           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                          itemCount: docs.length,
+                          itemCount: messages.length,
                           itemBuilder: (context, index) {
-                            final data = docs[index].data() as Map<String, dynamic>;
-
-                            final message = MessageModel.fromMap(data);
+                            final message = messages[index];
                             final bool isMe = message.senderId == widget.currentUserId;
 
                             return MessageBubble(
                               message: message,
                               isMe: isMe,
+                              chatRoomId: widget.chatRoomId,
+                              currentUserId: widget.currentUserId,
+                              onReplyPressed: (repliedMessage) {
+                                setState(() {
+                                  _replyToMessageId = repliedMessage.messageId;
+                                  _replyToText = repliedMessage.type == 'text' 
+                                      ? repliedMessage.content 
+                                      : 'Attachment';
+                                });
+                              },
                             );
                           },
                         );
@@ -262,7 +261,17 @@ class _ChatScreenState extends State<ChatScreen> {
                 chatRoomId: widget.chatRoomId,
                 senderId: widget.currentUserId,
                 receiverId: widget.receiverId,
-                onTypingChanged: (isTyping) => _updateTypingStatus(isTyping),
+                replyToMessageId: _replyToMessageId,
+                replyToText: _replyToText,
+                onCancelReply: () {
+                  setState(() {
+                    _replyToMessageId = null;
+                    _replyToText = null;
+                  });
+                },
+                onTypingChanged: (isTyping) {
+                  _chatService.updateTypingStatus(widget.chatRoomId, widget.currentUserId, isTyping);
+                },
               ),
             ),
           ],
