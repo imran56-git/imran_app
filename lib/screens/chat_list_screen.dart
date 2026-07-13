@@ -139,7 +139,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
           _buildSearchBar(),
           Expanded(
             child: StreamBuilder<QuerySnapshot>(
-              stream: _chatService.getUserChatsStream(widget.currentUserId), // ChatService থেকে ডেটা লোড (রুল ৪ সিঙ্ক)
+              stream: _chatService.getUserChatsStream(widget.currentUserId),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator(color: Color(0xFF006653)));
@@ -153,7 +153,6 @@ class _ChatListScreenState extends State<ChatListScreen> {
 
                 final chatDocs = snapshot.data!.docs;
 
-                // ক্লায়েন্ট-সাইড মেমোরি সর্টিং ইঞ্জিন (Firestore No-Index Crash Protection)
                 chatDocs.sort((a, b) {
                   final aData = a.data() as Map<String, dynamic>;
                   final bData = b.data() as Map<String, dynamic>;
@@ -205,17 +204,23 @@ class _ChatListScreenState extends State<ChatListScreen> {
                       if (participantsList.isEmpty) return const SizedBox.shrink();
                       final String receiverId = participantsList.first;
 
-                      // স্ট্রিম বিল্ডারের ভেতর থেকে ডাইরেক্ট অপোজিট ইউজার প্রোফাইল ডাটা সিঙ্ক (রুল ৫)
-                      return StreamBuilder<DocumentSnapshot>(
+                      return StreamBuilder<dynamic>(
                         stream: _chatService.getUserStatusStream(receiverId, !widget.isTeacher),
                         builder: (context, userSnapshot) {
                           String finalName = "User";
                           String finalImageUrl = "";
                           bool isOnline = false;
 
-                          if (userSnapshot.hasData && userSnapshot.data!.exists) {
-                            final userData = userSnapshot.data!.data() as Map<String, dynamic>?;
-                            if (userData != null) {
+                          if (userSnapshot.hasData) {
+                            final userData = userSnapshot.data;
+                            if (userData is DocumentSnapshot && userData.exists) {
+                              final mapData = userData.data() as Map<String, dynamic>?;
+                              if (mapData != null) {
+                                finalName = (mapData['name'] ?? mapData['displayName'] ?? 'User').toString();
+                                finalImageUrl = (mapData['profileImageUrl'] ?? mapData['profilePic'] ?? '').toString();
+                                isOnline = mapData['isOnline'] == true;
+                              }
+                            } else if (userData is Map<String, dynamic>) {
                               finalName = (userData['name'] ?? userData['displayName'] ?? 'User').toString();
                               finalImageUrl = (userData['profileImageUrl'] ?? userData['profilePic'] ?? '').toString();
                               isOnline = userData['isOnline'] == true;
