@@ -10,7 +10,6 @@ class TeacherSearchScreen extends StatefulWidget {
 }
 
 class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
-  // কন্ট্রোলারের নাম ও ফিল্ড ব্র্যান্ড সিঙ্ক করা হলো
   final TextEditingController _uidController = TextEditingController();
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _subjectController = TextEditingController();
@@ -20,7 +19,16 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
   List<DocumentSnapshot> searchResults = [];
   bool _isSearching = false;
 
-  // ডাইনামিক সার্চ ইঞ্জিন
+  @override
+  void dispose() {
+    _uidController.dispose();
+    _nameController.dispose();
+    _subjectController.dispose();
+    _locationController.dispose();
+    _experienceController.dispose();
+    super.dispose();
+  }
+
   void _searchTeachers() async {
     setState(() => _isSearching = true);
 
@@ -31,7 +39,6 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
     final String expInput = _experienceController.text.trim();
 
     try {
-      // UID/Reg ID দিয়ে সার্চ করলে সরাসরি সিঙ্গেল ডক ফেচ (সবচেয়ে ফাস্ট মেথড)
       if (uidInput.isNotEmpty) {
         final doc = await FirebaseFirestore.instance.collection('teachers').doc(uidInput).get();
         setState(() {
@@ -41,7 +48,6 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
         return;
       }
 
-      // ফিল্টার কুয়েরি বিল্ডার
       Query query = FirebaseFirestore.instance.collection('teachers');
 
       if (nameInput.isNotEmpty) {
@@ -51,7 +57,6 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
         query = query.where('location', isEqualTo: locationInput);
       }
       if (subjectInput.isNotEmpty) {
-        // arrayContains ব্যবহার করায় এটি পারফেক্টলি কাজ করবে
         query = query.where('subjects', arrayContains: subjectInput);
       }
       if (expInput.isNotEmpty) {
@@ -69,7 +74,6 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
     } catch (e) {
       setState(() => _isSearching = false);
       if (mounted) {
-        // ফায়ারবেস কম্পাউন্ড ইনডেক্সিং এরর ট্র্যাক করার প্রফেশনাল মেথড
         debugPrint("Firestore Search Exception: $e");
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -97,7 +101,7 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF7F9FC), // অ্যাপ বিজি সিঙ্ক
+      backgroundColor: const Color(0xFFF7F9FC),
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
@@ -179,7 +183,7 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
     return Container(
       padding: const EdgeInsets.fromLTRB(24, 15, 24, 25),
       decoration: const BoxDecoration(
-        color: Color(0xFF1E4C7A), // প্রিমিয়াম ডিপ ব্লু থিম
+        color: Color(0xFF1E4C7A),
         borderRadius: BorderRadius.vertical(bottom: Radius.circular(30)),
       ),
       child: Column(
@@ -262,7 +266,7 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
                 _searchTeachers();
               },
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFFFB300), // গোল্ডেন ইয়েলো ব্র্যান্ড অ্যাসেন্ট
+                backgroundColor: const Color(0xFFFFB300),
                 foregroundColor: Colors.black,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                 elevation: 1,
@@ -306,7 +310,6 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
   Widget _buildTeacherCard(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>? ?? {};
 
-    // বাগ ১৫ টাইপো এবং সেফ ভ্যালু হ্যান্ডলিং ফিক্স
     final String teacherName = data['name'] ?? data['displayName'] ?? 'No Name Provided';
     final String location = data['location'] ?? 'Location N/A';
     final int experience = data['experience'] is int 
@@ -337,10 +340,10 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
                 color: const Color(0xFF1E4C7A).withOpacity(0.08),
                 shape: BoxShape.circle,
               ),
-              child: CircleAvatar(
+              child: const CircleAvatar(
                 radius: 28,
                 backgroundColor: Colors.transparent,
-                child: const Icon(Icons.person_rounded, size: 32, color: Color(0xFF1E4C7A)),
+                child: Icon(Icons.person_rounded, size: 32, color: Color(0xFF1E4C7A)),
               ),
             ),
             title: Text(
@@ -364,7 +367,7 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => TeacherProfileScreen(teacherId: doc.id),
+                    builder: (_) => TeacherProfileScreen(currentUserId: doc.id),
                   ),
                 );
               },
