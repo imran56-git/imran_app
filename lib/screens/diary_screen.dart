@@ -57,6 +57,17 @@ class _DiaryScreenState extends State<DiaryScreen> {
     _selectedMonth = _months[DateTime.now().month - 1];
   }
 
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _subjectController.dispose();
+    _topicController.dispose();
+    _homeworkController.dispose();
+    _noteController.dispose();
+    _amountController.dispose();
+    super.dispose();
+  }
+
   // ফায়ারস্টোর থেকে লাইভ ফি ব্যালেন্স লোড করার মেথড
   void _fetchStudentFeeStructure(String studentId) async {
     try {
@@ -158,8 +169,8 @@ class _DiaryScreenState extends State<DiaryScreen> {
     );
   }
 
-  // ফায়ারস্টোর প্রোডাকশন রাইট ইঞ্জিন (ব্যাচ ট্রানজেকশন)
   void _saveDiaryToFirebase() async {
+    FocusScope.of(context).unfocus();
     if (_foundStudent == null || _subjectController.text.isEmpty) return;
 
     setState(() => _isSaving = true);
@@ -425,7 +436,10 @@ class _DiaryScreenState extends State<DiaryScreen> {
                                 child: DropdownButtonFormField<String>(
                                   value: _feeStatus,
                                   decoration: InputDecoration(labelText: 'Fee Received?', border: OutlineInputBorder(borderRadius: BorderRadius.circular(14))),
-                                  items: ['YES', 'NO'].map((status) => DropdownMenuItem(value: status, child: Text(status))).toList(),
+                                  items: const [
+                                    DropdownMenuItem(value: 'YES', child: Text('YES')),
+                                    DropdownMenuItem(value: 'NO', child: Text('NO')),
+                                  ],
                                   onChanged: (val) {
                                     setState(() {
                                       _feeStatus = val!;
@@ -546,7 +560,6 @@ class _DiaryScreenState extends State<DiaryScreen> {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    // ফিক্সড: ডায়রি হিস্ট্রি স্ক্রিনে প্রয়োজনীয় টিচার আইডি এবং নাম পাঠানো হলো
                     builder: (context) => DiaryHistoryScreen(
                       currentUserId: widget.currentUserId,
                       currentUserName: widget.currentUserName,
