@@ -4,9 +4,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; // ক্লিপবোর্ডে কপি করার জন্য যুক্ত করা হয়েছে
+import 'package:flutter/services.dart'; 
 import 'package:image_picker/image_picker.dart';
-import 'package:shared_preferences/shared_preferences.dart'; // সেশন ডাটা ক্লিয়ার করার জন্য
+import 'package:shared_preferences/shared_preferences.dart'; 
 import '../utils/image_utils.dart';
 import '../utils/chat_colors.dart';
 import '../widgets/success_toast.dart';
@@ -119,7 +119,6 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
     }
   }
 
-  // সেশন ক্লিয়ার করার হেল্পার মেথড (লগআউট বাগ ৩ ফিক্স)
   Future<void> _clearLocalSession() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.clear();
@@ -197,7 +196,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
                   ),
                   ElevatedButton(
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: isDelete ? Colors.red : Colors.blue[800],
+                      backgroundColor: isDelete ? Colors.red : const Color(0xFF1565C0), // ফিক্সড কালার এরর
                       foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -339,11 +338,10 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
                         children: [
                           _buildNameWithBadge(),
                           const SizedBox(height: 8),
-                          
-                          // বাগ ১৬ ফিক্স: প্রফেশনাল মেটেরিয়াল UID কার্ড লেআউট ডিজাইন
+
                           _buildUidIdentityCard(),
                           const SizedBox(height: 10),
-                          
+
                           if (!isEditing) _buildFollowStats(),
                           if (widget.teacherId != null) _buildFollowButton(),
                           const SizedBox(height: 20),
@@ -362,7 +360,6 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
     );
   }
 
-  // বাগ ১৬ ফিচার: ক্লিপবোর্ড কপি অ্যাকশন সহ সুন্দর UID কার্ড
   Widget _buildUidIdentityCard() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -384,7 +381,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
                 const SizedBox(height: 2),
                 Text(
                   targetUID,
-                  style: const TextStyle(color: Colors.blackDE, fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 0.2),
+                  style: const TextStyle(color: Colors.black87, fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 0.2), // টাইপো ফিক্স করা হয়েছে
                   overflow: TextOverflow.ellipsis,
                 ),
               ],
@@ -429,7 +426,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
             onConfirm: () async {
               try {
                 await _auth.signOut();
-                await _clearLocalSession(); // সেশন ক্লিন
+                await _clearLocalSession(); 
                 if (mounted) {
                   Navigator.of(context).popUntil((route) => route.isFirst);
                 }
@@ -448,7 +445,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
               try {
                 await _firestore.collection('teachers').doc(targetUID).delete();
                 await _auth.currentUser?.delete();
-                await _clearLocalSession(); // সেশন ক্লিন
+                await _clearLocalSession(); 
                 if (mounted) {
                   Navigator.of(context).popUntil((route) => route.isFirst);
                 }
@@ -651,9 +648,8 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
 
   Widget _buildEditForm() {
     final query = _subjectSearchController.text.trim();
-    // কম্পাইল ফিক্স: গ্লোবাল লিস্ট অ্যাক্সেস নিশ্চিত করা হয়েছে
     final list = _subjects.where((s) => s.toLowerCase().contains(query.toLowerCase())).toList();
-    
+
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       _editField("Full Name", _nameController, Icons.person),
       _editField("Mobile Number", _phoneController, Icons.phone, keyboardType: TextInputType.phone),
@@ -717,7 +713,8 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
     ]);
   }
 
-  Widget _buildEditField(String l, TextEditingController c, IconData i, {int maxLines = 1, TextInputType keyboardType = TextInputType.text}) => Padding(padding: const EdgeInsets.only(bottom: 15), child: TextField(controller: c, maxLines: maxLines, keyboardType: keyboardType, decoration: InputDecoration(labelText: l, prefixIcon: Icon(i), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))))));
+  // ফিক্সড মেথড নেম: _buildEditField থেকে _editField এ রূপান্তর করা হলো
+  Widget _editField(String l, TextEditingController c, IconData i, {int maxLines = 1, TextInputType keyboardType = TextInputType.text}) => Padding(padding: const EdgeInsets.only(bottom: 15), child: TextField(controller: c, maxLines: maxLines, keyboardType: keyboardType, decoration: InputDecoration(labelText: l, prefixIcon: Icon(i), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))))));
 }
 
 class HeaderCurveClipper extends CustomClipper<Path> {
