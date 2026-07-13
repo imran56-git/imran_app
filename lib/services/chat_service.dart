@@ -4,9 +4,23 @@ import '../models/message_model.dart';
 class ChatService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  // ==========================================
-  // USER STATUS & TYPING INDICATORS (ROLE-AWARE)
-  // ==========================================
+  Future<Map<String, dynamic>?> getUserProfile(String userId, bool isTeacher) async {
+    try {
+      final String collectionPath = isTeacher ? 'teachers' : 'students';
+      final doc = await _firestore.collection(collectionPath).doc(userId).get();
+      return doc.data();
+    } catch (e) {
+      _handleError('getUserProfile', e);
+      return null;
+    }
+  }
+
+  Stream<QuerySnapshot> getUserChatsStream(String userId) {
+    return _firestore
+        .collection('chats')
+        .where('participants', arrayContains: userId)
+        .snapshots();
+  }
 
   Future<void> updateOnlineStatus(String userId, bool isOnline, bool isTeacher) async {
     try {
@@ -55,10 +69,6 @@ class ChatService {
     });
   }
 
-  // ==========================================
-  // ONE-TO-ONE CHAT LOGIC & LIFECYCLE
-  // ==========================================
-
   String getChatRoomId(String user1, String user2) {
     return user1.compareTo(user2) <= 0 ? '${user1}_$user2' : '${user2}_$user1';
   }
@@ -86,7 +96,7 @@ class ChatService {
           'teacherImage': teacherImage,
           'studentImage': studentImage,
           'participants': [teacherId, studentId],
-          'lastMessageContent': 'Chat initialized', // ChatModel এর সাথে কি-ওয়ার্ড মেলাতে সিঙ্ক করা হলো
+          'lastMessageContent': 'Chat initialized',
           'lastMessageTime': FieldValue.serverTimestamp(),
           'unreadCount': 0,
           'isGroup': false,
@@ -141,7 +151,7 @@ class ChatService {
       if (type == 'location') previewText = '📍 Location';
 
       batch.update(chatRef, {
-        'lastMessageContent': previewText, // ChatModel মেলাতে সিঙ্ক
+        'lastMessageContent': previewText,
         'lastMessageTime': FieldValue.serverTimestamp(),
         'unreadCount': FieldValue.increment(1),
       });
@@ -163,10 +173,6 @@ class ChatService {
       return snapshot.docs.map((doc) => MessageModel.fromMap(doc.data())).toList();
     });
   }
-
-  // ==========================================
-  // READ RECEIPTS & DELIVERY STATUS
-  // ==========================================
 
   Future<void> markAsSeen(String chatId, String currentUserId) async {
     try {
@@ -199,10 +205,6 @@ class ChatService {
       _handleError('markAsSeen', e);
     }
   }
-
-  // ==========================================
-  // ADVANCED MESSAGING & SERVICE IMPLEMENTATIONS
-  // ==========================================
 
   Future<void> editMessage(String chatId, String messageId, String newText) async {
     try {
@@ -303,10 +305,6 @@ class ChatService {
     );
   }
 
-  // ==========================================
-  // MEDIA UPLOAD PLATFORMS
-  // ==========================================
-
   Future<void> sendImage(String chatId, String senderId, String receiverId, String url) async {
     await sendMessage(chatId: chatId, senderId: senderId, receiverId: receiverId, message: url, type: 'image');
   }
@@ -345,10 +343,6 @@ class ChatService {
     );
   }
 
-  // ==========================================
-  // GROUP CHAT LIFECYCLE & CORE LOGIC
-  // ==========================================
-
   Future<void> createGroupChat({
     required String groupId,
     required String groupName,
@@ -381,7 +375,7 @@ class ChatService {
   }) async {
     try {
       final messageRef = _firestore.collection('groups').doc(groupId).collection('messages').doc();
-      
+
       await messageRef.set({
         'messageId': messageRef.id,
         'senderId': senderId,
@@ -416,10 +410,6 @@ class ChatService {
       return snapshot.docs.map((doc) => MessageModel.fromMap(doc.data())).toList();
     });
   }
-
-  // ==========================================
-  // PRIVATE ERROR HANDLING UTILITY
-  // ==========================================
 
   void _handleError(String methodName, dynamic error) {
     print('[@ChatService] Error inside $methodName: $error');
