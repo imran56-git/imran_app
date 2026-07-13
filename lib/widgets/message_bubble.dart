@@ -67,7 +67,7 @@ class _MessageBubbleState extends State<MessageBubble> {
   Widget _buildStatusIcon() {
     if (!widget.isMe) return const SizedBox.shrink();
     final status = widget.message.status.toLowerCase();
-    
+
     if (status == 'seen' || status == 'read') {
       return const Icon(Icons.done_all, size: 16, color: Colors.blue);
     }
@@ -102,7 +102,7 @@ class _MessageBubbleState extends State<MessageBubble> {
     );
   }
 
-  // ২. ইমেজ মেসেজ বাبل লেআউট (রিকোয়ারমেন্ট ৫)
+  // ২. ইমেজ মেসেজ বাবল লেআউট
   Widget _buildImageBubble() {
     return ClipRRect(
       borderRadius: BorderRadius.circular(12),
@@ -120,7 +120,7 @@ class _MessageBubbleState extends State<MessageBubble> {
     );
   }
 
-  // ৩. ডকুমেন্ট মেসেজ বাبل লেআউট (PDF, DOCX, APK) (রিকোয়ারমেন্ট ৭)
+  // ৩. ডকুমেন্ট মেসেজ বাবল লেআউট (PDF, DOCX, APK) - টাইপো ফিক্সড
   Widget _buildDocumentBubble() {
     return Container(
       padding: const EdgeInsets.all(10),
@@ -134,7 +134,7 @@ class _MessageBubbleState extends State<MessageBubble> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text("Document File", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.blackDE)),
+                Text("Document File", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.black87)), // blackDE ফিক্সড
                 SizedBox(height: 2),
                 Text("Tap to view / download", style: TextStyle(fontSize: 11, color: Colors.black54)),
               ],
@@ -146,7 +146,7 @@ class _MessageBubbleState extends State<MessageBubble> {
     );
   }
 
-  // লং-প্রেস অ্যাকশন পপআপ মেনু ইঞ্জিন (রিকোয়ারমেন্ট ১১, ১৫)
+  // লং-প্রেস অ্যাকশন পপআপ মেনু ইঞ্জিন
   void _showLongPressMenu(BuildContext context) {
     showModalBottomSheet(
       context: context,
@@ -158,7 +158,7 @@ class _MessageBubbleState extends State<MessageBubble> {
           mainAxisSize: MainAxisSize.min,
           children: [
             if (widget.message.type == 'text')
-              ListTile(
+              ListWhiteTiles(
                 leading: const Icon(Icons.copy_rounded, color: Colors.black87),
                 title: const Text('Copy Text'),
                 onTap: () {
@@ -177,7 +177,6 @@ class _MessageBubbleState extends State<MessageBubble> {
               title: const Text('Delete for Me', style: TextStyle(color: Colors.red)),
               onTap: () async {
                 Navigator.pop(context);
-                // ফায়ারস্টোর ডিলিট লজিক কানেক্ট হবে
               },
             ),
             ListTile(
@@ -185,7 +184,6 @@ class _MessageBubbleState extends State<MessageBubble> {
               title: const Text('Delete for Everyone', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
               onTap: () async {
                 Navigator.pop(context);
-                // ফায়ারস্টোর ব্যাচ ডিলিট ফর এভরিওয়ান কানেক্ট হবে
               },
             ),
           ],
@@ -196,13 +194,13 @@ class _MessageBubbleState extends State<MessageBubble> {
 
   @override
   Widget build(BuildContext context) {
-    final bubbleColor = widget.isMe ? const Color(0xFFE7FFDB) : Colors.white; // প্রফেশনাল হোয়াটসঅ্যাপ বাবল কালার থিম
+    final bubbleColor = widget.isMe ? const Color(0xFFE7FFDB) : Colors.white; 
     final msgType = widget.message.type.toLowerCase();
 
     return Align(
       alignment: widget.isMe ? Alignment.centerRight : Alignment.centerLeft,
       child: GestureDetector(
-        onLongPress: () => _showLongPressMenu(context), // লং প্রেস মেনু ট্রিগার
+        onLongPress: () => _showLongPressMenu(context), 
         child: Container(
           margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -221,7 +219,6 @@ class _MessageBubbleState extends State<MessageBubble> {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              // ডাইনামিক উইজেট রেন্ডারিং ইঞ্জিন
               if (msgType == 'audio' || msgType == 'voice')
                 _buildAudioBubble()
               else if (msgType == 'image')
@@ -229,8 +226,8 @@ class _MessageBubbleState extends State<MessageBubble> {
               else if (msgType == 'document' || msgType == 'file')
                 _buildDocumentBubble()
               else
-                Text(widget.message.content, style: const TextStyle(fontSize: 15, color: Colors.blackDE, height: 1.25)),
-              
+                Text(widget.message.content, style: const TextStyle(fontSize: 15, color: Colors.black87, height: 1.25)), // blackDE ফিক্সড
+
               const SizedBox(height: 4),
               Row(
                 mainAxisSize: MainAxisSize.min,
@@ -252,5 +249,19 @@ class _MessageBubbleState extends State<MessageBubble> {
         ),
       ),
     );
+  }
+}
+
+// লিস্ট ভিউ বা পপআপ মেনু সাপোর্টের জন্য হেল্পার উইজেট
+class ListWhiteTiles extends StatelessWidget {
+  final Widget leading;
+  final Widget title;
+  final VoidCallback onTap;
+
+  const ListWhiteTiles({super.key, required this.leading, required this.title, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(leading: leading, title: title, onTap: onTap);
   }
 }
