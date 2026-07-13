@@ -4,30 +4,31 @@ import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-class MapScreen extends StatefulWidget {
+// ফিক্সড: ক্লাস নেম পরিবর্তন করে 'TeachingAreasMapScreen' করা হলো যাতে সার্চ স্ক্রিনের বিল্ড এরর চিরতরে দূর হয় (#13)
+class TeachingAreasMapScreen extends StatefulWidget {
   final String teacherId;
   final String teacherName;
 
-  const MapScreen({
+  const TeachingAreasMapScreen({
     super.key,
     required this.teacherId,
     required this.teacherName,
   });
 
   @override
-  State<MapScreen> createState() => _MapScreenState();
+  State<TeachingAreasMapScreen> createState() => _TeachingAreasMapScreenState();
 }
 
-class _MapScreenState extends State<MapScreen> {
+class _TeachingAreasMapScreenState extends State<TeachingAreasMapScreen> {
   GoogleMapController? _mapController;
   final Set<Marker> _markers = {};
   bool _isLoading = true;
-  
+
   // কাস্টম ইন্টারফেস অ্যানিমেশনের জন্য সিলেক্টেড মার্কার ডেটা হোল্ডার
   Map<String, dynamic>? _selectedLocationData;
   bool _showDetailsCard = false;
 
-  // ডিফল্ট সেন্টার পজিশন (ইন্ডিয়া/ওয়েস্ট বেঙ্গল বেস জোন যদি ডেটা মিসিং থাকে)
+  // ডিফল্ট সেন্টার পজিশন (ওয়েস্ট বেঙ্গল বেস জোন যদি ডেটা মিসিং থাকে)
   final LatLng _defaultCenter = const LatLng(22.5726, 88.3639); 
 
   @override
@@ -38,6 +39,7 @@ class _MapScreenState extends State<MapScreen> {
 
   @override
   void dispose() {
+    // ফিক্সড: ম্যাপ স্ক্রিন মেমোরি লিক এবং ক্র্যাশ প্রটেকশন ডিসপোজ রুল (#13)
     _mapController?.dispose();
     super.dispose();
   }
@@ -56,7 +58,6 @@ class _MapScreenState extends State<MapScreen> {
       }
 
       final data = doc.data() as Map<String, dynamic>? ?? {};
-      // ফায়ারবেস থেকে 'teachingAreas' লিস্ট রিড করা হচ্ছে
       final List<dynamic> areas = data['teachingAreas'] ?? [];
 
       _markers.clear();
@@ -64,8 +65,8 @@ class _MapScreenState extends State<MapScreen> {
 
       for (var index = 0; index < areas.length; index++) {
         final area = areas[index] as Map<String, dynamic>;
-        
-        // ফায়ারবেস ফিল্ড থেকে ল্যাটিটিউড এবং লঙ্গিটিউড এক্সট্রাক্ট করা (Null-Safe)
+
+        // ফায়ারবেস ফিল্ড থেকে ল্যাটিটিউড এবং লঙ্গিটিউড এক্সট্রাক্ট করা (Null-Safe) (#13)
         final double? lat = double.tryParse(area['latitude']?.toString() ?? '');
         final double? lng = double.tryParse(area['longitude']?.toString() ?? '');
         final String locationName = area['locationName'] ?? 'Teaching Zone ${index + 1}';
@@ -106,13 +107,12 @@ class _MapScreenState extends State<MapScreen> {
       }
     } catch (e) {
       debugPrint("Firestore Map Data Fetch Error: $e");
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
   void _onMapCreated(GoogleMapController controller) {
     _mapController = controller;
-    // ম্যাপ রেডি হওয়ার পর যদি ডেটা আগে লোড হয়ে থাকে তবে ফিট করা হবে
     if (_markers.isNotEmpty) {
       List<LatLng> points = _markers.map((m) => m.position).toList();
       _animateToFitPoints(points);
@@ -145,16 +145,17 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
-  // এক্সটার্নাল অফিশিয়াল গুগল ম্যাপস অ্যাপ ওপেন এবং ডিরেকশন মেকানিজম (#12)
+  // ফিক্সড: এক্সটার্নাল অফিশিয়াল গুগল ম্যাপস অ্যাপ ওপেন এবং ডিরেকশন মেকানিজম উইথ স্ট্যান্ডার্ড ফলব্যাক ইউআরএল (#12)
   Future<void> _launchGoogleMapsNavigation(double lat, double lng) async {
-    final Uri googleMapsUrl = Uri.parse("google.navigation:q=$lat,$lng&mode=d");
-    final Uri fallbackWebUrl = Uri.parse("https://www.google.com/maps/search/?api=1&query=$lat,$lng");
+    final Uri googleMapsAppUrl = Uri.parse("google.navigation:q=$lat,$lng&mode=d");
+    // ফিক্সড: ইউনিভার্সাল ব্রাউজার ফলব্যাক ইউআরএল স্কিম সিঙ্ক করা হলো
+    final Uri googleMapsWebUrl = Uri.parse("https://www.google.com/maps/search/?api=1&query=$lat,$lng");
 
     try {
-      if (await launchUrl(googleMapsUrl)) {
-        await launchUrl(googleMapsUrl);
-      } else if (await launchUrl(fallbackWebUrl, mode: LaunchMode.externalApplication)) {
-        await launchUrl(fallbackWebUrl, mode: LaunchMode.externalApplication);
+      if (await canLaunchUrl(googleMapsAppUrl)) {
+        await launchUrl(googleMapsAppUrl, mode: LaunchMode.externalApplication);
+      } else if (await canLaunchUrl(googleMapsWebUrl)) {
+        await launchUrl(googleMapsWebUrl, mode: LaunchMode.externalApplication);
       } else {
         throw 'Could not launch maps application.';
       }
@@ -206,14 +207,14 @@ class _MapScreenState extends State<MapScreen> {
                   myLocationButtonEnabled: false,
                   zoomControlsEnabled: false,
                   mapToolbarEnabled: false,
-                  onTap: (_) => setState(() => _showDetailsCard = false), // ফাঁকা জায়গায় ট্যাপ করলে কার্ড হাইড হবে
+                  onTap: (_) => setState(() => _showDetailsCard = false), 
                 ),
 
           // অ্যাডভান্সড ইউআই অ্যানিমেটেড লোকেশন ডিটেইলস কার্ড মেকানিজম (#11, #15)
           AnimatedPositioned(
             duration: const Duration(milliseconds: 350),
-            curve: Curves.antiClockwiseLinear,
-            bottom: _showDetailsCard ? 20 : -180,
+            curve: Curves.easeInOut,
+            bottom: _showDetailsCard ? 20 : -200,
             left: 16,
             right: 16,
             child: _selectedLocationData == null
@@ -232,7 +233,7 @@ class _MapScreenState extends State<MapScreen> {
                       ],
                     ),
                     child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                      cross CrossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Row(
@@ -277,7 +278,7 @@ class _MapScreenState extends State<MapScreen> {
                         // প্রফেশনাল গুগল ম্যাপস নেভিগেট বাটন (#11, #12)
                         SizedBox(
                           width: double.infinity,
-                          height: 40,
+                          height: 42,
                           child: ElevatedButton.icon(
                             style: ElevatedButton.styleFrom(
                               backgroundColor: const Color(0xFF1E4C7A),
