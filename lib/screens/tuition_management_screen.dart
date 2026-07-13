@@ -88,7 +88,7 @@ class _TuitionManagementScreenState extends State<TuitionManagementScreen> with 
                 subtitle: 'Send professional tuition fee alerts to students.',
                 icon: Icons.notifications_active_outlined,
                 iconColor: const Color(0xFFEF4444),
-                gradientColors: [Colors.white, const Color(0xFFFFF5F5)],
+                gradientColors: const [Colors.white, Color(0xFFFFF5F5)],
                 onTap: () {
                   Navigator.push(
                     context,
@@ -112,7 +112,7 @@ class _TuitionManagementScreenState extends State<TuitionManagementScreen> with 
                 subtitle: 'Track homework, topics covered, and attendance.',
                 icon: Icons.auto_stories_outlined,
                 iconColor: const Color(0xFF10B981),
-                gradientColors: [Colors.white, const Color(0xFFF0FDF4)],
+                gradientColors: const [Colors.white, Color(0xFFF0FDF4)],
                 onTap: () {
                   Navigator.push(
                     context,
