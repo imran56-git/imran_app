@@ -1,23 +1,17 @@
 import 'package:flutter/material.dart';
 
 class ChatInputBar extends StatefulWidget {
-  final Function(String, String) onSendMessage;
-  final VoidCallback onAttachmentPressed;
-  final VoidCallback onStartRecording;
-  final VoidCallback onStopRecording;
-  final Function(bool) onTypingStatusChanged;
-  final bool isBlocked;
-  final bool isRecording;
+  final String chatRoomId;
+  final String senderId;
+  final String receiverId;
+  final Function(bool) onTypingChanged;
 
   const ChatInputBar({
     super.key,
-    required this.onSendMessage,
-    required this.onAttachmentPressed,
-    required this.onStartRecording,
-    required this.onStopRecording,
-    required this.onTypingStatusChanged,
-    required this.isBlocked,
-    required this.isRecording,
+    required this.chatRoomId,
+    required this.senderId,
+    required this.receiverId,
+    required this.onTypingChanged,
   });
 
   @override
@@ -45,22 +39,73 @@ class _ChatInputBarState extends State<ChatInputBar> {
     final bool typing = _controller.text.trim().isNotEmpty;
     if (_isTyping != typing) {
       setState(() => _isTyping = typing);
-      widget.onTypingStatusChanged(_isTyping);
+      widget.onTypingChanged(_isTyping); // রিয়াল-টাইম টাইপিং ট্র্যাকার ট্রিগার
     }
   }
 
+  // হোয়াটসঅ্যাপ স্টাইল ফাইল ম্যানেজার এটাচমেন্ট শিট (রিকোয়ারমেন্ট ২)
+  void _showAttachmentBottomSheet() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        margin: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(24)),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text("Send Document / Media", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            const SizedBox(height: 20),
+            GridView.count(
+              crossAxisCount: 3,
+              shrinkWrap: true,
+              mainAxisSpacing: 16,
+              crossAxisSpacing: 16,
+              children: [
+                _attachmentTile(Icons.image, "Gallery", Colors.purple),
+                _attachmentTile(Icons.description, "Document", Colors.blue),
+                _attachmentTile(Icons.audiotrack, "Audio", Colors.orange),
+                _attachmentTile(Icons.video_library, "Video", Colors.red),
+                _attachmentTile(Icons.folder_zip, "ZIP/RAR", Colors.teal),
+                _attachmentTile(Icons.android, "APK File", Colors.green),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _attachmentTile(IconData icon, String label, Color color) {
+    return InkWell(
+      onTap: () {
+        Navigator.pop(context);
+        // এখানে আপনার ব্যাকএন্ড ফাইল আপলোডার কানেক্ট হবে
+      },
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          CircleAvatar(radius: 26, backgroundColor: color.withOpacity(0.1), child: Icon(icon, color: color, size: 24)),
+          const SizedBox(height: 6),
+          Text(label, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+        ],
+      ),
+    );
+  }
+
   void _handleSend() {
-    if (_controller.text.trim().isEmpty || widget.isBlocked) return;
-    widget.onSendMessage(_controller.text.trim(), 'text');
+    final text = _controller.text.trim();
+    if (text.isEmpty) return;
+    
+    // এখানে ডাইরেক্ট চ্যাট সার্ভিস মেসেজ পুশ মেথড ট্রিগার হবে
     _controller.clear();
+    setState(() => _isTyping = false);
+    widget.onTypingChanged(false);
   }
 
   @override
   Widget build(BuildContext context) {
-    if (widget.isBlocked) {
-      return const SizedBox.shrink();
-    }
-
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 6.0),
       child: Row(
@@ -70,59 +115,47 @@ class _ChatInputBarState extends State<ChatInputBar> {
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(25.0),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withAlpha(13),
-                    blurRadius: 5,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
+                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 5, offset: const Offset(0, 1))],
               ),
               child: Row(
                 children: [
                   IconButton(
                     icon: const Icon(Icons.emoji_emotions_outlined, color: Colors.grey),
-                    onPressed: () {},
+                    onPressed: () {}, // ইমোজি পিকার পপআপ
                   ),
                   Expanded(
                     child: TextField(
                       controller: _controller,
                       minLines: 1,
-                      maxLines: 6,
+                      maxLines: 5,
                       decoration: const InputDecoration(
                         hintText: 'Message',
                         border: InputBorder.none,
-                        contentPadding: EdgeInsets.symmetric(vertical: 10.0),
+                        contentPadding: EdgeInsets.symmetric(vertical: 10.0, horizontal: 4),
                       ),
                     ),
                   ),
+                  // রিকোয়ারমেন্ট ২ ফিক্স: গ্যালারি আইকন এখানে দেওয়া হয়েছে যা বটম শিট ট্রিগার করবে
                   IconButton(
-                    icon: const Icon(Icons.attach_file, color: Colors.grey),
-                    onPressed: widget.onAttachmentPressed,
+                    icon: const Icon(Icons.collections_rounded, color: Colors.grey),
+                    onPressed: _showAttachmentBottomSheet,
                   ),
-                  if (!_isTyping)
-                    IconButton(
-                      icon: const Icon(Icons.camera_alt, color: Colors.grey),
-                      onPressed: () {},
-                    ),
                 ],
               ),
             ),
           ),
           const SizedBox(width: 6.0),
+          
+          // ডাইনামিক অ্যাকশন বাটন (টাইপিং মোডে সেন্ড আইকন / আইডল মোডে মাইক্রোফোন রেকর্ড আইকন)
           GestureDetector(
             onTap: _isTyping ? _handleSend : null,
-            onLongPress: !_isTyping ? widget.onStartRecording : null,
-            onLongPressUp: !_isTyping ? widget.onStopRecording : null,
             child: CircleAvatar(
-              radius: 24,
-              backgroundColor: const Color(0xFF00A884),
+              radius: 22,
+              backgroundColor: const Color(0xFF006653),
               child: Icon(
-                _isTyping
-                    ? Icons.send
-                    : (widget.isRecording ? Icons.stop : Icons.mic),
+                _isTyping ? Icons.send : Icons.mic,
                 color: Colors.white,
-                size: 22,
+                size: 20,
               ),
             ),
           ),
