@@ -24,6 +24,7 @@ class AppRoutes {
   static Route<dynamic> generateRoute(RouteSettings settings) {
     Widget page;
 
+    // কারেন্ট লগইন করা ইউজারের UID নেওয়ার জন্য
     final currentUserId = FirebaseAuth.instance.currentUser?.uid ?? '';
 
     switch (settings.name) {
@@ -58,11 +59,17 @@ class AppRoutes {
         break;
 
       case teacherHome:
-        page = const TeacherHomeScreen();
+        // ফিক্সড: টিচার হোম স্ক্রিনেও কারেন্ট ইউজার আইডি পাস করা হলো
+        page = TeacherHomeScreen(
+          currentUserId: currentUserId,
+        );
         break;
 
       case teacherWelcome:
-        page = const TeacherWelcomeScreen();
+        // ফিক্সড: টিচার ওয়েলকাম স্ক্রিনেও কারেন্ট ইউজার আইডি পাস করা হলো
+        page = TeacherWelcomeScreen(
+          currentUserId: currentUserId,
+        );
         break;
 
       default:
