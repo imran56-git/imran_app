@@ -16,7 +16,7 @@ import 'live/join_live_screen.dart';
 
 class TeacherProfileScreen extends StatefulWidget {
   final String currentUserId;
-  
+
   const TeacherProfileScreen({
     super.key, 
     required this.currentUserId,
@@ -367,7 +367,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
   Widget _buildUidIdentityCard() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      maxWidth: 320,
+      constraints: const BoxConstraints(maxWidth: 320),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
@@ -402,7 +402,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                 ),
               );
-            },
+            },            
             borderRadius: BorderRadius.circular(8),
             child: Container(
               padding: const EdgeInsets.all(6),
