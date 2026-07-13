@@ -4,22 +4,22 @@ import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-// ফিক্সড: ক্লাস নেম পরিবর্তন করে 'TeachingAreasMapScreen' করা হলো যাতে সার্চ স্ক্রিনের বিল্ড এরর চিরতরে দূর হয় (#13)
-class TeachingAreasMapScreen extends StatefulWidget {
+// আপনার আসল ক্লাসের নাম 'MapScreen' হুবহু বজায় রাখা হলো
+class MapScreen extends StatefulWidget {
   final String teacherId;
   final String teacherName;
 
-  const TeachingAreasMapScreen({
+  const MapScreen({
     super.key,
     required this.teacherId,
     required this.teacherName,
   });
 
   @override
-  State<TeachingAreasMapScreen> createState() => _TeachingAreasMapScreenState();
+  State<MapScreen> createState() => _MapScreenState();
 }
 
-class _TeachingAreasMapScreenState extends State<TeachingAreasMapScreen> {
+class _MapScreenState extends State<MapScreen> {
   GoogleMapController? _mapController;
   final Set<Marker> _markers = {};
   bool _isLoading = true;
@@ -148,7 +148,6 @@ class _TeachingAreasMapScreenState extends State<TeachingAreasMapScreen> {
   // ফিক্সড: এক্সটার্নাল অফিশিয়াল গুগল ম্যাপস অ্যাপ ওপেন এবং ডিরেকশন মেকানিজম উইথ স্ট্যান্ডার্ড ফলব্যাক ইউআরএল (#12)
   Future<void> _launchGoogleMapsNavigation(double lat, double lng) async {
     final Uri googleMapsAppUrl = Uri.parse("google.navigation:q=$lat,$lng&mode=d");
-    // ফিক্সড: ইউনিভার্সাল ব্রাউজার ফলব্যাক ইউআরএল স্কিম সিঙ্ক করা হলো
     final Uri googleMapsWebUrl = Uri.parse("https://www.google.com/maps/search/?api=1&query=$lat,$lng");
 
     try {
@@ -210,7 +209,7 @@ class _TeachingAreasMapScreenState extends State<TeachingAreasMapScreen> {
                   onTap: (_) => setState(() => _showDetailsCard = false), 
                 ),
 
-          // অ্যাডভান্সড ইউআই অ্যানিমেটেড লোকেশন ডিটেইলস কার্ড মেকানিজম (#11, #15)
+          // অ্যাডভান্সড ইউআই অ্যানিমেটেড লোকেশন ডিটেইলসカード মেকানিজম (#11, #15)
           AnimatedPositioned(
             duration: const Duration(milliseconds: 350),
             curve: Curves.easeInOut,
@@ -233,7 +232,7 @@ class _TeachingAreasMapScreenState extends State<TeachingAreasMapScreen> {
                       ],
                     ),
                     child: Column(
-                      cross CrossAxisAlignment: CrossAxisAlignment.start,
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Row(
