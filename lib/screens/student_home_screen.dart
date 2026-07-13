@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'chat_list_screen.dart';
-import 'search_teacher_screen.dart';
+import 'search_teacher_screen.dart'; // নিশ্চিত করুন এই ফাইলের ভেতর ক্লাসের নাম TeacherSearchScreen
 import 'student_profile_screen.dart';
 
 class StudentHomeScreen extends StatefulWidget {
@@ -22,10 +22,10 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
   @override
   void initState() {
     super.initState();
-    // বাগ ফিক্স: চাইল্ড স্ক্রিনগুলোতে currentUserId পাস করা হয়েছে যাতে ডেটা সিঙ্ক ঠিক থাকে
+    // চাইল্ড স্ক্রিনগুলোতে currentUserId পাস করা হয়েছে যাতে ডেটা সিঙ্ক ঠিক থাকে
     _screens = [  
       ChatListScreen(currentUserId: widget.currentUserId),  
-      const TeacherSearchScreen(),  // আপনার আর্কিটেকচার অনুযায়ী প্রয়োজনীয় প্যারামিটার দিতে পারেন
+      const TeacherSearchScreen(),  // টাইপো এবং আর্কিটেকচার অনুযায়ী ক্লাস নেম সিঙ্ক করা হলো
       StudentProfileScreen(currentUserId: widget.currentUserId),  
     ];
   }
@@ -75,7 +75,7 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
                 ],
               ),
               const SizedBox(height: 16),
-              // এখানে আপনার কাস্টম ফিল্টার উইজেট (যেমন সাবজেক্ট, লোকেশন) অ্যাড করতে পারবেন
+              // আপনার কাস্টম ফিল্টার উইজেট (যেমন সাবজেক্ট, লোকেশন) অ্যাড করার জায়গা
               const Center(
                 child: Padding(
                   padding: EdgeInsets.symmetric(vertical: 20),
@@ -125,7 +125,6 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
               scrolledUnderElevation: 0,  
               centerTitle: false,  
               titleSpacing: 20,  
-              // লগো এবং ব্র্যান্ড নেম (FYBTT) ইন্টিগ্রেশন
               title: Row(
                 children: [
                   ClipRRect(
