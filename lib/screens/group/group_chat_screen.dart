@@ -316,13 +316,13 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
                       final type = (data['type'] ?? 'text').toString();
                       final bool isMe = data['senderId'] == widget.currentUserId;
 
-                      // নিরাপদ উপায়ে টাইমস্ট্যাম্প পার্স করা
                       dynamic rawTimestamp = data['timestamp'];
                       Timestamp? messageTimestamp;
                       if (rawTimestamp is Timestamp) {
                         messageTimestamp = rawTimestamp;
                       }
 
+                      // বাগ ফিক্স: ডুপ্লিকেট/নাল ডেটা সেফটি সহ মেপিং ফিক্সড
                       final messageModel = MessageModel(
                         messageId: docs[index].id,
                         senderId: data['senderId'] ?? '',
@@ -352,9 +352,41 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
                             type: type,
                             isTyping: false,
                             uploadVoiceMessage: () {},
-                            onDeleteForMe: () {},
-                            onDeleteForEveryone: () {},
-                            onReact: (emoji) {},
+                            // বাগ ফিক্স: বাবল অ্যাকশনে ডিলিট ও রিয়াকশন ফাংশন সিঙ্ক করা হলো
+                            onDeleteForMe: () async {
+                              await FirebaseFirestore.instance
+                                  .collection('groups')
+                                  .doc(widget.groupId)
+                                  .collection('messages')
+                                  .doc(messageModel.messageId)
+                                  .update({
+                                'deletedForUsers': FieldValue.arrayUnion([widget.currentUserId]),
+                              });
+                            },
+                            onDeleteForEveryone: () async {
+                              if (isMe) {
+                                await FirebaseFirestore.instance
+                                    .collection('groups')
+                                    .doc(widget.groupId)
+                                    .collection('messages')
+                                    .doc(messageModel.messageId)
+                                    .update({
+                                  'content': 'This message was deleted',
+                                  'type': 'text',
+                                  'isDeletedForEveryone': true,
+                                });
+                              }
+                            },
+                            onReact: (emoji) async {
+                              await FirebaseFirestore.instance
+                                  .collection('groups')
+                                  .doc(widget.groupId)
+                                  .collection('messages')
+                                  .doc(messageModel.messageId)
+                                  .update({
+                                'reactions.${widget.currentUserId}': emoji,
+                              });
+                            },
                           ),
                         ),
                       );
