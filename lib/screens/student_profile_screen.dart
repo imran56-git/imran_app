@@ -396,4 +396,83 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
     _dropDown("Select Class", Icons.school_rounded, studentClass, classOptions, (v) => setState(() => studentClass = v)), _gap(),
     _field(_school, "School Name", Icons.school_outlined), _gap(),
     _field(_college, "College Name", Icons.account_balance_rounded), _gap(),
-    _field(_institution, "Tui
+    _field(_institution, "Tuition Institution", Icons.business_rounded), _gap(),
+    _field(_bio, "Write Biography", Icons.info_outline_rounded, maxLines: 3),
+    const SizedBox(height: 25),
+    const Text("Interested Subjects", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xFF1B1B1B))),
+    const SizedBox(height: 12),
+
+    Row(
+      children: [
+        Expanded(
+          child: TextField(
+            controller: _customSubjectController,
+            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+            decoration: InputDecoration(
+              hintText: "Enter Custom Subject (e.g., Bengali)",
+              filled: true, fillColor: Colors.white,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade200)),
+              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade200)),
+              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFF1E4C7A), width: 1.5)),
+            ),
+          ),
+        ),
+        const SizedBox(width: 10),
+        SizedBox(
+          height: 48,
+          child: IconButton.filled(
+            style: IconButton.styleFrom(backgroundColor: const Color(0xFF1E4C7A), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+            icon: const Icon(Icons.add, color: Colors.white),
+            onPressed: () {
+              final txt = _customSubjectController.text.trim();
+              if (txt.isNotEmpty) {
+                if (!selectedSubjects.contains(txt)) { setState(() { selectedSubjects.add(txt); }); }
+                _customSubjectController.clear();
+              }
+            },
+          ),
+        ),
+      ],
+    ),
+    const SizedBox(height: 15),
+
+    Wrap(
+      spacing: 8, runSpacing: 8, 
+      children: [
+        ...subjectOptions.map((subject) => FilterChip(
+          label: Text(subject), 
+          selected: selectedSubjects.contains(subject), 
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          selectedColor: const Color(0xFFA2E8DD).withOpacity(0.3),
+          checkmarkColor: const Color(0xFF1E4C7A),
+          onSelected: (v) => setState(() { v ? selectedSubjects.add(subject) : selectedSubjects.remove(subject); selectedSubjects = selectedSubjects.toSet().toList(); })
+        )),
+        ...selectedSubjects.where((s) => !subjectOptions.contains(s)).map((customSub) => InputChip(
+          label: Text(customSub),
+          selected: true,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          selectedColor: const Color(0xFFA2E8DD).withOpacity(0.4),
+          onDeleted: () => setState(() => selectedSubjects.remove(customSub)),
+        )),
+      ]
+    ),
+    const SizedBox(height: 35),
+    Row(children: [Expanded(child: OutlinedButton(style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(48), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))), onPressed: () { setState(() { isEditing = false; _selectedImage = null; _triggerAnimation = !_triggerAnimation; }); _customSubjectController.clear(); fetchStudentData(); }, child: const Text("Cancel"))), const SizedBox(width: 12), Expanded(child: ElevatedButton(onPressed: updateStudentProfile, style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1E4C7A), foregroundColor: Colors.white, minimumSize: const Size.fromHeight(48), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))), child: const Text("Save Changes")))]),
+    const SizedBox(height: 30),
+  ]);
+
+  Widget _dropDown(String label, IconData icon, String? value, List<String> items, ValueChanged<String?> onChanged) => DropdownButtonFormField<String>(value: value, decoration: InputDecoration(labelText: label, prefixIcon: Icon(icon, color: const Color(0xFF1E4C7A)), filled: true, fillColor: Colors.white, border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade200)), enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade200))), items: items.map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(), onChanged: onChanged);
+
+  Widget _field(TextEditingController c, String lbl, IconData i, {TextInputType type = TextInputType.text, int maxLines = 1}) => TextField(
+    controller: c, keyboardType: type, maxLines: maxLines, 
+    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+    decoration: InputDecoration(
+      labelText: lbl, prefixIcon: Icon(i, color: const Color(0xFF1E4C7A)), filled: true, fillColor: Colors.white,
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade200)),
+      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade200)),
+      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFF1E4C7A), width: 1.5)),
+    )
+  );
+  Widget _gap() => const SizedBox(height: 15);
+}
