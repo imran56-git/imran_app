@@ -227,10 +227,11 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
               if (v == 'payment') _showServiceUnavailableDialog();
             },
             itemBuilder: (ctx) => [
-              const PopupMenuItem(value: 'edit', child: Row(children: [Icon(Icons.edit_rounded, size: 18, color: Colors.black70), SizedBox(width: 10), Text('Edit Profile')])), 
-              const PopupMenuItem(value: 'payment', child: Row(children: [Icon(Icons.payment_rounded, size: 18, color: Colors.black70), SizedBox(width: 10), Text('Payment Ticket')])), 
+              // বাগ ফিক্স: Colors.black70 এর বদলে সঠিক Colors.black54 ব্যবহার করা হলো এবং কনস্ট্যান্ট ঠিক করা হলো
+              const PopupMenuItem(value: 'edit', child: Row(children: [Icon(Icons.edit_rounded, size: 18, color: Colors.black54), SizedBox(width: 10), Text('Edit Profile')])), 
+              const PopupMenuItem(value: 'payment', child: Row(children: [Icon(Icons.payment_rounded, size: 18, color: Colors.black54), SizedBox(width: 10), Text('Payment Ticket')])), 
               const PopupMenuDivider(),
-              const PopupMenuItem(value: 'logout', child: Row(children: [Icon(Icons.logout_rounded, size: 18, color: Colors.black70), SizedBox(width: 10), Text('Sign Out')])), 
+              const PopupMenuItem(value: 'logout', child: Row(children: [Icon(Icons.logout_rounded, size: 18, color: Colors.black54), SizedBox(width: 10), Text('Sign Out')])), 
               const PopupMenuItem(value: 'delete', child: Row(children: [Icon(Icons.delete_forever_rounded, size: 18, color: Colors.redAccent), SizedBox(width: 10), Text('Delete Account', style: TextStyle(color: Colors.redAccent))])),
             ],
           )
@@ -364,7 +365,6 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
       const SizedBox(height: 25),
     ]),
   );
-
   Widget _info(IconData icon, String title, String value) => Padding(
     padding: const EdgeInsets.symmetric(vertical: 12),
     child: Row(children: [
