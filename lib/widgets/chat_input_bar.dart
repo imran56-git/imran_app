@@ -38,7 +38,6 @@ class _ChatInputBarState extends State<ChatInputBar> {
 
   @override
   void dispose() {
-    // স্ক্রিন বন্ধ হওয়ার আগে টাইপিং স্ট্যাটাস ক্লিন করা
     if (_isTyping) {
       _chatService.updateTypingStatus(widget.chatRoomId, widget.senderId, false);
     }
@@ -99,9 +98,8 @@ class _ChatInputBarState extends State<ChatInputBar> {
     return InkWell(
       onTap: () async {
         Navigator.pop(context);
-        // প্রোডাকশন রেডি মিডিয়া হ্যান্ডলার (ইউজার ইউআরএল পুশ করতে পারবেন)
         String mockUrl = "https://firebasestorage.googleapis.com/v0/b/mock/o/$type";
-        
+
         if (type == 'location') {
           await _chatService.sendLocation(
             widget.chatRoomId, 
@@ -173,7 +171,6 @@ class _ChatInputBarState extends State<ChatInputBar> {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // রিপ্লাই প্রিভিউ উইজেট এরিয়া (যদি কোনো মেসেজ রিপ্লাই মোডে থাকে)
         if (widget.replyToMessageId != null && widget.replyToText != null)
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -202,7 +199,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
                         widget.replyToText!,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(color: Colors.blackDE, fontSize: 14),
+                        style: TextStyle(color: Colors.black.withOpacity(0.87), fontSize: 14),
                       ),
                     ],
                   ),
