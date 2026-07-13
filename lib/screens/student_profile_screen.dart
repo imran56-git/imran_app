@@ -124,7 +124,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
         'collegeName': _college.text.trim(), 'gender': gender, 'studentClass': studentClass,
         'interestedSubjects': selectedSubjects, 'profileImageUrl': imageUrl,
       }, SetOptions(merge: true));
-      
+
       if (mounted) {
         setState(() { 
           isEditing = false; 
@@ -334,7 +334,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
     child: Container(
       padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
       decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 10, offset: const Offset(0, 4))]),
-      child: Column(children: [Icon(icon, color: const Color(0xFF1E4C7A), size: 24), const SizedBox(height: 6), Text(value, style: const TextStyle(规律: FontWeight.bold, fontWeight: FontWeight.bold, fontSize: 14, color: Colors.black87), textAlign: TextAlign.center, maxLines: 1, overflow: TextOverflow.ellipsis,)]),
+      child: Column(children: [Icon(icon, color: const Color(0xFF1E4C7A), size: 24), const SizedBox(height: 6), Text(value, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.black87), textAlign: TextAlign.center, maxLines: 1, overflow: TextOverflow.ellipsis,)]),
     ),
   );
 
@@ -370,7 +370,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
     child: Row(children: [
       Icon(icon, color: const Color(0xFF1E4C7A), size: 22), 
       const SizedBox(width: 16), 
-      Expanded( // বাগ ফিক্স: মাল্টিপল ও বেশি ডাটা টেক্সট ওভারফ্লো হ্যান্ডলিং
+      Expanded( 
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start, 
           children: [
