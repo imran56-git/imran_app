@@ -1,11 +1,8 @@
 import 'dart:io';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import '../../services/chat_service.dart';
 import '../../services/media_service.dart';
 import '../../widgets/chat_input_bar.dart';
-import '../../widgets/attachment_bottom_sheet.dart';
-import '../../widgets/reply_message_widget.dart';
 import '../../widgets/message_bubble.dart';
 import '../../models/message_model.dart';
 
@@ -32,9 +29,14 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
   final MediaService _mediaService = MediaService();
   final ScrollController _scrollController = ScrollController();
 
-  MessageModel? _replyingMessage;
-  bool _isRecording = false;
+  String? _replyToMessageId;
+  String? _replyToText;
   final String _backgroundImage = 'assets/images/chat_bg.png';
+
+  @override
+  void initState() {
+    super.initState();
+  }
 
   @override
   void dispose() {
@@ -49,17 +51,21 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
     return FileImage(File(_backgroundImage));
   }
 
-  void _handleSendMessage(String text, String type, {Map<String, dynamic>? mediaData}) {
-    _chatService.sendGroupMessage(
+  void _handleSendMessage(String text, String type, {Map<String, dynamic>? mediaData}) async {
+    if (text.trim().isEmpty) return;
+
+    await _chatService.sendGroupMessage(
       groupId: widget.groupId,
       senderId: widget.currentUserId,
       message: text,
       type: type,
-      replyToMessageId: _replyingMessage?.messageId,
     );
-    if (_replyingMessage != null) {
-      setState(() => _replyingMessage = null);
-    }
+
+    setState(() {
+      _replyToMessageId = null;
+      _replyToText = null;
+    });
+    
     _scrollToBottom();
   }
 
@@ -73,184 +79,24 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
     }
   }
 
-  void _showAttachmentBottomSheet() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (context) => AttachmentBottomSheet(
-        onDocumentTap: () => _pickAndSendMedia('document'),
-        onCameraTap: () => _pickAndSendMedia('camera_image'),
-        onGalleryTap: () => _pickAndSendMedia('image'),
-        onAudioTap: () => _pickAndSendMedia('audio'),
-        onLocationTap: () {},
-        onContactTap: () {},
-      ),
-    );
-  }
-
-  Future<void> _pickAndSendMedia(String type) async {
-    File? file;
-    if (type == 'image') {
-      file = await _mediaService.pickImageFromGallery();
-    } else if (type == 'camera_image') {
-      file = await _mediaService.captureImageFromCamera();
-      type = 'image';
-    } else if (type == 'document') {
-      file = await _mediaService.pickDocument();
-    } else if (type == 'audio') {
-      file = await _mediaService.pickAudio();
-    }
-
-    if (file != null) {
-      final String? url = await _mediaService.uploadMedia(
-        file: file,
-        chatId: widget.groupId,
-        mediaType: type,
-      );
-      if (url != null) {
-        _handleSendMessage(url, type);
-      }
-    }
-  }
-
-  Future<void> _showOptions({
-    required MessageModel message,
-    required bool isMe,
-  }) async {
-    final selected = await showModalBottomSheet<String>(
-      context: context,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) {
-        return SafeArea(
-          child: Wrap(
-            children: [
-              ListTile(
-                leading: Icon(Icons.reply_rounded, color: Colors.blue[800]),
-                title: const Text('Reply', style: TextStyle(fontWeight: FontWeight.w500)),
-                onTap: () => Navigator.pop(context, 'reply'),
-              ),
-              if (isMe && message.type == 'text' && !message.isDeletedForEveryone)
-                ListTile(
-                  leading: Icon(Icons.edit, color: Colors.blue[800]),
-                  title: const Text('Edit Message', style: TextStyle(fontWeight: FontWeight.w500)),
-                  onTap: () => Navigator.pop(context, 'edit'),
-                ),
-              ListTile(
-                leading: const Icon(Icons.delete_outline, color: Colors.redAccent),
-                title: const Text('Delete for me', style: TextStyle(fontWeight: FontWeight.w500)),
-                onTap: () => Navigator.pop(context, 'delete_me'),
-              ),
-              if (isMe && !message.isDeletedForEveryone)
-                ListTile(
-                  leading: const Icon(Icons.delete_forever_outlined, color: Colors.red),
-                  title: const Text('Delete for everyone', style: TextStyle(fontWeight: FontWeight.w500, color: Colors.red)),
-                  onTap: () => Navigator.pop(context, 'delete_all'),
-                ),
-            ],
-          ),
-        );
-      },
-    );
-
-    if (selected == 'reply') {
-      setState(() => _replyingMessage = message);
-    } else if (selected == 'edit') {
-      _showEditDialog(message.messageId, message.message);
-    } else if (selected == 'delete_all') {
-      await FirebaseFirestore.instance
-          .collection('groups')
-          .doc(widget.groupId)
-          .collection('messages')
-          .doc(message.messageId)
-          .update({
-        'content': 'This message was deleted',
-        'type': 'text',
-        'isDeletedForEveryone': true,
-      });
-    } else if (selected == 'delete_me') {
-      await FirebaseFirestore.instance
-          .collection('groups')
-          .doc(widget.groupId)
-          .collection('messages')
-          .doc(message.messageId)
-          .update({
-        'deletedForUsers': FieldValue.arrayUnion([widget.currentUserId]),
-      });
-    }
-  }
-
-  Future<void> _showEditDialog(String messageId, String oldText) async {
-    final controller = TextEditingController(text: oldText);
-    final result = await showDialog<String>(
-      context: context,
-      builder: (_) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Edit Message', style: TextStyle(fontWeight: FontWeight.bold)),
-        content: TextField(
-          controller: controller,
-          maxLines: 3,
-          decoration: InputDecoration(
-            hintText: 'Update your message',
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: Colors.blue[800]!, width: 2),
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text('Cancel', style: TextStyle(color: Colors.grey[600])),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.blue[800],
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-            ),
-            onPressed: () => Navigator.pop(context, controller.text.trim()),
-            child: const Text('Save'),
-          ),
-        ],
-      ),
-    );
-
-    if (result != null && result.isNotEmpty) {
-      await FirebaseFirestore.instance
-          .collection('groups')
-          .doc(widget.groupId)
-          .collection('messages')
-          .doc(messageId)
-          .update({
-        'content': result,
-        'isEdited': true,
-        'editTimestamp': FieldValue.serverTimestamp(),
-      });
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF4F6F9),
       appBar: AppBar(
-        backgroundColor: Colors.blue[900],
-        elevation: 1,
+        backgroundColor: const Color(0xFF1E4C7A),
+        elevation: 0,
         titleSpacing: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white, size: 20),
+          icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
           onPressed: () => Navigator.pop(context),
         ),
         title: Row(
           children: [
             CircleAvatar(
-              radius: 20,
-              backgroundColor: Colors.white.withOpacity(0.2),
-              child: const Icon(Icons.groups_rounded, color: Colors.white, size: 22),
+              radius: 18,
+              backgroundColor: Colors.white24,
+              child: const Icon(Icons.groups_rounded, color: Colors.white, size: 20),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -284,146 +130,87 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
           image: DecorationImage(
             image: _buildBackgroundProvider(),
             fit: BoxFit.cover,
-            opacity: 0.06,
+            opacity: 0.04,
           ),
         ),
         child: Column(
           children: [
             Expanded(
-              child: StreamBuilder<QuerySnapshot>(
-                stream: _chatService.getGroupMessagesStream(widget.groupId),
+              child: StreamBuilder<List<MessageModel>>(
+                stream: _chatService.getGroupMessagesStream(widget.groupId), // ChatService ডাটা কাস্টিং সিঙ্ক (রুল ৪)
                 builder: (context, snapshot) {
-                  if (!snapshot.hasData) {
-                    return Center(child: CircularProgressIndicator(color: Colors.blue[800]));
+                  if (snapshot.hasError) {
+                    return const Center(child: Text('Failed to load group messages.', style: TextStyle(color: Colors.red)));
                   }
 
-                  final docs = snapshot.data!.docs;
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator(color: Color(0xFF1E4C7A)));
+                  }
+
+                  final messages = snapshot.data;
+
+                  if (messages == null || messages.isEmpty) {
+                    return Center(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        decoration: BoxDecoration(color: Colors.black.withOpacity(0.05), borderRadius: BorderRadius.circular(12)),
+                        child: const Text('Welcome to Group Chat', style: TextStyle(color: Colors.black54, fontSize: 13)),
+                      ),
+                    );
+                  }
 
                   return ListView.builder(
                     controller: _scrollController,
                     reverse: true,
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    itemCount: docs.length,
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    itemCount: messages.length,
                     itemBuilder: (context, index) {
-                      final data = docs[index].data() as Map<String, dynamic>;
+                      final message = messages[index];
+                      final bool isMe = message.senderId == widget.currentUserId;
 
-                      final List<dynamic> deletedUsers = data['deletedForUsers'] ?? [];
-                      if (deletedUsers.contains(widget.currentUserId)) {
-                        return const SizedBox.shrink();
-                      }
-
-                      final messageText = (data['content'] ?? data['message'] ?? '').toString();
-                      final type = (data['type'] ?? 'text').toString();
-                      final bool isMe = data['senderId'] == widget.currentUserId;
-
-                      dynamic rawTimestamp = data['timestamp'];
-                      Timestamp? messageTimestamp;
-                      if (rawTimestamp is Timestamp) {
-                        messageTimestamp = rawTimestamp;
-                      }
-
-                      // বাগ ফিক্স: ডুপ্লিকেট/নাল ডেটা সেফটি সহ মেপিং ফিক্সড
-                      final messageModel = MessageModel(
-                        messageId: docs[index].id,
-                        senderId: data['senderId'] ?? '',
-                        receiverId: widget.groupId,
-                        message: messageText,
-                        type: type,
-                        status: 'seen',
-                        isDeletedForEveryone: data['isDeletedForEveryone'] ?? false,
-                        deletedForUsers: List<String>.from(deletedUsers),
-                        starredBy: List<String>.from(data['starredBy'] ?? []),
-                        reactions: Map<String, String>.from(data['reactions'] ?? {}),
-                        timestamp: messageTimestamp?.toDate(),
-                      );
-
-                      return GestureDetector(
-                        onLongPress: () => _showOptions(
-                          message: messageModel,
-                          isMe: isMe,
-                        ),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 4),
-                          child: MessageBubble(
-                            message: messageText, 
-                            isMe: isMe,
-                            timestamp: messageTimestamp,
-                            messageId: messageModel.messageId,
-                            type: type,
-                            isTyping: false,
-                            uploadVoiceMessage: () {},
-                            // বাগ ফিক্স: বাবল অ্যাকশনে ডিলিট ও রিয়াকশন ফাংশন সিঙ্ক করা হলো
-                            onDeleteForMe: () async {
-                              await FirebaseFirestore.instance
-                                  .collection('groups')
-                                  .doc(widget.groupId)
-                                  .collection('messages')
-                                  .doc(messageModel.messageId)
-                                  .update({
-                                'deletedForUsers': FieldValue.arrayUnion([widget.currentUserId]),
-                              });
-                            },
-                            onDeleteForEveryone: () async {
-                              if (isMe) {
-                                await FirebaseFirestore.instance
-                                    .collection('groups')
-                                    .doc(widget.groupId)
-                                    .collection('messages')
-                                    .doc(messageModel.messageId)
-                                    .update({
-                                  'content': 'This message was deleted',
-                                  'type': 'text',
-                                  'isDeletedForEveryone': true,
-                                });
-                              }
-                            },
-                            onReact: (emoji) async {
-                              await FirebaseFirestore.instance
-                                  .collection('groups')
-                                  .doc(widget.groupId)
-                                  .collection('messages')
-                                  .doc(messageModel.messageId)
-                                  .update({
-                                'reactions.${widget.currentUserId}': emoji,
-                              });
-                            },
-                          ),
-                        ),
+                      return MessageBubble(
+                        message: message,
+                        isMe: isMe,
+                        chatRoomId: widget.groupId,
+                        currentUserId: widget.currentUserId,
+                        onReplyPressed: (repliedMsg) {
+                          setState(() {
+                            _replyToMessageId = repliedMsg.messageId;
+                            _replyToText = repliedMsg.type == 'text' ? repliedMsg.content : 'Attachment';
+                          });
+                        },
                       );
                     },
                   );
                 },
               ),
             ),
-            if (_replyingMessage != null)
-              Container(
-                color: Colors.white,
-                child: ReplyMessageWidget(
-                  messageSenderName: _replyingMessage!.senderId == widget.currentUserId ? 'You' : widget.currentUserName,
-                  messageText: _replyingMessage!.message,
-                  messageType: _replyingMessage!.type,
-                  onCancelReply: () => setState(() => _replyingMessage = null),
-                ),
-              ),
             Container(
-              decoration: const BoxDecoration(
+              decoration: BoxDecoration(
                 color: Colors.white,
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black12,
-                    blurRadius: 4,
-                    offset: Offset(0, -1),
-                  )
-                ]
+                    color: Colors.black.withOpacity(0.03),
+                    blurRadius: 10,
+                    offset: const Offset(0, -3),
+                  ),
+                ],
               ),
               child: ChatInputBar(
-                onSendMessage: _handleSendMessage,
-                onAttachmentPressed: _showAttachmentBottomSheet,
-                onStartRecording: () => setState(() => _isRecording = true),
-                onStopRecording: () => setState(() => _isRecording = false),
-                onTypingStatusChanged: (_) {},
-                isBlocked: false,
-                isRecording: _isRecording,
+                chatRoomId: widget.groupId,
+                senderId: widget.currentUserId,
+                receiverId: 'group',
+                replyToMessageId: _replyToMessageId,
+                replyToText: _replyToText,
+                onCancelReply: () {
+                  setState(() {
+                    _replyToMessageId = null;
+                    _replyToText = null;
+                  });
+                },
+                onTypingChanged: (isTyping) {
+                  // গ্রুপে টাইপিং ইন্ডিকেটর সাইলেন্ট বা হ্যান্ডেল করা যেতে পারে
+                },
               ),
             ),
           ],
