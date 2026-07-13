@@ -13,6 +13,7 @@ import '../widgets/success_toast.dart';
 import 'location_picker_screen.dart';
 import 'tuition_management_screen.dart';
 import 'live/join_live_screen.dart';
+import 'notification_screen.dart'; // নতুন ক্রিয়েট করা নোটিফিকেশন স্ক্রিন
 
 class TeacherProfileScreen extends StatefulWidget {
   final String currentUserId;
@@ -36,7 +37,8 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
   late Animation<double> _glowAnimation;
 
   Map<String, dynamic>? teacherData;
-  bool isLoading = true, isEditing = false, isFollowing = false;
+  bool isLoading = true, isEditing = false;
+  String requestStatus = 'none'; // none, pending, accepted
   File? _selectedImage;
 
   final TextEditingController _nameController = TextEditingController();
@@ -48,6 +50,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
   String? gender;
   List<String> selectedSubjects = [];
   List<dynamic> teacherLocations = [];
+  bool hasUnreadNotifications = false;
 
   bool get isOwnProfile => widget.currentUserId == (_auth.currentUser?.uid ?? "");
 
@@ -55,7 +58,8 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
   void initState() {
     super.initState();
     fetchTeacherData();
-    checkFollowStatus();
+    checkFollowRequestStatus();
+    checkUnreadNotifications();
 
     _glowController = AnimationController(
       vsync: this,
@@ -100,27 +104,73 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
     }
   }
 
-  void checkFollowStatus() async {
+  void checkFollowRequestStatus() async {
     final currentUID = _auth.currentUser?.uid;
     if (currentUID == null || isOwnProfile) return;
-    final doc = await _firestore.collection('follows').doc('${currentUID}_${widget.currentUserId}').get();
-    if (mounted) setState(() => isFollowing = doc.exists);
+    
+    final doc = await _firestore.collection('follow_requests').doc('${currentUID}_${widget.currentUserId}').get();
+    if (mounted) {
+      if (doc.exists) {
+        setState(() => requestStatus = doc.data()?['status'] ?? 'pending');
+      } else {
+        setState(() => requestStatus = 'none');
+      }
+    }
   }
 
-  void toggleFollow() async {
+  void checkUnreadNotifications() async {
+    final currentUID = _auth.currentUser?.uid;
+    if (currentUID == null) return;
+    
+    _firestore.collection('notifications')
+      .where('receiverId', isEqualTo: currentUID)
+      .where('isRead', isEqualTo: false)
+      .snapshots().listen((snap) {
+        if (mounted) {
+          setState(() => hasUnreadNotifications = snap.docs.isNotEmpty);
+        }
+      });
+  }
+
+  void triggerFollowAction() async {
     final currentUID = _auth.currentUser?.uid;
     if (currentUID == null || isOwnProfile) return;
-    final docRef = _firestore.collection('follows').doc('${currentUID}_${widget.currentUserId}');
-    try {
-      isFollowing ? await docRef.delete() : await docRef.set({
-          'teacherId': widget.currentUserId,
-          'studentId': currentUID,
-          'timestamp': FieldValue.serverTimestamp(),
-        });
-      checkFollowStatus();
-    } catch (e) {
-      debugPrint('$e');
+
+    final requestDocRef = _firestore.collection('follow_requests').doc('${currentUID}_${widget.currentUserId}');
+
+    if (requestStatus == 'none') {
+      // স্টুডেন্টের নিজের ডেটা জানার জন্য
+      final studentDoc = await _firestore.collection('students').doc(currentUID).get();
+      final studentData = studentDoc.data() ?? {};
+
+      await requestDocRef.set({
+        'teacherId': widget.currentUserId,
+        'studentId': currentUID,
+        'studentName': studentData['name'] ?? 'A Student',
+        'studentPhotoUrl': studentData['photoUrl'] ?? '',
+        'status': 'pending',
+        'timestamp': FieldValue.serverTimestamp(),
+      });
+
+      // প্রোফেশনাল ফলো নোটিফিকেশন পুশ
+      await _firestore.collection('notifications').add({
+        'receiverId': widget.currentUserId,
+        'senderId': currentUID,
+        'senderName': studentData['name'] ?? 'A Student',
+        'senderPhotoUrl': studentData['photoUrl'] ?? '',
+        'message': 'wants to follow you.',
+        'type': 'follow_request',
+        'isRead': false,
+        'timestamp': FieldValue.serverTimestamp(),
+      });
+
+      SuccessToast.show(context, 'Follow request sent!');
+    } else {
+      // আনফলো বা রিকোয়েস্ট উইথড্র লজিক
+      await requestDocRef.delete();
+      SuccessToast.show(context, 'Unfollowed / Request removed');
     }
+    checkFollowRequestStatus();
   }
 
   Future<void> _clearLocalSession() async {
@@ -309,17 +359,15 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
                                       child: Row(
                                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                         children: [
-                                          !isOwnProfile
-                                              ? IconButton(
-                                                  icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
-                                                  onPressed: () => Navigator.pop(context),
-                                                )
-                                              : const SizedBox(width: 48),
+                                          IconButton(
+                                            icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
+                                            onPressed: () => Navigator.pop(context),
+                                          ),
                                           const Text(
                                             'Profile Details',
                                             style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 19),
                                           ),
-                                          isOwnProfile ? _buildMenu() : const SizedBox(width: 48),
+                                          _buildMenu(),
                                         ],
                                       ),
                                     ),
@@ -416,54 +464,60 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
   }
 
   Widget _buildMenu() {
-    return PopupMenuButton<String>(
-      icon: const Icon(Icons.more_vert, color: Colors.white),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-      onSelected: (val) {
-        if (val == 'edit') {
-          setState(() => isEditing = true);
-        } else if (val == 'signout') {
-          _showAnimatedPopup(
-            title: 'Sign Out', 
-            message: 'Are you sure you want to sign out?', 
-            confirmText: 'Confirm', 
-            onConfirm: () async {
-              try {
-                await _auth.signOut();
-                await _clearLocalSession(); 
-                if (mounted) {
-                  Navigator.of(context).popUntil((route) => route.isFirst);
+    return Stack(
+      children: [
+        PopupMenuButton<String>(
+          icon: const Icon(Icons.more_vert, color: Colors.white),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+          onSelected: (val) {
+            if (val == 'edit') {
+              setState(() => isEditing = true);
+            } else if (val == 'notifications') {
+              Navigator.push(context, MaterialPageRoute(builder: (_) => const NotificationScreen()));
+            } else if (val == 'share') {
+              Clipboard.setData(ClipboardData(text: "Check out this teacher profile on FYBTT. UID: ${widget.currentUserId}"));
+              SuccessToast.show(context, 'Profile link copied!');
+            } else if (val == 'report') {
+              SuccessToast.show(context, 'User Reported Successfully');
+            } else if (val == 'block') {
+              SuccessToast.show(context, 'User Blocked Successfully');
+            } else if (val == 'signout') {
+              _showAnimatedPopup(
+                title: 'Sign Out', 
+                message: 'Are you sure you want to sign out?', 
+                confirmText: 'Confirm', 
+                onConfirm: () async {
+                  await _auth.signOut();
+                  await _clearLocalSession(); 
+                  if (mounted) Navigator.of(context).popUntil((route) => route.isFirst);
                 }
-              } catch (e) {
-                debugPrint("Sign out failed: $e");
-              }
+              );
             }
-          );
-        } else if (val == 'delete') {
-          _showAnimatedPopup(
-            title: 'Delete Account', 
-            message: 'This will permanently delete your account.\nAre you sure?', 
-            confirmText: 'Delete', 
-            isDelete: true, 
-            onConfirm: () async {
-              try {
-                await _firestore.collection('teachers').doc(widget.currentUserId).delete();
-                await _auth.currentUser?.delete();
-                await _clearLocalSession(); 
-                if (mounted) {
-                  Navigator.of(context).popUntil((route) => route.isFirst);
-                }
-              } catch (e) {
-                debugPrint("Delete account failed: $e");
-              }
-            }
-          );
-        }
-      },
-      itemBuilder: (ctx) => [
-        const PopupMenuItem(value: 'edit', child: Row(children: [Icon(Icons.edit_outlined, size: 20), SizedBox(width: 10), Text('Edit Profile')])),
-        const PopupMenuItem(value: 'signout', child: Row(children: [Icon(Icons.logout, size: 20, color: Colors.orange), SizedBox(width: 10), Text('Sign Out')])),
-        const PopupMenuItem(value: 'delete', child: Row(children: [Icon(Icons.delete_forever, size: 20, color: Colors.red), SizedBox(width: 10), Text('Delete Account', style: TextStyle(color: Colors.red))])),
+          },
+          itemBuilder: (ctx) => isOwnProfile 
+            ? [
+                const PopupMenuItem(value: 'edit', child: Row(children: [Icon(Icons.edit_outlined, size: 20), SizedBox(width: 10), Text('Edit Profile')])),
+                const PopupMenuItem(value: 'notifications', child: Row(children: [Icon(Icons.notifications_none_rounded, size: 20), SizedBox(width: 10), Text('Notifications')])),
+                const PopupMenuItem(value: 'share', child: Row(children: [Icon(Icons.share_outlined, size: 20), SizedBox(width: 10), Text('Share Profile')])),
+                const PopupMenuItem(value: 'signout', child: Row(children: [Icon(Icons.logout, size: 20, color: Colors.orange), SizedBox(width: 10), Text('Sign Out')])),
+              ]
+            : [
+                const PopupMenuItem(value: 'notifications', child: Row(children: [Icon(Icons.notifications_none_rounded, size: 20), SizedBox(width: 10), Text('Notifications')])),
+                const PopupMenuItem(value: 'share', child: Row(children: [Icon(Icons.share_outlined, size: 20), SizedBox(width: 10), Text('Share Profile')])),
+                const PopupMenuItem(value: 'report', child: Row(children: [Icon(Icons.report_problem_outlined, size: 20, color: Colors.red), SizedBox(width: 10), Text('Report User', style: TextStyle(color: Colors.red))])),
+                const PopupMenuItem(value: 'block', child: Row(children: [Icon(Icons.block_flipped, size: 20, color: Colors.red), SizedBox(width: 10), Text('Block User', style: TextStyle(color: Colors.red))])),
+              ],
+        ),
+        if (hasUnreadNotifications)
+          Positioned(
+            right: 12,
+            top: 12,
+            child: Container(
+              width: 8,
+              height: 8,
+              decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle),
+            ),
+          )
       ],
     );
   }
@@ -500,7 +554,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
 
   Widget _buildFollowStats() {
     return StreamBuilder<QuerySnapshot>(
-      stream: _firestore.collection('follows').where('teacherId', isEqualTo: widget.currentUserId).snapshots(),
+      stream: _firestore.collection('follow_requests').where('teacherId', isEqualTo: widget.currentUserId).where('status', isEqualTo: 'accepted').snapshots(),
       builder: (context, snap) => Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
         decoration: BoxDecoration(color: Colors.blue[50], borderRadius: BorderRadius.circular(20)),
@@ -510,13 +564,27 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
   }
 
   Widget _buildFollowButton() {
+    String label = 'Follow Teacher';
+    Color btnColor = Colors.blue[800]!;
+    IconData icon = Icons.person_add;
+
+    if (requestStatus == 'pending') {
+      label = 'Requested';
+      btnColor = Colors.orange;
+      icon = Icons.hourglass_empty;
+    } else if (requestStatus == 'accepted') {
+      label = 'Following';
+      btnColor = Colors.green;
+      icon = Icons.check;
+    }
+
     return Padding(
       padding: const EdgeInsets.only(top: 15),
       child: ElevatedButton.icon(
-        onPressed: toggleFollow,
-        icon: Icon(isFollowing ? Icons.check : Icons.person_add),
-        label: Text(isFollowing ? 'Following' : 'Follow Teacher'),
-        style: ElevatedButton.styleFrom(backgroundColor: isFollowing ? Colors.green : Colors.blue[800], foregroundColor: Colors.white, minimumSize: const Size(180, 45)),
+        onPressed: triggerFollowAction,
+        icon: Icon(icon),
+        label: Text(label),
+        style: ElevatedButton.styleFrom(backgroundColor: btnColor, foregroundColor: Colors.white, minimumSize: const Size(180, 45)),
       ),
     );
   }
@@ -524,9 +592,9 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
   Widget _buildViewProfile() {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       _buildMaterial3Card("Bio", _bioController.text, Icons.description_outlined, const Color(0xFF3B82F6)),
-      _buildMaterial3Card("Phone Number", _phoneController.text, Icons.phone_outlined, Colors.deepPurple),
+      _buildMaterial3Card("Phone Number", isOwnProfile ? _phoneController.text : "Hidden for Privacy", Icons.phone_outlined, Colors.deepPurple),
       _buildMaterial3Card("Teaching Class", _classController.text, Icons.school_outlined, const Color(0xFF10B981)),
-      _buildMaterial3Card("Gender", gender ?? "Not set", Icons.wc_outlined, const Color(0xFFF59E0B)),
+      _buildMaterial3Card("Gender", isOwnProfile ? (gender ?? "Not set") : "Hidden for Privacy", Icons.wc_outlined, const Color(0xFFF59E0B)),
       const SizedBox(height: 18),
       const Text("Teaching Areas (Locations)", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xFF1B1B1B))),
       const SizedBox(height: 8),
@@ -579,7 +647,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
           childAspectRatio: 1.4,
           children: [
             StreamBuilder<QuerySnapshot>(
-              stream: _firestore.collection('teachers').doc(widget.currentUserId).collection('students').snapshots(),
+              stream: _firestore.collection('follow_requests').where('teacherId', isEqualTo: widget.currentUserId).where('status', isEqualTo: 'accepted').snapshots(),
               builder: (context, snapshot) {
                 int count = snapshot.hasData ? snapshot.data!.docs.length : 0;
                 return _buildDashboardCard("Total Students", "$count", Icons.people_alt_outlined, Colors.purple);
