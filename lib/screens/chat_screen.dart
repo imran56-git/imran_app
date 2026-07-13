@@ -12,7 +12,7 @@ class ChatScreen extends StatefulWidget {
   final String receiverName;
   final String receiverProfilePic;
   final String currentUserId;
-  final bool isTeacher; // রোল বেসড আর্কিটেকচারের জন্য
+  final bool isTeacher; 
 
   const ChatScreen({
     super.key,
@@ -40,7 +40,14 @@ class _ChatScreenState extends State<ChatScreen> {
     _updateTypingStatus(false);
   }
 
-  // ফায়ারস্টোর স্ট্রিম ইনিশিয়ালাইজেশন এবং সেফটি মেকানিজম
+  // মেমোরি লিক ও ক্র্যাশ বন্ধ করার জন্য ডিসপোজ মেথড ফিক্স
+  @override
+  void dispose() {
+    _updateTypingStatus(false); // স্ক্রিন লিভ করার সময় স্ট্যাটাস ফলস করা
+    _scrollController.dispose(); // কোর মেমোরি সেফটি ফিক্স
+    super.dispose();
+  }
+
   void _initChatStream() {
     try {
       _messageStream = FirebaseFirestore.instance
@@ -54,7 +61,6 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  // রিয়াল-টাইম টাইপিং স্ট্যাটাস সিঙ্ক
   void _updateTypingStatus(bool isTyping) {
     FirebaseFirestore.instance
         .collection('typing')
@@ -66,7 +72,6 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // সেফ ব্যাক নেভিগেশন যাতে ব্ল্যাক স্ক্রিন ইস্যু না হয়
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, result) {
@@ -75,12 +80,12 @@ class _ChatScreenState extends State<ChatScreen> {
         Navigator.of(context).pop();
       },
       child: Scaffold(
-        // WhatsApp Style Wallpaper Background
-        backgroundColor: const Color(0xFFEFE7DD), 
+        backgroundColor: const Color(0xFFF5F7FA), // প্রিমিয়াম ক্লিন ব্যাকগ্রাউন্ড (FYBTT থিম সিঙ্ক)
         appBar: AppBar(
           automaticallyImplyLeading: false,
-          backgroundColor: const Color(0xFF006653), // WhatsApp Premium Teal
+          backgroundColor: const Color(0xFF1E4C7A), // অ্যাপের সিগনেচার ডিপ ব্লু থিম
           titleSpacing: 0,
+          scrolledUnderElevation: 0,
           title: Row(
             children: [
               IconButton(
@@ -97,10 +102,10 @@ class _ChatScreenState extends State<ChatScreen> {
                     ? NetworkImage(widget.receiverProfilePic)
                     : null,
                 child: widget.receiverProfilePic.isEmpty
-                    ? const Icon(Icons.person_rounded, color: Colors.white)
+                    ? const Icon(Icons.person_rounded, color: Colors.white, size: 20)
                     : null,
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -111,12 +116,12 @@ class _ChatScreenState extends State<ChatScreen> {
                       style: const TextStyle(
                         fontSize: 16, 
                         fontWeight: FontWeight.bold, 
-                        color: Colors.white
+                        color: Colors.white,
+                        letterSpacing: 0.2
                       ),
                       overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 2),
-                    // রিয়াল-টাইম অনলাইন/টাইপিং স্ট্যাটাস ইন্ডিকেটর উইজেট
                     StreamBuilder<DocumentSnapshot>(
                       stream: FirebaseFirestore.instance
                           .collection('typing')
@@ -134,13 +139,12 @@ class _ChatScreenState extends State<ChatScreen> {
                             'typing...',
                             style: TextStyle(
                               fontSize: 12, 
-                              color: Color(0xFF25D366), 
+                              color: Color(0xFFA2E8DD), // নিয়ন গ্রিন-ব্লু টোন
                               fontWeight: FontWeight.bold
                             ),
                           );
                         }
 
-                        // অনলাইন স্ট্যাটাস ট্র্যাকিং
                         return StreamBuilder<DocumentSnapshot>(
                           stream: FirebaseFirestore.instance
                               .collection(widget.isTeacher ? 'students' : 'teachers')
@@ -153,12 +157,13 @@ class _ChatScreenState extends State<ChatScreen> {
                               return Text(
                                 isOnline ? 'Online' : 'Offline',
                                 style: TextStyle(
-                                  fontSize: 12, 
+                                  fontSize: 11, 
+                                  fontWeight: FontWeight.w500,
                                   color: isOnline ? const Color(0xFF25D366) : Colors.white70
                                 ),
                               );
                             }
-                            return const Text('Offline', style: TextStyle(fontSize: 12, color: Colors.white70));
+                            return const Text('Offline', style: TextStyle(fontSize: 11, color: Colors.white70));
                           },
                         );
                       },
@@ -169,17 +174,17 @@ class _ChatScreenState extends State<ChatScreen> {
             ],
           ),
           actions: [
-            IconButton(icon: const Icon(Icons.videocam_rounded, color: Colors.white), onPressed: () {}),
-            IconButton(icon: const Icon(Icons.call_rounded, color: Colors.white), onPressed: () {}),
-            IconButton(icon: const Icon(Icons.more_vert_rounded, color: Colors.white), onPressed: () {}),
+            IconButton(icon: const Icon(Icons.videocam_rounded, color: Colors.white, size: 22), onPressed: () {}),
+            IconButton(icon: const Icon(Icons.call_rounded, color: Colors.white, size: 22), onPressed: () {}),
+            IconButton(icon: const Icon(Icons.more_vert_rounded, color: Colors.white, size: 22), onPressed: () {}),
+            const SizedBox(width: 4),
           ],
         ),
         body: Column(
           children: [
-            // মেসেজ লিস্ট এরিয়া
             Expanded(
               child: _messageStream == null
-                  ? const Center(child: CircularProgressIndicator(color: Color(0xFF006653)))
+                  ? const Center(child: CircularProgressIndicator(color: Color(0xFF1E4C7A), strokeWidth: 3))
                   : StreamBuilder<QuerySnapshot>(
                       stream: _messageStream,
                       builder: (context, snapshot) {
@@ -187,26 +192,33 @@ class _ChatScreenState extends State<ChatScreen> {
                           return const Center(
                             child: Text(
                               'Failed to load messages.',
-                              style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
+                              style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold),
                             ),
                           );
                         }
 
                         if (snapshot.connectionState == ConnectionState.waiting) {
-                          return const Center(child: CircularProgressIndicator(color: Color(0xFF006653)));
+                          return const Center(child: CircularProgressIndicator(color: Color(0xFF1E4C7A), strokeWidth: 3));
                         }
 
                         if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
                           return Center(
                             child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
                               decoration: BoxDecoration(
-                                color: Colors.black24,
-                                borderRadius: BorderRadius.circular(10),
+                                color: Colors.black.withOpacity(0.05),
+                                borderRadius: BorderRadius.circular(16),
                               ),
-                              child: const Text(
-                                'Messages are end-to-end encrypted',
-                                style: TextStyle(color: Colors.white, fontSize: 12),
+                              child: const Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.lock_outline_rounded, size: 14, color: Colors.black54),
+                                  SizedBox(width: 6),
+                                  Text(
+                                    'Messages are end-to-end encrypted',
+                                    style: TextStyle(color: Colors.black54, fontSize: 12, fontWeight: FontWeight.w500),
+                                  ),
+                                ],
                               ),
                             ),
                           );
@@ -216,14 +228,13 @@ class _ChatScreenState extends State<ChatScreen> {
 
                         return ListView.builder(
                           controller: _scrollController,
-                          reverse: true, // নিচের দিক থেকে মেসেজ লোড হবে (WhatsApp Style)
+                          reverse: true, 
                           physics: const BouncingScrollPhysics(),
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                           itemCount: docs.length,
                           itemBuilder: (context, index) {
                             final data = docs[index].data() as Map<String, dynamic>;
-                            
-                            // মেসেজ মডেল পার্সিং ও সেফটি রেন্ডারিং
+
                             final message = MessageModel.fromMap(data);
                             final bool isMe = message.senderId == widget.currentUserId;
 
@@ -236,12 +247,23 @@ class _ChatScreenState extends State<ChatScreen> {
                       },
                     ),
             ),
-            // প্রিমিয়াম চ্যাট ইনপুট বার
-            ChatInputBar(
-              chatRoomId: widget.chatRoomId,
-              senderId: widget.currentUserId,
-              receiverId: widget.receiverId,
-              onTypingChanged: (isTyping) => _updateTypingStatus(isTyping),
+            Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.03),
+                    blurRadius: 10,
+                    offset: const Offset(0, -3),
+                  ),
+                ],
+              ),
+              child: ChatInputBar(
+                chatRoomId: widget.chatRoomId,
+                senderId: widget.currentUserId,
+                receiverId: widget.receiverId,
+                onTypingChanged: (isTyping) => _updateTypingStatus(isTyping),
+              ),
             ),
           ],
         ),
@@ -249,4 +271,3 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 }
-
