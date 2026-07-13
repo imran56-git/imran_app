@@ -8,24 +8,21 @@ class ChatService {
   // USER STATUS & TYPING INDICATORS (ROLE-AWARE)
   // ==========================================
 
-  // বাগ ফিক্স: রোল অনুযায়ী ডেডিকেটেড কালেকশনে অনলাইন স্ট্যাটাস রিয়েল-টাইম সিঙ্ক
   Future<void> updateOnlineStatus(String userId, bool isOnline, bool isTeacher) async {
     try {
       final String collectionPath = isTeacher ? 'teachers' : 'students';
-      
-      // ১. নির্দিষ্ট রোল কালেকশন আপডেট
+
       await _firestore.collection(collectionPath).doc(userId).update({
         'isOnline': isOnline,
         'status': isOnline ? 'Online' : 'Offline',
         'lastSeen': FieldValue.serverTimestamp(),
       });
 
-      // ২. জেনারেলাইজড ইউজার লেজারে ব্যাকআপ আপডেট
       await _firestore.collection('users').doc(userId).update({
         'status': isOnline ? 'Online' : 'Offline',
         'lastSeen': FieldValue.serverTimestamp(),
-      }).catchError((_) {}); // ব্যাকআপ কালেকশন না থাকলেও ক্র্যাশ করবে না
-      
+      }).catchError((_) {});
+
     } catch (e) {
       _handleError('updateOnlineStatus', e);
     }
@@ -34,7 +31,7 @@ class ChatService {
   Future<void> updateTypingStatus(String chatId, String userId, bool isTyping) async {
     try {
       await _firestore
-          .collection('typing') // রিয়েল-টাইম পারফরম্যান্সের জন্য আলাদা রুট কালেকশন
+          .collection('typing')
           .doc(chatId)
           .set({
         userId: isTyping,
@@ -62,7 +59,6 @@ class ChatService {
   // ONE-TO-ONE CHAT LOGIC & LIFECYCLE
   // ==========================================
 
-  // ডিটারমিনিস্টিক চ্যাট রুম আইডি জেনারেটর (বাগ ২০ পারফরম্যান্স ফিক্স)
   String getChatRoomId(String user1, String user2) {
     return user1.compareTo(user2) <= 0 ? '${user1}_$user2' : '${user2}_$user1';
   }
@@ -90,7 +86,7 @@ class ChatService {
           'teacherImage': teacherImage,
           'studentImage': studentImage,
           'participants': [teacherId, studentId],
-          'lastMessage': 'Chat initialized',
+          'lastMessageContent': 'Chat initialized', // ChatModel এর সাথে কি-ওয়ার্ড মেলাতে সিঙ্ক করা হলো
           'lastMessageTime': FieldValue.serverTimestamp(),
           'unreadCount': 0,
           'isGroup': false,
@@ -109,7 +105,7 @@ class ChatService {
     required String senderId,
     required String receiverId,
     required String message,
-    required String type, // 'text', 'image', 'audio', 'document'
+    required String type,
     String? replyToMessageId,
     Map<String, dynamic>? mediaMetaData,
   }) async {
@@ -122,7 +118,7 @@ class ChatService {
         'messageId': messageRef.id,
         'senderId': senderId,
         'receiverId': receiverId,
-        'content': message, // content কি-ওয়ার্ড সিঙ্ক
+        'content': message,
         'timestamp': FieldValue.serverTimestamp(),
         'type': type,
         'status': 'sent', 
@@ -132,23 +128,20 @@ class ChatService {
         'reactions': {},
       };
 
-      if (replyToMessageId != null) {
-        messageData['replyToMessageId'] = replyToMessageId;
-      }
-      if (mediaMetaData != null) {
-        messageData['mediaMetaData'] = mediaMetaData;
-      }
+      if (replyToMessageId != null) messageData['replyToMessageId'] = replyToMessageId;
+      if (mediaMetaData != null) messageData['mediaMetaData'] = mediaMetaData;
 
       batch.set(messageRef, messageData);
 
-      // চ্যাট হেডার রিয়াল-টাইম লস্ট মেসেজ মেটা আপডেট
       String previewText = message;
       if (type == 'image') previewText = '📷 Photo';
+      if (type == 'video') previewText = '🎥 Video';
       if (type == 'audio' || type == 'voice') previewText = '🎵 Voice message';
       if (type == 'document') previewText = '📄 Document';
+      if (type == 'location') previewText = '📍 Location';
 
       batch.update(chatRef, {
-        'lastMessage': previewText,
+        'lastMessageContent': previewText, // ChatModel মেলাতে সিঙ্ক
         'lastMessageTime': FieldValue.serverTimestamp(),
         'unreadCount': FieldValue.increment(1),
       });
@@ -159,24 +152,23 @@ class ChatService {
     }
   }
 
+  Stream<List<MessageModel>> getMessages(String chatId) {
+    return _firestore
+        .collection('chats')
+        .doc(chatId)
+        .collection('messages')
+        .orderBy('timestamp', descending: true)
+        .snapshots()
+        .map((snapshot) {
+      return snapshot.docs.map((doc) => MessageModel.fromMap(doc.data())).toList();
+    });
+  }
+
   // ==========================================
   // READ RECEIPTS & DELIVERY STATUS
   // ==========================================
 
-  Future<void> updateMessageDeliveryStatus(String chatId, String messageId, String status) async {
-    try {
-      await _firestore
-          .collection('chats')
-          .doc(chatId)
-          .collection('messages')
-          .doc(messageId)
-          .update({'status': status});
-    } catch (e) {
-      _handleError('updateMessageDeliveryStatus', e);
-    }
-  }
-
-  Future<void> markChatMessagesAsSeen(String chatId, String currentUserId) async {
+  Future<void> markAsSeen(String chatId, String currentUserId) async {
     try {
       final querySnapshot = await _firestore
           .collection('chats')
@@ -191,8 +183,7 @@ class ChatService {
       bool hasUnseen = false;
 
       for (var doc in querySnapshot.docs) {
-        final data = doc.data();
-        if (data['status'] != 'seen') {
+        if (doc.data()['status'] != 'seen') {
           batch.update(doc.reference, {'status': 'seen'});
           hasUnseen = true;
         }
@@ -200,17 +191,17 @@ class ChatService {
 
       if (hasUnseen) {
         batch.update(_firestore.collection('chats').doc(chatId), {
-          'unreadCount': 0, // চ্যাট ওপেন করলেই কাউন্টার রিসেট
+          'unreadCount': 0,
         });
         await batch.commit();
       }
     } catch (e) {
-      _handleError('markChatMessagesAsSeen', e);
+      _handleError('markAsSeen', e);
     }
   }
 
   // ==========================================
-  // ADVANCED MESSAGING FEATURES
+  // ADVANCED MESSAGING & SERVICE IMPLEMENTATIONS
   // ==========================================
 
   Future<void> editMessage(String chatId, String messageId, String newText) async {
@@ -262,7 +253,7 @@ class ChatService {
     }
   }
 
-  Future<void> addMessageReaction(String chatId, String messageId, String userId, String emoji) async {
+  Future<void> reactMessage(String chatId, String messageId, String userId, String emoji) async {
     try {
       await _firestore
           .collection('chats')
@@ -273,12 +264,89 @@ class ChatService {
         'reactions.$userId': emoji,
       });
     } catch (e) {
-      _handleError('addMessageReaction', e);
+      _handleError('reactMessage', e);
     }
   }
 
+  Future<void> replyMessage({
+    required String chatId,
+    required String senderId,
+    required String receiverId,
+    required String message,
+    required String replyToMessageId,
+  }) async {
+    await sendMessage(
+      chatId: chatId,
+      senderId: senderId,
+      receiverId: receiverId,
+      message: message,
+      type: 'text',
+      replyToMessageId: replyToMessageId,
+    );
+  }
+
+  Future<void> forwardMessage({
+    required String targetChatId,
+    required String senderId,
+    required String receiverId,
+    required String message,
+    required String type,
+    Map<String, dynamic>? mediaMetaData,
+  }) async {
+    await sendMessage(
+      chatId: targetChatId,
+      senderId: senderId,
+      receiverId: receiverId,
+      message: message,
+      type: type,
+      mediaMetaData: mediaMetaData,
+    );
+  }
+
   // ==========================================
-  // GROUP CHAT LIFECYCLE & MANAGEMENT
+  // MEDIA UPLOAD PLATFORMS
+  // ==========================================
+
+  Future<void> sendImage(String chatId, String senderId, String receiverId, String url) async {
+    await sendMessage(chatId: chatId, senderId: senderId, receiverId: receiverId, message: url, type: 'image');
+  }
+
+  Future<void> sendVideo(String chatId, String senderId, String receiverId, String url) async {
+    await sendMessage(chatId: chatId, senderId: senderId, receiverId: receiverId, message: url, type: 'video');
+  }
+
+  Future<void> sendDocument(String chatId, String senderId, String receiverId, String url, String fileName) async {
+    await sendMessage(
+      chatId: chatId, 
+      senderId: senderId, 
+      receiverId: receiverId, 
+      message: url, 
+      type: 'document',
+      mediaMetaData: {'fileName': fileName},
+    );
+  }
+
+  Future<void> sendAudio(String chatId, String senderId, String receiverId, String url) async {
+    await sendMessage(chatId: chatId, senderId: senderId, receiverId: receiverId, message: url, type: 'audio');
+  }
+
+  Future<void> sendVoice(String chatId, String senderId, String receiverId, String url) async {
+    await sendMessage(chatId: chatId, senderId: senderId, receiverId: receiverId, message: url, type: 'voice');
+  }
+
+  Future<void> sendLocation(String chatId, String senderId, String receiverId, double latitude, double longitude) async {
+    await sendMessage(
+      chatId: chatId,
+      senderId: senderId,
+      receiverId: receiverId,
+      message: '$latitude,$longitude',
+      type: 'location',
+      mediaMetaData: {'latitude': latitude, 'longitude': longitude},
+    );
+  }
+
+  // ==========================================
+  // GROUP CHAT LIFECYCLE & CORE LOGIC
   // ==========================================
 
   Future<void> createGroupChat({
@@ -296,13 +364,57 @@ class ChatService {
         'createdBy': creatorId,
         'createdAt': FieldValue.serverTimestamp(),
         'members': members,
-        'lastMessage': 'Group created by administration',
+        'lastMessageContent': 'Group created by administration',
         'lastMessageTime': FieldValue.serverTimestamp(),
         'admins': [creatorId],
       });
     } catch (e) {
       _handleError('createGroupChat', e);
     }
+  }
+
+  Future<void> sendGroupMessage({
+    required String groupId,
+    required String senderId,
+    required String message,
+    required String type,
+  }) async {
+    try {
+      final messageRef = _firestore.collection('groups').doc(groupId).collection('messages').doc();
+      
+      await messageRef.set({
+        'messageId': messageRef.id,
+        'senderId': senderId,
+        'receiverId': 'group',
+        'content': message,
+        'timestamp': FieldValue.serverTimestamp(),
+        'type': type,
+        'status': 'sent',
+        'isDeletedForEveryone': false,
+        'deletedForUsers': [],
+        'starredBy': [],
+        'reactions': {},
+      });
+
+      await _firestore.collection('groups').doc(groupId).update({
+        'lastMessageContent': type == 'text' ? message : 'Media Attachment',
+        'lastMessageTime': FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      _handleError('sendGroupMessage', e);
+    }
+  }
+
+  Stream<List<MessageModel>> getGroupMessagesStream(String groupId) {
+    return _firestore
+        .collection('groups')
+        .doc(groupId)
+        .collection('messages')
+        .orderBy('timestamp', descending: true)
+        .snapshots()
+        .map((snapshot) {
+      return snapshot.docs.map((doc) => MessageModel.fromMap(doc.data())).toList();
+    });
   }
 
   // ==========================================
