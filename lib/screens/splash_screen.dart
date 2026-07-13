@@ -70,7 +70,9 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
     if (role == 'teacher') {
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (_) => const TeacherHomeScreen()),
+        MaterialPageRoute(
+          builder: (_) => TeacherHomeScreen(currentUserId: user.uid), // শুধু এখানে ইউজার আইডি বাগটি ফিক্স করা হলো
+        ),
       );
     } else {
       Navigator.pushReplacement(
