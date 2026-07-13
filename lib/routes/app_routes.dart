@@ -23,9 +23,9 @@ class AppRoutes {
 
   static Route<dynamic> generateRoute(RouteSettings settings) {
     Widget page;
-
-    // কারেন্ট লগইন করা ইউজারের UID নেওয়ার জন্য
-    final currentUserId = FirebaseAuth.instance.currentUser?.uid ?? '';
+    
+    final authUserId = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final args = settings.arguments;
 
     switch (settings.name) {
       case splash:
@@ -53,22 +53,23 @@ class AppRoutes {
         break;
 
       case studentHome:
+        final userId = (args is String && args.isNotEmpty) ? args : authUserId;
         page = StudentHomeScreen(
-          currentUserId: currentUserId,
+          currentUserId: userId,
         );
         break;
 
       case teacherHome:
-        // ফিক্সড: টিচার হোম স্ক্রিনেও কারেন্ট ইউজার আইডি পাস করা হলো
+        final userId = (args is String && args.isNotEmpty) ? args : authUserId;
         page = TeacherHomeScreen(
-          currentUserId: currentUserId,
+          currentUserId: userId,
         );
         break;
 
       case teacherWelcome:
-        // ফিক্সড: টিচার ওয়েলকাম স্ক্রিনেও কারেন্ট ইউজার আইডি পাস করা হলো
+        final userId = (args is String && args.isNotEmpty) ? args : authUserId;
         page = TeacherWelcomeScreen(
-          currentUserId: currentUserId,
+          currentUserId: userId,
         );
         break;
 
