@@ -105,9 +105,9 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _checkAndNavigateUser(User user) async {
     // ১. প্রথমে টিচার কালেকশন চেক করা হচ্ছে (Clean Architecture)
     DocumentSnapshot teacherDoc = await _firestore.collection('teachers').doc(user.uid).get();
-    
+
     String userType = 'student';
-    
+
     if (teacherDoc.exists) {
       userType = 'teacher';
     } else {
@@ -118,10 +118,10 @@ class _LoginScreenState extends State<LoginScreen> {
       } else {
         // যদি কোনো কালেকশনেই ডেটা না থাকে (নতুন গুগল সাইন-ইন ইউজার)
         userType = 'student'; // ডিফল্ট রোল স্টুডেন্ট
-        
+
         // "No Name" বাগ ফিক্স: গুগলের নাম অথবা ইমেলের প্রথম অংশ ব্যাকআপ হিসেবে নেওয়া হলো
         String finalName = user.displayName ?? user.email!.split('@')[0];
-        
+
         await _firestore.collection('students').doc(user.uid).set({
           'uid': user.uid,
           'name': finalName, // 'name' ফিল্ড নিশ্চিত করা হলো
@@ -142,7 +142,8 @@ class _LoginScreenState extends State<LoginScreen> {
       context,
       MaterialPageRoute(
         builder: (_) => userType == 'teacher'
-            ? const TeacherHomeScreen()
+            // বাগ ফিক্স: TeacherHomeScreen-এ রিকোয়ার্ড প্যারামিটার 'currentUserId' পাস করা হলো
+            ? TeacherHomeScreen(currentUserId: user.uid)
             : StudentHomeScreen(currentUserId: user.uid),
       ),
       (route) => false,
@@ -189,7 +190,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 40),
-                
+
                 // ইমেল ইনপুট
                 TextFormField(
                   controller: _emailController,
@@ -210,7 +211,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                 ),
                 const SizedBox(height: 20),
-                
+
                 // পাসওয়ার্ড ইনপুট
                 TextFormField(
                   controller: _passwordController,
@@ -224,7 +225,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ),
                 ),
-                
+
                 Align(
                   alignment: Alignment.centerRight,
                   child: TextButton(
@@ -241,7 +242,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                 ),
                 const SizedBox(height: 20),
-                
+
                 _isLoading
                     ? const CircularProgressIndicator(color: Color(0xFF128C7E))
                     : Column(
@@ -277,7 +278,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             ],
                           ),
                           const SizedBox(height: 25),
-                          
+
                           // গুগল লগইন বাটন
                           SizedBox(
                             width: double.infinity,
@@ -297,7 +298,8 @@ class _LoginScreenState extends State<LoginScreen> {
                               ),
                               label: const Text(
                                 'Continue with Google',
-                                style: TextStyle(fontSize: 16, color: Colors.blackDE, fontWeight: FontWeight.bold),
+                                // বাগ ফিক্স: Colors.blackDE এর জায়গায় স্ট্যান্ডার্ড Colors.black87 ব্যবহার করা হলো
+                                style: TextStyle(fontSize: 16, color: Colors.black87, fontWeight: FontWeight.bold),
                               ),
                             ),
                           ),
