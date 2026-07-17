@@ -4,39 +4,72 @@ import '../models/reminder_model.dart';
 class ReminderService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  // বাগ ১৫ ফিক্স: সরাসরি 'students' কালেকশন থেকে নিখুঁত ডেটা এবং নাম রিড করা
   Future<Map<String, dynamic>?> searchStudentById(String studentId) async {
+    // যেকোনো স্পেস রিমুভ করার জন্য ট্রিম করে নেওয়া হলো
+    final cleanId = studentId.trim();
+    if (cleanId.isEmpty) return null;
+
     try {
-      final docSnapshot = await _firestore.collection('students').doc(studentId).get();
+      // ১. প্রথমে সরাসরি Document ID (ডকুমেন্ট নাম) দিয়ে খোঁজার চেষ্টা করবে
+      var docSnapshot = await _firestore.collection('students').doc(cleanId).get();
 
       if (docSnapshot.exists && docSnapshot.data() != null) {
         final data = docSnapshot.data()!;
-        // যদি ডকুমেন্টের ভেতর ভুলবশত 'uid' ফিল্ড না থাকে, তবে ডক আইডি সেট করে দেওয়া
-        if (data['uid'] == null) {
-          data['uid'] = docSnapshot.id;
-        }
-        // নাম ফিল্ডের ডাবল ব্যাকআপ চেক
-        if (data['name'] == null) {
-          data['name'] = data['displayName'] ?? 'No Name Provided';
-        }
+        _normalizeStudentData(data, docSnapshot.id);
         return data;
       }
+
+      // ২. যদি সরাসরি না পাওয়া যায়, তবে ডকুমেন্টের ভেতরের 'uid' ফিল্ড কুয়েরি করবে
+      final querySnapshot = await _firestore
+          .collection('students')
+          .where('uid', isEqualTo: cleanId)
+          .limit(1)
+          .get();
+
+      if (querySnapshot.docs.isNotEmpty) {
+        final doc = querySnapshot.docs.first;
+        final data = doc.data();
+        _normalizeStudentData(data, doc.id);
+        return data;
+      }
+
+      // ৩. সবশেষে ব্যাকআপ হিসেবে 'studentId' ফিল্ড দিয়েও চেক করে নেওয়া নিরাপদ
+      final backupQuery = await _firestore
+          .collection('students')
+          .where('studentId', isEqualTo: cleanId)
+          .limit(1)
+          .get();
+
+      if (backupQuery.docs.isNotEmpty) {
+        final doc = backupQuery.docs.first;
+        final data = doc.data();
+        _normalizeStudentData(data, doc.id);
+        return data;
+      }
+
       return null;
     } catch (e) {
-      // কনসোলে এরর প্রপারলি লগ করা
       intlLog("Error in searchStudentById: $e");
       return null;
+    }
+  }
+
+  /// ডেটার ফিল্ডগুলোকে স্ট্যান্ডার্ড ফরম্যাটে রূপান্তর করার হেল্পার মেথড
+  void _normalizeStudentData(Map<String, dynamic> data, String fallbackId) {
+    if (data['uid'] == null) {
+      data['uid'] = fallbackId;
+    }
+    if (data['name'] == null) {
+      data['name'] = data['displayName'] ?? data['fullName'] ?? 'No Name Provided';
     }
   }
 
   Future<void> sendPaymentReminder(ReminderModel reminder) async {
     final batch = _firestore.batch();
 
-    // ১. payment_reminders কালেকশনে নোটিফিকেশন এন্ট্রি সেভ
     final reminderRef = _firestore.collection('payment_reminders').doc(reminder.reminderId);
     batch.set(reminderRef, reminder.toMap());
 
-    // ২. ডিটারমিনিস্টিক আইডি জেনারেশন মেথড কল
     final String chatRoomId = _getChatRoomId(reminder.teacherId, reminder.studentId);
     final messageRef = _firestore
         .collection('chats')
@@ -62,7 +95,6 @@ class ReminderService {
       'timestamp': Timestamp.fromDate(reminder.reminderTime),
     });
 
-    // ৩. চ্যাট রুমের মেটাডেটা রিয়াল-টাইম আপডেট
     final chatRef = _firestore.collection('chats').doc(chatRoomId);
     batch.set(chatRef, {
       'lastMessage': "Tuition fee reminder sent.",
@@ -70,16 +102,13 @@ class ReminderService {
       'participants': [reminder.teacherId, reminder.studentId],
     }, SetOptions(merge: true));
 
-    // ব্যাচ অপারেশন এক্সিকিউট করা
     await batch.commit();
   }
 
-  // বাগ ২০ ফিক্স: রানটাইম মেমোরি লিক এবং আইডি মিসম্যাচ রোধে প্রফেশনাল অ্যালফাবেটিক্যাল কম্পেয়ার
   String _getChatRoomId(String user1, String user2) {
     return user1.compareTo(user2) <= 0 ? '${user1}_$user2' : '${user2}_$user1';
   }
 
-  // ডিবাগিং ট্র্যাকার
   void intlLog(String msg) {
     print("[ReminderService] $msg");
   }
