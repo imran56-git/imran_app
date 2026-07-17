@@ -1,6 +1,4 @@
 import 'package:flutter/material.dart';
-// প্রোডাকশন অ্যাপে ইমেজ ক্যাশিং এর জন্য এই প্যাকেজটি যোগ করে নেওয়া ভালো:
-// import 'package:cached_network_image/cached_network_image.dart';
 
 class TeacherCardWidget extends StatelessWidget {
   final String teacherId;
@@ -16,8 +14,8 @@ class TeacherCardWidget extends StatelessWidget {
   final String locationText;       
   final String calculatedDistance; 
   final VoidCallback onChatPressed;
-  final VoidCallback? onProfilePressed; // প্রোফাইল ক্লিকের কাস্টম হ্যান্ডলার
-  final VoidCallback? onMapPressed;     // ম্যাপ ক্লিকের কাস্টম হ্যান্ডলার
+  final VoidCallback? onProfilePressed; 
+  final VoidCallback? onMapPressed;     
 
   const TeacherCardWidget({
     super.key,
@@ -38,7 +36,7 @@ class TeacherCardWidget extends StatelessWidget {
     this.onMapPressed,
   });
 
-  // ইমেজ ফুল-স্ক্রিন প্রিভিউ করার প্রিমিয়াম ডায়ালগ উইজেট (Smooth scale animation সহ)
+  // ইমেজ ফুল-স্ক্রিন প্রিভিউ করার ডায়ালগ উইজেট (Smooth scale animation সহ)
   void _openFullImage(BuildContext context) {
     showGeneralDialog(
       context: context,
@@ -84,17 +82,18 @@ class TeacherCardWidget extends StatelessWidget {
     );
   }
 
+  // ফিক্সড: এখান থেকে const কেটে দেওয়া হয়েছে এবং চাইল্ডে const যুক্ত করা হয়েছে
   Widget _buildImagePlaceholder() {
-    return const Container(
+    return Container(
       color: Colors.white,
-      padding: EdgeInsets.all(40),
-      child: Icon(Icons.person_rounded, size: 80, color: Color(0xFF1E4C7A)),
+      padding: const EdgeInsets.all(40),
+      child: const Icon(Icons.person_rounded, size: 80, color: Color(0xFF1E4C7A)),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final themeColor = const Color(0xFF1E4C7A);
+    const themeColor = Color(0xFF1E4C7A); // const ঠিক করা হয়েছে
 
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
@@ -148,7 +147,7 @@ class TeacherCardWidget extends StatelessWidget {
                                       ? NetworkImage(profileImageUrl) 
                                       : null,
                                   child: profileImageUrl.isEmpty 
-                                      ? Icon(Icons.person_rounded, size: 36, color: themeColor) 
+                                      ? const Icon(Icons.person_rounded, size: 36, color: themeColor) 
                                       : null,
                                 ),
                               ),
@@ -216,7 +215,7 @@ class TeacherCardWidget extends StatelessWidget {
                               subject,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
+                              style: const TextStyle(
                                 color: themeColor,
                                 fontWeight: FontWeight.bold,
                                 fontSize: 13,
@@ -287,12 +286,12 @@ class TeacherCardWidget extends StatelessWidget {
                           height: 42,
                           child: OutlinedButton(
                             style: OutlinedButton.styleFrom(
-                              side: BorderSide(color: themeColor, width: 1.6),
+                              side: const BorderSide(color: themeColor, width: 1.6),
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                               elevation: 0,
                             ),
                             onPressed: onProfilePressed,
-                            child: Text(
+                            child: const Text(
                               "View Profile",
                               style: TextStyle(
                                 fontWeight: FontWeight.bold,
