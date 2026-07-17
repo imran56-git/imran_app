@@ -15,22 +15,19 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> with Ticker
   GoogleMapController? _mapController;
   bool _isSearching = false;
 
-  // টেক্সট দিয়ে লোকেশন সার্চ এবং ম্যাপে পিন ড্রপ
   Future<void> _searchLocation(String query) async {
     if (query.trim().isEmpty) return;
     setState(() => _isSearching = true);
-    
+
     try {
       List<Location> locations = await locationFromAddress(query);
       if (locations.isNotEmpty) {
         final position = LatLng(locations.first.latitude, locations.first.longitude);
-        
-        // ক্যামেরা অ্যানিমেশন
+
         _mapController?.animateCamera(
           CameraUpdate.newLatLngZoom(position, 15),
         );
 
-        // সার্চ করা লোকেশনটিকে সরাসরি অ্যাড করার অপশন বা ট্যাপ ট্রিগার
         await _onMapTap(position);
       }
     } catch (e) {
@@ -45,7 +42,6 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> with Ticker
     }
   }
 
-  // ম্যাপ ট্যাপ এবং রিভার্স জিওকোডিং (অ্যাড্রেস বের করা)
   Future<void> _onMapTap(LatLng position) async {
     String address = "Pinned Location";
     try {
@@ -59,7 +55,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> with Ticker
         String name = place.name ?? "";
         String subLocality = place.subLocality ?? "";
         String locality = place.locality ?? "";
-        
+
         address = "$name, $subLocality, $locality".replaceAll(RegExp(r', ,|,,'), ',').trim();
         if (address.startsWith(',') || address.isEmpty) {
           address = "${place.subLocality ?? ''} ${place.locality ?? ''}".trim();
@@ -72,12 +68,11 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> with Ticker
 
     if (mounted) {
       setState(() {
-        // ডুপ্লিকেট লোকেশন এড়াতে চেক
         bool exists = selectedLocations.any((loc) => 
           (loc['lat'] as double).toStringAsFixed(4) == position.latitude.toStringAsFixed(4) &&
           (loc['lng'] as double).toStringAsFixed(4) == position.longitude.toStringAsFixed(4)
         );
-        
+
         if (!exists) {
           selectedLocations.add({
             'lat': position.latitude,
@@ -116,10 +111,9 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> with Ticker
       ),
       body: Stack(
         children: [
-          // গুগল ম্যাপ উইজেট
           GoogleMap(
             initialCameraPosition: const CameraPosition(
-              target: LatLng(22.5726, 88.3639), // কোলকাতা/পশ্চিমবঙ্গ রিজিয়ন ডিফল্ট
+              target: LatLng(22.5726, 88.3639),
               zoom: 12,
             ),
             onMapCreated: (controller) => _mapController = controller,
@@ -139,11 +133,9 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> with Ticker
               );
             }).toSet(),
             myLocationEnabled: true,
-            myLocationButtonEnabled: false, // কাস্টম জায়গায় বসানোর জন্য অফ করা
+            myLocationButtonEnabled: false,
             zoomControlsEnabled: false,
           ),
-
-          // প্রিমিয়াম ফ্লোটিং সার্চ বার
           Positioned(
             top: 16,
             left: 16,
@@ -183,8 +175,6 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> with Ticker
               ),
             ),
           ),
-
-          // ইউজার গাইডেন্স পপআপ অ্যানিমেশন
           if (selectedLocations.isEmpty)
             Positioned(
               bottom: 30,
@@ -223,8 +213,6 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> with Ticker
             ),
         ],
       ),
-      
-      // ডাইনামিক বটম শীট (সিলেক্টেড লোকেশন লিস্ট দেখানোর জন্য)
       bottomNavigationBar: selectedLocations.isNotEmpty
           ? AnimatedContainer(
               duration: const Duration(milliseconds: 300),
@@ -239,7 +227,6 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> with Ticker
               ),
               child: Column(
                 children: [
-                  // হেডার প্যানেল
                   Padding(
                     padding: const EdgeInsets.fromLTRB(20, 16, 12, 8),
                     child: Row(
@@ -264,7 +251,6 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> with Ticker
                     ),
                   ),
                   const Divider(height: 1),
-                  // সিলেক্টেড লোকেশনের হরাইজন্টাল কারোসেল লিস্ট
                   Expanded(
                     child: ListView.builder(
                       scrollDirection: Axis.horizontal,
