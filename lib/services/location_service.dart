@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
-import 'package:geolocator/geolocator';
+// ফিক্সড: বিল্ড লগের ১ম এরর অনুযায়ী ইমপোর্টের শেষে সঠিকভাবে .dart যুক্ত করা হলো
+import 'package:geolocator/geolocator.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class LocationService {
