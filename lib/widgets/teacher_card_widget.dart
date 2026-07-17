@@ -10,11 +10,11 @@ class TeacherCardWidget extends StatelessWidget {
   final double latitude;
   final double longitude;
   final int studentCount;
-  final int experienceYears;       // শিক্ষক অভিজ্ঞতা বছর
-  final int followersCount;        // শিক্ষক ফলোয়ারস সংখ্যা
-  final double rating;             // শিক্ষক রেটিং স্টারস
-  final String locationText;       // টেক্সট লোকেশন বা ঠিকানা
-  final String calculatedDistance; // সার্চ স্ক্রিন থেকে পাস হওয়া নিখুঁত দূরত্ব
+  final int experienceYears;       
+  final int followersCount;        
+  final double rating;             
+  final String locationText;       
+  final String calculatedDistance; 
   final VoidCallback onChatPressed;
 
   const TeacherCardWidget({
