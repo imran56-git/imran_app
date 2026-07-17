@@ -64,21 +64,18 @@ class _JoinLiveScreenState extends State<JoinLiveScreen> {
           SuccessToast.show(context, 'Live Class Created Successfully');
         }
       } else {
-        // --- ফিক্সড: টাইপ-সেফ কল ---
-        // আপনার lib/services/live_class_service.dart ফাইলে মেথডটির নাম যদি 
-        // getLiveSession হয়, তবে এখানে getLiveSession লিখুন।
-        // যদি getLiveClassSnapshot হয়, তবে এটাই রাখুন।
-        final liveSession = await _liveClassService.getLiveClassSnapshot(roomId);
+        // --- ফিক্সড ও টাইপ-সেফ: স্ট্রিম থেকে প্রথম লেটেস্ট ডেটা নেওয়া হলো ---
+        final liveClassData = await _liveClassService.watchLiveClass(roomId).first;
 
-        if (liveSession == null || !liveSession.exists) {
+        if (liveClassData == null) {
           if (mounted) {
             _showErrorDialog('Invalid Room Code', 'No active live class found. Please check again.');
           }
           return;
         }
 
-        final sessionData = liveSession.data() as Map<String, dynamic>?;
-        final bool isCurrentlyLive = sessionData?['isLive'] ?? false;
+        // মডেল থেকে সরাসরি 'isLive' প্রোপার্টি চেক করা হচ্ছে
+        final bool isCurrentlyLive = liveClassData.isLive;
 
         if (!isCurrentlyLive) {
           if (mounted) {
@@ -127,7 +124,6 @@ class _JoinLiveScreenState extends State<JoinLiveScreen> {
             Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
           ],
         ),
-        // ফিক্সড: Colors.black74 এর বদলে Colors.black54 ব্যবহার করা হলো
         content: Text(message, style: const TextStyle(fontSize: 14, color: Colors.black54)),
         actions: [
           TextButton(
