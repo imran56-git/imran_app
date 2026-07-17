@@ -24,12 +24,12 @@ class _MapScreenState extends State<MapScreen> {
   bool _isLoading = true;
   Map<String, dynamic>? _selectedLocationData;
   bool _showDetailsCard = false;
-  final LatLng _defaultCenter = const LatLng(22.5726, 88.3639); 
+  final LatLng _defaultCenter = const LatLng(22.5726, 88.3639); // Kolkata Default Center
 
   @override
   void initState() {
     super.initState();
-    _fetchTeacherTeachingAreas();
+    _fetchTeacherLocations();
   }
 
   @override
@@ -38,8 +38,9 @@ class _MapScreenState extends State<MapScreen> {
     super.dispose();
   }
 
-  Future<void> _fetchTeacherTeachingAreas() async {
+  Future<void> _fetchTeacherLocations() async {
     try {
+      // সঠিক কালেকশন এবং ডকুমেন্ট থেকে ডেটা ফেচ করা হচ্ছে
       final doc = await FirebaseFirestore.instance
           .collection('teachers')
           .doc(widget.teacherId)
@@ -51,17 +52,23 @@ class _MapScreenState extends State<MapScreen> {
       }
 
       final data = doc.data() as Map<String, dynamic>? ?? {};
-      final List<dynamic> areas = data['teachingAreas'] ?? [];
+      
+      // প্রোফাইল স্ক্রিনের 'locations' ফিল্ডের সাথে ডাটা সিঙ্ক করা হয়েছে
+      final List<dynamic> locations = data['locations'] ?? [];
 
       _markers.clear();
       List<LatLng> points = [];
 
-      for (var index = 0; index < areas.length; index++) {
-        final area = areas[index] as Map<String, dynamic>;
-        final double? lat = double.tryParse(area['latitude']?.toString() ?? '');
-        final double? lng = double.tryParse(area['longitude']?.toString() ?? '');
-        final String locationName = area['locationName'] ?? 'Teaching Zone ${index + 1}';
-        final String address = area['address'] ?? 'Address not specified';
+      for (var index = 0; index < locations.length; index++) {
+        final loc = locations[index] as Map<String, dynamic>;
+        
+        // ডাবল বা স্ট্রিং যাই আসুক না কেন সেটিকে সেফলি হ্যান্ডেল করার মেকানিজম
+        final double? lat = double.tryParse(loc['latitude']?.toString() ?? '');
+        final double? lng = double.tryParse(loc['longitude']?.toString() ?? '');
+        
+        // অ্যাড্রেস বা লোকেশন নেম ফিল্ড অ্যাসাইনমেন্ট
+        final String address = loc['address'] ?? 'Address not specified';
+        final String locationName = loc['locationName'] ?? 'Teaching Zone ${index + 1}';
 
         if (lat != null && lng != null) {
           final LatLng position = LatLng(lat, lng);
@@ -92,6 +99,7 @@ class _MapScreenState extends State<MapScreen> {
         _isLoading = false;
       });
 
+      // মার্কার অ্যাড হওয়ার পর ম্যাপ ক্যামেরা অ্যানিমেট করা
       if (points.isNotEmpty && _mapController != null) {
         _animateToFitPoints(points);
       }
@@ -130,7 +138,7 @@ class _MapScreenState extends State<MapScreen> {
           southwest: LatLng(minLat, minLng),
           northeast: LatLng(maxLat, maxLng),
         ),
-        60,
+        60, // Padding
       ),
     );
   }
