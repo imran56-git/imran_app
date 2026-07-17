@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import '../screens/teacher_profile_screen.dart'; 
-import '../screens/teaching_areas_map_screen.dart'; 
+// প্রোডাকশন অ্যাপে ইমেজ ক্যাশিং এর জন্য এই প্যাকেজটি যোগ করে নেওয়া ভালো:
+// import 'package:cached_network_image/cached_network_image.dart';
 
 class TeacherCardWidget extends StatelessWidget {
   final String teacherId;
@@ -16,6 +16,8 @@ class TeacherCardWidget extends StatelessWidget {
   final String locationText;       
   final String calculatedDistance; 
   final VoidCallback onChatPressed;
+  final VoidCallback? onProfilePressed; // প্রোফাইল ক্লিকের কাস্টম হ্যান্ডলার
+  final VoidCallback? onMapPressed;     // ম্যাপ ক্লিকের কাস্টম হ্যান্ডলার
 
   const TeacherCardWidget({
     super.key,
@@ -32,6 +34,8 @@ class TeacherCardWidget extends StatelessWidget {
     required this.locationText,
     required this.calculatedDistance,
     required this.onChatPressed,
+    this.onProfilePressed,
+    this.onMapPressed,
   });
 
   // ইমেজ ফুল-স্ক্রিন প্রিভিউ করার প্রিমিয়াম ডায়ালগ উইজেট (Smooth scale animation সহ)
@@ -60,15 +64,13 @@ class TeacherCardWidget extends StatelessWidget {
             child: InteractiveViewer(
               panEnabled: true,
               scaleEnabled: true,
-              child: Image.network(
-                profileImageUrl, 
-                fit: BoxFit.contain,
-                errorBuilder: (context, error, stackTrace) => const Container(
-                  color: Colors.white,
-                  padding: EdgeInsets.all(40),
-                  child: Icon(Icons.person_rounded, size: 80, color: Color(0xFF1E4C7A)),
-                ),
-              ),
+              child: profileImageUrl.isNotEmpty
+                  ? Image.network(
+                      profileImageUrl, 
+                      fit: BoxFit.contain,
+                      errorBuilder: (context, error, stackTrace) => _buildImagePlaceholder(),
+                    )
+                  : _buildImagePlaceholder(),
             ),
           ),
         ),
@@ -82,35 +84,18 @@ class TeacherCardWidget extends StatelessWidget {
     );
   }
 
-  // প্রোফাইলে যাওয়ার জন্য প্রিমিয়াম ফেড অ্যানিমেশন ন্যাভিগেটর
-  void _navigateToProfile(BuildContext context) {
-    Navigator.of(context).push(
-      PageRouteBuilder(
-        transitionDuration: const Duration(milliseconds: 400),
-        pageBuilder: (_, __, ___) => TeacherProfileScreen(currentUserId: teacherId),
-        transitionsBuilder: (_, animation, __, child) => FadeTransition(
-          opacity: animation,
-          child: child,
-        ),
-      ),
-    );
-  }
-
-  // টিচিং এরিয়াস ম্যাপ স্ক্রিন ওপেন করার মেথড
-  void _navigateToTeachingAreas(BuildContext context) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => MapScreen(
-          teacherId: teacherId,
-          teacherName: name,
-        ),
-      ),
+  Widget _buildImagePlaceholder() {
+    return const Container(
+      color: Colors.white,
+      padding: EdgeInsets.all(40),
+      child: Icon(Icons.person_rounded, size: 80, color: Color(0xFF1E4C7A)),
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    final themeColor = const Color(0xFF1E4C7A);
+
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
       decoration: BoxDecoration(
@@ -118,7 +103,7 @@ class TeacherCardWidget extends StatelessWidget {
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF1E4C7A).withOpacity(0.06),
+            color: themeColor.withOpacity(0.06),
             blurRadius: 16,
             offset: const Offset(0, 8),
           ),
@@ -129,8 +114,8 @@ class TeacherCardWidget extends StatelessWidget {
         child: Material(
           color: Colors.transparent,
           child: InkWell(
-            onTap: () => _navigateToProfile(context),
-            splashColor: const Color(0xFF1E4C7A).withOpacity(0.03),
+            onTap: onProfilePressed,
+            splashColor: themeColor.withOpacity(0.03),
             highlightColor: Colors.transparent,
             child: Padding(
               padding: const EdgeInsets.all(16),
@@ -141,7 +126,6 @@ class TeacherCardWidget extends StatelessWidget {
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // প্রিমিয়াম রাউন্ডেড প্রোফাইল ইমেজ (Hero ও ফুলভিউ ট্যাপ সাপোর্ট সহ)
                       GestureDetector(
                         onTap: () => _openFullImage(context),
                         child: Hero(
@@ -153,7 +137,7 @@ class TeacherCardWidget extends StatelessWidget {
                                 decoration: BoxDecoration(
                                   shape: BoxShape.circle,
                                   border: Border.all(
-                                    color: const Color(0xFF1E4C7A).withOpacity(0.1),
+                                    color: themeColor.withOpacity(0.1),
                                     width: 2.5,
                                   ),
                                 ),
@@ -163,11 +147,8 @@ class TeacherCardWidget extends StatelessWidget {
                                   backgroundImage: profileImageUrl.isNotEmpty 
                                       ? NetworkImage(profileImageUrl) 
                                       : null,
-                                  onBackgroundImageError: (exception, stackTrace) {
-                                    debugPrint("Error loading profile image: $exception");
-                                  },
                                   child: profileImageUrl.isEmpty 
-                                      ? const Icon(Icons.person_rounded, size: 36, color: Color(0xFF1E4C7A)) 
+                                      ? Icon(Icons.person_rounded, size: 36, color: themeColor) 
                                       : null,
                                 ),
                               ),
@@ -211,22 +192,23 @@ class TeacherCardWidget extends StatelessWidget {
                                   ),
                                 ),
                                 // গুগল ম্যাপস আইকন বাটন
-                                Material(
-                                  color: Colors.teal.withOpacity(0.08),
-                                  borderRadius: BorderRadius.circular(10),
-                                  child: InkWell(
+                                if (onMapPressed != null)
+                                  Material(
+                                    color: Colors.teal.withOpacity(0.08),
                                     borderRadius: BorderRadius.circular(10),
-                                    onTap: () => _navigateToTeachingAreas(context),
-                                    child: const Padding(
-                                      padding: EdgeInsets.all(8),
-                                      child: Icon(
-                                        Icons.map_rounded,
-                                        color: Colors.teal,
-                                        size: 20,
+                                    child: InkWell(
+                                      borderRadius: BorderRadius.circular(10),
+                                      onTap: onMapPressed,
+                                      child: const Padding(
+                                        padding: EdgeInsets.all(8),
+                                        child: Icon(
+                                          Icons.map_rounded,
+                                          color: Colors.teal,
+                                          size: 20,
+                                        ),
                                       ),
                                     ),
                                   ),
-                                ),
                               ],
                             ),
                             const SizedBox(height: 4),
@@ -234,8 +216,8 @@ class TeacherCardWidget extends StatelessWidget {
                               subject,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: Color(0xFF1E4C7A),
+                              style: TextStyle(
+                                color: themeColor,
                                 fontWeight: FontWeight.bold,
                                 fontSize: 13,
                               ),
@@ -291,12 +273,12 @@ class TeacherCardWidget extends StatelessWidget {
                         _buildMetaInfoDivider(),
                         _buildMetaInfoItem(Icons.people_alt_rounded, "$followersCount", "Followers", iconColor: Colors.purple),
                         _buildMetaInfoDivider(),
-                        _buildMetaInfoItem(Icons.school_rounded, "$studentCount", "Students", iconColor: const Color(0xFF1E4C7A)),
+                        _buildMetaInfoItem(Icons.school_rounded, "$studentCount", "Students", iconColor: themeColor),
                       ],
                     ),
                   ),
                   const SizedBox(height: 14),
-                  // অ্যাকশন বাটন সেকশন: সমপরিমাণ চওড়া (Equal Width) দুটি প্রিমিয়াম বাটন
+                  // অ্যাকশন বাটন সেকশন
                   Row(
                     children: [
                       // View Profile Button
@@ -305,16 +287,16 @@ class TeacherCardWidget extends StatelessWidget {
                           height: 42,
                           child: OutlinedButton(
                             style: OutlinedButton.styleFrom(
-                              side: const BorderSide(color: Color(0xFF1E4C7A), width: 1.6),
+                              side: BorderSide(color: themeColor, width: 1.6),
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                               elevation: 0,
                             ),
-                            onPressed: () => _navigateToProfile(context),
-                            child: const Text(
+                            onPressed: onProfilePressed,
+                            child: Text(
                               "View Profile",
                               style: TextStyle(
                                 fontWeight: FontWeight.bold,
-                                color: Color(0xFF1E4C7A),
+                                color: themeColor,
                                 fontSize: 13.5,
                               ),
                             ),
