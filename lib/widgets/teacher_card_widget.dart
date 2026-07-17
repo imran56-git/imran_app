@@ -73,7 +73,8 @@ class TeacherCardWidget extends StatelessWidget {
           ),
         ),
       ),
-      transitionsBuilder: (_, animation, __, child) {
+      // ফিক্সড: 'transitionsBuilder' থেকে শেষের 's' কেটে 'transitionBuilder' করা হলো
+      transitionBuilder: (_, animation, __, child) {
         return ScaleTransition(
           scale: CurvedAnimation(parent: animation, curve: Curves.easeOutBack),
           child: FadeTransition(opacity: animation, child: child),
@@ -82,7 +83,6 @@ class TeacherCardWidget extends StatelessWidget {
     );
   }
 
-  // ফিক্সড: এখান থেকে const কেটে দেওয়া হয়েছে এবং চাইল্ডে const যুক্ত করা হয়েছে
   Widget _buildImagePlaceholder() {
     return Container(
       color: Colors.white,
@@ -93,7 +93,7 @@ class TeacherCardWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const themeColor = Color(0xFF1E4C7A); // const ঠিক করা হয়েছে
+    const themeColor = Color(0xFF1E4C7A);
 
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
@@ -121,7 +121,6 @@ class TeacherCardWidget extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // উপরের সেকশন: ছবি, ভেরিফাইড ব্যাজ, নাম ও ম্যাপ আইকন
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -151,7 +150,6 @@ class TeacherCardWidget extends StatelessWidget {
                                       : null,
                                 ),
                               ),
-                              // Verified Badge
                               Container(
                                 padding: const EdgeInsets.all(2.5),
                                 decoration: const BoxDecoration(
@@ -169,7 +167,6 @@ class TeacherCardWidget extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(width: 14),
-                      // মিডল টেক্সট ইনফরমেশন
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -190,7 +187,6 @@ class TeacherCardWidget extends StatelessWidget {
                                     ),
                                   ),
                                 ),
-                                // গুগল ম্যাপস আইকন বাটন
                                 if (onMapPressed != null)
                                   Material(
                                     color: Colors.teal.withOpacity(0.08),
@@ -222,7 +218,6 @@ class TeacherCardWidget extends StatelessWidget {
                               ),
                             ),
                             const SizedBox(height: 4),
-                            // লোকেশন ও এক্সপেরিয়েন্স মেটালাইন
                             Row(
                               children: [
                                 const Icon(Icons.location_on_rounded, color: Colors.grey, size: 14),
@@ -256,7 +251,6 @@ class TeacherCardWidget extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: 16),
-                  // স্ট্যাটাস বা ড্যাশবোর্ড বার: দূরত্ব, রেটিং, ফলোয়ারস এবং স্টুডেন্টস কাউন্ট
                   Container(
                     padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
                     decoration: BoxDecoration(
@@ -277,10 +271,8 @@ class TeacherCardWidget extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 14),
-                  // অ্যাকশন বাটন সেকশন
                   Row(
                     children: [
-                      // View Profile Button
                       Expanded(
                         child: SizedBox(
                           height: 42,
@@ -303,7 +295,6 @@ class TeacherCardWidget extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(width: 12),
-                      // Chat Now Button
                       Expanded(
                         child: SizedBox(
                           height: 42,
@@ -343,7 +334,6 @@ class TeacherCardWidget extends StatelessWidget {
     );
   }
 
-  // মেটা ইনফো গ্রিড আইটেম বিল্ডার helper মেথড
   Widget _buildMetaInfoItem(IconData icon, String value, String label, {required Color iconColor}) {
     return Column(
       children: [
