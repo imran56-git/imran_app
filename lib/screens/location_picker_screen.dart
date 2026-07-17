@@ -16,10 +16,10 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> with Ticker
   final List<Map<String, dynamic>> selectedLocations = [];
   final TextEditingController _searchController = TextEditingController();
   GoogleMapController? _mapController;
-  
+
   bool _isSearching = false;
   bool _isLoadingLocation = false;
-  
+
   LatLng _currentCenterPosition = const LatLng(22.5726, 88.3639); // Default Kolkata
   String _draggedAddress = "Loading address...";
   bool _isDragging = false;
@@ -36,7 +36,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> with Ticker
     try {
       final position = await LocationService.getCurrentLocation();
       final currentLatLng = LatLng(position.latitude, position.longitude);
-      
+
       if (moveToPosition && _mapController != null) {
         _mapController!.animateCamera(
           CameraUpdate.newLatLngZoom(currentLatLng, 14),
@@ -51,7 +51,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> with Ticker
     }
   }
 
-  /// Search Location using Geocoding (Google Places SDK Fallback/Alternative)
+  /// Search Location using Geocoding
   Future<void> _searchLocation(String query) async {
     if (query.trim().isEmpty) return;
     setState(() => _isSearching = true);
@@ -73,7 +73,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> with Ticker
     }
   }
 
-  /// Reverse Geocode Address Update when map is dragged or tapped
+  /// Reverse Geocode Address Update
   Future<void> _updateAddressFromPosition(LatLng position) async {
     try {
       List<Placemark> placemarks = await placemarkFromCoordinates(
@@ -91,7 +91,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> with Ticker
         String formatted = "$name, $subLocality, $locality, $subAdministrativeArea"
             .replaceAll(RegExp(r', ,|,,'), ',')
             .trim();
-            
+
         if (formatted.startsWith(',') || formatted.isEmpty) {
           formatted = "${place.subLocality ?? ''} ${place.locality ?? ''}".trim();
         }
@@ -109,17 +109,19 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> with Ticker
 
   /// Single Pin Tapping Logic
   void _addCurrentPositionAsArea() {
+    // ডাটাবেজ আর্কিটেকচারের সাথে মিলিয়ে 'latitude' এবং 'longitude' করা হয়েছে
     bool exists = selectedLocations.any((loc) => 
-      (loc['lat'] as double).toStringAsFixed(4) == _currentCenterPosition.latitude.toStringAsFixed(4) &&
-      (loc['lng'] as double).toStringAsFixed(4) == _currentCenterPosition.longitude.toStringAsFixed(4)
+      (loc['latitude'] as double).toStringAsFixed(4) == _currentCenterPosition.latitude.toStringAsFixed(4) &&
+      (loc['longitude'] as double).toStringAsFixed(4) == _currentCenterPosition.longitude.toStringAsFixed(4)
     );
 
     if (!exists) {
       setState(() {
         selectedLocations.add({
-          'lat': _currentCenterPosition.latitude,
-          'lng': _currentCenterPosition.longitude,
+          'latitude': _currentCenterPosition.latitude,
+          'longitude': _currentCenterPosition.longitude,
           'address': _draggedAddress,
+          'locationName': _draggedAddress.split(',').first, // কাস্টম জোন নেম জেনারেট করার জন্য
         });
       });
       _showSnackBar("Area Added Successfully!");
@@ -148,19 +150,17 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> with Ticker
 
   @override
   Widget build(BuildContext context) {
-    // Dynamically update Circles based on user interaction or pinned areas
     Set<Circle> mapCircles = selectedLocations.map((loc) {
       return Circle(
-        circleId: CircleId('circle_${loc['lat']}_${loc['lng']}'),
-        center: LatLng(loc['lat'], loc['lng']),
-        radius: 10000, // 10 KM Radius strictly as specified
+        circleId: CircleId('circle_${loc['latitude']}_${loc['longitude']}'),
+        center: LatLng(loc['latitude'], loc['longitude']),
+        radius: 10000, // 10 KM Radius
         fillColor: Colors.blue.withOpacity(0.12),
         strokeColor: Colors.blue[700]!,
         strokeWidth: 2,
       );
     }).toSet();
 
-    // Also show active radius circle around the current camera center pointer
     mapCircles.add(
       Circle(
         circleId: const CircleId('current_center_radius'),
@@ -176,7 +176,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> with Ticker
       backgroundColor: const Color(0xFFF8FAFC),
       body: Stack(
         children: [
-          /// 1. Full Screen Google Maps SDK Widget
+          /// 1. Google Maps SDK Widget
           GoogleMap(
             initialCameraPosition: CameraPosition(
               target: _currentCenterPosition,
@@ -205,7 +205,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> with Ticker
               var data = entry.value;
               return Marker(
                 markerId: MarkerId('teaching_idx_$idx'),
-                position: LatLng(data['lat'], data['lng']),
+                position: LatLng(data['latitude'], data['longitude']),
                 icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
                 infoWindow: InfoWindow(
                   title: data['address'],
@@ -221,7 +221,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> with Ticker
             mapToolbarEnabled: false,
           ),
 
-          /// 2. Google Maps Native Style Custom Center Floating Pointer (Pin)
+          /// 2. Custom Center Floating Pointer (Pin)
           Center(
             child: Padding(
               padding: const EdgeInsets.bottom: 40.0,
@@ -286,7 +286,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> with Ticker
             ),
           ),
 
-          /// 4. Center-Right Quick Floating Controls (My Location Detect Button)
+          /// 4. Center-Right Quick Floating Controls
           Positioned(
             right: 16,
             bottom: selectedLocations.isNotEmpty ? 240 : 200,
@@ -315,7 +315,6 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> with Ticker
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Realtime Dragged Address Box UI
                 Container(
                   margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   padding: const EdgeInsets.all(14),
@@ -365,7 +364,6 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> with Ticker
                   ),
                 ).animate().slideY(begin: 1.0, duration: 300.ms, curve: Curves.easeOut),
 
-                // Horizontal list container showing multi-pinned structures
                 if (selectedLocations.isNotEmpty)
                   Container(
                     height: 200,
@@ -456,8 +454,6 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> with Ticker
                             },
                           ),
                         ),
-                        
-                        // Main Massive Save Active Hub System Controller Button
                         Padding(
                           padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
                           child: SizedBox(
@@ -466,12 +462,11 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> with Ticker
                             child: ElevatedButton(
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: Colors.amber[600],
-                                foregroundColor: Colors.blackCE,
+                                foregroundColor: Colors.black, // টাইপো ফিক্সড
                                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                                 elevation: 0,
                               ),
                               onPressed: () {
-                                // Returns full teachingAreas structure as requested to update Firestore
                                 Navigator.pop(context, selectedLocations);
                               },
                               child: const Text("Save Active Teaching Areas", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
