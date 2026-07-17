@@ -39,6 +39,7 @@ dependencies:
   flutter_sound: ^9.2.13
   audioplayers: ^6.1.0
   animate_do: ^3.3.4
+  flutter_animate: ^4.5.2
 
   jitsi_meet_flutter_sdk: ^11.6.0
 
