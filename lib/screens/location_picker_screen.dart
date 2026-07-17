@@ -27,23 +27,38 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> with Ticker
   @override
   void initState() {
     super.initState();
-    _getUserCurrentLocation(moveToPosition: true);
+    // ইনিশিয়াল লোকেশন লোড initState এ করাই সবচেয়ে নিরাপদ
+    _getUserCurrentLocation(moveToPosition: false);
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _mapController?.dispose();
+    super.dispose();
   }
 
   /// Get user's active device location automatically
   Future<void> _getUserCurrentLocation({bool moveToPosition = false}) async {
+    if (!mounted) return;
     setState(() => _isLoadingLocation = true);
+    
     try {
       final position = await LocationService.getCurrentLocation();
       final currentLatLng = LatLng(position.latitude, position.longitude);
 
+      _currentCenterPosition = currentLatLng;
+      
       if (moveToPosition && _mapController != null) {
         _mapController!.animateCamera(
           CameraUpdate.newLatLngZoom(currentLatLng, 14),
         );
+      } else if (_mapController != null) {
+        // ম্যাপ প্রথমবার ক্রিয়েট হলে ইনিশিয়াল পজিশনে নিয়ে যাওয়ার জন্য
+        _mapController!.moveCamera(CameraUpdate.newLatLngZoom(currentLatLng, 14));
       }
-      _currentCenterPosition = currentLatLng;
-      _updateAddressFromPosition(currentLatLng);
+      
+      await _updateAddressFromPosition(currentLatLng);
     } catch (e) {
       _showSnackBar("Could not detect location: $e");
     } finally {
@@ -60,10 +75,11 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> with Ticker
       List<Location> locations = await locationFromAddress(query);
       if (locations.isNotEmpty) {
         final position = LatLng(locations.first.latitude, locations.first.longitude);
+        _currentCenterPosition = position;
+        
         _mapController?.animateCamera(
           CameraUpdate.newLatLngZoom(position, 14),
         );
-        _currentCenterPosition = position;
         await _updateAddressFromPosition(position);
       }
     } catch (e) {
@@ -80,6 +96,8 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> with Ticker
         position.latitude,
         position.longitude,
       );
+
+      if (!mounted) return; // মেমোরি লিক প্রোটেকশন
 
       if (placemarks.isNotEmpty) {
         Placemark place = placemarks.first;
@@ -101,15 +119,16 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> with Ticker
         });
       }
     } catch (e) {
-      setState(() {
-        _draggedAddress = "Lat: ${position.latitude.toStringAsFixed(4)}, Lng: ${position.longitude.toStringAsFixed(4)}";
-      });
+      if (mounted) {
+        setState(() {
+          _draggedAddress = "Lat: ${position.latitude.toStringAsFixed(4)}, Lng: ${position.longitude.toStringAsFixed(4)}";
+        });
+      }
     }
   }
 
   /// Single Pin Tapping Logic
   void _addCurrentPositionAsArea() {
-    // ডাটাবেজ আর্কিটেকচারের সাথে মিলিয়ে 'latitude' এবং 'longitude' করা হয়েছে
     bool exists = selectedLocations.any((loc) => 
       (loc['latitude'] as double).toStringAsFixed(4) == _currentCenterPosition.latitude.toStringAsFixed(4) &&
       (loc['longitude'] as double).toStringAsFixed(4) == _currentCenterPosition.longitude.toStringAsFixed(4)
@@ -121,7 +140,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> with Ticker
           'latitude': _currentCenterPosition.latitude,
           'longitude': _currentCenterPosition.longitude,
           'address': _draggedAddress,
-          'locationName': _draggedAddress.split(',').first, // কাস্টম জোন নেম জেনারেট করার জন্য
+          'locationName': _draggedAddress.split(',').first,
         });
       });
       _showSnackBar("Area Added Successfully!");
@@ -184,7 +203,8 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> with Ticker
             ),
             onMapCreated: (controller) {
               _mapController = controller;
-              _getUserCurrentLocation(moveToPosition: true);
+              // অন-ম্যাপ ক্রিয়েট হওয়ার পর ইউজারের কারেন্ট লোকেশনে স্মুথ মুভ করবে, লুপ ছাড়া
+              _getUserCurrentLocation(moveToPosition: false);
             },
             onCameraMoveStarted: () {
               setState(() {
@@ -192,12 +212,14 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> with Ticker
               });
             },
             onCameraMove: (CameraPosition position) {
+              // ড্র্যাগ করার সময় পজিশন ট্র্যাক হবে কিন্তু ব্যাকগ্রাউন্ডে হেভি জিওকোডিং রান হবে না
               _currentCenterPosition = position.target;
             },
             onCameraIdle: () async {
               setState(() {
                 _isDragging = false;
               });
+              // ড্র্যাগ শেষ হওয়ার সাথে সাথে একদম নিখুঁত অ্যাড্রেস ফেচ করবে
               await _updateAddressFromPosition(_currentCenterPosition);
             },
             markers: selectedLocations.asMap().entries.map((entry) {
@@ -442,7 +464,8 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> with Ticker
                                             child: Container(
                                               padding: const EdgeInsets.all(6),
                                               decoration: BoxDecoration(color: Colors.red.shade50, shape: BoxShape.circle),
-                                              child: Icon(Icons.delete_outline_rounded, size: 14, color: Colors.red[700]),
+ 
+child: Icon(Icons.delete_outline_rounded, size: 14, color: Colors.red[700]),
                                             ),
                                           ),
                                         ],
@@ -462,7 +485,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> with Ticker
                             child: ElevatedButton(
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: Colors.amber[600],
-                                foregroundColor: Colors.black, // টাইপো ফিক্সড
+                                foregroundColor: Colors.black,
                                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                                 elevation: 0,
                               ),
@@ -483,4 +506,4 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> with Ticker
       ),
     );
   }
-}
+}                                             
