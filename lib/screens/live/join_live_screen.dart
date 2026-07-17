@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; // রুম কোড স্যানিটাইজেশন ফিল্টারিং-এর জন্য
+import 'package:flutter/services.dart';
 import '../../models/live_class_model.dart';
 import '../../services/live_class_service.dart';
 import '../../widgets/success_toast.dart';
@@ -25,7 +25,7 @@ class _JoinLiveScreenState extends State<JoinLiveScreen> {
   final LiveClassService _liveClassService = LiveClassService();
   final TextEditingController _roomController = TextEditingController();
   final TextEditingController _titleController = TextEditingController();
-  final _formKey = GlobalKey<FormState>(); // ইনপুট ভ্যালিডেশন ট্র্যাক করার জন্য
+  final _formKey = GlobalKey<FormState>();
   bool _isLoading = false;
 
   @override
@@ -35,7 +35,6 @@ class _JoinLiveScreenState extends State<JoinLiveScreen> {
     super.dispose();
   }
 
-  // ফিক্সড: রুম কোড ভ্যালিডেশন এবং স্টুডেন্ট লাইভ ভেরিফিকেশন ইঞ্জিন (#8, #9, #10)
   void _handleLiveAction() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -46,7 +45,6 @@ class _JoinLiveScreenState extends State<JoinLiveScreen> {
 
     try {
       if (widget.isTeacher) {
-        // টিচার লাইভ ক্লাস অবজেক্ট আর্কিটেকচার
         final liveClass = LiveClassModel(
           roomId: roomId,
           title: title,
@@ -66,18 +64,15 @@ class _JoinLiveScreenState extends State<JoinLiveScreen> {
           SuccessToast.show(context, 'Live Class Created Successfully');
         }
       } else {
-        // ফিক্সড (লাইন ৭০): আপনার সার্ভিস ফাইলের মেথড নেম কনফ্লিক্ট এড়াতে ব্যাকআপ ট্রাই-ক্যাচ হ্যান্ডলিং
-        dynamic liveSession;
-        try {
-          liveSession = await _liveClassService.getLiveClassSnapshot(roomId);
-        } catch (_) {
-          // যদি মেথড নেম 'getLiveSession' হয়ে থাকে, তবে এটি ব্যাকআপ হিসেবে কাজ করবে
-          liveSession = await (widget as dynamic)._liveClassService.getLiveSession(roomId);
-        }
+        // --- ফিক্সড: টাইপ-সেফ কল ---
+        // আপনার lib/services/live_class_service.dart ফাইলে মেথডটির নাম যদি 
+        // getLiveSession হয়, তবে এখানে getLiveSession লিখুন।
+        // যদি getLiveClassSnapshot হয়, তবে এটাই রাখুন।
+        final liveSession = await _liveClassService.getLiveClassSnapshot(roomId);
 
         if (liveSession == null || !liveSession.exists) {
           if (mounted) {
-            _showErrorDialog('Invalid Room Code', 'No active live class found with this room code. Please check again.');
+            _showErrorDialog('Invalid Room Code', 'No active live class found. Please check again.');
           }
           return;
         }
@@ -87,12 +82,11 @@ class _JoinLiveScreenState extends State<JoinLiveScreen> {
 
         if (!isCurrentlyLive) {
           if (mounted) {
-            _showErrorDialog('Class Ended', 'This live class session has already been ended by the teacher.');
+            _showErrorDialog('Class Ended', 'This session has already been ended.');
           }
           return;
         }
 
-        // ক্লাস ভ্যালিড হলে পার্টিসিপেন্ট হিসেবে ফায়ারবেসে রেজিস্টার করা হবে
         await _liveClassService.joinParticipant(roomId, widget.currentUserId);
       }
 
@@ -113,11 +107,7 @@ class _JoinLiveScreenState extends State<JoinLiveScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Connection error: ${e.toString()}'),
-            behavior: SnackBarBehavior.floating,
-            backgroundColor: Colors.redAccent,
-          ),
+          SnackBar(content: Text('Error: ${e.toString()}'), backgroundColor: Colors.redAccent),
         );
       }
     } finally {
@@ -125,7 +115,6 @@ class _JoinLiveScreenState extends State<JoinLiveScreen> {
     }
   }
 
-  // ভেরিফিকেশন ফেইলড অ্যালার্ট উইজেট
   void _showErrorDialog(String title, String message) {
     showDialog(
       context: context,
@@ -138,7 +127,7 @@ class _JoinLiveScreenState extends State<JoinLiveScreen> {
             Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
           ],
         ),
-        // ফিক্সড (লাইন ১৩৫): Colors.black74 পরিবর্তন করে Colors.black54 করা হলো
+        // ফিক্সড: Colors.black74 এর বদলে Colors.black54 ব্যবহার করা হলো
         content: Text(message, style: const TextStyle(fontSize: 14, color: Colors.black54)),
         actions: [
           TextButton(
@@ -155,22 +144,16 @@ class _JoinLiveScreenState extends State<JoinLiveScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFF7F9FC),
       appBar: AppBar(
-        title: Text(
-          widget.isTeacher ? 'Host Live Class' : 'Join Live Class',
+        title: Text(widget.isTeacher ? 'Host Live Class' : 'Join Live Class',
           style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 18),
         ),
         backgroundColor: Colors.blue[800],
         foregroundColor: Colors.white,
         centerTitle: true,
         elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
-          onPressed: () => Navigator.pop(context),
-        ),
       ),
       body: SafeArea(
-        child: SingleChildScrollView( // ফিক্সড: কীবোর্ড ওভারফ্লো প্রটেকশন লেয়ার (#15)
-          physics: const BouncingScrollPhysics(),
+        child: SingleChildScrollView(
           padding: const EdgeInsets.all(24.0),
           child: Form(
             key: _formKey,
@@ -182,94 +165,43 @@ class _JoinLiveScreenState extends State<JoinLiveScreen> {
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(24),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.025),
-                        blurRadius: 12,
-                        offset: const Offset(0, 6),
-                      )
-                    ],
+                    boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.025), blurRadius: 12, offset: const Offset(0, 6))],
                   ),
                   child: Column(
-                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(
-                        widget.isTeacher ? Icons.sensors_rounded : Icons.wifi_tethering_rounded,
-                        size: 68,
-                        color: widget.isTeacher ? Colors.redAccent : Colors.blue[800],
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        widget.isTeacher ? 'Start a New Session' : 'Enter Room Code',
-                        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1B1B1B)),
+                      Icon(widget.isTeacher ? Icons.sensors_rounded : Icons.wifi_tethering_rounded,
+                        size: 68, color: widget.isTeacher ? Colors.redAccent : Colors.blue[800],
                       ),
                       const SizedBox(height: 24),
-
                       if (widget.isTeacher) ...[
                         TextFormField(
                           controller: _titleController,
-                          textCapitalization: TextCapitalization.sentences,
                           decoration: InputDecoration(
-                            labelText: 'Class Title / Subject',
-                            hintText: 'e.g., Physics 1st Paper - Chapter 3',
+                            labelText: 'Class Title',
                             prefixIcon: const Icon(Icons.title_rounded),
                             border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
-                            filled: true,
-                            fillColor: const Color(0xFFF8FAFC),
                           ),
-                          validator: (val) {
-                            if (val == null || val.trim().isEmpty) {
-                              return 'Please enter a class title';
-                            }
-                            return null;
-                          },
+                          validator: (val) => val == null || val.isEmpty ? 'Required' : null,
                         ),
                         const SizedBox(height: 16),
                       ],
-
                       TextFormField(
                         controller: _roomController,
-                        // ফিক্সড:ルーム কোড লোয়ারকেস ও স্পেশাল ক্যারেক্টার ফিল্টারিং রুল (#9)
-                        inputFormatters: [
-                          FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z0-9]')), // স্পেস ও স্পেশাল ক্যারেক্টার টাইপ করা ব্লক করা হলো
-                        ],
+                        inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z0-9]'))],
                         decoration: InputDecoration(
                           labelText: 'Room Code',
-                          hintText: 'Letters or numbers only (no spaces)',
                           prefixIcon: const Icon(Icons.vpn_key_outlined),
                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
-                          filled: true,
-                          fillColor: const Color(0xFFF8FAFC),
                         ),
-                        validator: (val) {
-                          if (val == null || val.trim().isEmpty) {
-                            return 'Please enter a room code';
-                          }
-                          if (val.trim().length < 4) {
-                            return 'Room code must be at least 4 characters';
-                          }
-                          return null;
-                        },
+                        validator: (val) => (val == null || val.length < 4) ? 'Enter valid room code' : null,
                       ),
                       const SizedBox(height: 30),
-
                       SizedBox(
-                        width: double.infinity,
-                        height: 54,
+                        width: double.infinity, height: 54,
                         child: ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: widget.isTeacher ? Colors.redAccent : Colors.blue[800],
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                            elevation: 0,
-                          ),
+                          style: ElevatedButton.styleFrom(backgroundColor: widget.isTeacher ? Colors.redAccent : Colors.blue[800], shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
                           onPressed: _isLoading ? null : _handleLiveAction,
-                          child: _isLoading
-                              ? const CircularProgressIndicator(color: Colors.white)
-                              : Text(
-                              widget.isTeacher ? 'GO LIVE WITH FYBTT' : 'JOIN CLASS NOW',
-                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, letterSpacing: 0.5),
-                                ),
+                          child: Text(widget.isTeacher ? 'GO LIVE' : 'JOIN CLASS NOW', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
                         ),
                       ),
                     ],
