@@ -10,10 +10,10 @@ class TeacherCardWidget extends StatelessWidget {
   final double latitude;
   final double longitude;
   final int studentCount;
-  final int experienceYears;       // নতুন প্যারামিটার: অভিজ্ঞতা
-  final int followersCount;        // নতুন প্যারামিটার: ফলোয়ারস
-  final double rating;             // নতুন প্যারামিটার: ফিউচার রেডি রেটিং
-  final String locationText;       // নতুন প্যারামিটার: টেক্সট লোকেশন
+  final int experienceYears;       // শিক্ষক অভিজ্ঞতা বছর
+  final int followersCount;        // শিক্ষক ফলোয়ারস সংখ্যা
+  final double rating;             // শিক্ষক রেটিং স্টারস
+  final String locationText;       // টেক্সট লোকেশন বা ঠিকানা
   final String calculatedDistance; // সার্চ স্ক্রিন থেকে পাস হওয়া নিখুঁত দূরত্ব
   final VoidCallback onChatPressed;
 
@@ -160,15 +160,18 @@ class TeacherCardWidget extends StatelessWidget {
                                 child: CircleAvatar(
                                   radius: 32,
                                   backgroundColor: const Color(0xFFF1F5F9),
-                                  backgroundImage: NetworkImage(profileImageUrl),
-                                  onBackgroundImageError: (_, __) => const Icon(
-                                    Icons.person_rounded,
-                                    size: 36,
-                                    color: Color(0xFF1E4C7A),
-                                  ),
+                                  backgroundImage: profileImageUrl.isNotEmpty 
+                                      ? NetworkImage(profileImageUrl) 
+                                      : null,
+                                  onBackgroundImageError: (exception, stackTrace) {
+                                    debugPrint("Error loading profile image: $exception");
+                                  },
+                                  child: profileImageUrl.isEmpty 
+                                      ? const Icon(Icons.person_rounded, size: 36, color: Color(0xFF1E4C7A)) 
+                                      : null,
                                 ),
                               ),
-                              // Verified Badge (Requirement 5)
+                              // Verified Badge
                               Container(
                                 padding: const EdgeInsets.all(2.5),
                                 decoration: const BoxDecoration(
@@ -207,7 +210,7 @@ class TeacherCardWidget extends StatelessWidget {
                                     ),
                                   ),
                                 ),
-                                // গুগল ম্যাপস আইকন বাটন (Requirement 5)
+                                // গুগল ম্যাপস আইকন বাটন
                                 Material(
                                   color: Colors.teal.withOpacity(0.08),
                                   borderRadius: BorderRadius.circular(10),
@@ -335,7 +338,7 @@ class TeacherCardWidget extends StatelessWidget {
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
                                 Icon(Icons.chat_bubble_outline_rounded, size: 16),
-                                const SizedBox(width: 6),
+                                SizedBox(width: 6),
                                 Text(
                                   "Chat Now",
                                   style: TextStyle(
