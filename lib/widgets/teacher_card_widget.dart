@@ -1,143 +1,401 @@
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
 import '../screens/teacher_profile_screen.dart'; 
+import '../screens/teaching_areas_map_screen.dart'; 
 
 class TeacherCardWidget extends StatelessWidget {
   final String teacherId;
-    final String name;
-      final String subject;
-        final String profileImageUrl;
-          final double latitude;
-            final double longitude;
-              final int studentCount;
-                final VoidCallback onMyTeacherPressed;
+  final String name;
+  final String subject;
+  final String profileImageUrl;
+  final double latitude;
+  final double longitude;
+  final int studentCount;
+  final int experienceYears;       // নতুন প্যারামিটার: অভিজ্ঞতা
+  final int followersCount;        // নতুন প্যারামিটার: ফলোয়ারস
+  final double rating;             // নতুন প্যারামিটার: ফিউচার রেডি রেটিং
+  final String locationText;       // নতুন প্যারামিটার: টেক্সট লোকেশন
+  final String calculatedDistance; // সার্চ স্ক্রিন থেকে পাস হওয়া নিখুঁত দূরত্ব
+  final VoidCallback onChatPressed;
 
-                  const TeacherCardWidget({
-                      super.key,
-                          required this.teacherId,
-                              required this.name,
-                                  required this.subject,
-                                      required this.profileImageUrl,
-                                          required this.latitude,
-                                              required this.longitude,
-                                                  required this.studentCount,
-                                                      required this.onMyTeacherPressed,
-                                                        });
+  const TeacherCardWidget({
+    super.key,
+    required this.teacherId,
+    required this.name,
+    required this.subject,
+    required this.profileImageUrl,
+    required this.latitude,
+    required this.longitude,
+    required this.studentCount,
+    required this.experienceYears,
+    required this.followersCount,
+    required this.rating,
+    required this.locationText,
+    required this.calculatedDistance,
+    required this.onChatPressed,
+  });
 
-                                                          void _openMap() async {
-                                                              final String url = 'https://www.google.com/maps/search/?api=1&query=$latitude,$longitude';
-                                                                  final Uri uri = Uri.parse(url);
-                                                                      if (await canLaunchUrl(uri)) {
-                                                                            await launchUrl(uri, mode: LaunchMode.externalApplication);
-                                                                                }
-                                                                                  }
+  // ইমেজ ফুল-স্ক্রিন প্রিভিউ করার প্রিমিয়াম ডায়ালগ উইজেট (Smooth scale animation সহ)
+  void _openFullImage(BuildContext context) {
+    showGeneralDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'Dismiss Image',
+      barrierColor: Colors.black87,
+      transitionDuration: const Duration(milliseconds: 300),
+      pageBuilder: (_, __, ___) => Center(
+        child: Container(
+          margin: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(24),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.white.withOpacity(0.1),
+                blurRadius: 20,
+                spreadRadius: 5,
+              )
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(24),
+            child: InteractiveViewer(
+              panEnabled: true,
+              scaleEnabled: true,
+              child: Image.network(
+                profileImageUrl, 
+                fit: BoxFit.contain,
+                errorBuilder: (context, error, stackTrace) => const Container(
+                  color: Colors.white,
+                  padding: EdgeInsets.all(40),
+                  child: Icon(Icons.person_rounded, size: 80, color: Color(0xFF1E4C7A)),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+      transitionsBuilder: (_, animation, __, child) {
+        return ScaleTransition(
+          scale: CurvedAnimation(parent: animation, curve: Curves.easeOutBack),
+          child: FadeTransition(opacity: animation, child: child),
+        );
+      },
+    );
+  }
 
-                                                                                    void _openFullImage(BuildContext context) {
-                                                                                        showDialog(
-                                                                                              context: context,
-                                                                                                    builder: (_) => Dialog(
-                                                                                                            backgroundColor: Colors.transparent,
-                                                                                                                    child: ClipRRect(
-                                                                                                                              borderRadius: BorderRadius.circular(12),
-                                                                                                                                        child: Image.network(profileImageUrl, fit: BoxFit.cover),
-                                                                                                                                                ),
-                                                                                                                                                      ),
-                                                                                                                                                          );
-                                                                                                                                                            }
+  // প্রোফাইলে যাওয়ার জন্য প্রিমিয়াম ফেড অ্যানিমেশন ন্যাভিগেটর
+  void _navigateToProfile(BuildContext context) {
+    Navigator.of(context).push(
+      PageRouteBuilder(
+        transitionDuration: const Duration(milliseconds: 400),
+        pageBuilder: (_, __, ___) => TeacherProfileScreen(currentUserId: teacherId),
+        transitionsBuilder: (_, animation, __, child) => FadeTransition(
+          opacity: animation,
+          child: child,
+        ),
+      ),
+    );
+  }
 
-                                                                                                                                                              void _navigateToProfile(BuildContext context) {
-                                                                                                                                                                  Navigator.of(context).push(
-                                                                                                                                                                        PageRouteBuilder(
-                                                                                                                                                                                transitionDuration: const Duration(milliseconds: 400),
-                                                                                                                                                                                        pageBuilder: (_, __, ___) => TeacherProfileScreen(teacherId: teacherId),
-                                                                                                                                                                                                transitionsBuilder: (_, animation, __, child) => FadeTransition(
-                                                                                                                                                                                                          opacity: animation,
-                                                                                                                                                                                                                    child: child,
-                                                                                                                                                                                                                            ),
-                                                                                                                                                                                                                                  ),
-                                                                                                                                                                                                                                      );
-                                                                                                                                                                                                                                        }
+  // টিচিং এরিয়াস ম্যাপ স্ক্রিন ওপেন করার মেথড
+  void _navigateToTeachingAreas(BuildContext context) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => MapScreen(
+          teacherId: teacherId,
+          teacherName: name,
+        ),
+      ),
+    );
+  }
 
-                                                                                                                                                                                                                                          @override
-                                                                                                                                                                                                                                            Widget build(BuildContext context) {
-                                                                                                                                                                                                                                                return GestureDetector(
-                                                                                                                                                                                                                                                      onTap: () => _navigateToProfile(context),
-                                                                                                                                                                                                                                                            child: Card(
-                                                                                                                                                                                                                                                                    margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-                                                                                                                                                                                                                                                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                                                                                                                                                                                                                                                                                    elevation: 4,
-                                                                                                                                                                                                                                                                                            child: Padding(
-                                                                                                                                                                                                                                                                                                      padding: const EdgeInsets.all(12),
-                                                                                                                                                                                                                                                                                                                child: Column(
-                                                                                                                                                                                                                                                                                                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                                                                                                                                                                                                                                                                                                                        children: [
-                                                                                                                                                                                                                                                                                                                                                      // Student count display
-                                                                                                                                                                                                                                                                                                                                                                    Text(
-                                                                                                                                                                                                                                                                                                                                                                                    '$studentCount Students',
-                                                                                                                                                                                                                                                                                                                                                                                                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                                                                                                                                                                                                                                                                                                                                                                                                                  ),
-                                                                                                                                                                                                                                                                                                                                                                                                                                const SizedBox(height: 6),
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF1E4C7A).withOpacity(0.06),
+            blurRadius: 16,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(24),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: () => _navigateToProfile(context),
+            splashColor: const Color(0xFF1E4C7A).withOpacity(0.03),
+            highlightColor: Colors.transparent,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // উপরের সেকশন: ছবি, ভেরিফাইড ব্যাজ, নাম ও ম্যাপ আইকন
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // প্রিমিয়াম রাউন্ডেড প্রোফাইল ইমেজ (Hero ও ফুলভিউ ট্যাপ সাপোর্ট সহ)
+                      GestureDetector(
+                        onTap: () => _openFullImage(context),
+                        child: Hero(
+                          tag: 'teacher_avatar_$teacherId',
+                          child: Stack(
+                            alignment: Alignment.bottomRight,
+                            children: [
+                              Container(
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: const Color(0xFF1E4C7A).withOpacity(0.1),
+                                    width: 2.5,
+                                  ),
+                                ),
+                                child: CircleAvatar(
+                                  radius: 32,
+                                  backgroundColor: const Color(0xFFF1F5F9),
+                                  backgroundImage: NetworkImage(profileImageUrl),
+                                  onBackgroundImageError: (_, __) => const Icon(
+                                    Icons.person_rounded,
+                                    size: 36,
+                                    color: Color(0xFF1E4C7A),
+                                  ),
+                                ),
+                              ),
+                              // Verified Badge (Requirement 5)
+                              Container(
+                                padding: const EdgeInsets.all(2.5),
+                                decoration: const BoxDecoration(
+                                  color: Colors.blue,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(
+                                  Icons.verified_rounded,
+                                  size: 14,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      // মিডল টেক্সট ইনফরমেশন
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    name,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 17,
+                                      color: Color(0xFF0F172A),
+                                      letterSpacing: -0.2,
+                                    ),
+                                  ),
+                                ),
+                                // গুগল ম্যাপস আইকন বাটন (Requirement 5)
+                                Material(
+                                  color: Colors.teal.withOpacity(0.08),
+                                  borderRadius: BorderRadius.circular(10),
+                                  child: InkWell(
+                                    borderRadius: BorderRadius.circular(10),
+                                    onTap: () => _navigateToTeachingAreas(context),
+                                    child: const Padding(
+                                      padding: EdgeInsets.all(8),
+                                      child: Icon(
+                                        Icons.map_rounded,
+                                        color: Colors.teal,
+                                        size: 20,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              subject,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Color(0xFF1E4C7A),
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            // লোকেশন ও এক্সপেরিয়েন্স মেটালাইন
+                            Row(
+                              children: [
+                                const Icon(Icons.location_on_rounded, color: Colors.grey, size: 14),
+                                const SizedBox(width: 4),
+                                Expanded(
+                                  child: Text(
+                                    locationText,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      color: Colors.grey.shade600,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  "•  $experienceYears Yrs Exp.",
+                                  style: TextStyle(
+                                    color: Colors.grey.shade600,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  // স্ট্যাটাস বা ড্যাশবোর্ড বার: দূরত্ব, রেটিং, ফলোয়ারস এবং স্টুডেন্টস কাউন্ট
+                  Container(
+                    padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceAround,
+                      children: [
+                        _buildMetaInfoItem(Icons.radar_rounded, calculatedDistance, "Distance", iconColor: Colors.deepOrange),
+                        _buildMetaInfoDivider(),
+                        _buildMetaInfoItem(Icons.star_rounded, rating.toStringAsFixed(1), "Rating", iconColor: const Color(0xFFFFB300)),
+                        _buildMetaInfoDivider(),
+                        _buildMetaInfoItem(Icons.people_alt_rounded, "$followersCount", "Followers", iconColor: Colors.purple),
+                        _buildMetaInfoDivider(),
+                        _buildMetaInfoItem(Icons.school_rounded, "$studentCount", "Students", iconColor: const Color(0xFF1E4C7A)),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  // অ্যাকশন বাটন সেকশন: সমপরিমাণ চওড়া (Equal Width) দুটি প্রিমিয়াম বাটন
+                  Row(
+                    children: [
+                      // View Profile Button
+                      Expanded(
+                        child: SizedBox(
+                          height: 42,
+                          child: OutlinedButton(
+                            style: OutlinedButton.styleFrom(
+                              side: const BorderSide(color: Color(0xFF1E4C7A), width: 1.6),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              elevation: 0,
+                            ),
+                            onPressed: () => _navigateToProfile(context),
+                            child: const Text(
+                              "View Profile",
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFF1E4C7A),
+                                fontSize: 13.5,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      // Chat Now Button
+                      Expanded(
+                        child: SizedBox(
+                          height: 42,
+                          child: ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF006653),
+                              foregroundColor: Colors.white,
+                              elevation: 0,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
+                            onPressed: onChatPressed,
+                            child: const Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.chat_bubble_outline_rounded, size: 16),
+                                const SizedBox(width: 6),
+                                Text(
+                                  "Chat Now",
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 13.5,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 
-                                                                                                                                                                                                                                                                                                                                                                                                                                              Row(
-                                                                                                                                                                                                                                                                                                                                                                                                                                                              children: [
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                // Profile image preview with Hero animation
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  GestureDetector(
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      onTap: () => _openFullImage(context),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          child: Hero(
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                tag: 'profile_$teacherId',
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      child: CircleAvatar(
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              radius: 30,
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      backgroundImage: NetworkImage(profileImageUrl),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            ),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                ),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  ),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    const SizedBox(width: 12),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      // Teacher details (Name and Subject)
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        Expanded(
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            child: Column(
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        children: [
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                Text(
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          name, 
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            ),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    const SizedBox(height: 4),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            Text(
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      subject, 
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                style: const TextStyle(color: Colors.grey),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        ),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              ],
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  ),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    ),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      const SizedBox(width: 6),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        // Map trigger button
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          IconButton(
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              icon: const Icon(Icons.map, color: Colors.blueAccent),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  onPressed: _openMap,
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      tooltip: 'View on Map',
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        ),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        ],
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      ),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    const SizedBox(height: 12),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  // Action button to connect with teacher
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                Center(
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                child: ElevatedButton.icon(
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  onPressed: onMyTeacherPressed,
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    icon: const Icon(Icons.person_add_alt_1),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      label: const Text('My Teacher'),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        style: ElevatedButton.styleFrom(
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            backgroundColor: Colors.green,
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                foregroundColor: Colors.white,
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          ),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          ),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        ),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    ],
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              ),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      ),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            ),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                );
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  }
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  }
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  
+  // মেটা ইনফো গ্রিড আইটেম বিল্ডার helper মেথড
+  Widget _buildMetaInfoItem(IconData icon, String value, String label, {required Color iconColor}) {
+    return Column(
+      children: [
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 15, color: iconColor),
+            const SizedBox(width: 4),
+            Text(
+              value,
+              style: const TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 12.5,
+                color: Color(0xFF1E293B),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 2),
+        Text(
+          label,
+          style: TextStyle(
+            color: Colors.grey.shade500,
+            fontSize: 10,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMetaInfoDivider() {
+    return Container(
+      height: 20,
+      width: 1,
+      color: Colors.grey.shade300,
+    );
+  }
+}
