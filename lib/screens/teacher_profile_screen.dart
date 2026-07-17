@@ -131,7 +131,6 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
       });
   }
 
-  // রিয়াল-টাইম ফলো এবং আনফলো সিস্টেম ফিক্স মেকানিজম (#3)
   void triggerFollowAction() async {
     final currentUID = _auth.currentUser?.uid;
     if (currentUID == null || isOwnProfile) return;
@@ -151,7 +150,6 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
         'timestamp': FieldValue.serverTimestamp(),
       });
 
-      // ফলো নোটিফিকেশন ট্রিগার ইঞ্জিন লজিক (#3, #6)
       await _firestore.collection('notifications').add({
         'receiverId': widget.currentUserId,
         'senderId': currentUID,
@@ -165,7 +163,6 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
 
       if (mounted) SuccessToast.show(context, 'Follow request sent!');
     } else {
-      // আনফলো মেকানিজম এবং ডেটাবেস সিঙ্ক সাপোর্ট
       await requestDocRef.delete();
       if (mounted) SuccessToast.show(context, 'Unfollowed / Request removed');
     }
@@ -351,20 +348,27 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
                                       right: 24,
                                       child: Icon(Icons.blur_on_rounded, color: Colors.white.withOpacity(_glowAnimation.value * 0.24), size: 55),
                                     ),
+                                    // সাইড পজিশনড হেডার আর্কিটেকচার (My Profile আপডেট)
                                     Positioned(
                                       top: 40,
-                                      left: 0,
+                                      left: 8,
                                       right: 0,
                                       child: Row(
                                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                         children: [
-                                          IconButton(
-                                            icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
-                                            onPressed: () => Navigator.pop(context),
-                                          ),
-                                          const Text(
-                                            'Profile Details',
-                                            style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 19),
+                                          Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              IconButton(
+                                                icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
+                                                onPressed: () => Navigator.pop(context),
+                                              ),
+                                              const SizedBox(width: 2),
+                                              const Text(
+                                                'My Profile',
+                                                style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 19, letterSpacing: -0.3),
+                                              ),
+                                            ],
                                           ),
                                           _buildMenu(),
                                         ],
@@ -462,7 +466,6 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
     );
   }
 
-  // ফিক্সড: থ্রি ডট ড্রপডাউন মেনু এবং রেড ডট আনরিড নোটিফিকেশন সিঙ্ক (#4, #5)
   Widget _buildMenu() {
     return Stack(
       clipBehavior: Clip.none,
@@ -495,7 +498,6 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
               );
             }
           },
-          
           itemBuilder: (ctx) => isOwnProfile 
             ? [
                 const PopupMenuItem(value: 'edit', child: Row(children: [Icon(Icons.edit_outlined, size: 20), SizedBox(width: 10), Text('Edit Profile')])),
@@ -510,7 +512,6 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
                 const PopupMenuItem(value: 'block', child: Row(children: [Icon(Icons.block_flipped, size: 20, color: Colors.red), SizedBox(width: 10), Text('Block User', style: TextStyle(color: Colors.red))])),
               ],
         ),
-        // ফিক্সড: আনরিড নোটিফিকেশন থাকলে থ্রি ডট মেনুর উপর রেড ডট শো করবে (#5)
         if (hasUnreadNotifications)
           Positioned(
             right: 14,
@@ -555,7 +556,6 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
     ]);
   }
 
-  // ফিক্সড: রিয়েল-টাইম ফলোয়ার কাউন্ট আপডেট আর্কিটেকচার (#3)
   Widget _buildFollowStats() {
     return StreamBuilder<QuerySnapshot>(
       stream: _firestore.collection('follow_requests').where('teacherId', isEqualTo: widget.currentUserId).where('status', isEqualTo: 'accepted').snapshots(),
@@ -593,14 +593,11 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
     );
   }
 
-  // ফিক্সড: পাবলিক প্রোফাইল প্রাইভেসি সিকিউরিটি লেয়ার (ফোন ও জেন্ডার হাইড) (#2)
   Widget _buildViewProfile() {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       _buildMaterial3Card("Bio", _bioController.text, Icons.description_outlined, const Color(0xFF3B82F6)),
-      // ফোন নম্বর হাইড কন্ডিশনাল লজিক সিঙ্ক
       _buildMaterial3Card("Phone Number", isOwnProfile ? _phoneController.text : "Hidden for Privacy", Icons.phone_outlined, Colors.deepPurple),
       _buildMaterial3Card("Teaching Class", _classController.text, Icons.school_outlined, const Color(0xFF10B981)),
-      // জেন্ডার হাইড কন্ডিশনাল লজিক সিঙ্ক
       _buildMaterial3Card("Gender", isOwnProfile ? (gender ?? "Not set") : "Hidden for Privacy", Icons.wc_outlined, const Color(0xFFF59E0B)),
 
       const SizedBox(height: 18),
