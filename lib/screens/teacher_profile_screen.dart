@@ -174,12 +174,32 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
     await prefs.clear();
   }
 
+  /// ম্যাপ থেকে ডাটা রিসিভ করে সরাসরি ফায়ারস্টোরে আপডেট করার মেকানিজম (Sync Fixed)
   void _openMapPicker() async {
     final List<Map<String, dynamic>>? results = await Navigator.push(
       context, MaterialPageRoute(builder: (context) => const LocationPickerScreen()),
     );
+    
     if (results != null && results.isNotEmpty) {
-      setState(() => teacherLocations.addAll(results));
+      setState(() {
+        // নতুন পিন করা লোকেশনগুলো অ্যাড করা হচ্ছে
+        teacherLocations.addAll(results);
+      });
+
+      // প্রোফাইল এডিটিং মোডে না থাকলেও ম্যাপ সিলেক্ট করার পর ডাটাবেজে ক্লাউড সিঙ্ক চালু রাখা হলো
+      if (!isEditing) {
+        final uid = _auth.currentUser?.uid;
+        if (uid != null) {
+          try {
+            await _firestore.collection('teachers').doc(uid).update({
+              'locations': teacherLocations,
+            });
+            if (mounted) SuccessToast.show(context, 'Teaching areas synchronized!');
+          } catch (e) {
+            // এরর ট্র্যাকিং লজিক
+          }
+        }
+      }
     }
   }
 
@@ -203,7 +223,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
         'gender': gender,
         'profileImageUrl': imageUrl,
         'subjects': selectedSubjects,
-        'locations': teacherLocations,
+        'locations': teacherLocations, // ফর্ম সাবমিশনেও সিঙ্ক অক্ষুণ্ণ থাকবে
       });
       if (mounted) {
         SuccessToast.show(context, 'Updated Successfully');
@@ -348,7 +368,6 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
                                       right: 24,
                                       child: Icon(Icons.blur_on_rounded, color: Colors.white.withOpacity(_glowAnimation.value * 0.24), size: 55),
                                     ),
-                                    // সাইড পজিশনড হেডার আর্কিটেকচার (My Profile আপডেট)
                                     Positioned(
                                       top: 40,
                                       left: 8,
@@ -593,7 +612,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
     );
   }
 
-  Widget _buildViewProfile() {
+ Widget _buildViewProfile() {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       _buildMaterial3Card("Bio", _bioController.text, Icons.description_outlined, const Color(0xFF3B82F6)),
       _buildMaterial3Card("Phone Number", isOwnProfile ? _phoneController.text : "Hidden for Privacy", Icons.phone_outlined, Colors.deepPurple),
@@ -603,7 +622,16 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
       const SizedBox(height: 18),
       const Text("Teaching Areas (Locations)", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xFF1B1B1B))),
       const SizedBox(height: 8),
-      Wrap(spacing: 8, children: teacherLocations.map((l) => Chip(label: Text((l is Map) ? (l['address'] ?? "Unknown") : l.toString()), avatar: const Icon(Icons.location_on, size: 14, color: Colors.red), backgroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), side: BorderSide(color: Colors.grey.shade200))).toList()),
+      Wrap(
+        spacing: 8, 
+        children: teacherLocations.map((l) => Chip(
+          label: Text((l is Map) ? (l['address'] ?? "Unknown") : l.toString()), 
+          avatar: const Icon(Icons.location_on, size: 14, color: Colors.red), 
+          backgroundColor: Colors.white, 
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), 
+          side: BorderSide(color: Colors.grey.shade200)
+        )).toList()
+      ),
       const SizedBox(height: 18),
       const Text("Subjects", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xFF1B1B1B))),
       const SizedBox(height: 8),
@@ -691,7 +719,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
     );
   }
 
-  Widget _buildDashboardCard(String title, String value, IconData icon, Color color) {
+ Widget _buildDashboardCard(String title, String value, IconData icon, Color color) {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
