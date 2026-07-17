@@ -40,7 +40,7 @@ class TeacherSearchResultScreen extends StatelessWidget {
     final String targetLocation = (filters['location'] ?? '').toString().toLowerCase();
     final String targetExpStr = (filters['experience'] ?? '').toString();
     final int minExperience = int.tryParse(targetExpStr) ?? 0;
-    
+
     final double minRadius = filters['minRadius'] ?? 1.0;
     final double maxRadius = filters['maxRadius'] ?? 10.0;
 
@@ -67,7 +67,7 @@ class TeacherSearchResultScreen extends StatelessWidget {
               child: CircularProgressIndicator(color: Color(0xFF1E4C7A), strokeWidth: 3),
             );
           }
-          
+
           if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
             return _buildNoResultsView();
           }
@@ -174,7 +174,7 @@ class TeacherSearchResultScreen extends StatelessWidget {
             const SizedBox(height: 6),
             Text(
               "We couldn't find any teacher matching your precise filters and radius settings. Try broadening your range.",
-              textAlign: Center,
+              textAlign: TextAlign.center, // ফিক্সড: Center উইজেটের বদলে TextAlign.center ব্যবহার করা হয়েছে
               style: TextStyle(fontSize: 13, color: Colors.grey.shade500, height: 1.4),
             ),
           ],
