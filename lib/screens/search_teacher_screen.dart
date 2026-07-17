@@ -9,11 +9,12 @@ class TeacherSearchScreen extends StatefulWidget {
 }
 
 class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
-  final TextEditingController _uidController = TextEditingController();
-  final TextEditingController = _nameController = TextEditingController();
-  final TextEditingController _subjectController = TextEditingController();
-  final TextEditingController _locationController = TextEditingController();
-  final TextEditingController _experienceController = TextEditingController();
+  // ১. প্রথমে কন্ট্রোলারগুলোকে late হিসেবে ডিক্লেয়ার করা হলো
+  late final TextEditingController _uidController;
+  late final TextEditingController _nameController;
+  late final TextEditingController _subjectController;
+  late final TextEditingController _locationController;
+  late final TextEditingController _experienceController;
 
   String _selectedRadiusRange = '1–10 KM'; // Default set to 1–10 KM
   bool _isSearchButtonEnabled = false;
@@ -31,6 +32,13 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
   @override
   void initState() {
     super.initState();
+    // ২. initState-এর ভেতর কন্ট্রোলারগুলো ইনিশিয়ালাইজ করে লিসেনার যুক্ত করা হলো
+    _uidController = TextEditingController();
+    _nameController = TextEditingController();
+    _subjectController = TextEditingController();
+    _locationController = TextEditingController();
+    _experienceController = TextEditingController();
+
     _uidController.addListener(_validateSearchForm);
     _nameController.addListener(_validateSearchForm);
     _subjectController.addListener(_validateSearchForm);
@@ -93,7 +101,7 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
 
   void _navigateToResults() {
     FocusScope.of(context).unfocus();
-    
+
     final radiusLimits = _parseRadiusRange(_selectedRadiusRange);
 
     final Map<String, dynamic> searchFilters = {
@@ -173,7 +181,7 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
           const SizedBox(height: 12),
           _customSearchField("Minimum Experience (Years)", _experienceController, Icons.history_toggle_off_rounded, isNumber: true),
           const SizedBox(height: 16),
-          
+
           // Customized Dynamic Radius Range Picker Row
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
@@ -207,7 +215,7 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
             ),
           ),
           const SizedBox(height: 24),
-          
+
           // Yellow Animated Confirmation Action Bar
           AnimatedContainer(
             duration: const Duration(milliseconds: 250),
