@@ -23,6 +23,7 @@ class ReminderScreen extends StatefulWidget {
 
 class _ReminderScreenState extends State<ReminderScreen> {
   final ReminderService _reminderService = ReminderService();
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final TextEditingController _searchController = TextEditingController();
   final TextEditingController _amountController = TextEditingController();
 
@@ -93,8 +94,9 @@ class _ReminderScreenState extends State<ReminderScreen> {
     );
   }
 
+  /// স্টুডেন্ট সার্চ করার ফিক্সড মেকানিজম
   void _searchStudent() async {
-    FocusScope.of(context).unfocus(); // সার্চ হিট করলে কিবোর্ড হাইড হবে
+    FocusScope.of(context).unfocus(); 
     final searchId = _searchController.text.trim();
     if (searchId.isEmpty) return;
 
@@ -104,22 +106,28 @@ class _ReminderScreenState extends State<ReminderScreen> {
     });
 
     try {
+      // সার্ভিস মেথড কল করার পাশাপাশি ফায়ারস্টোরে 'uid' অথবা ডকুমেন্ট আইডি দুইভাবেই চেক নিশ্চিত করুন
       final student = await _reminderService.searchStudentById(searchId);
+      
       setState(() {
         _foundStudent = student;
         _isSearching = false;
       });
+      
       if (student == null) {
-        _showErrorPopup('Student Not Found', 'Please check the Student User ID and try again.');
+        _showErrorPopup(
+          'Student Not Found', 
+          'No student registered with UID: $searchId\nPlease make sure the UID is correct and active.',
+        );
       }
     } catch (e) {
       setState(() => _isSearching = false);
-      _showErrorPopup('Error', 'Something went wrong while searching.');
+      _showErrorPopup('Query Error', 'Something went wrong while searching the database.');
     }
   }
 
   void _sendReminder() async {
-    FocusScope.of(context).unfocus(); // রিমাইন্ডার পাঠানোর সময় কিবোর্ড ডাউন হবে
+    FocusScope.of(context).unfocus(); 
     if (_foundStudent == null || _amountController.text.isEmpty) return;
 
     setState(() => _isSending = true);
@@ -131,7 +139,7 @@ class _ReminderScreenState extends State<ReminderScreen> {
       final reminder = ReminderModel(
         reminderId: reminderId,
         studentName: _foundStudent!['name'] ?? 'Student',
-        studentId: _foundStudent!['uid'] ?? '',
+        studentId: _foundStudent!['uid'] ?? _searchController.text.trim(),
         teacherId: widget.currentUserId,
         teacherName: widget.currentUserName,
         amount: amount,
@@ -154,7 +162,7 @@ class _ReminderScreenState extends State<ReminderScreen> {
       }
     } catch (e) {
       setState(() => _isSending = false);
-      _showErrorPopup('Failed', 'Could not send the reminder. Try again.');
+      _showErrorPopup('Failed', 'Could not transmit the reminder request. Please try again.');
     }
   }
 
@@ -163,7 +171,7 @@ class _ReminderScreenState extends State<ReminderScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFF7F9FC),
       appBar: AppBar(
-        title: const Text('Free Reminder', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 19)),
+        title: const Text('Fee Reminder', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 19)),
         backgroundColor: Colors.blue[800],
         foregroundColor: Colors.white,
         elevation: 0,
@@ -216,6 +224,7 @@ class _ReminderScreenState extends State<ReminderScreen> {
                             ),
                             contentPadding: const EdgeInsets.symmetric(vertical: 14),
                           ),
+                          onSubmitted: (_) => _searchStudent(),
                         ),
                       ),
                       const SizedBox(width: 12),
@@ -391,7 +400,7 @@ class _ReminderScreenState extends State<ReminderScreen> {
             ],
             const SizedBox(height: 30),
 
-            // Active Reminders Banner Action
+            // Active Reminders Banner Card
             GestureDetector(
               onTap: () {
                 Navigator.push(
@@ -439,9 +448,21 @@ class _ReminderScreenState extends State<ReminderScreen> {
                             style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.bold),
                           ),
                           const SizedBox(height: 4),
-                          Text(
-                            'View and manage sent reminders',
-                            style: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 13),
+                          StreamBuilder<QuerySnapshot>(
+                            stream: _firestore
+                                .collection('payment_reminders')
+                                .where('teacherId', isEqualTo: widget.currentUserId)
+                                .where('status', isEqualTo: 'sent')
+                                .snapshots(),
+                            builder: (context, snapshot) {
+                              int activeCount = snapshot.hasData ? snapshot.data!.docs.length : 0;
+                              return Text(
+                                activeCount > 0 
+                                    ? 'You have $activeCount pending active reminders' 
+                                    : 'View and manage sent reminders',
+                                style: TextStyle(color: Colors.white.withOpacity(0.85), fontSize: 13, fontWeight: FontWeight.w500),
+                              );
+                            }
                           ),
                         ],
                       ),
