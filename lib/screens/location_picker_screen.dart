@@ -27,7 +27,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> with Ticker
   @override
   void initState() {
     super.initState();
-    // ইনিশিয়াল লোকেশন লোড initState এ করাই সবচেয়ে নিরাপদ
+    // ইনিশিয়াল ডাটা ব্যাকগ্রাউন্ডে রেডি রাখার জন্য
     _getUserCurrentLocation(moveToPosition: false);
   }
 
@@ -42,22 +42,22 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> with Ticker
   Future<void> _getUserCurrentLocation({bool moveToPosition = false}) async {
     if (!mounted) return;
     setState(() => _isLoadingLocation = true);
-    
+
     try {
       final position = await LocationService.getCurrentLocation();
       final currentLatLng = LatLng(position.latitude, position.longitude);
 
-      _currentCenterPosition = currentLatLng;
-      
-      if (moveToPosition && _mapController != null) {
+      setState(() {
+        _currentCenterPosition = currentLatLng;
+      });
+
+      // ফিক্সড: লজিক্যাল রেস কন্ডিশন এড়াতে ম্যাপ কন্ট্রোলার রেডি থাকলেই কেবল অ্যানিমেট হবে
+      if (_mapController != null) {
         _mapController!.animateCamera(
           CameraUpdate.newLatLngZoom(currentLatLng, 14),
         );
-      } else if (_mapController != null) {
-        // ম্যাপ প্রথমবার ক্রিয়েট হলে ইনিশিয়াল পজিশনে নিয়ে যাওয়ার জন্য
-        _mapController!.moveCamera(CameraUpdate.newLatLngZoom(currentLatLng, 14));
       }
-      
+
       await _updateAddressFromPosition(currentLatLng);
     } catch (e) {
       _showSnackBar("Could not detect location: $e");
@@ -76,7 +76,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> with Ticker
       if (locations.isNotEmpty) {
         final position = LatLng(locations.first.latitude, locations.first.longitude);
         _currentCenterPosition = position;
-        
+
         _mapController?.animateCamera(
           CameraUpdate.newLatLngZoom(position, 14),
         );
@@ -203,8 +203,8 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> with Ticker
             ),
             onMapCreated: (controller) {
               _mapController = controller;
-              // অন-ম্যাপ ক্রিয়েট হওয়ার পর ইউজারের কারেন্ট লোকেশনে স্মুথ মুভ করবে, লুপ ছাড়া
-              _getUserCurrentLocation(moveToPosition: false);
+              // ফিক্সড: ম্যাপ প্রথমবার সফলভাবে তৈরি হয়ে গেলে ইউজারের কারেন্ট লোকেশনে ক্যামেরা মুভ করবে
+              _getUserCurrentLocation(moveToPosition: true);
             },
             onCameraMoveStarted: () {
               setState(() {
@@ -212,14 +212,12 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> with Ticker
               });
             },
             onCameraMove: (CameraPosition position) {
-              // ড্র্যাগ করার সময় পজিশন ট্র্যাক হবে কিন্তু ব্যাকগ্রাউন্ডে হেভি জিওকোডিং রান হবে না
               _currentCenterPosition = position.target;
             },
             onCameraIdle: () async {
               setState(() {
                 _isDragging = false;
               });
-              // ড্র্যাগ শেষ হওয়ার সাথে সাথে একদম নিখুঁত অ্যাড্রেস ফেচ করবে
               await _updateAddressFromPosition(_currentCenterPosition);
             },
             markers: selectedLocations.asMap().entries.map((entry) {
@@ -246,7 +244,8 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> with Ticker
           /// 2. Custom Center Floating Pointer (Pin)
           Center(
             child: Padding(
-              padding: const EdgeInsets.bottom: 40.0,
+              // ফিক্সড (ভুল ১): কাস্টম পয়েন্টারের বানান ভুল ঠিক করা হলো
+              padding: const EdgeInsets.only(bottom: 40.0),
               child: Icon(
                 Icons.location_on_rounded, 
                 size: 46, 
@@ -278,7 +277,8 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> with Ticker
               child: Row(
                 children: [
                   IconButton(
-                    icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: Colors.black80),
+                    // ফিক্সড (ভুল ২): Colors.black80 পরিবর্তন করে Colors.black87 করা হলো
+                    icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: Colors.black87),
                     onPressed: () => Navigator.pop(context),
                   ),
                   Expanded(
@@ -300,7 +300,8 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> with Ticker
                           child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
                         )
                       : IconButton(
-                          icon: const Icon(Icons.search_rounded, color: Colors.black80),
+                          // ফিক্সড (ভুল ২): Colors.black80 পরিবর্তন করে Colors.black87 করা হলো
+                          icon: const Icon(Icons.search_rounded, color: Colors.black87),
                           onPressed: () => _searchLocation(_searchController.text),
                         ),
                 ],
@@ -406,7 +407,8 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> with Ticker
                                 children: [
                                   Text(
                                     '${selectedLocations.length} Custom Hub Areas',
-                                    style: const TextStyle(fontWeight: FontWeight.extrabold, fontSize: 16, color: Color(0xFF1E293B)),
+                                    // ফিক্সড (ভুল ৩): FontWeight.extrabold পরিবর্তন করে FontWeight.w800 করা হলো
+                                    style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16, color: Color(0xFF1E293B)),
                                   ),
                                   const Text("10 KM covers student matching automatically", style: TextStyle(fontSize: 11, color: Colors.grey)),
                                 ],
@@ -464,8 +466,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> with Ticker
                                             child: Container(
                                               padding: const EdgeInsets.all(6),
                                               decoration: BoxDecoration(color: Colors.red.shade50, shape: BoxShape.circle),
- 
-child: Icon(Icons.delete_outline_rounded, size: 14, color: Colors.red[700]),
+                                              child: Icon(Icons.delete_outline_rounded, size: 14, color: Colors.red[700]),
                                             ),
                                           ),
                                         ],
@@ -506,4 +507,4 @@ child: Icon(Icons.delete_outline_rounded, size: 14, color: Colors.red[700]),
       ),
     );
   }
-}                                             
+}
