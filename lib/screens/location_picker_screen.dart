@@ -27,7 +27,6 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> with Ticker
   @override
   void initState() {
     super.initState();
-    // ইনিশিয়াল ডাটা ব্যাকগ্রাউন্ডে রেডি রাখার জন্য
     _getUserCurrentLocation(moveToPosition: false);
   }
 
@@ -51,7 +50,6 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> with Ticker
         _currentCenterPosition = currentLatLng;
       });
 
-      // ফিক্সড: লজিক্যাল রেস কন্ডিশন এড়াতে ম্যাপ কন্ট্রোলার রেডি থাকলেই কেবল অ্যানিমেট হবে
       if (_mapController != null) {
         _mapController!.animateCamera(
           CameraUpdate.newLatLngZoom(currentLatLng, 14),
@@ -97,7 +95,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> with Ticker
         position.longitude,
       );
 
-      if (!mounted) return; // মেমোরি লিক প্রোটেকশন
+      if (!mounted) return;
 
       if (placemarks.isNotEmpty) {
         Placemark place = placemarks.first;
@@ -203,7 +201,6 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> with Ticker
             ),
             onMapCreated: (controller) {
               _mapController = controller;
-              // ফিক্সড: ম্যাপ প্রথমবার সফলভাবে তৈরি হয়ে গেলে ইউজারের কারেন্ট লোকেশনে ক্যামেরা মুভ করবে
               _getUserCurrentLocation(moveToPosition: true);
             },
             onCameraMoveStarted: () {
@@ -244,7 +241,6 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> with Ticker
           /// 2. Custom Center Floating Pointer (Pin)
           Center(
             child: Padding(
-              // ফিক্সড (ভুল ১): কাস্টম পয়েন্টারের বানান ভুল ঠিক করা হলো
               padding: const EdgeInsets.only(bottom: 40.0),
               child: Icon(
                 Icons.location_on_rounded, 
@@ -252,8 +248,8 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> with Ticker
                 color: _isDragging ? Colors.amber[800] : Colors.blue[900]
               )
               .animate(target: _isDragging ? 1 : 0)
-              .scaleXY(end: 1.2, curve: Curves.easeOut)
-              .view(),
+              .scaleXY(end: 1.2, curve: Curves.easeOut), 
+              // ফিক্সড: অকারণ .view() মেথডটি রিমুভ করা হয়েছে যা এরর তৈরি করছিল
             ),
           ),
 
@@ -277,7 +273,6 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> with Ticker
               child: Row(
                 children: [
                   IconButton(
-                    // ফিক্সড (ভুল ২): Colors.black80 পরিবর্তন করে Colors.black87 করা হলো
                     icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: Colors.black87),
                     onPressed: () => Navigator.pop(context),
                   ),
@@ -300,7 +295,6 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> with Ticker
                           child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
                         )
                       : IconButton(
-                          // ফিক্সড (ভুল ২): Colors.black80 পরিবর্তন করে Colors.black87 করা হলো
                           icon: const Icon(Icons.search_rounded, color: Colors.black87),
                           onPressed: () => _searchLocation(_searchController.text),
                         ),
@@ -386,7 +380,6 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> with Ticker
                     ],
                   ),
                 ).animate().slideY(begin: 1.0, duration: 300.ms, curve: Curves.easeOut),
-
                 if (selectedLocations.isNotEmpty)
                   Container(
                     height: 200,
@@ -407,7 +400,6 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> with Ticker
                                 children: [
                                   Text(
                                     '${selectedLocations.length} Custom Hub Areas',
-                                    // ফিক্সড (ভুল ৩): FontWeight.extrabold পরিবর্তন করে FontWeight.w800 করা হলো
                                     style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16, color: Color(0xFF1E293B)),
                                   ),
                                   const Text("10 KM covers student matching automatically", style: TextStyle(fontSize: 11, color: Colors.grey)),
