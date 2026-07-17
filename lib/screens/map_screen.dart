@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-// আপনার আসল ক্লাসের নাম 'MapScreen' হুবহু বজায় রাখা হলো
 class MapScreen extends StatefulWidget {
   final String teacherId;
   final String teacherName;
@@ -23,12 +22,8 @@ class _MapScreenState extends State<MapScreen> {
   GoogleMapController? _mapController;
   final Set<Marker> _markers = {};
   bool _isLoading = true;
-
-  // কাস্টম ইন্টারফেস অ্যানিমেশনের জন্য সিলেক্টেড মার্কার ডেটা হোল্ডার
   Map<String, dynamic>? _selectedLocationData;
   bool _showDetailsCard = false;
-
-  // ডিফল্ট সেন্টার পজিশন (ওয়েস্ট বেঙ্গল বেস জোন যদি ডেটা মিসিং থাকে)
   final LatLng _defaultCenter = const LatLng(22.5726, 88.3639); 
 
   @override
@@ -39,12 +34,10 @@ class _MapScreenState extends State<MapScreen> {
 
   @override
   void dispose() {
-    // ফিক্সড: ম্যাপ স্ক্রিন মেমোরি লিক এবং ক্র্যাশ প্রটেকশন ডিসপোজ রুল (#13)
     _mapController?.dispose();
     super.dispose();
   }
 
-  // ফায়ারবেস থেকে ডায়নামিক লোকেশন ও এরিয়া মার্কার ফেচিং মেকানিজম (#11, #16)
   Future<void> _fetchTeacherTeachingAreas() async {
     try {
       final doc = await FirebaseFirestore.instance
@@ -65,8 +58,6 @@ class _MapScreenState extends State<MapScreen> {
 
       for (var index = 0; index < areas.length; index++) {
         final area = areas[index] as Map<String, dynamic>;
-
-        // ফায়ারবেস ফিল্ড থেকে ল্যাটিটিউড এবং লঙ্গিটিউড এক্সট্রাক্ট করা (Null-Safe) (#13)
         final double? lat = double.tryParse(area['latitude']?.toString() ?? '');
         final double? lng = double.tryParse(area['longitude']?.toString() ?? '');
         final String locationName = area['locationName'] ?? 'Teaching Zone ${index + 1}';
@@ -101,7 +92,6 @@ class _MapScreenState extends State<MapScreen> {
         _isLoading = false;
       });
 
-      // সব মার্কার স্ক্রিনের সেন্টারে ফিট করার জন্য ক্যামেরা অ্যানিমেশন বাউন্স হুক
       if (points.isNotEmpty && _mapController != null) {
         _animateToFitPoints(points);
       }
@@ -140,12 +130,11 @@ class _MapScreenState extends State<MapScreen> {
           southwest: LatLng(minLat, minLng),
           northeast: LatLng(maxLat, maxLng),
         ),
-        60, // ম্যাপ প্যাডিং চারপাশ থেকে যেন কেটে না যায়
+        60,
       ),
     );
   }
 
-  // ফিক্সড: এক্সটার্নাল অফিশিয়াল গুগল ম্যাপস অ্যাপ ওপেন এবং ডিরেকশন মেকানিজম উইথ স্ট্যান্ডার্ড ফলব্যাক ইউআরএল (#12)
   Future<void> _launchGoogleMapsNavigation(double lat, double lng) async {
     final Uri googleMapsAppUrl = Uri.parse("google.navigation:q=$lat,$lng&mode=d");
     final Uri googleMapsWebUrl = Uri.parse("https://www.google.com/maps/search/?api=1&query=$lat,$lng");
@@ -208,8 +197,6 @@ class _MapScreenState extends State<MapScreen> {
                   mapToolbarEnabled: false,
                   onTap: (_) => setState(() => _showDetailsCard = false), 
                 ),
-
-          // অ্যাডভান্সড ইউআই অ্যানিমেটেড লোকেশন ডিটেইলসカード মেকানিজম (#11, #15)
           AnimatedPositioned(
             duration: const Duration(milliseconds: 350),
             curve: Curves.easeInOut,
@@ -274,7 +261,6 @@ class _MapScreenState extends State<MapScreen> {
                           style: TextStyle(color: Colors.grey.shade600, fontSize: 12, height: 1.3),
                         ),
                         const SizedBox(height: 14),
-                        // প্রফেশনাল গুগল ম্যাপস নেভিগেট বাটন (#11, #12)
                         SizedBox(
                           width: double.infinity,
                           height: 42,
