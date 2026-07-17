@@ -1,8 +1,7 @@
 import 'dart:math' as math;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-import 'teacher_profile_screen.dart';
-import 'teaching_areas_map_screen.dart'; 
+import '../widgets/teacher_card_widget.dart';
 
 class TeacherSearchScreen extends StatefulWidget {
   const TeacherSearchScreen({super.key});
@@ -12,7 +11,6 @@ class TeacherSearchScreen extends StatefulWidget {
 }
 
 class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
-  // কন্ট্রোলার সমূহ
   final TextEditingController _uidController = TextEditingController();
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _subjectController = TextEditingController();
@@ -20,19 +18,15 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
   final TextEditingController _experienceController = TextEditingController();
   final TextEditingController _classController = TextEditingController();
 
-  // ড্রপডাউন ও ফিল্টার স্টেট
   String _selectedGender = 'All';
   String _selectedMode = 'All'; 
   String _selectedRadiusRange = '1–10 KM';
 
-  // স্টুডেন্টের ডামি কারেন্ট লোকেশন (ম্যাপ সার্ভিস তৈরি হলে এটি রিয়েল ডায়নামিক জিপিএস লোকেশন দিয়ে রিপ্লেস হবে)
-  final double _studentLat = 22.5726; // উদাহরণ: কলকাতা (Salt Lake এর কাছাকাছি)
+  final double _studentLat = 22.5726; 
   final double _studentLng = 88.3639;
 
-  // সার্চ বাটন একটিভ করার জন্য রিয়েল-টাইম ট্র্যাকিং ভ্যারিয়েবল
   bool _isSearchButtonEnabled = false;
 
-  // রেডিয়াস ফিল্টারের সম্পূর্ণ ভ্যালু লিস্ট (আপনার অর্ডার অনুযায়ী নিখুঁত সাজানো)
   final List<String> _radiusOptions = [
     '1–10 KM', '10–12 KM', '12–14 KM', '14–16 KM', '16–18 KM', '18–20 KM',
     '20–22 KM', '22–24 KM', '24–26 KM', '26–28 KM', '28–30 KM', '30–32 KM',
@@ -45,7 +39,6 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
   @override
   void initState() {
     super.initState();
-    // প্রতিটি টেক্সট ফিল্ডের ইনপুট মনিটর করার জন্য লিসেনার অ্যাড
     _uidController.addListener(_validateSearchForm);
     _nameController.addListener(_validateSearchForm);
     _subjectController.addListener(_validateSearchForm);
@@ -65,7 +58,6 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
     super.dispose();
   }
 
-  // যেকোনো একটি ফিল্ড পূরণ হলেই সার্চ বাটন এনাবল হবে
   void _validateSearchForm() {
     final bool hasInput = _uidController.text.trim().isNotEmpty ||
         _nameController.text.trim().isNotEmpty ||
@@ -81,17 +73,16 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
     }
   }
 
-  // নিখুঁত Haversine ফর্মুলা ব্যবহার করে দুটি কোঅর্ডিনেটের দূরত্ব (KM) বের করার মেথড
   double _calculateHaversineDistance(double lat1, double lon1, double lat2, double lon2) {
-    const double earthRadius = 6371.0; // কিলোমিটার এককে পৃথিবীর ব্যাসার্ধ
-    
+    const double earthRadius = 6371.0; 
+
     double dLat = _toRadians(lat2 - lat1);
     double dLon = _toRadians(lon2 - lon1);
 
     double a = math.sin(dLat / 2) * math.sin(dLat / 2) +
         math.cos(_toRadians(lat1)) * math.cos(_toRadians(lat2)) *
         math.sin(dLon / 2) * math.sin(dLon / 2);
-        
+
     double c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a));
     return earthRadius * c;
   }
@@ -100,7 +91,6 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
     return degree * (math.pi / 180.0);
   }
 
-  // ড্রপডাউন রেঞ্জ স্ট্রিং থেকে Min এবং Max KM আলাদা করার পার্সার
   Map<String, double> _parseRadiusRange(String range) {
     try {
       final cleanRange = range.replaceAll(' KM', '');
@@ -114,7 +104,7 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
     } catch (e) {
       debugPrint("Radius parsing error: $e");
     }
-    return {'min': 0.0, 'max': 10.0}; // ফলব্যাক ডিফল্ট ভ্যালু
+    return {'min': 0.0, 'max': 10.0}; 
   }
 
   void _clearFilters() {
@@ -136,48 +126,6 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF1E4C7A),
-        elevation: 0,
-        centerTitle: false,
-        title: Row(
-          children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: Image.asset(
-                'assets/images/app_logo.png',
-                width: 32,
-                height: 32,
-                fit: BoxFit.cover,
-                errorBuilder: (context, error, stackTrace) => const Icon(
-                  Icons.school_rounded, 
-                  color: Color(0xFFFFB300), 
-                  size: 30
-                ),
-              ),
-            ),
-            const SizedBox(width: 12),
-            const Text(
-              'FYBTT • Find Teacher',
-              style: TextStyle(
-                color: Colors.white, 
-                fontWeight: FontWeight.bold, 
-                fontSize: 18, 
-                letterSpacing: 0.5
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          if (_isSearchButtonEnabled || _selectedGender != 'All' || _selectedMode != 'All' || _selectedRadiusRange != '1–10 KM')
-            IconButton(
-              icon: const Icon(Icons.refresh_rounded, color: Colors.white),
-              onPressed: _clearFilters,
-              tooltip: 'Clear Filters',
-            ),
-          const SizedBox(width: 10),
-        ],
-      ),
       body: Column(
         children: [
           _buildAdvancedSearchPanel(),
@@ -192,7 +140,6 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
                   return _buildNoResultsView();
                 }
 
-                // ক্লায়েন্ট সাইড অ্যাডভান্সড ফিল্টারিং
                 final filteredDocs = snapshot.data!.docs.where((doc) {
                   final data = doc.data() as Map<String, dynamic>? ?? {};
                   final docId = doc.id.toLowerCase();
@@ -206,7 +153,6 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
                   final List classes = data['classes'] is List ? data['classes'] : [];
                   final int exp = data['experience'] is int ? data['experience'] : (int.tryParse(data['experience']?.toString() ?? '0') ?? 0);
 
-                  // কোয়েরি স্ট্রিং প্রিপারেশন (Case-Insensitive)
                   final uidQ = _uidController.text.trim().toLowerCase();
                   final nameQ = _nameController.text.trim().toLowerCase();
                   final locQ = _locationController.text.trim().toLowerCase();
@@ -214,7 +160,6 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
                   final classQ = _classController.text.trim().toLowerCase();
                   final expQ = _experienceController.text.trim();
 
-                  // ফিল্টারিং লজিক ম্যাশআপ
                   bool matchesUid = uidQ.isEmpty || docId.contains(uidQ);
                   bool matchesName = nameQ.isEmpty || name.contains(nameQ);
                   bool matchesLocation = locQ.isEmpty || location.contains(locQ);
@@ -231,14 +176,13 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
                     }
                   }
 
-                  // গুগল ল্যাট/লং এর মাধ্যমে একুরেট রেডিয়াস ফিল্টারিং (Haversine)
                   bool matchesRadius = true;
                   if (data.containsKey('latitude') && data.containsKey('longitude')) {
                     double tLat = double.tryParse(data['latitude'].toString()) ?? 0.0;
                     double tLng = double.tryParse(data['longitude'].toString()) ?? 0.0;
-                    
+
                     double distance = _calculateHaversineDistance(_studentLat, _studentLng, tLat, tLng);
-                    
+
                     final radiusLimits = _parseRadiusRange(_selectedRadiusRange);
                     matchesRadius = distance >= radiusLimits['min']! && distance <= radiusLimits['max']!;
                   }
@@ -251,10 +195,36 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
                 }
 
                 return ListView.builder(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                  padding: const EdgeInsets.symmetric(vertical: 8),
                   physics: const BouncingScrollPhysics(),
                   itemCount: filteredDocs.length,
-                  itemBuilder: (context, index) => _buildTeacherCard(filteredDocs[index]),
+                  itemBuilder: (context, index) {
+                    final doc = filteredDocs[index];
+                    final data = doc.data() as Map<String, dynamic>? ?? {};
+
+                    double tLat = double.tryParse(data['latitude']?.toString() ?? '0.0') ?? 0.0;
+                    double tLng = double.tryParse(data['longitude']?.toString() ?? '0.0') ?? 0.0;
+                    double distance = _calculateHaversineDistance(_studentLat, _studentLng, tLat, tLng);
+
+                    final List subjectsList = data['subjects'] is List ? data['subjects'] : [];
+                    final String subjectText = subjectsList.isNotEmpty ? subjectsList.join(', ') : 'General';
+
+                    return TeacherCardWidget(
+                      teacherId: doc.id,
+                      name: data['name'] ?? data['displayName'] ?? 'No Name',
+                      subject: subjectText,
+                      profileImageUrl: data['photoUrl'] ?? '',
+                      latitude: tLat,
+                      longitude: tLng,
+                      studentCount: data['studentCount'] is int ? data['studentCount'] : 0,
+                      experienceYears: data['experience'] is int ? data['experience'] : 0,
+                      followersCount: data['followersCount'] is int ? data['followersCount'] : 0,
+                      rating: double.tryParse(data['rating']?.toString() ?? '5.0') ?? 5.0,
+                      locationText: data['location'] ?? 'Location N/A',
+                      calculatedDistance: "${distance.toStringAsFixed(1)} KM",
+                      onChatPressed: () {},
+                    );
+                  },
                 );
               },
             ),
@@ -266,7 +236,7 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
 
   Widget _buildAdvancedSearchPanel() {
     return Container(
-      padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+      padding: EdgeInsets.fromLTRB(20, MediaQuery.of(context).padding.top + 12, 20, 20),
       decoration: const BoxDecoration(
         color: Color(0xFF1E4C7A),
         borderRadius: BorderRadius.vertical(bottom: Radius.circular(28)),
@@ -277,7 +247,46 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: Image.asset(
+                      'assets/images/app_logo.png',
+                      width: 32,
+                      height: 32,
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stackTrace) => const Icon(
+                        Icons.school_rounded, 
+                        color: Color(0xFFFFB300), 
+                        size: 30
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  const Text(
+                    'FYBTT • Find Teacher',
+                    style: TextStyle(
+                      color: Colors.white, 
+                      fontWeight: FontWeight.bold, 
+                      fontSize: 18, 
+                      letterSpacing: 0.5
+                    ),
+                  ),
+                ],
+              ),
+              if (_isSearchButtonEnabled || _selectedGender != 'All' || _selectedMode != 'All' || _selectedRadiusRange != '1–10 KM')
+                IconButton(
+                  icon: const Icon(Icons.refresh_rounded, color: Colors.white, size: 22),
+                  onPressed: _clearFilters,
+                  visualDensity: VisualDensity.compact,
+                ),
+            ],
+          ),
+          const SizedBox(height: 16),
           _customSearchField("Search by Teacher UID / Registration ID", _uidController, Icons.vpn_key_outlined),
           const SizedBox(height: 10),
           Row(
@@ -300,7 +309,6 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
             children: [
               Expanded(child: _customSearchField("Min Exp (Years)", _experienceController, Icons.history_toggle_off_rounded, isNumber: true)),
               const SizedBox(width: 10),
-              // জেন্ডার ফিল্টার
               Expanded(
                 child: _buildCustomDropdown(
                   value: _selectedGender,
@@ -309,7 +317,6 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
                 ),
               ),
               const SizedBox(width: 10),
-              // মোড ফিল্টার
               Expanded(
                 child: _buildCustomDropdown(
                   value: _selectedMode,
@@ -319,15 +326,14 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
               ),
             ],
           ),
-          const SizedBox(height: 12),
-          // নতুন প্রিমিয়াম রেডিয়াস ফিল্টার ড্রপডাউন (Requirement 3)
+          const SizedBox(height: 14),
           Row(
             children: [
-              const Icon(Icons.radar_rounded, color: Color(0xFFFFB300), size: 20),
+              const Icon(Icons.radar_rounded, color: Color(0xFFFFB300), size: 18),
               const SizedBox(width: 8),
               const Text(
                 "Search Radius:",
-                style: TextStyle(color: Colors.whiteDimmish ?? Colors.whiteEE, fontSize: 13, fontWeight: FontWeight.bold),
+                style: TextStyle(color: Colors.whiteFE ?? Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -340,7 +346,6 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
             ],
           ),
           const SizedBox(height: 16),
-          // অ্যানিমেটেড সার্চ বাটন (Requirement 2)
           AnimatedContainer(
             duration: const Duration(milliseconds: 300),
             curve: Curves.easeInOut,
@@ -348,18 +353,17 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
             child: ElevatedButton(
               style: ElevatedButton.styleFrom(
                 backgroundColor: _isSearchButtonEnabled ? const Color(0xFFFFB300) : Colors.grey.shade400,
-                foregroundColor: _isSearchButtonEnabled ? Colors.black87 : Colors.white,
+                foregroundColor: _isSearchButtonEnabled ? const Color(0xFF0F172A) : Colors.white,
                 elevation: _isSearchButtonEnabled ? 4 : 0,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
               ),
               onPressed: _isSearchButtonEnabled ? () {
-                // ফর্ম ভ্যালিডেশন হয়ে রিয়েল-টাইম কোয়েরি রিফ্রেশ ট্রিগার করবে
                 FocusScope.of(context).unfocus();
               } : null,
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(_isSearchButtonEnabled ? Icons.search_purple_rounded ?? Icons.search : Icons.search_off_rounded, size: 20),
+                  Icon(_isSearchButtonEnabled ? Icons.search_rounded : Icons.search_off_rounded, size: 20),
                   const SizedBox(width: 8),
                   const Text(
                     "Search Teachers", 
@@ -418,127 +422,6 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
           borderSide: const BorderSide(color: Color(0xFFFFB300), width: 1)
         ),
         contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
-      ),
-    );
-  }
-
-  Widget _buildTeacherCard(DocumentSnapshot doc) {
-    final data = doc.data() as Map<String, dynamic>? ?? {};
-
-    final String teacherName = data['name'] ?? data['displayName'] ?? 'No Name';
-    final String location = data['location'] ?? 'Location N/A';
-    final String photoUrl = data['photoUrl'] ?? '';
-    final int experience = data['experience'] is int ? data['experience'] : (int.tryParse(data['experience']?.toString() ?? '0') ?? 0);
-    
-    // ডাইনামিক ডিস্ট্যান্স লাইভ ক্যালকুলেশন UI-তে দেখানোর জন্য
-    String distanceString = "-- KM";
-    if (data.containsKey('latitude') && data.containsKey('longitude')) {
-      double tLat = double.tryParse(data['latitude'].toString()) ?? 0.0;
-      double tLng = double.tryParse(data['longitude'].toString()) ?? 0.0;
-      double distance = _calculateHaversineDistance(_studentLat, _studentLng, tLat, tLng);
-      distanceString = "${distance.toStringAsFixed(1)} KM";
-    }
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 14),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 12, offset: const Offset(0, 6))
-        ],
-      ),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              Hero(
-                tag: 'teacher_avatar_${doc.id}',
-                child: CircleAvatar(
-                  radius: 28,
-                  backgroundColor: const Color(0xFF1E4C7A).withOpacity(0.1),
-                  backgroundImage: photoUrl.isNotEmpty ? NetworkImage(photoUrl) : null,
-                  child: photoUrl.isEmpty ? const Icon(Icons.person_rounded, size: 30, color: Color(0xFF1E4C7A)) : null,
-                ),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Expanded(
-                          child: Text(
-                            teacherName,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-     ),
-                        ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: Colors.teal.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(8)
-                          ),
-                          child: Text(
-                            distanceString,
-                            style: const TextStyle(color: Colors.teal, fontSize: 11, fontWeight: FontWeight.bold),
-                          ),
-                        )
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          const Divider(height: 1, color: Color(0xFFE2E8F0)),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: SizedBox(
-                  height: 40,
-                  child: OutlinedButton(
-                    style: OutlinedButton.styleFrom(
-                      side: const BorderSide(color: Color(0xFF1E4C7A), width: 1.5),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => TeacherProfileScreen(currentUserId: doc.id)),
-                      );
-                    },
-                    child: const Text("View Profile", style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF1E4C7A), fontSize: 13)),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: SizedBox(
-                  height: 40,
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF006653),
-                      foregroundColor: Colors.white,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                    onPressed: () {
-                      // চ্যাট ন্যাভিগেশন কোড
-                    },
-                    child: const Text("Chat Now", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
       ),
     );
   }
