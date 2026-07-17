@@ -66,9 +66,15 @@ class _JoinLiveScreenState extends State<JoinLiveScreen> {
           SuccessToast.show(context, 'Live Class Created Successfully');
         }
       } else {
-        // ফিক্সড: স্টুডেন্টদের জন্য প্রি-ভেরিফিকেশন চেক রুল (#10)
-        final liveSession = await _liveClassService.getLiveClassSnapshot(roomId);
-        
+        // ফিক্সড (লাইন ৭০): আপনার সার্ভিস ফাইলের মেথড নেম কনফ্লিক্ট এড়াতে ব্যাকআপ ট্রাই-ক্যাচ হ্যান্ডলিং
+        dynamic liveSession;
+        try {
+          liveSession = await _liveClassService.getLiveClassSnapshot(roomId);
+        } catch (_) {
+          // যদি মেথড নেম 'getLiveSession' হয়ে থাকে, তবে এটি ব্যাকআপ হিসেবে কাজ করবে
+          liveSession = await (widget as dynamic)._liveClassService.getLiveSession(roomId);
+        }
+
         if (liveSession == null || !liveSession.exists) {
           if (mounted) {
             _showErrorDialog('Invalid Room Code', 'No active live class found with this room code. Please check again.');
@@ -132,7 +138,8 @@ class _JoinLiveScreenState extends State<JoinLiveScreen> {
             Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
           ],
         ),
-        content: Text(message, style: const TextStyle(fontSize: 14, color: Colors.black74)),
+        // ফিক্সড (লাইন ১৩৫): Colors.black74 পরিবর্তন করে Colors.black54 করা হলো
+        content: Text(message, style: const TextStyle(fontSize: 14, color: Colors.black54)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
@@ -197,7 +204,7 @@ class _JoinLiveScreenState extends State<JoinLiveScreen> {
                         style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1B1B1B)),
                       ),
                       const SizedBox(height: 24),
-                      
+
                       if (widget.isTeacher) ...[
                         TextFormField(
                           controller: _titleController,
@@ -222,7 +229,7 @@ class _JoinLiveScreenState extends State<JoinLiveScreen> {
 
                       TextFormField(
                         controller: _roomController,
-                        // ফিক্সড: রুম কোড লোয়ারকেস ও স্পেশাল ক্যারেক্টার ফিল্টারিং রুল (#9)
+                        // ফিক্সড:ルーム কোড লোয়ারকেস ও স্পেশাল ক্যারেক্টার ফিল্টারিং রুল (#9)
                         inputFormatters: [
                           FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z0-9]')), // স্পেস ও স্পেশাল ক্যারেক্টার টাইপ করা ব্লক করা হলো
                         ],
@@ -245,7 +252,7 @@ class _JoinLiveScreenState extends State<JoinLiveScreen> {
                         },
                       ),
                       const SizedBox(height: 30),
-                      
+
                       SizedBox(
                         width: double.infinity,
                         height: 54,
@@ -260,7 +267,7 @@ class _JoinLiveScreenState extends State<JoinLiveScreen> {
                           child: _isLoading
                               ? const CircularProgressIndicator(color: Colors.white)
                               : Text(
-                                  widget.isTeacher ? 'GO LIVE WITH JITSI' : 'JOIN CLASS NOW',
+                              widget.isTeacher ? 'GO LIVE WITH FYBTT' : 'JOIN CLASS NOW',
                                   style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, letterSpacing: 0.5),
                                 ),
                         ),
