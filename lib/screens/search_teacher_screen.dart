@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'teacher_search_result_screen.dart'; // Navigates to dedicated result screen
+import 'teacher_search_result_screen.dart';
 
 class TeacherSearchScreen extends StatefulWidget {
   const TeacherSearchScreen({super.key});
@@ -10,20 +10,22 @@ class TeacherSearchScreen extends StatefulWidget {
 
 class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
   final TextEditingController _uidController = TextEditingController();
-  final TextEditingController _nameController = TextEditingController();
+  final TextEditingController = _nameController = TextEditingController();
   final TextEditingController _subjectController = TextEditingController();
   final TextEditingController _locationController = TextEditingController();
   final TextEditingController _experienceController = TextEditingController();
 
-  String _selectedRadius = '10 KM'; // Default 10 KM as requested
+  String _selectedRadiusRange = '1–10 KM'; // Default set to 1–10 KM
   bool _isSearchButtonEnabled = false;
 
+  // Dynamically generated list matching your exact breakdown up to 100 KM
   final List<String> _radiusOptions = [
-    '10 KM',
-    '20 KM',
-    '30 KM',
-    '40 KM',
-    '50 KM'
+    '1–10 KM', '10–12 KM', '12–14 KM', '14–16 KM', '16–18 KM', '18–20 KM',
+    '20–22 KM', '22–24 KM', '24–26 KM', '26–28 KM', '28–30 KM', '30–32 KM',
+    '32–34 KM', '34–36 KM', '36–38 KM', '38–40 KM', '40–42 KM', '42–44 KM',
+    '44–46 KM', '46–48 KM', '48–50 KM', '50–55 KM', '55–60 KM', '60–65 KM',
+    '65–70 KM', '70–75 KM', '75–80 KM', '80–85 KM', '85–90 KM', '90–95 KM',
+    '95–100 KM'
   ];
 
   @override
@@ -46,18 +48,35 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
     super.dispose();
   }
 
-  /// Strict Validation Logic: Enabled ONLY when Teacher ID OR Name OR Subject OR Location is filled
+  /// Validation: True if at least one core search metric is provided
   void _validateSearchForm() {
-    final bool hasRequiredInput = _uidController.text.trim().isNotEmpty ||
+    final bool hasInput = _uidController.text.trim().isNotEmpty ||
         _nameController.text.trim().isNotEmpty ||
         _subjectController.text.trim().isNotEmpty ||
         _locationController.text.trim().isNotEmpty;
 
-    if (_isSearchButtonEnabled != hasRequiredInput) {
+    if (_isSearchButtonEnabled != hasInput) {
       setState(() {
-        _isSearchButtonEnabled = hasRequiredInput;
+        _isSearchButtonEnabled = hasInput;
       });
     }
+  }
+
+  /// Parses the complex custom range format (e.g., '50–55 KM' -> min: 50.0, max: 55.0)
+  Map<String, double> _parseRadiusRange(String range) {
+    try {
+      final cleanRange = range.replaceAll(' KM', '');
+      final parts = cleanRange.split('–');
+      if (parts.length == 2) {
+        return {
+          'min': double.parse(parts[0].trim()),
+          'max': double.parse(parts[1].trim()),
+        };
+      }
+    } catch (e) {
+      debugPrint("Parsing exception for radius: $e");
+    }
+    return {'min': 1.0, 'max': 10.0}; // Safe Fallback
   }
 
   void _clearFilters() {
@@ -67,7 +86,7 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
     _locationController.clear();
     _experienceController.clear();
     setState(() {
-      _selectedRadius = '10 KM';
+      _selectedRadiusRange = '1–10 KM';
       _isSearchButtonEnabled = false;
     });
   }
@@ -75,17 +94,18 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
   void _navigateToResults() {
     FocusScope.of(context).unfocus();
     
-    // Extracted clean filtering parameters
+    final radiusLimits = _parseRadiusRange(_selectedRadiusRange);
+
     final Map<String, dynamic> searchFilters = {
       'teacherId': _uidController.text.trim(),
       'name': _nameController.text.trim(),
       'subject': _subjectController.text.trim(),
       'location': _locationController.text.trim(),
       'experience': _experienceController.text.trim(),
-      'radius': double.parse(_selectedRadius.replaceAll(' KM', '')),
+      'minRadius': radiusLimits['min'],
+      'maxRadius': radiusLimits['max'],
     };
 
-    // Navigates directly to the results screen instead of showing it inline
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -107,7 +127,7 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
         elevation: 0,
         centerTitle: true,
         actions: [
-          if (_isSearchButtonEnabled || _selectedRadius != '10 KM' || _experienceController.text.isNotEmpty)
+          if (_isSearchButtonEnabled || _selectedRadiusRange != '1–10 KM' || _experienceController.text.isNotEmpty)
             IconButton(
               icon: const Icon(Icons.refresh_rounded, color: Colors.white, size: 22),
               onPressed: _clearFilters,
@@ -138,11 +158,6 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          /* 
-             DUPLICATE LOGO FIX:
-             Removed the second secondary 'FYBTT' text row widget from here 
-             as it's already rendered cleanly by the native AppBar above.
-          */
           const Text(
             "Configure Filters to Match Teachers",
             style: TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w500),
@@ -159,7 +174,7 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
           _customSearchField("Minimum Experience (Years)", _experienceController, Icons.history_toggle_off_rounded, isNumber: true),
           const SizedBox(height: 16),
           
-          // Modern Radius Selection Card Row
+          // Customized Dynamic Radius Range Picker Row
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
             decoration: BoxDecoration(
@@ -181,11 +196,11 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
                   ],
                 ),
                 SizedBox(
-                  width: 110,
+                  width: 135, // Balanced width to handle strings like '95–100 KM' securely
                   child: _buildCustomDropdown(
-                    value: _selectedRadius,
+                    value: _selectedRadiusRange,
                     items: _radiusOptions,
-                    onChanged: (val) => setState(() => _selectedRadius = val ?? '10 KM'),
+                    onChanged: (val) => setState(() => _selectedRadiusRange = val ?? '1–10 KM'),
                   ),
                 ),
               ],
@@ -193,7 +208,7 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
           ),
           const SizedBox(height: 24),
           
-          // Validation-Driven Dynamic Search Button (Grey/Disabled vs Yellow/Enabled)
+          // Yellow Animated Confirmation Action Bar
           AnimatedContainer(
             duration: const Duration(milliseconds: 250),
             curve: Curves.easeInOut,
