@@ -6,7 +6,7 @@ class FirestoreService {
 
   Future<Map<String, dynamic>?> searchStudentById(String searchId) async {
     try {
-      DocumentSnapshot doc = await _firestore.collection('users').doc(searchId).get();
+      DocumentSnapshot doc = await _firestore.collection('students').doc(searchId).get();
       
       if (doc.exists && doc.data() != null) {
         Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
@@ -17,7 +17,7 @@ class FirestoreService {
       }
 
       QuerySnapshot querySnapshot = await _firestore
-          .collection('users')
+          .collection('students')
           .where('uid', isEqualTo: searchId)
           .limit(1)
           .get();
@@ -38,18 +38,15 @@ class FirestoreService {
       String? teacherId = filters['teacherId']?.toString().trim();
       
       if (teacherId != null && teacherId.isNotEmpty) {
-        DocumentSnapshot doc = await _firestore.collection('users').doc(teacherId).get();
+        DocumentSnapshot doc = await _firestore.collection('teachers').doc(teacherId).get();
         if (doc.exists && doc.data() != null) {
           Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
-          if (data['role'] == 'teacher') {
-            if (!data.containsKey('uid')) data['uid'] = doc.id;
-            return [data];
-          }
+          if (!data.containsKey('uid')) data['uid'] = doc.id;
+          return [data];
         }
 
         QuerySnapshot querySnapshot = await _firestore
-            .collection('users')
-            .where('role', isEqualTo: 'teacher')
+            .collection('teachers')
             .where('uid', isEqualTo: teacherId)
             .limit(1)
             .get();
@@ -61,14 +58,14 @@ class FirestoreService {
         return [];
       }
 
-      Query query = _firestore.collection('users').where('role', isEqualTo: 'teacher');
+      Query query = _firestore.collection('teachers');
 
       if (filters['subject'] != null && filters['subject'].toString().isNotEmpty) {
-        query = query.where('subject', isEqualTo: filters['subject'].toString().trim());
+        query = query.where('subjects', arrayContains: filters['subject'].toString().trim());
       }
 
       if (filters['location'] != null && filters['location'].toString().isNotEmpty) {
-        query = query.where('location', isEqualTo: filters['location'].toString().trim());
+        query = query.where('teachingLocation', isEqualTo: filters['location'].toString().trim());
       }
 
       QuerySnapshot querySnapshot = await query.get();
@@ -86,23 +83,6 @@ class FirestoreService {
         results = results.where((t) {
           String teacherName = (t['name'] ?? '').toString().toLowerCase();
           return teacherName.contains(searchName);
-        }).toList();
-      }
-
-      if (filters['experience'] != null && filters['experience'].toString().isNotEmpty) {
-        double minExp = double.tryParse(filters['experience'].toString()) ?? 0.0;
-        results = results.where((t) {
-          double exp = double.tryParse(t['experience'].toString()) ?? 0.0;
-          return exp >= minExp;
-        }).toList();
-      }
-
-      if (filters['maxRadius'] != null) {
-        double maxR = double.tryParse(filters['maxRadius'].toString()) ?? 99999.0;
-        double minR = double.tryParse(filters['minRadius']?.toString() ?? '0.0') ?? 0.0;
-        results = results.where((t) {
-          double dist = double.tryParse(t['distance'].toString()) ?? 0.0;
-          return dist >= minR && dist <= maxR;
         }).toList();
       }
 
