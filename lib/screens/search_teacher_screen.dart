@@ -9,17 +9,15 @@ class TeacherSearchScreen extends StatefulWidget {
 }
 
 class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
-  // ১. প্রথমে কন্ট্রোলারগুলোকে late হিসেবে ডিক্লেয়ার করা হলো
   late final TextEditingController _uidController;
   late final TextEditingController _nameController;
   late final TextEditingController _subjectController;
   late final TextEditingController _locationController;
   late final TextEditingController _experienceController;
 
-  String _selectedRadiusRange = '1–10 KM'; // Default set to 1–10 KM
+  String _selectedRadiusRange = '1–10 KM';
   bool _isSearchButtonEnabled = false;
 
-  // Dynamically generated list matching your exact breakdown up to 100 KM
   final List<String> _radiusOptions = [
     '1–10 KM', '10–12 KM', '12–14 KM', '14–16 KM', '16–18 KM', '18–20 KM',
     '20–22 KM', '22–24 KM', '24–26 KM', '26–28 KM', '28–30 KM', '30–32 KM',
@@ -32,7 +30,6 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
   @override
   void initState() {
     super.initState();
-    // ২. initState-এর ভেতর কন্ট্রোলারগুলো ইনিশিয়ালাইজ করে লিসেনার যুক্ত করা হলো
     _uidController = TextEditingController();
     _nameController = TextEditingController();
     _subjectController = TextEditingController();
@@ -56,12 +53,12 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
     super.dispose();
   }
 
-  /// Validation: True if at least one core search metric is provided
   void _validateSearchForm() {
     final bool hasInput = _uidController.text.trim().isNotEmpty ||
         _nameController.text.trim().isNotEmpty ||
         _subjectController.text.trim().isNotEmpty ||
-        _locationController.text.trim().isNotEmpty;
+        _locationController.text.trim().isNotEmpty ||
+        _experienceController.text.trim().isNotEmpty;
 
     if (_isSearchButtonEnabled != hasInput) {
       setState(() {
@@ -70,7 +67,6 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
     }
   }
 
-  /// Parses the complex custom range format (e.g., '50–55 KM' -> min: 50.0, max: 55.0)
   Map<String, double> _parseRadiusRange(String range) {
     try {
       final cleanRange = range.replaceAll(' KM', '');
@@ -84,7 +80,7 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
     } catch (e) {
       debugPrint("Parsing exception for radius: $e");
     }
-    return {'min': 1.0, 'max': 10.0}; // Safe Fallback
+    return {'min': 1.0, 'max': 10.0};
   }
 
   void _clearFilters() {
@@ -102,17 +98,31 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
   void _navigateToResults() {
     FocusScope.of(context).unfocus();
 
-    final radiusLimits = _parseRadiusRange(_selectedRadiusRange);
+    final String targetUid = _uidController.text.trim();
+    final Map<String, dynamic> searchFilters;
 
-    final Map<String, dynamic> searchFilters = {
-      'teacherId': _uidController.text.trim(),
-      'name': _nameController.text.trim(),
-      'subject': _subjectController.text.trim(),
-      'location': _locationController.text.trim(),
-      'experience': _experienceController.text.trim(),
-      'minRadius': radiusLimits['min'],
-      'maxRadius': radiusLimits['max'],
-    };
+    if (targetUid.isNotEmpty) {
+      searchFilters = {
+        'teacherId': targetUid,
+        'name': '',
+        'subject': '',
+        'location': '',
+        'experience': '',
+        'minRadius': null,
+        'maxRadius': null,
+      };
+    } else {
+      final radiusLimits = _parseRadiusRange(_selectedRadiusRange);
+      searchFilters = {
+        'teacherId': '',
+        'name': _nameController.text.trim(),
+        'subject': _subjectController.text.trim(),
+        'location': _locationController.text.trim(),
+        'experience': _experienceController.text.trim(),
+        'minRadius': radiusLimits['min'],
+        'maxRadius': radiusLimits['max'],
+      };
+    }
 
     Navigator.push(
       context,
@@ -167,12 +177,28 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const Text(
-            "Configure Filters to Match Teachers",
-            style: TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w500),
+            "Search Directly by Teacher ID",
+            style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold, letterSpacing: 0.5),
+          ),
+          const SizedBox(height: 10),
+          _customSearchField("Enter Teacher Unique ID", _uidController, Icons.tag_rounded),
+          
+          const SizedBox(height: 20),
+          Row(
+            children: [
+              Expanded(child: Divider(color: Colors.white.withOpacity(0.2), thickness: 1)),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Text(
+                  "OR SEARCH BY FILTERS",
+                  style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1.0),
+                ),
+              ),
+              Expanded(child: Divider(color: Colors.white.withOpacity(0.2), thickness: 1)),
+            ],
           ),
           const SizedBox(height: 16),
-          _customSearchField("Search by Teacher ID", _uidController, Icons.tag_rounded),
-          const SizedBox(height: 12),
+          
           _customSearchField("Teacher's Name", _nameController, Icons.person_outline_rounded),
           const SizedBox(height: 12),
           _customSearchField("Subject (e.g. Physics, Chemistry)", _subjectController, Icons.book_outlined),
@@ -182,7 +208,6 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
           _customSearchField("Minimum Experience (Years)", _experienceController, Icons.history_toggle_off_rounded, isNumber: true),
           const SizedBox(height: 16),
 
-          // Customized Dynamic Radius Range Picker Row
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
             decoration: BoxDecoration(
@@ -204,7 +229,7 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
                   ],
                 ),
                 SizedBox(
-                  width: 135, // Balanced width to handle strings like '95–100 KM' securely
+                  width: 135,
                   child: _buildCustomDropdown(
                     value: _selectedRadiusRange,
                     items: _radiusOptions,
@@ -214,9 +239,8 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
               ],
             ),
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 26),
 
-          // Yellow Animated Confirmation Action Bar
           AnimatedContainer(
             duration: const Duration(milliseconds: 250),
             curve: Curves.easeInOut,
