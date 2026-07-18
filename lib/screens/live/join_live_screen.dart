@@ -206,7 +206,7 @@ class _JoinLiveScreenState extends State<JoinLiveScreen> {
                         children: [
                           Text(
                             'FYBTT DIGITAL',
-                            style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.black, letterSpacing: 1.5),
+                            style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w900, letterSpacing: 1.5),
                           ),
                           Text(
                             'Virtual Classroom Network',
@@ -291,16 +291,16 @@ class _JoinLiveScreenState extends State<JoinLiveScreen> {
                           fillColor: const Color(0xFFF8FAFC),
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(16),
-                            borderSide: BorderSide(color: Colors.grey.shade200),
-                          ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(16),
-                            borderSide: BorderSide(color: Colors.grey.shade200),
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(16),
-                            borderSide: BorderSide(color: Colors.blue.shade400, width: 1.5),
-                          ),
+                              borderSide: BorderSide(color: Colors.grey.shade200),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(16),
+                              borderSide: BorderSide(color: Colors.grey.shade200),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(16),
+                              borderSide: BorderSide(color: Colors.blue.shade400, width: 1.5),
+                            ),
                         ),
                         validator: (val) => (val == null || val.length < 4) ? 'Enter valid room code (min 4 chars)' : null,
                       ),
