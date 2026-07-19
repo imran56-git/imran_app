@@ -240,7 +240,8 @@ class _JoinLiveScreenState extends State<JoinLiveScreen> {
                           children: [
                             Text(
                               'FYBTT DIGITAL',
-                              style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.black, letterSpacing: 1.2),
+                              // ফিক্সড: FontWeight.black পরিবর্তন করে ফ্ল্যাটার স্ট্যান্ডার্ড FontWeight.w900 করা হলো
+                              style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w900, letterSpacing: 1.2),
                             ),
                             SizedBox(height: 2),
                             Text(
