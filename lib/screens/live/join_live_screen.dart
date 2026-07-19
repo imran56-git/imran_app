@@ -128,13 +128,24 @@ class _JoinLiveScreenState extends State<JoinLiveScreen> {
             child: FadeTransition(
               opacity: anim,
               child: AlertDialog(
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.redAccent)),
-                content: Text(message, style: const TextStyle(color: Colors.black87)),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                backgroundColor: Colors.white,
+                title: Row(
+                  children: [
+                    const Icon(Icons.error_outline_rounded, color: Colors.redAccent, size: 28),
+                    const SizedBox(width: 12),
+                    Text(title, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.redAccent, fontSize: 18)),
+                  ],
+                ),
+                content: Text(message, style: const TextStyle(color: Color(0xFF334155), fontSize: 14, height: 1.4)),
                 actions: [
                   TextButton(
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.blue[800],
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
                     onPressed: () => Navigator.pop(context),
-                    child: const Text('OK', style: TextStyle(fontWeight: FontWeight.bold)),
+                    child: const Text('OK', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
                   ),
                 ],
               ),
@@ -147,45 +158,51 @@ class _JoinLiveScreenState extends State<JoinLiveScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final themeColor = widget.isTeacher ? Colors.redAccent : Colors.blue[800]!;
+
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
         title: Text(
           widget.isTeacher ? 'Host Live Room' : 'Join Live Room',
-          style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 19),
+          style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 18, letterSpacing: 0.3),
         ),
-        backgroundColor: Colors.blue[800],
+        backgroundColor: Colors.blue[900],
         foregroundColor: Colors.white,
         centerTitle: true,
         elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
-          onPressed: () => Navigator.pop(context),
+        leading: Padding(
+          padding: const EdgeInsets.all(8.0),
+          child: IconButton(
+            icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18),
+            onPressed: () => Navigator.pop(context),
+          ),
         ),
       ),
       body: SafeArea(
         child: SingleChildScrollView(
           physics: const BouncingScrollPhysics(),
-          padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 20),
+          padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 24),
           child: Form(
             key: _formKey,
             child: Column(
               children: [
+                // প্রিমিয়াম টপ ব্যানার উইজেট (লোগো ইন্টিগ্রেশন সহ)
                 Container(
                   width: double.infinity,
-                  padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+                  padding: const EdgeInsets.symmetric(vertical: 22, horizontal: 20),
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
-                      colors: [Colors.blue.shade900, Colors.blue.shade700],
+                      colors: [Colors.blue.shade900, const Color(0xFF1E3A8A)],
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
                     ),
                     borderRadius: BorderRadius.circular(24),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.blue.withOpacity(0.2),
-                        blurRadius: 15,
-                        offset: const Offset(0, 6),
+                        color: Colors.blue.shade900.withOpacity(0.25),
+                        blurRadius: 20,
+                        offset: const Offset(0, 8),
                       )
                     ],
                   ),
@@ -193,41 +210,63 @@ class _JoinLiveScreenState extends State<JoinLiveScreen> {
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Container(
-                        padding: const EdgeInsets.all(8),
+                        width: 50,
+                        height: 50,
+                        padding: const EdgeInsets.all(4),
                         decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.15),
+                          color: Colors.white,
                           shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 8)
+                          ]
                         ),
-                        child: const Icon(Icons.school_rounded, color: Colors.white, size: 28),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(25),
+                          child: Image.asset(
+                            'assets/images/app_logo.png',
+                            fit: BoxFit.contain,
+                            errorBuilder: (context, error, stackTrace) => Icon(
+                              Icons.school_rounded,
+                              color: Colors.blue[900],
+                              size: 24,
+                            ),
+                          ),
+                        ),
                       ),
-                      const SizedBox(width: 14),
-                      const Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'FYBTT DIGITAL',
-                            style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w900, letterSpacing: 1.5),
-                          ),
-                          Text(
-                            'Virtual Classroom Network',
-                            style: TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w400, letterSpacing: 0.5),
-                          ),
-                        ],
+                      const SizedBox(width: 16),
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'FYBTT DIGITAL',
+                              style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.black, letterSpacing: 1.2),
+                            ),
+                            SizedBox(height: 2),
+                            Text(
+                              'Virtual Classroom Network',
+                              style: TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.w400, letterSpacing: 0.5),
+                            ),
+                          ],
+                        ),
                       ),
                     ],
                   ),
                 ),
                 const SizedBox(height: 24),
+                
+                // মূল ইনপুট প্যানেল কার্ড
                 Container(
                   padding: const EdgeInsets.all(24),
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(28),
+                    border: Border.all(color: const Color(0xFFE2E8F0), width: 1),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.03),
-                        blurRadius: 20,
-                        offset: const Offset(0, 8),
+                        color: const Color(0xFF0F172A).withOpacity(0.04),
+                        blurRadius: 24,
+                        offset: const Offset(0, 12),
                       )
                     ],
                   ),
@@ -237,8 +276,8 @@ class _JoinLiveScreenState extends State<JoinLiveScreen> {
                         alignment: Alignment.center,
                         children: [
                           Container(
-                            width: 90,
-                            height: 90,
+                            width: 84,
+                            height: 84,
                             decoration: BoxDecoration(
                               color: widget.isTeacher ? Colors.red.shade50 : Colors.blue.shade50,
                               shape: BoxShape.circle,
@@ -246,76 +285,46 @@ class _JoinLiveScreenState extends State<JoinLiveScreen> {
                           ),
                           Icon(
                             widget.isTeacher ? Icons.sensors_rounded : Icons.wifi_tethering_rounded,
-                            size: 46,
-                            color: widget.isTeacher ? Colors.redAccent : Colors.blue[800],
+                            size: 40,
+                            color: themeColor,
                           ),
                         ],
                       ),
-                      const SizedBox(height: 30),
+                      const SizedBox(height: 28),
+                      
                       if (widget.isTeacher) ...[
-                        TextFormField(
+                        _buildCustomTextField(
                           controller: _titleController,
-                          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
-                          decoration: InputDecoration(
-                            labelText: 'Class Title',
-                            labelStyle: TextStyle(color: Colors.grey[600], fontSize: 14),
-                            prefixIcon: Icon(Icons.title_rounded, color: Colors.blue[800], size: 22),
-                            filled: true,
-                            fillColor: const Color(0xFFF8FAFC),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(16),
-                              borderSide: BorderSide(color: Colors.grey.shade200),
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(16),
-                              borderSide: BorderSide(color: Colors.grey.shade200),
-                            ),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(16),
-                              borderSide: BorderSide(color: Colors.blue.shade400, width: 1.5),
-                            ),
-                          ),
+                          label: 'Class Title',
+                          hint: 'e.g. Physics Quantum Mechanics',
+                          icon: Icons.title_rounded,
+                          accentColor: themeColor,
                           validator: (val) => val == null || val.isEmpty ? 'Please enter a valid title' : null,
                         ),
-                        const SizedBox(height: 18),
+                        const SizedBox(height: 16),
                       ],
-                      TextFormField(
+                      
+                      _buildCustomTextField(
                         controller: _roomController,
-                        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, letterSpacing: 1.0),
-                        inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z0-9]'))],
-                        decoration: InputDecoration(
-                          labelText: 'Room Code',
-                          labelStyle: TextStyle(color: Colors.grey[600], fontSize: 14),
-                          prefixIcon: Icon(Icons.vpn_key_rounded, color: Colors.blue[800], size: 22),
-                          filled: true,
-                          fillColor: const Color(0xFFF8FAFC),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(16),
-                              borderSide: BorderSide(color: Colors.grey.shade200),
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(16),
-                              borderSide: BorderSide(color: Colors.grey.shade200),
-                            ),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(16),
-                              borderSide: BorderSide(color: Colors.blue.shade400, width: 1.5),
-                            ),
-                        ),
+                        label: 'Room Code',
+                        hint: 'Enter or generate unique code',
+                        icon: Icons.vpn_key_rounded,
+                        accentColor: themeColor,
+                        isCode: true,
                         validator: (val) => (val == null || val.length < 4) ? 'Enter valid room code (min 4 chars)' : null,
                       ),
-                      const SizedBox(height: 34),
+                      const SizedBox(height: 30),
+                      
+                      // প্রিমিয়াম গ্রেডিয়েন্ট অ্যাকশন বাটন
                       Container(
                         width: double.infinity,
-                        height: 56,
+                        height: 54,
                         decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(18),
+                          borderRadius: BorderRadius.circular(16),
                           boxShadow: [
                             BoxShadow(
-                              color: widget.isTeacher 
-                                  ? Colors.redAccent.withOpacity(0.35) 
-                                  : Colors.blue[800]!.withOpacity(0.35),
-                              blurRadius: 16,
+                              color: themeColor.withOpacity(0.3),
+                              blurRadius: 12,
                               offset: const Offset(0, 6),
                             )
                           ],
@@ -323,27 +332,28 @@ class _JoinLiveScreenState extends State<JoinLiveScreen> {
                         child: ElevatedButton(
                           style: ElevatedButton.styleFrom(
                             padding: EdgeInsets.zero,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                             elevation: 0,
+                            backgroundColor: Colors.transparent,
                           ),
                           onPressed: _isLoading ? null : _handleLiveAction,
                           child: Ink(
                             decoration: BoxDecoration(
                               gradient: LinearGradient(
                                 colors: widget.isTeacher
-                                    ? [const Color(0xFFFF416C), const Color(0xFFFF4B2B)]
-                                    : [Colors.blue.shade800, Colors.blue.shade600],
+                                    ? [const Color(0xFFEF4444), const Color(0xFFDC2626)]
+                                    : [const Color(0xFF2563EB), const Color(0xFF1D4ED8)],
                                 begin: Alignment.centerLeft,
                                 end: Alignment.centerRight,
                               ),
-                              borderRadius: BorderRadius.circular(18),
+                              borderRadius: BorderRadius.circular(16),
                             ),
                             child: Container(
                               alignment: Alignment.center,
                               child: _isLoading
                                   ? const SizedBox(
-                                      width: 24,
-                                      height: 24,
+                                      width: 22,
+                                      height: 22,
                                       child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5),
                                     )
                                   : Row(
@@ -352,14 +362,14 @@ class _JoinLiveScreenState extends State<JoinLiveScreen> {
                                         Icon(
                                           widget.isTeacher ? Icons.videocam_rounded : Icons.login_rounded,
                                           color: Colors.white,
-                                          size: 22,
+                                          size: 20,
                                         ),
                                         const SizedBox(width: 10),
                                         Text(
                                           widget.isTeacher ? 'GO LIVE WITH FYBTT' : 'JOIN CLASS NOW',
                                           style: const TextStyle(
                                             fontWeight: FontWeight.bold,
-                                            fontSize: 15,
+                                            fontSize: 14,
                                             color: Colors.white,
                                             letterSpacing: 0.5,
                                           ),
@@ -378,6 +388,59 @@ class _JoinLiveScreenState extends State<JoinLiveScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  // মডার্ন ইনপুট ফিল্ড বিল্ডার উইজেট
+  Widget _buildCustomTextField({
+    required TextEditingController controller,
+    required String label,
+    required String hint,
+    required IconData icon,
+    required Color accentColor,
+    required String? Function(String?)? validator,
+    bool isCode = false,
+  }) {
+    return TextFormField(
+      controller: controller,
+      style: TextStyle(
+        fontSize: 14, 
+        fontWeight: isCode ? FontWeight.bold : FontWeight.w500,
+        color: const Color(0xFF1E293B),
+        letterSpacing: isCode ? 1.5 : 0.2
+      ),
+      inputFormatters: isCode ? [FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z0-9]'))] : null,
+      decoration: InputDecoration(
+        labelText: label,
+        labelStyle: const TextStyle(color: Color(0xFF64748B), fontSize: 13, fontWeight: FontWeight.w500),
+        hintText: hint,
+        hintStyle: const TextStyle(color: Color(0xFF94A3B8), fontSize: 13),
+        prefixIcon: Icon(icon, color: accentColor, size: 20),
+        filled: true,
+        fillColor: const Color(0xFFF8FAFC),
+        contentPadding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide(color: accentColor, width: 1.5),
+        ),
+        errorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: Colors.redAccent, width: 1),
+        ),
+        focusedErrorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: Colors.redAccent, width: 1.5),
+        ),
+      ),
+      validator: validator,
     );
   }
 }
