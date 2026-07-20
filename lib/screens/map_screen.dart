@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class MapScreen extends StatefulWidget {
@@ -24,12 +25,14 @@ class _MapScreenState extends State<MapScreen> {
   bool _isLoading = true;
   Map<String, dynamic>? _selectedLocationData;
   bool _showDetailsCard = false;
-  final LatLng _defaultCenter = const LatLng(22.5726, 88.3639); // Kolkata Default Center
+  
+  // Default position (Kolkata Default Center)
+  LatLng _userOrCenterPosition = const LatLng(22.5726, 88.3639);
 
   @override
   void initState() {
     super.initState();
-    _fetchTeacherLocations();
+    _initializeMapData();
   }
 
   @override
@@ -38,9 +41,59 @@ class _MapScreenState extends State<MapScreen> {
     super.dispose();
   }
 
+  Future<void> _initializeMapData() async {
+    await _getUserCurrentLocationSafely();
+    await _fetchTeacherLocations();
+  }
+
+  // --- Safe Location Fetching with 2-Minute Timeout ---
+  Future<void> _getUserCurrentLocationSafely() async {
+    try {
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) return;
+
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) return;
+      }
+
+      if (permission == LocationPermission.deniedForever) return;
+
+      // ১২ সেকেন্ডের বদলে ২ মিনিট টাইমআউট দেওয়া হলো এবং সেফ ফলব্যাক হ্যান্ডেল করা হলো
+      Position? position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.medium,
+      ).timeout(
+        const Duration(minutes: 2),
+        onTimeout: () async {
+          return await Geolocator.getLastKnownPosition() ??
+              Position(
+                latitude: _userOrCenterPosition.latitude,
+                longitude: _userOrCenterPosition.longitude,
+                timestamp: DateTime.now(),
+                accuracy: 0,
+                altitude: 0,
+                heading: 0,
+                speed: 0,
+                speedAccuracy: 0,
+                altitudeAccuracy: 0,
+                headingAccuracy: 0,
+              );
+        },
+      );
+
+      if (mounted) {
+        setState(() {
+          _userOrCenterPosition = LatLng(position.latitude, position.longitude);
+        });
+      }
+    } catch (e) {
+      debugPrint("Location detection error handled safely: $e");
+    }
+  }
+
   Future<void> _fetchTeacherLocations() async {
     try {
-      // সঠিক কালেকশন এবং ডকুমেন্ট থেকে ডেটা ফেচ করা হচ্ছে
       final doc = await FirebaseFirestore.instance
           .collection('teachers')
           .doc(widget.teacherId)
@@ -52,8 +105,6 @@ class _MapScreenState extends State<MapScreen> {
       }
 
       final data = doc.data() as Map<String, dynamic>? ?? {};
-      
-      // প্রোফাইল স্ক্রিনের 'locations' ফিল্ডের সাথে ডাটা সিঙ্ক করা হয়েছে
       final List<dynamic> locations = data['locations'] ?? [];
 
       _markers.clear();
@@ -61,12 +112,10 @@ class _MapScreenState extends State<MapScreen> {
 
       for (var index = 0; index < locations.length; index++) {
         final loc = locations[index] as Map<String, dynamic>;
-        
-        // ডাবল বা স্ট্রিং যাই আসুক না কেন সেটিকে সেফলি হ্যান্ডেল করার মেকানিজম
+
         final double? lat = double.tryParse(loc['latitude']?.toString() ?? '');
         final double? lng = double.tryParse(loc['longitude']?.toString() ?? '');
-        
-        // অ্যাড্রেস বা লোকেশন নেম ফিল্ড অ্যাসাইনমেন্ট
+
         final String address = loc['address'] ?? 'Address not specified';
         final String locationName = loc['locationName'] ?? 'Teaching Zone ${index + 1}';
 
@@ -99,7 +148,6 @@ class _MapScreenState extends State<MapScreen> {
         _isLoading = false;
       });
 
-      // মার্কার অ্যাড হওয়ার পর ম্যাপ ক্যামেরা অ্যানিমেট করা
       if (points.isNotEmpty && _mapController != null) {
         _animateToFitPoints(points);
       }
@@ -138,7 +186,7 @@ class _MapScreenState extends State<MapScreen> {
           southwest: LatLng(minLat, minLng),
           northeast: LatLng(maxLat, maxLng),
         ),
-        60, // Padding
+        60,
       ),
     );
   }
@@ -171,7 +219,7 @@ class _MapScreenState extends State<MapScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final LatLng initialPos = _markers.isNotEmpty ? _markers.first.position : _defaultCenter;
+    final LatLng initialPos = _markers.isNotEmpty ? _markers.first.position : _userOrCenterPosition;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF4F6F9),
@@ -200,9 +248,10 @@ class _MapScreenState extends State<MapScreen> {
                   initialCameraPosition: CameraPosition(target: initialPos, zoom: 12),
                   markers: _markers,
                   myLocationEnabled: true,
-                  myLocationButtonEnabled: false,
+                  myLocationButtonEnabled: true,
                   zoomControlsEnabled: false,
                   mapToolbarEnabled: false,
+                  mapType: MapType.normal, // স্যাটেলাইট ভিউ চাইলে MapType.satellite করবে
                   onTap: (_) => setState(() => _showDetailsCard = false), 
                 ),
           AnimatedPositioned(
