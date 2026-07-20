@@ -9,10 +9,10 @@ class TeacherSearchResultScreen extends StatelessWidget {
   const TeacherSearchResultScreen({super.key, required this.filters});
 
   // Student's baseline coordinate parameters (Kolkata Center as default)
-  final double _studentLat = 22.5726; 
+  final double _studentLat = 22.5726;
   final double _studentLng = 88.3639;
 
-  /// Pure math formulation to calculate real-world distance between coordinates
+  /// Haversine formula for coordinate distance calculation
   double _calculateHaversineDistance(double lat1, double lon1, double lat2, double lon2) {
     const double earthRadius = 6371.0; // In Kilometers
 
@@ -33,16 +33,15 @@ class TeacherSearchResultScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Extracting passed dynamic boundaries from the search panel context
-    final String targetId = (filters['teacherId'] ?? '').toString().toLowerCase();
-    final String targetName = (filters['name'] ?? '').toString().toLowerCase();
-    final String targetSubject = (filters['subject'] ?? '').toString().toLowerCase();
-    final String targetLocation = (filters['location'] ?? '').toString().toLowerCase();
-    final String targetExpStr = (filters['experience'] ?? '').toString();
-    final int minExperience = int.tryParse(targetExpStr) ?? 0;
-
-    final double minRadius = filters['minRadius'] ?? 1.0;
-    final double maxRadius = filters['maxRadius'] ?? 10.0;
+    // Extract search query options cleanly
+    final String targetId = (filters['teacherId'] ?? '').toString().trim().toLowerCase();
+    final String targetName = (filters['name'] ?? '').toString().trim().toLowerCase();
+    final String targetSubject = (filters['subject'] ?? '').toString().trim().toLowerCase();
+    final String targetLocation = (filters['location'] ?? '').toString().trim().toLowerCase();
+    
+    final int minExperience = int.tryParse(filters['experience']?.toString() ?? '0') ?? 0;
+    final double minRadius = double.tryParse(filters['minRadius']?.toString() ?? '0.0') ?? 0.0;
+    final double maxRadius = double.tryParse(filters['maxRadius']?.toString() ?? '500.0') ?? 500.0;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
@@ -68,41 +67,56 @@ class TeacherSearchResultScreen extends StatelessWidget {
             );
           }
 
+          if (snapshot.hasError) {
+            return Center(
+              child: Text(
+                'Error fetching teachers: ${snapshot.error}',
+                style: const TextStyle(color: Colors.redAccent),
+              ),
+            );
+          }
+
           if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
             return _buildNoResultsView();
           }
 
-          // Strict Client-Side Multiplex Filtering Logic
+          // Smart & Resilient Multiplex Filtering Logic
           final matchedDocs = snapshot.data!.docs.where((doc) {
             final data = doc.data() as Map<String, dynamic>? ?? {};
             final docId = doc.id.toLowerCase();
 
-            final name = (data['name'] ?? data['displayName'] ?? '').toString().toLowerCase();
-            final location = (data['location'] ?? '').toString().toLowerCase();
-            final List subjects = data['subjects'] is List ? data['subjects'] : [];
-            final int exp = data['experience'] is int 
-                ? data['experience'] 
+            final String name = (data['name'] ?? data['displayName'] ?? '').toString().toLowerCase();
+            final String location = (data['location'] ?? data['address'] ?? '').toString().toLowerCase();
+            
+            // Flexibly extract subject list or string
+            List<String> subjects = [];
+            if (data['subjects'] is List) {
+              subjects = (data['subjects'] as List).map((s) => s.toString().toLowerCase()).toList();
+            } else if (data['subjects'] is String) {
+              subjects = [data['subjects'].toString().toLowerCase()];
+            }
+
+            final int exp = data['experience'] is int
+                ? data['experience']
                 : (int.tryParse(data['experience']?.toString() ?? '0') ?? 0);
 
-            // Conditional Checks based on user inputs
+            // 1. Text & ID Match Condition
             bool matchesId = targetId.isEmpty || docId.contains(targetId);
             bool matchesName = targetName.isEmpty || name.contains(targetName);
             bool matchesLocation = targetLocation.isEmpty || location.contains(targetLocation);
-            bool matchesSubject = targetSubject.isEmpty || 
-                subjects.any((s) => s.toString().toLowerCase().contains(targetSubject));
+            bool matchesSubject = targetSubject.isEmpty ||
+                subjects.any((s) => s.contains(targetSubject));
             bool matchesExperience = exp >= minExperience;
 
-            // Strict Haversine Radius Range Filtering Logic
+            // 2. Safe Coordinates & Radius Match Condition
             bool matchesRadius = true;
-            if (data.containsKey('latitude') && data.containsKey('longitude')) {
-              double tLat = double.tryParse(data['latitude'].toString()) ?? 0.0;
-              double tLng = double.tryParse(data['longitude'].toString()) ?? 0.0;
+            double? tLat = double.tryParse(data['latitude']?.toString() ?? '');
+            double? tLng = double.tryParse(data['longitude']?.toString() ?? '');
 
+            // Only apply strict radius check if user explicitly requested radius filtering AND coordinates exist
+            if (tLat != null && tLng != null && tLat != 0.0 && tLng != 0.0) {
               double distance = _calculateHaversineDistance(_studentLat, _studentLng, tLat, tLng);
               matchesRadius = distance >= minRadius && distance <= maxRadius;
-            } else {
-              // If teacher has no coordinates, exclude them from radius queries safely
-              if (targetLocation.isEmpty) matchesRadius = false;
             }
 
             return matchesId && matchesName && matchesLocation && matchesSubject && matchesExperience && matchesRadius;
@@ -113,7 +127,7 @@ class TeacherSearchResultScreen extends StatelessWidget {
           }
 
           return ListView.builder(
-            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
+            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
             physics: const BouncingScrollPhysics(),
             itemCount: matchedDocs.length,
             itemBuilder: (context, index) {
@@ -122,26 +136,36 @@ class TeacherSearchResultScreen extends StatelessWidget {
 
               double tLat = double.tryParse(data['latitude']?.toString() ?? '0.0') ?? 0.0;
               double tLng = double.tryParse(data['longitude']?.toString() ?? '0.0') ?? 0.0;
-              double distance = _calculateHaversineDistance(_studentLat, _studentLng, tLat, tLng);
+              
+              String distanceText = "N/A";
+              if (tLat != 0.0 && tLng != 0.0) {
+                double distance = _calculateHaversineDistance(_studentLat, _studentLng, tLat, tLng);
+                distanceText = "${distance.toStringAsFixed(1)} KM";
+              }
 
-              final List subjectsList = data['subjects'] is List ? data['subjects'] : [];
+              List<String> subjectsList = [];
+              if (data['subjects'] is List) {
+                subjectsList = List<String>.from(data['subjects'].map((x) => x.toString()));
+              } else if (data['subjects'] is String) {
+                subjectsList = [data['subjects'].toString()];
+              }
               final String subjectText = subjectsList.isNotEmpty ? subjectsList.join(', ') : 'General';
 
               return TeacherCardWidget(
                 teacherId: doc.id,
-                name: data['name'] ?? data['displayName'] ?? 'No Name',
+                name: data['name'] ?? data['displayName'] ?? 'Unknown Teacher',
                 subject: subjectText,
-                profileImageUrl: data['photoUrl'] ?? '',
+                profileImageUrl: data['photoUrl'] ?? data['profilePic'] ?? '',
                 latitude: tLat,
                 longitude: tLng,
-                studentCount: data['studentCount'] is int ? data['studentCount'] : 0,
-                experienceYears: data['experience'] is int ? data['experience'] : 0,
-                followersCount: data['followersCount'] is int ? data['followersCount'] : 0,
+                studentCount: data['studentCount'] is int ? data['studentCount'] : int.tryParse(data['studentCount']?.toString() ?? '0') ?? 0,
+                experienceYears: data['experience'] is int ? data['experience'] : int.tryParse(data['experience']?.toString() ?? '0') ?? 0,
+                followersCount: data['followersCount'] is int ? data['followersCount'] : int.tryParse(data['followersCount']?.toString() ?? '0') ?? 0,
                 rating: double.tryParse(data['rating']?.toString() ?? '5.0') ?? 5.0,
-                locationText: data['location'] ?? 'Location N/A',
-                calculatedDistance: "${distance.toStringAsFixed(1)} KM",
+                locationText: data['location'] ?? data['address'] ?? 'Location N/A',
+                calculatedDistance: distanceText,
                 onChatPressed: () {
-                  // Direct actions or routing config can trigger here
+                  // Navigation/Action callback
                 },
               );
             },
@@ -173,8 +197,8 @@ class TeacherSearchResultScreen extends StatelessWidget {
             ),
             const SizedBox(height: 6),
             Text(
-              "We couldn't find any teacher matching your precise filters and radius settings. Try broadening your range.",
-              textAlign: TextAlign.center, // ফিক্সড: Center উইজেটের বদলে TextAlign.center ব্যবহার করা হয়েছে
+              "We couldn't find any teacher matching your precise filters and radius settings. Try broadening your search criteria.",
+              textAlign: TextAlign.center,
               style: TextStyle(fontSize: 13, color: Colors.grey.shade500, height: 1.4),
             ),
           ],
