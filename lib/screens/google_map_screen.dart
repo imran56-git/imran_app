@@ -12,11 +12,11 @@ class GoogleMapScreen extends StatefulWidget {
 }
 
 class _GoogleMapScreenState extends State<GoogleMapScreen> {
-  Completer<GoogleMapController> _controller = Completer();
+  final Completer<GoogleMapController> _controller = Completer();
   final Map<MarkerId, Marker> _markers = {};
-  
-  // Default position (e.g., City Center) if location is denied
-  LatLng _initialPosition = const LatLng(23.8103, 90.4125); 
+
+  // Default position (Kolkata Center default fallback)
+  LatLng _initialPosition = const LatLng(22.5726, 88.3639); 
   bool _isLoading = true;
 
   @override
@@ -36,7 +36,7 @@ class _GoogleMapScreenState extends State<GoogleMapScreen> {
     }
   }
 
-  // --- Fetch User Location with Error Handling ---
+  // --- Fetch User Location with Safe 2-Minute Timeout & Fallback ---
   Future<void> _determineUserPosition() async {
     bool serviceEnabled;
     LocationPermission permission;
@@ -62,21 +62,43 @@ class _GoogleMapScreenState extends State<GoogleMapScreen> {
     }
 
     try {
-      Position position = await Geolocator.getCurrentPosition(
-          desiredAccuracy: LocationAccuracy.high);
-      
+      // ১২ সেকেন্ডের জায়গায় ২ মিনিট (120 sec) টাইমআউট সেট করা হলো
+      Position? position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.medium,
+      ).timeout(
+        const Duration(minutes: 2),
+        onTimeout: () async {
+          // টাইমআউট হলে লাস্ট নোউন লোকেশন ট্রাই করবে
+          return await Geolocator.getLastKnownPosition() ??
+              Position(
+                longitude: _initialPosition.longitude,
+                latitude: _initialPosition.latitude,
+                timestamp: DateTime.now(),
+                accuracy: 0,
+                altitude: 0,
+                heading: 0,
+                speed: 0,
+                speedAccuracy: 0,
+                altitudeAccuracy: 0,
+                headingAccuracy: 0,
+              );
+        },
+      );
+
       _initialPosition = LatLng(position.latitude, position.longitude);
-      
-      // Animate camera to user position
-      final GoogleMapController controller = await _controller.future;
-      controller.animateCamera(CameraUpdate.newLatLngZoom(_initialPosition, 14.0));
+
+      // Animate camera to user position safely
+      if (_controller.isCompleted) {
+        final GoogleMapController controller = await _controller.future;
+        controller.animateCamera(CameraUpdate.newLatLngZoom(_initialPosition, 14.0));
+      }
 
     } catch (e) {
-      debugPrint("Location error: $e");
+      debugPrint("Location detection handled safely: $e");
     }
   }
 
-  // --- Optimized Teacher Loader ---
+  // --- Optimized Crash-Proof Teacher Loader ---
   Future<void> _loadTeachersFromFirestore() async {
     try {
       final snapshot = await FirebaseFirestore.instance.collection('teachers').get();
@@ -85,25 +107,31 @@ class _GoogleMapScreenState extends State<GoogleMapScreen> {
       for (var doc in snapshot.docs) {
         final data = doc.data();
         final String teacherId = doc.id;
-        final String name = data['name'] ?? 'Teacher';
+        final String name = data['name'] ?? data['displayName'] ?? 'Teacher';
 
         if (data['locations'] != null && data['locations'] is List) {
           List locations = data['locations'];
           for (int i = 0; i < locations.length; i++) {
             var loc = locations[i];
-            final markerId = MarkerId('$teacherId-$i');
+            
+            final double? lat = double.tryParse(loc['latitude']?.toString() ?? '');
+            final double? lng = double.tryParse(loc['longitude']?.toString() ?? '');
 
-            final marker = Marker(
-              markerId: markerId,
-              position: LatLng(loc['latitude'], loc['longitude']),
-              icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
-              infoWindow: InfoWindow(
-                title: name,
-                snippet: "Click to view profile",
-                onTap: () => _navigateToProfile(teacherId),
-              ),
-            );
-            newMarkers[markerId] = marker;
+            if (lat != null && lng != null) {
+              final markerId = MarkerId('$teacherId-$i');
+
+              final marker = Marker(
+                markerId: markerId,
+                position: LatLng(lat, lng),
+                icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+                infoWindow: InfoWindow(
+                  title: name,
+                  snippet: loc['address'] ?? "Click to view profile",
+                  onTap: () => _navigateToProfile(teacherId),
+                ),
+              );
+              newMarkers[markerId] = marker;
+            }
           }
         }
       }
@@ -127,6 +155,7 @@ class _GoogleMapScreenState extends State<GoogleMapScreen> {
   }
 
   void _showErrorSnackBar(String message) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
     );
@@ -151,9 +180,11 @@ class _GoogleMapScreenState extends State<GoogleMapScreen> {
             markers: Set<Marker>.from(_markers.values),
             myLocationEnabled: true,
             myLocationButtonEnabled: true,
-            zoomControlsEnabled: false, // Custom UI often hides these
+            zoomControlsEnabled: false,
             onMapCreated: (GoogleMapController controller) {
-              _controller.complete(controller);
+              if (!_controller.isCompleted) {
+                _controller.complete(controller);
+              }
             },
           ),
           if (_isLoading)
