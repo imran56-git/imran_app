@@ -1,16 +1,16 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/badge_model.dart';
-import 'badge_evaluator_service.dart';
+import 'badge_service.dart'; // ✅ আসল ফাইলের নাম অনুযায়ী ইম্পোর্ট করা হলো
 
 class VerificationService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final BadgeEvaluatorService _badgeEvaluator = BadgeEvaluatorService();
+  final BadgeService _badgeService = BadgeService(); // ✅ BadgeService ব্যবহার করা হয়েছে
 
   /// ১. শিক্ষক ভেরিফিকেশনের জন্য রিকোয়েস্ট সাবমিট করবেন
   Future<void> submitVerificationRequest({
     required String teacherId,
     required String teacherName,
-    required String documentType, // e.g., 'NID', 'Certificate', 'Institutional ID'
+    required String documentType,
     required String documentUrl,
     String? note,
   }) async {
@@ -23,12 +23,11 @@ class VerificationService {
         'documentType': documentType,
         'documentUrl': documentUrl,
         'note': note ?? '',
-        'status': 'pending', // 'pending', 'approved', 'rejected'
+        'status': 'pending',
         'submittedAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
 
-      // শিক্ষকের মেইন ডকুমেন্টেও ভেরিফিকেশন পেন্ডিং স্ট্যাটাস আপডেট করা
       await _firestore.collection('teachers').doc(teacherId).update({
         'verificationStatus': 'pending',
       });
@@ -60,7 +59,6 @@ class VerificationService {
     try {
       final batch = _firestore.batch();
 
-      // Verification Request Document আপডেট
       final requestRef = _firestore.collection('verification_requests').doc(teacherId);
       batch.update(requestRef, {
         'status': 'approved',
@@ -68,7 +66,6 @@ class VerificationService {
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
-      // Teacher Profile-এ ভেরিফাইড ফ্ল্যাগ আপডেট
       final teacherRef = _firestore.collection('teachers').doc(teacherId);
       batch.update(teacherRef, {
         'isVerified': true,
@@ -78,17 +75,17 @@ class VerificationService {
 
       await batch.commit();
 
-      // ভেরিফাইড হওয়ার পর টিচারের ব্যাজ আপডেট রি-ইভালুয়েট করা
+      // ভেরিফাইড হওয়ার পর ব্যাজ অ্যাসাইন করা
       final badge = BadgeModel(
         id: 'badge_verified_$teacherId',
         teacherId: teacherId,
         type: BadgeType.verified,
-        title: 'Verified Teacher',
         description: 'Identity and credentials verified by admin.',
         unlockedAt: DateTime.now(),
       );
 
-      await _badgeEvaluator.assignVerifiedBadge(teacherId: teacherId, badge: badge);
+      // আপনার BadgeService-এর মেথড অনুযায়ী কল করুন
+      await _badgeService.assignBadge(teacherId, badge);
     } catch (e) {
       rethrow;
     }
