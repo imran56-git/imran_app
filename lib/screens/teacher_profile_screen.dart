@@ -16,7 +16,6 @@ import 'tuition_management_screen.dart';
 import 'live/join_live_screen.dart';
 import 'notification_screen.dart';
 import 'teacher_reviews_screen.dart';
-import 'rating_screen.dart';
 
 class TeacherProfileScreen extends StatefulWidget {
   final String currentUserId;
@@ -353,7 +352,6 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
                                           Row(
                                             mainAxisSize: MainAxisSize.min,
                                             children: [
-                                              // ক্র্যাশ সল্ভ করতে ব্যাক বাটন শুধু অন্যের প্রোফাইলে শো করবে
                                               if (canPopScreen)
                                                 IconButton(
                                                   icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
@@ -394,7 +392,6 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
                           _buildUidIdentityCard(),
                           const SizedBox(height: 12),
 
-                          // --- ROADMAP STEP 4: Rating Section Component ---
                           _buildRatingSummaryCard(),
                           const SizedBox(height: 12),
 
@@ -418,7 +415,6 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
     );
   }
 
-  // --- ROADMAP STEP 4: Rating & Season Header Display Widget ---
   Widget _buildRatingSummaryCard() {
     double avgRating = (teacherData?['averageRating'] as num?)?.toDouble() ?? 0.0;
     double allTimeRating = (teacherData?['allTimeRating'] as num?)?.toDouble() ?? 0.0;
@@ -477,7 +473,12 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (_) => TeacherReviewsScreen(teacherId: widget.currentUserId),
+                      builder: (_) => TeacherReviewsScreen(
+                        teacherId: widget.currentUserId,
+                        teacherName: _nameController.text.isEmpty ? "Teacher" : _nameController.text,
+                        teacherProfileUrl: teacherData?['profileImageUrl'],
+                        currentStudentId: _auth.currentUser?.uid ?? "",
+                      ),
                     ),
                   );
                 },
@@ -515,9 +516,11 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (_) => RatingScreen(
+                  builder: (_) => TeacherReviewsScreen(
                     teacherId: widget.currentUserId,
-                    teacherName: _nameController.text,
+                    teacherName: _nameController.text.isEmpty ? "Teacher" : _nameController.text,
+                    teacherProfileUrl: teacherData?['profileImageUrl'],
+                    currentStudentId: currentUID,
                   ),
                 ),
               ).then((_) => fetchTeacherData());
@@ -635,7 +638,8 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
       ],
     );
   }
-Widget _buildProfileImage(double radius) {
+
+  Widget _buildProfileImage(double radius) {
     final url = teacherData?['profileImageUrl'];
     return GestureDetector(
       onTap: isEditing ? () async {
@@ -701,8 +705,7 @@ Widget _buildProfileImage(double radius) {
       ),
     );
   }
-
-  Widget _buildViewProfile() {
+Widget _buildViewProfile() {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       _buildMaterial3Card("Bio", _bioController.text, Icons.description_outlined, const Color(0xFF3B82F6)),
       _buildMaterial3Card("Phone Number", isOwnProfile ? _phoneController.text : "Hidden for Privacy", Icons.phone_outlined, Colors.deepPurple),
@@ -809,7 +812,7 @@ Widget _buildProfileImage(double radius) {
     );
   }
 
-Widget _buildDashboardCard(String title, String value, IconData icon, Color color) {
+  Widget _buildDashboardCard(String title, String value, IconData icon, Color color) {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -841,7 +844,7 @@ Widget _buildDashboardCard(String title, String value, IconData icon, Color colo
     );
   }
 
-  Widget _buildEditForm() {
+Widget _buildEditForm() {
     final query = _subjectSearchController.text.trim();
     final list = _subjects.where((s) => s.toLowerCase().contains(query.toLowerCase())).toList();
 
