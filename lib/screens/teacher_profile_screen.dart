@@ -7,12 +7,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart'; 
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart'; 
+
+import '../models/rating_model.dart';
 import '../utils/image_utils.dart';
 import '../widgets/success_toast.dart';
 import 'location_picker_screen.dart';
 import 'tuition_management_screen.dart';
 import 'live/join_live_screen.dart';
 import 'notification_screen.dart';
+import 'teacher_reviews_screen.dart';
+import 'rating_screen.dart';
 
 class TeacherProfileScreen extends StatefulWidget {
   final String currentUserId;
@@ -131,6 +135,32 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
       });
   }
 
+  Future<void> _clearLocalSessionAndNavigate() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.clear();
+    if (mounted) {
+      Navigator.of(context, rootNavigator: true).pushNamedAndRemoveUntil('/login', (route) => false);
+    }
+  }
+
+  Future<void> _deleteAccount() async {
+    try {
+      final user = _auth.currentUser;
+      if (user != null) {
+        String uid = user.uid;
+        await _firestore.collection('teachers').doc(uid).delete();
+        await user.delete();
+        await _clearLocalSessionAndNavigate();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Account deletion failed: ${e.toString()} (Re-authentication required)")),
+        );
+      }
+    }
+  }
+
   void triggerFollowAction() async {
     final currentUID = _auth.currentUser?.uid;
     if (currentUID == null || isOwnProfile) return;
@@ -169,24 +199,16 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
     checkFollowRequestStatus();
   }
 
-  Future<void> _clearLocalSession() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.clear();
-  }
-
-  /// ম্যাপ থেকে ডাটা রিসিভ করে সরাসরি ফায়ারস্টোরে আপডেট করার মেকানিজম (Sync Fixed)
   void _openMapPicker() async {
     final List<Map<String, dynamic>>? results = await Navigator.push(
       context, MaterialPageRoute(builder: (context) => const LocationPickerScreen()),
     );
-    
+
     if (results != null && results.isNotEmpty) {
       setState(() {
-        // নতুন পিন করা লোকেশনগুলো অ্যাড করা হচ্ছে
         teacherLocations.addAll(results);
       });
 
-      // প্রোফাইল এডিটিং মোডে না থাকলেও ম্যাপ সিলেক্ট করার পর ডাটাবেজে ক্লাউড সিঙ্ক চালু রাখা হলো
       if (!isEditing) {
         final uid = _auth.currentUser?.uid;
         if (uid != null) {
@@ -196,7 +218,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
             });
             if (mounted) SuccessToast.show(context, 'Teaching areas synchronized!');
           } catch (e) {
-            // এরর ট্র্যাকিং লজিক
+            // Error handling
           }
         }
       }
@@ -223,7 +245,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
         'gender': gender,
         'profileImageUrl': imageUrl,
         'subjects': selectedSubjects,
-        'locations': teacherLocations, // ফর্ম সাবমিশনেও সিঙ্ক অক্ষুণ্ণ থাকবে
+        'locations': teacherLocations,
       });
       if (mounted) {
         SuccessToast.show(context, 'Updated Successfully');
@@ -250,72 +272,34 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
       pageBuilder: (context, a1, a2) => const SizedBox(),
       transitionBuilder: (dialogContext, anim, a2, child) {
         return BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
+          filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
           child: ScaleTransition(
             scale: Tween<double>(begin: 0.85, end: 1.0).animate(CurvedAnimation(parent: anim, curve: Curves.easeOutBack)),
             child: FadeTransition(
               opacity: anim,
               child: AlertDialog(
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 22)),
-                content: Text(message, style: const TextStyle(fontSize: 16, color: Colors.black87)),
+                title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 20)),
+                content: Text(message, style: const TextStyle(fontSize: 15, color: Colors.black87)),
                 actions: [
                   TextButton(
                     onPressed: () => Navigator.pop(dialogContext),
-                    child: const Text('Cancel', style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold, fontSize: 16)),
+                    child: const Text('Cancel', style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold, fontSize: 15)),
                   ),
                   ElevatedButton(
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: isDelete ? Colors.red : const Color(0xFF1565C0),
+                      backgroundColor: isDelete ? Colors.redAccent : const Color(0xFF1565C0),
                       foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                     ),
                     onPressed: () async {
                       Navigator.pop(dialogContext);
                       await onConfirm();
                     },
-                    child: Text(confirmText, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                    child: Text(confirmText, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
                   ),
                 ],
               ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  void _showPaymentDisabledPopup() {
-    showGeneralDialog(
-      context: context,
-      barrierDismissible: true,
-      barrierLabel: '',
-      transitionDuration: const Duration(milliseconds: 250),
-      pageBuilder: (context, a1, a2) => const SizedBox(),
-      transitionBuilder: (context, anim, a2, child) {
-        return ScaleTransition(
-          scale: Tween<double>(begin: 0.9, end: 1.0).animate(CurvedAnimation(parent: anim, curve: Curves.easeOut)),
-          child: FadeTransition(
-            opacity: anim,
-            child: AlertDialog(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              content: const Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('This service is currently disabled.', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                  SizedBox(height: 10),
-                  Text('We are working on this feature.', style: TextStyle(color: Colors.grey, fontSize: 14)),
-                  Text('It will be available in a future update.', style: TextStyle(color: Colors.grey, fontSize: 14)),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('OK', style: TextStyle(fontWeight: FontWeight.bold)),
-                )
-              ],
             ),
           ),
         );
@@ -327,6 +311,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
   Widget build(BuildContext context) {
     double headerHeight = 170.0;
     double profileRadius = 56.0;
+    bool canPopScreen = Navigator.canPop(context) && !isOwnProfile;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF7F9FC),
@@ -359,33 +344,26 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
                                 child: Stack(
                                   children: [
                                     Positioned(
-                                      top: 50,
-                                      left: 24,
-                                      child: Icon(Icons.blur_on_rounded, color: Colors.white.withOpacity(_glowAnimation.value * 0.28), size: 55),
-                                    ),
-                                    Positioned(
-                                      top: 45,
-                                      right: 24,
-                                      child: Icon(Icons.blur_on_rounded, color: Colors.white.withOpacity(_glowAnimation.value * 0.24), size: 55),
-                                    ),
-                                    Positioned(
                                       top: 40,
-                                      left: 8,
-                                      right: 0,
+                                      left: 12,
+                                      right: 12,
                                       child: Row(
                                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                         children: [
                                           Row(
                                             mainAxisSize: MainAxisSize.min,
                                             children: [
-                                              IconButton(
-                                                icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
-                                                onPressed: () => Navigator.pop(context),
-                                              ),
-                                              const SizedBox(width: 2),
+                                              // ক্র্যাশ সল্ভ করতে ব্যাক বাটন শুধু অন্যের প্রোফাইলে শো করবে
+                                              if (canPopScreen)
+                                                IconButton(
+                                                  icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
+                                                  onPressed: () => Navigator.pop(context),
+                                                )
+                                              else
+                                                const SizedBox(width: 8),
                                               const Text(
                                                 'My Profile',
-                                                style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 19, letterSpacing: -0.3),
+                                                style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 20),
                                               ),
                                             ],
                                           ),
@@ -398,7 +376,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
                               ),
                             );
                           },
-                        ),                        
+                        ),
                         Positioned(
                           top: headerHeight - profileRadius - 10,
                           child: _buildProfileImage(profileRadius),
@@ -414,10 +392,16 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
                           const SizedBox(height: 8),
 
                           _buildUidIdentityCard(),
-                          const SizedBox(height: 10),
+                          const SizedBox(height: 12),
+
+                          // --- ROADMAP STEP 4: Rating Section Component ---
+                          _buildRatingSummaryCard(),
+                          const SizedBox(height: 12),
 
                           if (!isEditing) _buildFollowStats(),
                           if (!isOwnProfile) _buildFollowButton(),
+                          if (!isOwnProfile) _buildStudentRatingActionButton(),
+
                           const SizedBox(height: 20),
                           isEditing ? _buildEditForm() : _buildViewProfile(),
                           if (isOwnProfile && !isEditing) _buildDashboardSection(),
@@ -431,6 +415,116 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
                 ),
               ),
             ),
+    );
+  }
+
+  // --- ROADMAP STEP 4: Rating & Season Header Display Widget ---
+  Widget _buildRatingSummaryCard() {
+    double avgRating = (teacherData?['averageRating'] as num?)?.toDouble() ?? 0.0;
+    double allTimeRating = (teacherData?['allTimeRating'] as num?)?.toDouble() ?? 0.0;
+    int reviewCount = (teacherData?['reviewCount'] as num?)?.toInt() ?? 0;
+    String currentSeason = teacherData?['currentSeason'] ?? RatingModel.getCurrentSeason();
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.blue.shade100),
+        boxShadow: [BoxShadow(color: Colors.blue.withOpacity(0.03), blurRadius: 10)],
+      ),
+      child: Column(
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.star_rounded, color: Colors.amber, size: 24),
+                      const SizedBox(width: 4),
+                      Text(
+                        avgRating.toStringAsFixed(1),
+                        style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(color: Colors.blue[50], borderRadius: BorderRadius.circular(10)),
+                        child: Text(
+                          "$currentSeason Rating",
+                          style: TextStyle(color: Colors.blue[900], fontSize: 11, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    "All-Time: ★ $allTimeRating ($reviewCount Reviews)",
+                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600, fontWeight: FontWeight.w500),
+                  ),
+                ],
+              ),
+              OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  side: BorderSide(color: Colors.blue.shade300),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                ),
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => TeacherReviewsScreen(teacherId: widget.currentUserId),
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.rate_review_outlined, size: 16),
+                label: const Text("View Reviews", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStudentRatingActionButton() {
+    String currentUID = _auth.currentUser?.uid ?? "";
+    if (currentUID.isEmpty) return const SizedBox();
+
+    return FutureBuilder<DocumentSnapshot>(
+      future: _firestore.collection('ratings').doc('${widget.currentUserId}_$currentUID').get(),
+      builder: (context, snapshot) {
+        bool hasRated = snapshot.hasData && snapshot.data!.exists;
+
+        return Padding(
+          padding: const EdgeInsets.only(top: 10),
+          child: ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: hasRated ? Colors.amber[800] : Colors.amber[700],
+              foregroundColor: Colors.white,
+              minimumSize: const Size(180, 42),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            icon: Icon(hasRated ? Icons.edit_note : Icons.star, size: 18),
+            label: Text(hasRated ? "Edit Rating" : "Give Rating"),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => RatingScreen(
+                    teacherId: widget.currentUserId,
+                    teacherName: _nameController.text,
+                  ),
+                ),
+              ).then((_) => fetchTeacherData());
+            },
+          ),
+        );
+      },
     );
   }
 
@@ -461,17 +555,10 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
               ],
             ),
           ),
-          const SizedBox(width: 10),
           InkWell(
             onTap: () {
               Clipboard.setData(ClipboardData(text: widget.currentUserId));
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: const Text("Teacher UID Copied!"),
-                  behavior: SnackBarBehavior.floating,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                ),
-              );
+              SuccessToast.show(context, "Teacher UID Copied!");
             },            
             borderRadius: BorderRadius.circular(8),
             child: Container(
@@ -500,10 +587,6 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
             } else if (val == 'share') {
               Clipboard.setData(ClipboardData(text: "Check out this teacher profile on FYBTT. UID: ${widget.currentUserId}"));
               SuccessToast.show(context, 'Profile link copied!');
-            } else if (val == 'report') {
-              SuccessToast.show(context, 'User Reported Successfully');
-            } else if (val == 'block') {
-              SuccessToast.show(context, 'User Blocked Successfully');
             } else if (val == 'signout') {
               _showAnimatedPopup(
                 title: 'Sign Out', 
@@ -511,8 +594,17 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
                 confirmText: 'Confirm', 
                 onConfirm: () async {
                   await _auth.signOut();
-                  await _clearLocalSession(); 
-                  if (mounted) Navigator.of(context).popUntil((route) => route.isFirst);
+                  await _clearLocalSessionAndNavigate();
+                }
+              );
+            } else if (val == 'delete_account') {
+              _showAnimatedPopup(
+                title: 'Delete Account', 
+                message: 'This will permanently delete your account. Are you sure?', 
+                confirmText: 'Delete', 
+                isDelete: true,
+                onConfirm: () async {
+                  await _deleteAccount();
                 }
               );
             }
@@ -523,12 +615,11 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
                 const PopupMenuItem(value: 'notifications', child: Row(children: [Icon(Icons.notifications_none_rounded, size: 20), SizedBox(width: 10), Text('Notifications')])),
                 const PopupMenuItem(value: 'share', child: Row(children: [Icon(Icons.share_outlined, size: 20), SizedBox(width: 10), Text('Share Profile')])),
                 const PopupMenuItem(value: 'signout', child: Row(children: [Icon(Icons.logout, size: 20, color: Colors.orange), SizedBox(width: 10), Text('Sign Out')])),
+                const PopupMenuItem(value: 'delete_account', child: Row(children: [Icon(Icons.delete_forever, size: 20, color: Colors.redAccent), SizedBox(width: 10), Text('Delete Account', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold))])),
               ]
             : [
                 const PopupMenuItem(value: 'notifications', child: Row(children: [Icon(Icons.notifications_none_rounded, size: 20), SizedBox(width: 10), Text('Notifications')])),
                 const PopupMenuItem(value: 'share', child: Row(children: [Icon(Icons.share_outlined, size: 20), SizedBox(width: 10), Text('Share Profile')])),
-                const PopupMenuItem(value: 'report', child: Row(children: [Icon(Icons.report_problem_outlined, size: 20, color: Colors.red), SizedBox(width: 10), Text('Report User', style: TextStyle(color: Colors.red))])),
-                const PopupMenuItem(value: 'block', child: Row(children: [Icon(Icons.block_flipped, size: 20, color: Colors.red), SizedBox(width: 10), Text('Block User', style: TextStyle(color: Colors.red))])),
               ],
         ),
         if (hasUnreadNotifications)
@@ -544,8 +635,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
       ],
     );
   }
-
-  Widget _buildProfileImage(double radius) {
+Widget _buildProfileImage(double radius) {
     final url = teacherData?['profileImageUrl'];
     return GestureDetector(
       onTap: isEditing ? () async {
@@ -602,17 +692,17 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
     }
 
     return Padding(
-      padding: const EdgeInsets.only(top: 15),
+      padding: const EdgeInsets.only(top: 10),
       child: ElevatedButton.icon(
         onPressed: triggerFollowAction,
         icon: Icon(icon),
         label: Text(label),
-        style: ElevatedButton.styleFrom(backgroundColor: btnColor, foregroundColor: Colors.white, minimumSize: const Size(180, 45)),
+        style: ElevatedButton.styleFrom(backgroundColor: btnColor, foregroundColor: Colors.white, minimumSize: const Size(180, 42)),
       ),
     );
   }
 
- Widget _buildViewProfile() {
+  Widget _buildViewProfile() {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       _buildMaterial3Card("Bio", _bioController.text, Icons.description_outlined, const Color(0xFF3B82F6)),
       _buildMaterial3Card("Phone Number", isOwnProfile ? _phoneController.text : "Hidden for Privacy", Icons.phone_outlined, Colors.deepPurple),
@@ -661,7 +751,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
         ),
       ),
     );
-  }
+  }               
 
   Widget _buildDashboardSection() {
     return Column(
@@ -719,7 +809,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
     );
   }
 
- Widget _buildDashboardCard(String title, String value, IconData icon, Color color) {
+Widget _buildDashboardCard(String title, String value, IconData icon, Color color) {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -813,8 +903,6 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
       Card(elevation: 0, color: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: const BorderSide(color: Color(0xFFF1F5F9))), child: ListTile(leading: const Icon(Icons.assignment_turned_in_rounded, color: Colors.teal), title: const Text("Tuition Management", style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)), trailing: const Icon(Icons.chevron_right_rounded), onTap: () {
         Navigator.push(context, MaterialPageRoute(builder: (context) => TuitionManagementScreen(currentUserId: _auth.currentUser?.uid ?? '', currentUserName: _nameController.text.isEmpty ? 'Teacher' : _nameController.text)));
       })),
-      const SizedBox(height: 4),
-      Card(elevation: 0, color: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: const BorderSide(color: Color(0xFFF1F5F9))), child: ListTile(leading: const Icon(Icons.receipt_long_rounded, color: Colors.indigo, size: 22), title: const Text("Payment Confirmations", style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)), trailing: const Icon(Icons.chevron_right_rounded), onTap: _showPaymentDisabledPopup)),
     ]);
   }
 
