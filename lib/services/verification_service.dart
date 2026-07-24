@@ -77,6 +77,7 @@ class VerificationService {
       final teacherData = teacherDoc.data() ?? {};
       final ratingSummary = RatingSummaryModel.fromMap(
         teacherData['ratingSummary'] as Map<String, dynamic>? ?? {},
+        teacherId,
       );
 
       await _badgeService.evaluateAndAssignBadges(
