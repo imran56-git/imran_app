@@ -14,34 +14,42 @@ class VerificationService {
     required String documentUrl,
     String? note,
   }) async {
-    final docRef = _firestore.collection('verification_requests').doc(teacherId);
+    try {
+      final docRef = _firestore.collection('verification_requests').doc(teacherId);
 
-    await docRef.set({
-      'teacherId': teacherId,
-      'teacherName': teacherName,
-      'documentType': documentType,
-      'documentUrl': documentUrl,
-      'note': note ?? '',
-      'status': 'pending', // 'pending', 'approved', 'rejected'
-      'submittedAt': FieldValue.serverTimestamp(),
-      'updatedAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
+      await docRef.set({
+        'teacherId': teacherId,
+        'teacherName': teacherName,
+        'documentType': documentType,
+        'documentUrl': documentUrl,
+        'note': note ?? '',
+        'status': 'pending', // 'pending', 'approved', 'rejected'
+        'submittedAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
 
-    // শিক্ষকের মেইন ডকুমেন্টেও ভেরিফিকেশন পেন্ডিং স্ট্যাটাস আপডেট করা
-    await _firestore.collection('teachers').doc(teacherId).update({
-      'verificationStatus': 'pending',
-    });
+      // শিক্ষকের মেইন ডকুমেন্টেও ভেরিফিকেশন পেন্ডিং স্ট্যাটাস আপডেট করা
+      await _firestore.collection('teachers').doc(teacherId).update({
+        'verificationStatus': 'pending',
+      });
+    } catch (e) {
+      rethrow;
+    }
   }
 
   /// ২. এডমিন প্যানেলের জন্য: সকল পেন্ডিং ভেরিফিকেশন রিকোয়েস্ট ফেচ করা
   Future<List<Map<String, dynamic>>> getPendingVerificationRequests() async {
-    final querySnapshot = await _firestore
-        .collection('verification_requests')
-        .where('status', isEqualTo: 'pending')
-        .orderBy('submittedAt', descending: true)
-        .get();
+    try {
+      final querySnapshot = await _firestore
+          .collection('verification_requests')
+          .where('status', isEqualTo: 'pending')
+          .orderBy('submittedAt', descending: true)
+          .get();
 
-    return querySnapshot.docs.map((doc) => doc.data()).toList();
+      return querySnapshot.docs.map((doc) => doc.data()).toList();
+    } catch (e) {
+      return [];
+    }
   }
 
   /// ৩. এডমিন ভেরিফিকেশন Approve করবেন
@@ -49,37 +57,41 @@ class VerificationService {
     required String teacherId,
     required String adminId,
   }) async {
-    final batch = _firestore.batch();
+    try {
+      final batch = _firestore.batch();
 
-    // Verification Request Document আপডেট
-    final requestRef = _firestore.collection('verification_requests').doc(teacherId);
-    batch.update(requestRef, {
-      'status': 'approved',
-      'reviewedBy': adminId,
-      'updatedAt': FieldValue.serverTimestamp(),
-    });
+      // Verification Request Document আপডেট
+      final requestRef = _firestore.collection('verification_requests').doc(teacherId);
+      batch.update(requestRef, {
+        'status': 'approved',
+        'reviewedBy': adminId,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
 
-    // Teacher Profile-এ ভেরিফাইড ফ্ল্যাগ আপডেট
-    final teacherRef = _firestore.collection('teachers').doc(teacherId);
-    batch.update(teacherRef, {
-      'isVerified': true,
-      'verificationStatus': 'approved',
-      'verifiedAt': FieldValue.serverTimestamp(),
-    });
+      // Teacher Profile-এ ভেরিফাইড ফ্ল্যাগ আপডেট
+      final teacherRef = _firestore.collection('teachers').doc(teacherId);
+      batch.update(teacherRef, {
+        'isVerified': true,
+        'verificationStatus': 'approved',
+        'verifiedAt': FieldValue.serverTimestamp(),
+      });
 
-    await batch.commit();
+      await batch.commit();
 
-    // ভেরিফাইড হওয়ার পর টিচারের ব্যাজ আপডেট রি-ইভালুয়েট করা
-    final badge = BadgeModel(
-      id: 'badge_verified_$teacherId',
-      teacherId: teacherId,
-      type: BadgeType.verified,
-      title: 'Verified Teacher',
-      description: 'Identity and credentials verified by admin.',
-      unlockedAt: DateTime.now(),
-    );
+      // ভেরিফাইড হওয়ার পর টিচারের ব্যাজ আপডেট রি-ইভালুয়েট করা
+      final badge = BadgeModel(
+        id: 'badge_verified_$teacherId',
+        teacherId: teacherId,
+        type: BadgeType.verified,
+        title: 'Verified Teacher',
+        description: 'Identity and credentials verified by admin.',
+        unlockedAt: DateTime.now(),
+      );
 
-    await _badgeEvaluator.assignVerifiedBadge(teacherId: teacherId, badge: badge);
+      await _badgeEvaluator.assignVerifiedBadge(teacherId: teacherId, badge: badge);
+    } catch (e) {
+      rethrow;
+    }
   }
 
   /// ৪. এডমিন ভেরিফিকেশন Reject করবেন
@@ -88,23 +100,27 @@ class VerificationService {
     required String adminId,
     required String rejectionReason,
   }) async {
-    final batch = _firestore.batch();
+    try {
+      final batch = _firestore.batch();
 
-    final requestRef = _firestore.collection('verification_requests').doc(teacherId);
-    batch.update(requestRef, {
-      'status': 'rejected',
-      'rejectionReason': rejectionReason,
-      'reviewedBy': adminId,
-      'updatedAt': FieldValue.serverTimestamp(),
-    });
+      final requestRef = _firestore.collection('verification_requests').doc(teacherId);
+      batch.update(requestRef, {
+        'status': 'rejected',
+        'rejectionReason': rejectionReason,
+        'reviewedBy': adminId,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
 
-    final teacherRef = _firestore.collection('teachers').doc(teacherId);
-    batch.update(teacherRef, {
-      'isVerified': false,
-      'verificationStatus': 'rejected',
-    });
+      final teacherRef = _firestore.collection('teachers').doc(teacherId);
+      batch.update(teacherRef, {
+        'isVerified': false,
+        'verificationStatus': 'rejected',
+      });
 
-    await batch.commit();
+      await batch.commit();
+    } catch (e) {
+      rethrow;
+    }
   }
 
   /// ৫. কোনো নির্দিষ্ট শিক্ষকের ভেরিফিকেশন স্ট্যাটাস দেখা
