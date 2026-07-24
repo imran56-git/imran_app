@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'teacher_badge_widget.dart';
 
 class TeacherCardWidget extends StatelessWidget {
   final String teacherId;
@@ -8,14 +9,15 @@ class TeacherCardWidget extends StatelessWidget {
   final double latitude;
   final double longitude;
   final int studentCount;
-  final int experienceYears;       
-  final int followersCount;        
-  final double rating;             
-  final String locationText;       
-  final String calculatedDistance; 
+  final int experienceYears;
+  final int followersCount;
+  final double rating;
+  final String locationText;
+  final String calculatedDistance;
+  final String highestBadgeType; // 'master', 'golden', 'verified'
   final VoidCallback onChatPressed;
-  final VoidCallback? onProfilePressed; 
-  final VoidCallback? onMapPressed;     
+  final VoidCallback? onProfilePressed;
+  final VoidCallback? onMapPressed;
 
   const TeacherCardWidget({
     super.key,
@@ -31,12 +33,13 @@ class TeacherCardWidget extends StatelessWidget {
     required this.rating,
     required this.locationText,
     required this.calculatedDistance,
+    this.highestBadgeType = 'verified',
     required this.onChatPressed,
     this.onProfilePressed,
     this.onMapPressed,
   });
 
-  // ইমেজ ফুল-স্ক্রিন প্রিভিউ করার ডায়ালগ উইজেট (Smooth scale animation সহ)
+  // ইমেজ ফুল-স্ক্রিন প্রিভিউ করার ডায়ালগ উইজেট
   void _openFullImage(BuildContext context) {
     showGeneralDialog(
       context: context,
@@ -64,16 +67,16 @@ class TeacherCardWidget extends StatelessWidget {
               scaleEnabled: true,
               child: profileImageUrl.isNotEmpty
                   ? Image.network(
-                      profileImageUrl, 
+                      profileImageUrl,
                       fit: BoxFit.contain,
-                      errorBuilder: (context, error, stackTrace) => _buildImagePlaceholder(),
+                      errorBuilder: (context, error, stackTrace) =>
+                          _buildImagePlaceholder(),
                     )
                   : _buildImagePlaceholder(),
             ),
           ),
         ),
       ),
-      // ফিক্সড: 'transitionsBuilder' থেকে শেষের 's' কেটে 'transitionBuilder' করা হলো
       transitionBuilder: (_, animation, __, child) {
         return ScaleTransition(
           scale: CurvedAnimation(parent: animation, curve: Curves.easeOutBack),
@@ -142,25 +145,19 @@ class TeacherCardWidget extends StatelessWidget {
                                 child: CircleAvatar(
                                   radius: 32,
                                   backgroundColor: const Color(0xFFF1F5F9),
-                                  backgroundImage: profileImageUrl.isNotEmpty 
-                                      ? NetworkImage(profileImageUrl) 
+                                  backgroundImage: profileImageUrl.isNotEmpty
+                                      ? NetworkImage(profileImageUrl)
                                       : null,
-                                  child: profileImageUrl.isEmpty 
-                                      ? const Icon(Icons.person_rounded, size: 36, color: themeColor) 
+                                  child: profileImageUrl.isEmpty
+                                      ? const Icon(Icons.person_rounded,
+                                          size: 36, color: themeColor)
                                       : null,
                                 ),
                               ),
-                              Container(
-                                padding: const EdgeInsets.all(2.5),
-                                decoration: const BoxDecoration(
-                                  color: Colors.blue,
-                                  shape: BoxShape.circle,
-                                ),
-                                child: const Icon(
-                                  Icons.verified_rounded,
-                                  size: 14,
-                                  color: Colors.white,
-                                ),
+                              TeacherBadgeWidget(
+                                badgeType: highestBadgeType,
+                                style: BadgeStyle.iconOnly,
+                                iconSize: 18,
                               ),
                             ],
                           ),
@@ -175,16 +172,27 @@ class TeacherCardWidget extends StatelessWidget {
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
                                 Expanded(
-                                  child: Text(
-                                    name,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 17,
-                                      color: Color(0xFF0F172A),
-                                      letterSpacing: -0.2,
-                                    ),
+                                  child: Row(
+                                    children: [
+                                      Flexible(
+                                        child: Text(
+                                          name,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 17,
+                                            color: Color(0xFF0F172A),
+                                            letterSpacing: -0.2,
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 6),
+                                      TeacherBadgeWidget(
+                                        badgeType: highestBadgeType,
+                                        style: BadgeStyle.compact,
+                                      ),
+                                    ],
                                   ),
                                 ),
                                 if (onMapPressed != null)
@@ -220,7 +228,8 @@ class TeacherCardWidget extends StatelessWidget {
                             const SizedBox(height: 4),
                             Row(
                               children: [
-                                const Icon(Icons.location_on_rounded, color: Colors.grey, size: 14),
+                                const Icon(Icons.location_on_rounded,
+                                    color: Colors.grey, size: 14),
                                 const SizedBox(width: 4),
                                 Expanded(
                                   child: Text(
@@ -252,7 +261,8 @@ class TeacherCardWidget extends StatelessWidget {
                   ),
                   const SizedBox(height: 16),
                   Container(
-                    padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+                    padding: const EdgeInsets.symmetric(
+                        vertical: 10, horizontal: 12),
                     decoration: BoxDecoration(
                       color: const Color(0xFFF8FAFC),
                       borderRadius: BorderRadius.circular(16),
@@ -260,13 +270,27 @@ class TeacherCardWidget extends StatelessWidget {
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceAround,
                       children: [
-                        _buildMetaInfoItem(Icons.radar_rounded, calculatedDistance, "Distance", iconColor: Colors.deepOrange),
+                        _buildMetaInfoItem(
+                            Icons.radar_rounded, calculatedDistance, "Distance",
+                            iconColor: Colors.deepOrange),
                         _buildMetaInfoDivider(),
-                        _buildMetaInfoItem(Icons.star_rounded, rating.toStringAsFixed(1), "Rating", iconColor: const Color(0xFFFFB300)),
+                        _buildMetaInfoItem(
+                            Icons.star_rounded,
+                            rating.toStringAsFixed(1),
+                            "Rating",
+                            iconColor: const Color(0xFFFFB300)),
                         _buildMetaInfoDivider(),
-                        _buildMetaInfoItem(Icons.people_alt_rounded, "$followersCount", "Followers", iconColor: Colors.purple),
+                        _buildMetaInfoItem(
+                            Icons.people_alt_rounded,
+                            "$followersCount",
+                            "Followers",
+                            iconColor: Colors.purple),
                         _buildMetaInfoDivider(),
-                        _buildMetaInfoItem(Icons.school_rounded, "$studentCount", "Students", iconColor: themeColor),
+                        _buildMetaInfoItem(
+                            Icons.school_rounded,
+                            "$studentCount",
+                            "Students",
+                            iconColor: themeColor),
                       ],
                     ),
                   ),
@@ -278,8 +302,10 @@ class TeacherCardWidget extends StatelessWidget {
                           height: 42,
                           child: OutlinedButton(
                             style: OutlinedButton.styleFrom(
-                              side: const BorderSide(color: themeColor, width: 1.6),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              side: const BorderSide(
+                                  color: themeColor, width: 1.6),
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12)),
                               elevation: 0,
                             ),
                             onPressed: onProfilePressed,
@@ -303,13 +329,15 @@ class TeacherCardWidget extends StatelessWidget {
                               backgroundColor: const Color(0xFF006653),
                               foregroundColor: Colors.white,
                               elevation: 0,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12)),
                             ),
                             onPressed: onChatPressed,
                             child: const Row(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                Icon(Icons.chat_bubble_outline_rounded, size: 16),
+                                Icon(Icons.chat_bubble_outline_rounded,
+                                    size: 16),
                                 SizedBox(width: 6),
                                 Text(
                                   "Chat Now",
@@ -334,7 +362,8 @@ class TeacherCardWidget extends StatelessWidget {
     );
   }
 
-  Widget _buildMetaInfoItem(IconData icon, String value, String label, {required Color iconColor}) {
+  Widget _buildMetaInfoItem(IconData icon, String value, String label,
+      {required Color iconColor}) {
     return Column(
       children: [
         Row(
