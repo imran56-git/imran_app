@@ -1,12 +1,12 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/badge_model.dart';
-import 'badge_service.dart'; // ✅ আসল ফাইলের নাম অনুযায়ী ইম্পোর্ট করা হলো
+import '../models/rating_summary_model.dart';
+import 'badge_service.dart';
 
 class VerificationService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final BadgeService _badgeService = BadgeService(); // ✅ BadgeService ব্যবহার করা হয়েছে
+  final BadgeService _badgeService = BadgeService();
 
-  /// ১. শিক্ষক ভেরিফিকেশনের জন্য রিকোয়েস্ট সাবমিট করবেন
   Future<void> submitVerificationRequest({
     required String teacherId,
     required String teacherName,
@@ -36,7 +36,6 @@ class VerificationService {
     }
   }
 
-  /// ২. এডমিন প্যানেলের জন্য: সকল পেন্ডিং ভেরিফিকেশন রিকোয়েস্ট ফেচ করা
   Future<List<Map<String, dynamic>>> getPendingVerificationRequests() async {
     try {
       final querySnapshot = await _firestore
@@ -51,7 +50,6 @@ class VerificationService {
     }
   }
 
-  /// ৩. এডমিন ভেরিফিকেশন Approve করবেন
   Future<void> approveTeacherVerification({
     required String teacherId,
     required String adminId,
@@ -75,23 +73,23 @@ class VerificationService {
 
       await batch.commit();
 
-      // ভেরিফাইড হওয়ার পর ব্যাজ অ্যাসাইন করা
-      final badge = BadgeModel(
-        id: 'badge_verified_$teacherId',
-        teacherId: teacherId,
-        type: BadgeType.verified,
-        description: 'Identity and credentials verified by admin.',
-        unlockedAt: DateTime.now(),
+      final teacherDoc = await teacherRef.get();
+      final teacherData = teacherDoc.data() ?? {};
+      final ratingSummary = RatingSummaryModel.fromMap(
+        teacherData['ratingSummary'] as Map<String, dynamic>? ?? {},
       );
 
-      // আপনার BadgeService-এর মেথড অনুযায়ী কল করুন
-      await _badgeService.assignBadge(teacherId, badge);
+      await _badgeService.evaluateAndAssignBadges(
+        teacherId: teacherId,
+        isAdminApproved: true,
+        documentsApproved: true,
+        ratingSummary: ratingSummary,
+      );
     } catch (e) {
       rethrow;
     }
   }
 
-  /// ৪. এডমিন ভেরিফিকেশন Reject করবেন
   Future<void> rejectTeacherVerification({
     required String teacherId,
     required String adminId,
@@ -120,7 +118,6 @@ class VerificationService {
     }
   }
 
-  /// ৫. কোনো নির্দিষ্ট শিক্ষকের ভেরিফিকেশন স্ট্যাটাস দেখা
   Stream<DocumentSnapshot<Map<String, dynamic>>> streamVerificationStatus(String teacherId) {
     return _firestore.collection('verification_requests').doc(teacherId).snapshots();
   }
