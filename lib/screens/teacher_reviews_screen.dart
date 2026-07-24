@@ -74,6 +74,7 @@ class _TeacherReviewsScreenState extends State<TeacherReviewsScreen> {
           teacherId: widget.teacherId,
           studentId: widget.currentStudentId,
           studentName: 'Verified Student',
+          studentPhotoUrl: '', // ✅ এখানেstudentPhotoUrl প্যারামিটারটি ফিক্স করা হয়েছে
           overallRating: rating,
           categories: CategoryRating(
             teaching: rating,
@@ -366,15 +367,20 @@ class _TeacherReviewsScreenState extends State<TeacherReviewsScreen> {
                   CircleAvatar(
                     radius: 18,
                     backgroundColor: const Color(0xFFF1F5F9),
-                    child: Text(
-                      review.studentName.isNotEmpty
-                          ? review.studentName[0].toUpperCase()
-                          : 'S',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFF1E4C7A),
-                      ),
-                    ),
+                    backgroundImage: (review.studentPhotoUrl.isNotEmpty)
+                        ? NetworkImage(review.studentPhotoUrl)
+                        : null,
+                    child: (review.studentPhotoUrl.isEmpty)
+                        ? Text(
+                            review.studentName.isNotEmpty
+                                ? review.studentName[0].toUpperCase()
+                                : 'S',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF1E4C7A),
+                            ),
+                          )
+                        : null,
                   ),
                   const SizedBox(width: 10),
                   Column(
