@@ -11,6 +11,10 @@ class StudentModel {
   final String studentClass;
   final Timestamp createdAt;
 
+  // New fields for Rating & Verification system
+  final List<String> ratedTeachers;
+  final List<String> verifiedTeacherIds;
+
   StudentModel({
     required this.id,
     required this.name,
@@ -21,6 +25,8 @@ class StudentModel {
     required this.interestedSubjects,
     required this.studentClass,
     required this.createdAt,
+    this.ratedTeachers = const [],
+    this.verifiedTeacherIds = const [],
   });
 
   factory StudentModel.fromMap(Map<String, dynamic> map, String documentId) {
@@ -34,6 +40,9 @@ class StudentModel {
       interestedSubjects: List<String>.from(map['interestedSubjects'] ?? []),
       studentClass: map['studentClass'] ?? '',
       createdAt: map['createdAt'] ?? Timestamp.now(),
+      // Rating & Verification mappings
+      ratedTeachers: List<String>.from(map['ratedTeachers'] ?? []),
+      verifiedTeacherIds: List<String>.from(map['verifiedTeacherIds'] ?? []),
     );
   }
 
@@ -47,6 +56,9 @@ class StudentModel {
       'interestedSubjects': interestedSubjects,
       'studentClass': studentClass,
       'createdAt': createdAt,
+      // Rating & Verification fields
+      'ratedTeachers': ratedTeachers,
+      'verifiedTeacherIds': verifiedTeacherIds,
     };
   }
 }
