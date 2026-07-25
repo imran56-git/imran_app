@@ -14,7 +14,8 @@ class TeacherCardWidget extends StatelessWidget {
   final double rating;
   final String locationText;
   final String calculatedDistance;
-  final String highestBadgeType; // 'master', 'golden', 'verified'
+  final String? highestBadgeType; // 'master', 'golden', 'verified' অথবা null/empty
+  final bool isVerified; // ডাইনামিক ভেরিফিকেশন চেক
   final VoidCallback onChatPressed;
   final VoidCallback? onProfilePressed;
   final VoidCallback? onMapPressed;
@@ -33,7 +34,8 @@ class TeacherCardWidget extends StatelessWidget {
     required this.rating,
     required this.locationText,
     required this.calculatedDistance,
-    this.highestBadgeType = 'verified',
+    this.highestBadgeType, // ডিফল্ট 'verified' সরাতে হবে যাতে ভুয়া ব্যাজ না দেখায়
+    this.isVerified = false,
     required this.onChatPressed,
     this.onProfilePressed,
     this.onMapPressed,
@@ -92,6 +94,18 @@ class TeacherCardWidget extends StatelessWidget {
       padding: const EdgeInsets.all(40),
       child: const Icon(Icons.person_rounded, size: 80, color: Color(0xFF1E4C7A)),
     );
+  }
+
+  // ব্যাজ দেখাবে কি না যাচাই করার মেথড
+  bool get _shouldShowBadge {
+    return isVerified || (highestBadgeType != null && highestBadgeType!.isNotEmpty);
+  }
+
+  String get _effectiveBadgeType {
+    if (highestBadgeType != null && highestBadgeType!.isNotEmpty) {
+      return highestBadgeType!;
+    }
+    return 'verified';
   }
 
   @override
@@ -154,11 +168,13 @@ class TeacherCardWidget extends StatelessWidget {
                                       : null,
                                 ),
                               ),
-                              TeacherBadgeWidget(
-                                badgeType: highestBadgeType,
-                                style: BadgeStyle.iconOnly,
-                                iconSize: 18,
-                              ),
+                              // শুধুমাত্র ভেরিফাইড হলে বা ব্যাজ থাকলে ছবির নিচে ব্যাজ দেখাবে
+                              if (_shouldShowBadge)
+                                TeacherBadgeWidget(
+                                  badgeType: _effectiveBadgeType,
+                                  style: BadgeStyle.iconOnly,
+                                  iconSize: 18,
+                                ),
                             ],
                           ),
                         ),
@@ -188,10 +204,12 @@ class TeacherCardWidget extends StatelessWidget {
                                         ),
                                       ),
                                       const SizedBox(width: 6),
-                                      TeacherBadgeWidget(
-                                        badgeType: highestBadgeType,
-                                        style: BadgeStyle.compact,
-                                      ),
+                                      // শুধুমাত্র ভেরিফাইড হলেই নামের পাশে টেক্সট ব্যাজ দেখাবে
+                                      if (_shouldShowBadge)
+                                        TeacherBadgeWidget(
+                                          badgeType: _effectiveBadgeType,
+                                          style: BadgeStyle.compact,
+                                        ),
                                     ],
                                   ),
                                 ),
@@ -216,7 +234,7 @@ class TeacherCardWidget extends StatelessWidget {
                             ),
                             const SizedBox(height: 4),
                             Text(
-                              subject,
+                              subject.isNotEmpty ? subject : 'Subjects N/A',
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
@@ -233,7 +251,7 @@ class TeacherCardWidget extends StatelessWidget {
                                 const SizedBox(width: 4),
                                 Expanded(
                                   child: Text(
-                                    locationText,
+                                    locationText.isNotEmpty ? locationText : 'Location N/A',
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                     style: TextStyle(
@@ -271,12 +289,14 @@ class TeacherCardWidget extends StatelessWidget {
                       mainAxisAlignment: MainAxisAlignment.spaceAround,
                       children: [
                         _buildMetaInfoItem(
-                            Icons.radar_rounded, calculatedDistance, "Distance",
+                            Icons.radar_rounded,
+                            calculatedDistance.isNotEmpty ? calculatedDistance : 'N/A',
+                            "Distance",
                             iconColor: Colors.deepOrange),
                         _buildMetaInfoDivider(),
                         _buildMetaInfoItem(
                             Icons.star_rounded,
-                            rating.toStringAsFixed(1),
+                            rating > 0 ? rating.toStringAsFixed(1) : 'N/A',
                             "Rating",
                             iconColor: const Color(0xFFFFB300)),
                         _buildMetaInfoDivider(),
@@ -297,6 +317,7 @@ class TeacherCardWidget extends StatelessWidget {
                   const SizedBox(height: 14),
                   Row(
                     children: [
+                      // Profile Button
                       Expanded(
                         child: SizedBox(
                           height: 42,
@@ -321,6 +342,7 @@ class TeacherCardWidget extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(width: 12),
+                      // Chat Now Button (Direct Navigation)
                       Expanded(
                         child: SizedBox(
                           height: 42,
