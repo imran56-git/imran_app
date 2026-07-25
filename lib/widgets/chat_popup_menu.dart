@@ -24,44 +24,68 @@ class ChatPopupMenu extends StatelessWidget {
       elevation: 6,
       color: Colors.white,
       offset: const Offset(0, 40),
-      onSelected: onSelected,
       itemBuilder: (context) => [
-        const PopupMenuItem<ChatMenuAction>(
+        PopupMenuItem<ChatMenuAction>(
           value: ChatMenuAction.viewProfile,
+          padding: EdgeInsets.zero,
           child: PopupMenuItemTile(
             icon: Icons.person_outline_rounded,
             title: 'View Profile',
+            onTap: () {
+              Navigator.pop(context);
+              onSelected(ChatMenuAction.viewProfile);
+            },
           ),
         ),
-        const PopupMenuItem<ChatMenuAction>(
+        PopupMenuItem<ChatMenuAction>(
           value: ChatMenuAction.blockUser,
+          padding: EdgeInsets.zero,
           child: PopupMenuItemTile(
             icon: Icons.block_rounded,
             title: 'Block User',
             textColor: Colors.redAccent,
+            onTap: () {
+              Navigator.pop(context);
+              onSelected(ChatMenuAction.blockUser);
+            },
           ),
         ),
-        const PopupMenuItem<ChatMenuAction>(
+        PopupMenuItem<ChatMenuAction>(
           value: ChatMenuAction.reportUser,
+          padding: EdgeInsets.zero,
           child: PopupMenuItemTile(
             icon: Icons.flag_outlined,
             title: 'Report User',
             textColor: Colors.orangeAccent,
+            onTap: () {
+              Navigator.pop(context);
+              onSelected(ChatMenuAction.reportUser);
+            },
           ),
         ),
-        const PopupMenuItem<ChatMenuAction>(
+        PopupMenuItem<ChatMenuAction>(
           value: ChatMenuAction.clearChat,
+          padding: EdgeInsets.zero,
           child: PopupMenuItemTile(
             icon: Icons.cleaning_services_outlined,
             title: 'Clear Chat',
+            onTap: () {
+              Navigator.pop(context);
+              onSelected(ChatMenuAction.clearChat);
+            },
           ),
         ),
-        const PopupMenuItem<ChatMenuAction>(
+        PopupMenuItem<ChatMenuAction>(
           value: ChatMenuAction.deleteConversation,
+          padding: EdgeInsets.zero,
           child: PopupMenuItemTile(
             icon: Icons.delete_outline_rounded,
             title: 'Delete Conversation',
             textColor: Colors.red,
+            onTap: () {
+              Navigator.pop(context);
+              onSelected(ChatMenuAction.deleteConversation);
+            },
           ),
         ),
       ],
