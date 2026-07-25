@@ -4,8 +4,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../widgets/teacher_card_widget.dart';
-import 'chat_screen.dart'; // আপনার চ্যাট স্ক্রিন ফাইলটি ইম্পোর্ট করুন
-import 'teacher_profile_screen.dart'; // আপনার প্রোফাইল স্ক্রিন ফাইলটি ইম্পোর্ট করুন
+import 'chat_screen.dart'; 
+import 'teacher_profile_screen.dart'; 
 
 class TeacherSearchResultScreen extends StatelessWidget {
   final Map<String, dynamic> filters;
@@ -46,6 +46,15 @@ class TeacherSearchResultScreen extends StatelessWidget {
       await launchUrl(googleMapsUrl, mode: LaunchMode.externalApplication);
     } else {
       debugPrint('Could not launch Google Maps');
+    }
+  }
+
+  /// Helper to generate a consistent Chat Room ID between student and teacher
+  String _getChatRoomId(String id1, String id2) {
+    if (id1.compareTo(id2) > 0) {
+      return "${id1}_$id2";
+    } else {
+      return "${id2}_$id1";
     }
   }
 
@@ -202,7 +211,7 @@ class TeacherSearchResultScreen extends StatelessWidget {
               final String teacherName =
                   data['name'] ?? data['displayName'] ?? 'Unknown Teacher';
               final String profilePic =
-                  data['photoUrl'] ?? data['profilePic'] ?? '';
+                  data['profileImageUrl'] ?? data['photoUrl'] ?? data['profilePic'] ?? '';
               final bool isVerified = data['isVerified'] ?? false;
               final String? highestBadgeType = data['highestBadgeType'];
 
@@ -229,31 +238,35 @@ class TeacherSearchResultScreen extends StatelessWidget {
                 calculatedDistance: distanceText,
                 isVerified: isVerified,
                 highestBadgeType: highestBadgeType,
-                // Chat Button Click Handling
+                // Chat Button Click Handling (Fixed Parameters)
                 onChatPressed: () {
+                  final String chatRoomId = _getChatRoomId(currentUserId, doc.id);
                   Navigator.push(
                     context,
                     MaterialPageRoute(
                       builder: (context) => ChatScreen(
+                        chatRoomId: chatRoomId,
                         receiverId: doc.id,
                         receiverName: teacherName,
-                        receiverImageUrl: profilePic,
+                        receiverProfilePic: profilePic,
                         currentUserId: currentUserId,
+                        isTeacher: false,
                       ),
                     ),
                   );
                 },
-                // Profile Click Handling
+                // Profile Click Handling (Fixed Parameters)
                 onProfilePressed: () {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (context) =>
-                          TeacherProfileScreen(teacherId: doc.id),
+                      builder: (context) => TeacherProfileScreen(
+                        currentUserId: doc.id,
+                      ),
                     ),
                   );
                 },
-                // Map Icon Click Handling (Google Maps ওপেন করার জন্য)
+                // Map Icon Click Handling
                 onMapPressed: (tLat != 0.0 && tLng != 0.0)
                     ? () => _openGoogleMap(tLat, tLng, teacherName)
                     : null,
