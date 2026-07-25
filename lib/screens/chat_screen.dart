@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:developer';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/chat_service.dart';
@@ -115,7 +116,8 @@ class _ChatScreenState extends State<ChatScreen> {
                       stream: FirebaseFirestore.instance
                           .collection('typing')
                           .doc(widget.chatRoomId)
-                          .snapshots(),
+                          .snapshots()
+                          .handleError((error) => log('Typing Stream Error: $error')),
                       builder: (context, typingSnapshot) {
                         bool isTyping = false;
                         if (typingSnapshot.hasData && typingSnapshot.data!.exists) {
@@ -159,9 +161,14 @@ class _ChatScreenState extends State<ChatScreen> {
             ],
           ),
           actions: [
-            IconButton(icon: const Icon(Icons.videocam_rounded, color: Colors.white, size: 22), onPressed: () {}),
-            IconButton(icon: const Icon(Icons.call_rounded, color: Colors.white, size: 22), onPressed: () {}),
-            IconButton(icon: const Icon(Icons.more_vert_rounded, color: Colors.white, size: 22), onPressed: () {}),
+            // Phase 2: Removed Video Call and Phone Call Icons
+            // Kept only Three Dot Menu for Phase 3 implementation
+            IconButton(
+              icon: const Icon(Icons.more_vert_rounded, color: Colors.white, size: 22), 
+              onPressed: () {
+                // Phase 3 তে এখানে Modular Menu System অ্যাড করা হবে
+              }
+            ),
             const SizedBox(width: 4),
           ],
         ),
@@ -182,13 +189,13 @@ class _ChatScreenState extends State<ChatScreen> {
                           );
                         }
 
-                        if (snapshot.connectionState == ConnectionState.waiting) {
+                        if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
                           return const Center(child: CircularProgressIndicator(color: Color(0xFF1E4C7A), strokeWidth: 3));
                         }
 
-                        final messages = snapshot.data;
+                        final messages = snapshot.data ?? [];
 
-                        if (messages == null || messages.isEmpty) {
+                        if (messages.isEmpty) {
                           return Center(
                             child: Container(
                               padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
