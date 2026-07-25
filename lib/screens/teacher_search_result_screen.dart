@@ -1,7 +1,11 @@
 import 'dart:math' as math;
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../widgets/teacher_card_widget.dart';
+import 'chat_screen.dart'; // আপনার চ্যাট স্ক্রিন ফাইলটি ইম্পোর্ট করুন
+import 'teacher_profile_screen.dart'; // আপনার প্রোফাইল স্ক্রিন ফাইলটি ইম্পোর্ট করুন
 
 class TeacherSearchResultScreen extends StatelessWidget {
   final Map<String, dynamic> filters;
@@ -13,15 +17,18 @@ class TeacherSearchResultScreen extends StatelessWidget {
   final double _studentLng = 88.3639;
 
   /// Haversine formula for coordinate distance calculation
-  double _calculateHaversineDistance(double lat1, double lon1, double lat2, double lon2) {
+  double _calculateHaversineDistance(
+      double lat1, double lon1, double lat2, double lon2) {
     const double earthRadius = 6371.0; // In Kilometers
 
     double dLat = _toRadians(lat2 - lat1);
     double dLon = _toRadians(lon2 - lon1);
 
     double a = math.sin(dLat / 2) * math.sin(dLat / 2) +
-        math.cos(_toRadians(lat1)) * math.cos(_toRadians(lat2)) *
-        math.sin(dLon / 2) * math.sin(dLon / 2);
+        math.cos(_toRadians(lat1)) *
+            math.cos(_toRadians(lat2)) *
+            math.sin(dLon / 2) *
+            math.sin(dLon / 2);
 
     double c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a));
     return earthRadius * c;
@@ -31,30 +38,52 @@ class TeacherSearchResultScreen extends StatelessWidget {
     return degree * (math.pi / 180.0);
   }
 
+  // Google Maps অ্যাপে টিচারের লোকেশন ওপেন করার মেথড
+  Future<void> _openGoogleMap(double lat, double lng, String teacherName) async {
+    final Uri googleMapsUrl = Uri.parse(
+        'https://www.google.com/maps/search/?api=1&query=$lat,$lng');
+    if (await canLaunchUrl(googleMapsUrl)) {
+      await launchUrl(googleMapsUrl, mode: LaunchMode.externalApplication);
+    } else {
+      debugPrint('Could not launch Google Maps');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final currentUserId = FirebaseAuth.instance.currentUser?.uid ?? '';
+
     // Extract search query options cleanly
-    final String targetId = (filters['teacherId'] ?? '').toString().trim().toLowerCase();
-    final String targetName = (filters['name'] ?? '').toString().trim().toLowerCase();
-    final String targetSubject = (filters['subject'] ?? '').toString().trim().toLowerCase();
-    final String targetLocation = (filters['location'] ?? '').toString().trim().toLowerCase();
-    
-    final int minExperience = int.tryParse(filters['experience']?.toString() ?? '0') ?? 0;
-    final double minRadius = double.tryParse(filters['minRadius']?.toString() ?? '0.0') ?? 0.0;
-    final double maxRadius = double.tryParse(filters['maxRadius']?.toString() ?? '500.0') ?? 500.0;
+    final String targetId =
+        (filters['teacherId'] ?? '').toString().trim().toLowerCase();
+    final String targetName =
+        (filters['name'] ?? '').toString().trim().toLowerCase();
+    final String targetSubject =
+        (filters['subject'] ?? '').toString().trim().toLowerCase();
+    final String targetLocation =
+        (filters['location'] ?? '').toString().trim().toLowerCase();
+
+    final int minExperience =
+        int.tryParse(filters['experience']?.toString() ?? '0') ?? 0;
+    final double minRadius =
+        double.tryParse(filters['minRadius']?.toString() ?? '0.0') ?? 0.0;
+    final double maxRadius =
+        double.tryParse(filters['maxRadius']?.toString() ?? '500.0') ?? 500.0;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
         title: const Text(
           'Matching Teachers',
-          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.white),
+          style: TextStyle(
+              fontWeight: FontWeight.bold, fontSize: 16, color: Colors.white),
         ),
         backgroundColor: const Color(0xFF1E4C7A),
         elevation: 0,
         centerTitle: true,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18, color: Colors.white),
+          icon: const Icon(Icons.arrow_back_ios_new_rounded,
+              size: 18, color: Colors.white),
           onPressed: () => Navigator.pop(context),
         ),
       ),
@@ -63,7 +92,8 @@ class TeacherSearchResultScreen extends StatelessWidget {
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(
-              child: CircularProgressIndicator(color: Color(0xFF1E4C7A), strokeWidth: 3),
+              child: CircularProgressIndicator(
+                  color: Color(0xFF1E4C7A), strokeWidth: 3),
             );
           }
 
@@ -85,13 +115,19 @@ class TeacherSearchResultScreen extends StatelessWidget {
             final data = doc.data() as Map<String, dynamic>? ?? {};
             final docId = doc.id.toLowerCase();
 
-            final String name = (data['name'] ?? data['displayName'] ?? '').toString().toLowerCase();
-            final String location = (data['location'] ?? data['address'] ?? '').toString().toLowerCase();
-            
+            final String name = (data['name'] ?? data['displayName'] ?? '')
+                .toString()
+                .toLowerCase();
+            final String location = (data['location'] ?? data['address'] ?? '')
+                .toString()
+                .toLowerCase();
+
             // Flexibly extract subject list or string
             List<String> subjects = [];
             if (data['subjects'] is List) {
-              subjects = (data['subjects'] as List).map((s) => s.toString().toLowerCase()).toList();
+              subjects = (data['subjects'] as List)
+                  .map((s) => s.toString().toLowerCase())
+                  .toList();
             } else if (data['subjects'] is String) {
               subjects = [data['subjects'].toString().toLowerCase()];
             }
@@ -103,7 +139,8 @@ class TeacherSearchResultScreen extends StatelessWidget {
             // 1. Text & ID Match Condition
             bool matchesId = targetId.isEmpty || docId.contains(targetId);
             bool matchesName = targetName.isEmpty || name.contains(targetName);
-            bool matchesLocation = targetLocation.isEmpty || location.contains(targetLocation);
+            bool matchesLocation =
+                targetLocation.isEmpty || location.contains(targetLocation);
             bool matchesSubject = targetSubject.isEmpty ||
                 subjects.any((s) => s.contains(targetSubject));
             bool matchesExperience = exp >= minExperience;
@@ -113,13 +150,19 @@ class TeacherSearchResultScreen extends StatelessWidget {
             double? tLat = double.tryParse(data['latitude']?.toString() ?? '');
             double? tLng = double.tryParse(data['longitude']?.toString() ?? '');
 
-            // Only apply strict radius check if user explicitly requested radius filtering AND coordinates exist
+            // Only apply strict radius check if coordinates exist
             if (tLat != null && tLng != null && tLat != 0.0 && tLng != 0.0) {
-              double distance = _calculateHaversineDistance(_studentLat, _studentLng, tLat, tLng);
+              double distance =
+                  _calculateHaversineDistance(_studentLat, _studentLng, tLat, tLng);
               matchesRadius = distance >= minRadius && distance <= maxRadius;
             }
 
-            return matchesId && matchesName && matchesLocation && matchesSubject && matchesExperience && matchesRadius;
+            return matchesId &&
+                matchesName &&
+                matchesLocation &&
+                matchesSubject &&
+                matchesExperience &&
+                matchesRadius;
           }).toList();
 
           if (matchedDocs.isEmpty) {
@@ -134,39 +177,86 @@ class TeacherSearchResultScreen extends StatelessWidget {
               final doc = matchedDocs[index];
               final data = doc.data() as Map<String, dynamic>? ?? {};
 
-              double tLat = double.tryParse(data['latitude']?.toString() ?? '0.0') ?? 0.0;
-              double tLng = double.tryParse(data['longitude']?.toString() ?? '0.0') ?? 0.0;
-              
+              double tLat =
+                  double.tryParse(data['latitude']?.toString() ?? '0.0') ?? 0.0;
+              double tLng =
+                  double.tryParse(data['longitude']?.toString() ?? '0.0') ?? 0.0;
+
               String distanceText = "N/A";
               if (tLat != 0.0 && tLng != 0.0) {
-                double distance = _calculateHaversineDistance(_studentLat, _studentLng, tLat, tLng);
+                double distance =
+                    _calculateHaversineDistance(_studentLat, _studentLng, tLat, tLng);
                 distanceText = "${distance.toStringAsFixed(1)} KM";
               }
 
               List<String> subjectsList = [];
               if (data['subjects'] is List) {
-                subjectsList = List<String>.from(data['subjects'].map((x) => x.toString()));
+                subjectsList = List<String>.from(
+                    data['subjects'].map((x) => x.toString()));
               } else if (data['subjects'] is String) {
                 subjectsList = [data['subjects'].toString()];
               }
-              final String subjectText = subjectsList.isNotEmpty ? subjectsList.join(', ') : 'General';
+              final String subjectText =
+                  subjectsList.isNotEmpty ? subjectsList.join(', ') : 'General';
+
+              final String teacherName =
+                  data['name'] ?? data['displayName'] ?? 'Unknown Teacher';
+              final String profilePic =
+                  data['photoUrl'] ?? data['profilePic'] ?? '';
+              final bool isVerified = data['isVerified'] ?? false;
+              final String? highestBadgeType = data['highestBadgeType'];
 
               return TeacherCardWidget(
                 teacherId: doc.id,
-                name: data['name'] ?? data['displayName'] ?? 'Unknown Teacher',
+                name: teacherName,
                 subject: subjectText,
-                profileImageUrl: data['photoUrl'] ?? data['profilePic'] ?? '',
+                profileImageUrl: profilePic,
                 latitude: tLat,
                 longitude: tLng,
-                studentCount: data['studentCount'] is int ? data['studentCount'] : int.tryParse(data['studentCount']?.toString() ?? '0') ?? 0,
-                experienceYears: data['experience'] is int ? data['experience'] : int.tryParse(data['experience']?.toString() ?? '0') ?? 0,
-                followersCount: data['followersCount'] is int ? data['followersCount'] : int.tryParse(data['followersCount']?.toString() ?? '0') ?? 0,
-                rating: double.tryParse(data['rating']?.toString() ?? '5.0') ?? 5.0,
-                locationText: data['location'] ?? data['address'] ?? 'Location N/A',
+                studentCount: data['studentCount'] is int
+                    ? data['studentCount']
+                    : int.tryParse(data['studentCount']?.toString() ?? '0') ?? 0,
+                experienceYears: data['experience'] is int
+                    ? data['experience']
+                    : int.tryParse(data['experience']?.toString() ?? '0') ?? 0,
+                followersCount: data['followersCount'] is int
+                    ? data['followersCount']
+                    : int.tryParse(data['followersCount']?.toString() ?? '0') ?? 0,
+                rating:
+                    double.tryParse(data['rating']?.toString() ?? '0.0') ?? 0.0,
+                locationText:
+                    data['location'] ?? data['address'] ?? 'Location N/A',
                 calculatedDistance: distanceText,
+                isVerified: isVerified,
+                highestBadgeType: highestBadgeType,
+                // Chat Button Click Handling
                 onChatPressed: () {
-                  // Navigation/Action callback
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => ChatScreen(
+                        receiverId: doc.id,
+                        receiverName: teacherName,
+                        receiverImageUrl: profilePic,
+                        currentUserId: currentUserId,
+                      ),
+                    ),
+                  );
                 },
+                // Profile Click Handling
+                onProfilePressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) =>
+                          TeacherProfileScreen(teacherId: doc.id),
+                    ),
+                  );
+                },
+                // Map Icon Click Handling (Google Maps ওপেন করার জন্য)
+                onMapPressed: (tLat != 0.0 && tLng != 0.0)
+                    ? () => _openGoogleMap(tLat, tLng, teacherName)
+                    : null,
               );
             },
           );
@@ -188,18 +278,23 @@ class TeacherSearchResultScreen extends StatelessWidget {
                 color: Colors.grey.shade100,
                 shape: BoxShape.circle,
               ),
-              child: Icon(Icons.search_off_rounded, size: 52, color: Colors.grey.shade400),
+              child: Icon(Icons.search_off_rounded,
+                  size: 52, color: Colors.grey.shade400),
             ),
             const SizedBox(height: 16),
             const Text(
               "No Teachers Found",
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF334155)),
+              style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF334155)),
             ),
             const SizedBox(height: 6),
             Text(
               "We couldn't find any teacher matching your precise filters and radius settings. Try broadening your search criteria.",
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 13, color: Colors.grey.shade500, height: 1.4),
+              style: TextStyle(
+                  fontSize: 13, color: Colors.grey.shade500, height: 1.4),
             ),
           ],
         ),
