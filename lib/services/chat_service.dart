@@ -1,3 +1,4 @@
+import 'dart:developer';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/message_model.dart';
 
@@ -19,7 +20,10 @@ class ChatService {
     return _firestore
         .collection('chats')
         .where('participants', arrayContains: userId)
-        .snapshots();
+        .snapshots()
+        .handleError((error) {
+      _handleError('getUserChatsStream', error);
+    });
   }
 
   Future<void> updateOnlineStatus(String userId, bool isOnline, bool isTeacher) async {
@@ -35,8 +39,7 @@ class ChatService {
       await _firestore.collection('users').doc(userId).update({
         'status': isOnline ? 'Online' : 'Offline',
         'lastSeen': FieldValue.serverTimestamp(),
-      }).catchError((_) {});
-
+      }).catchError((_) {}); // Ignore if users collection doesn't exist
     } catch (e) {
       _handleError('updateOnlineStatus', e);
     }
@@ -44,10 +47,7 @@ class ChatService {
 
   Future<void> updateTypingStatus(String chatId, String userId, bool isTyping) async {
     try {
-      await _firestore
-          .collection('typing')
-          .doc(chatId)
-          .set({
+      await _firestore.collection('typing').doc(chatId).set({
         userId: isTyping,
         'lastUpdated': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
@@ -66,6 +66,8 @@ class ChatService {
         'isOnline': data?['isOnline'] ?? false,
         'lastSeen': data?['lastSeen'] as Timestamp?,
       };
+    }).handleError((error) {
+      _handleError('getUserStatusStream', error);
     });
   }
 
@@ -131,7 +133,7 @@ class ChatService {
         'content': message,
         'timestamp': FieldValue.serverTimestamp(),
         'type': type,
-        'status': 'sent', 
+        'status': 'sent',
         'isDeletedForEveryone': false,
         'deletedForUsers': [],
         'starredBy': [],
@@ -150,15 +152,18 @@ class ChatService {
       if (type == 'document') previewText = '📄 Document';
       if (type == 'location') previewText = '📍 Location';
 
-      batch.update(chatRef, {
+      // Fix: Used SetOptions(merge: true) instead of update to avoid crash if chat doc doesn't exist
+      batch.set(chatRef, {
         'lastMessageContent': previewText,
         'lastMessageTime': FieldValue.serverTimestamp(),
         'unreadCount': FieldValue.increment(1),
-      });
+        'participants': FieldValue.arrayUnion([senderId, receiverId]), 
+      }, SetOptions(merge: true));
 
       await batch.commit();
     } catch (e) {
       _handleError('sendMessage', e);
+      throw Exception('Failed to send message: $e'); // Throw so UI can catch it
     }
   }
 
@@ -169,8 +174,14 @@ class ChatService {
         .collection('messages')
         .orderBy('timestamp', descending: true)
         .snapshots()
-        .map((snapshot) {
-      return snapshot.docs.map((doc) => MessageModel.fromMap(doc.data())).toList();
+        .handleError((error) {
+      _handleError('getMessages (Stream Error)', error);
+    }).map((snapshot) {
+      return snapshot.docs.map((doc) {
+        final data = doc.data();
+        data['messageId'] = doc.id; // Ensure messageId is always present
+        return MessageModel.fromMap(data);
+      }).toList();
     });
   }
 
@@ -181,26 +192,22 @@ class ChatService {
           .doc(chatId)
           .collection('messages')
           .where('receiverId', isEqualTo: currentUserId)
+          .where('status', isNotEqualTo: 'seen') // Optimized query
           .get();
 
       if (querySnapshot.docs.isEmpty) return;
 
       final batch = _firestore.batch();
-      bool hasUnseen = false;
-
+      
       for (var doc in querySnapshot.docs) {
-        if (doc.data()['status'] != 'seen') {
-          batch.update(doc.reference, {'status': 'seen'});
-          hasUnseen = true;
-        }
+        batch.update(doc.reference, {'status': 'seen'});
       }
 
-      if (hasUnseen) {
-        batch.update(_firestore.collection('chats').doc(chatId), {
-          'unreadCount': 0,
-        });
-        await batch.commit();
-      }
+      batch.set(_firestore.collection('chats').doc(chatId), {
+        'unreadCount': 0,
+      }, SetOptions(merge: true));
+
+      await batch.commit();
     } catch (e) {
       _handleError('markAsSeen', e);
     }
@@ -262,9 +269,9 @@ class ChatService {
           .doc(chatId)
           .collection('messages')
           .doc(messageId)
-          .update({
-        'reactions.$userId': emoji,
-      });
+          .set({
+        'reactions': {userId: emoji}
+      }, SetOptions(merge: true));
     } catch (e) {
       _handleError('reactMessage', e);
     }
@@ -315,10 +322,10 @@ class ChatService {
 
   Future<void> sendDocument(String chatId, String senderId, String receiverId, String url, String fileName) async {
     await sendMessage(
-      chatId: chatId, 
-      senderId: senderId, 
-      receiverId: receiverId, 
-      message: url, 
+      chatId: chatId,
+      senderId: senderId,
+      receiverId: receiverId,
+      message: url,
       type: 'document',
       mediaMetaData: {'fileName': fileName},
     );
@@ -343,75 +350,7 @@ class ChatService {
     );
   }
 
-  Future<void> createGroupChat({
-    required String groupId,
-    required String groupName,
-    required String groupImage,
-    required String creatorId,
-    required List<String> members,
-  }) async {
-    try {
-      await _firestore.collection('groups').doc(groupId).set({
-        'groupId': groupId,
-        'groupName': groupName,
-        'groupImage': groupImage,
-        'createdBy': creatorId,
-        'createdAt': FieldValue.serverTimestamp(),
-        'members': members,
-        'lastMessageContent': 'Group created by administration',
-        'lastMessageTime': FieldValue.serverTimestamp(),
-        'admins': [creatorId],
-      });
-    } catch (e) {
-      _handleError('createGroupChat', e);
-    }
-  }
-
-  Future<void> sendGroupMessage({
-    required String groupId,
-    required String senderId,
-    required String message,
-    required String type,
-  }) async {
-    try {
-      final messageRef = _firestore.collection('groups').doc(groupId).collection('messages').doc();
-
-      await messageRef.set({
-        'messageId': messageRef.id,
-        'senderId': senderId,
-        'receiverId': 'group',
-        'content': message,
-        'timestamp': FieldValue.serverTimestamp(),
-        'type': type,
-        'status': 'sent',
-        'isDeletedForEveryone': false,
-        'deletedForUsers': [],
-        'starredBy': [],
-        'reactions': {},
-      });
-
-      await _firestore.collection('groups').doc(groupId).update({
-        'lastMessageContent': type == 'text' ? message : 'Media Attachment',
-        'lastMessageTime': FieldValue.serverTimestamp(),
-      });
-    } catch (e) {
-      _handleError('sendGroupMessage', e);
-    }
-  }
-
-  Stream<List<MessageModel>> getGroupMessagesStream(String groupId) {
-    return _firestore
-        .collection('groups')
-        .doc(groupId)
-        .collection('messages')
-        .orderBy('timestamp', descending: true)
-        .snapshots()
-        .map((snapshot) {
-      return snapshot.docs.map((doc) => MessageModel.fromMap(doc.data())).toList();
-    });
-  }
-
   void _handleError(String methodName, dynamic error) {
-    print('[@ChatService] Error inside $methodName: $error');
+    log('🔴 [@ChatService] Error inside $methodName: $error');
   }
 }
