@@ -39,7 +39,7 @@ class ChatService {
       await _firestore.collection('users').doc(userId).update({
         'status': isOnline ? 'Online' : 'Offline',
         'lastSeen': FieldValue.serverTimestamp(),
-      }).catchError((_) {}); // Ignore if users collection doesn't exist
+      }).catchError((_) {}); 
     } catch (e) {
       _handleError('updateOnlineStatus', e);
     }
@@ -152,7 +152,6 @@ class ChatService {
       if (type == 'document') previewText = '📄 Document';
       if (type == 'location') previewText = '📍 Location';
 
-      // Fix: Used SetOptions(merge: true) instead of update to avoid crash if chat doc doesn't exist
       batch.set(chatRef, {
         'lastMessageContent': previewText,
         'lastMessageTime': FieldValue.serverTimestamp(),
@@ -163,7 +162,42 @@ class ChatService {
       await batch.commit();
     } catch (e) {
       _handleError('sendMessage', e);
-      throw Exception('Failed to send message: $e'); // Throw so UI can catch it
+      throw Exception('Failed to send message: $e');
+    }
+  }
+
+  // Added Group Message Method to fix compilation error
+  Future<void> sendGroupMessage({
+    required String groupId,
+    required String senderId,
+    required String message,
+    required String type,
+    String? replyToMessageId,
+    String? replyToText,
+  }) async {
+    try {
+      final messageRef = _firestore.collection('groups').doc(groupId).collection('messages').doc();
+      
+      final Map<String, dynamic> messageData = {
+        'messageId': messageRef.id,
+        'senderId': senderId,
+        'content': message,
+        'type': type,
+        'timestamp': FieldValue.serverTimestamp(),
+        'isRead': false,
+        'replyToMessageId': replyToMessageId,
+        'replyToText': replyToText,
+      };
+
+      await messageRef.set(messageData);
+
+      await _firestore.collection('groups').doc(groupId).update({
+        'lastMessage': message,
+        'lastMessageTimestamp': FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      _handleError('sendGroupMessage', e);
+      throw Exception('Failed to send group message: $e');
     }
   }
 
@@ -179,7 +213,26 @@ class ChatService {
     }).map((snapshot) {
       return snapshot.docs.map((doc) {
         final data = doc.data();
-        data['messageId'] = doc.id; // Ensure messageId is always present
+        data['messageId'] = doc.id;
+        return MessageModel.fromMap(data);
+      }).toList();
+    });
+  }
+
+  // Added Group Messages Stream Method to fix compilation error
+  Stream<List<MessageModel>> getGroupMessagesStream(String groupId) {
+    return _firestore
+        .collection('groups')
+        .doc(groupId)
+        .collection('messages')
+        .orderBy('timestamp', descending: true)
+        .snapshots()
+        .handleError((error) {
+      _handleError('getGroupMessagesStream (Stream Error)', error);
+    }).map((snapshot) {
+      return snapshot.docs.map((doc) {
+        final data = doc.data();
+        data['messageId'] = doc.id;
         return MessageModel.fromMap(data);
       }).toList();
     });
@@ -192,13 +245,13 @@ class ChatService {
           .doc(chatId)
           .collection('messages')
           .where('receiverId', isEqualTo: currentUserId)
-          .where('status', isNotEqualTo: 'seen') // Optimized query
+          .where('status', isNotEqualTo: 'seen')
           .get();
 
       if (querySnapshot.docs.isEmpty) return;
 
       final batch = _firestore.batch();
-      
+
       for (var doc in querySnapshot.docs) {
         batch.update(doc.reference, {'status': 'seen'});
       }
