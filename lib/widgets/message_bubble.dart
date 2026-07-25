@@ -1,4 +1,4 @@
-import 'dart:ui';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -29,6 +29,7 @@ class MessageBubble extends StatefulWidget {
 
 class _MessageBubbleState extends State<MessageBubble> {
   late final AudioPlayer _audioPlayer;
+  StreamSubscription? _audioSubscription;
   final ChatService _chatService = ChatService();
   bool _isPlaying = false;
 
@@ -36,13 +37,15 @@ class _MessageBubbleState extends State<MessageBubble> {
   void initState() {
     super.initState();
     _audioPlayer = AudioPlayer();
-    _audioPlayer.onPlayerComplete.listen((event) {
+    // Memory leak ফিক্স করার জন্য Subscription সেভ রাখা হলো
+    _audioSubscription = _audioPlayer.onPlayerComplete.listen((event) {
       if (mounted) setState(() => _isPlaying = false);
     });
   }
 
   @override
   void dispose() {
+    _audioSubscription?.cancel(); // Memory Leak Prevention
     _audioPlayer.dispose();
     super.dispose();
   }
@@ -82,7 +85,7 @@ class _MessageBubbleState extends State<MessageBubble> {
     if (status == 'delivered') {
       return const Icon(Icons.done_all, size: 16, color: Colors.grey);
     }
-    return const Icon(Icons.done, size: 16, color: Colors.grey);
+    return const Icon(Icons.done, size: 14, color: Colors.grey);
   }
 
   Widget _buildAudioBubble() {
@@ -99,7 +102,7 @@ class _MessageBubbleState extends State<MessageBubble> {
           ),
           const SizedBox(width: 10),
           Container(
-            width: 120, height: 4,
+            width: 100, height: 4,
             decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(10)),
           ),
           const SizedBox(width: 8),
@@ -136,7 +139,7 @@ class _MessageBubbleState extends State<MessageBubble> {
         children: [
           const Icon(Icons.description_rounded, color: Colors.redAccent, size: 32),
           const SizedBox(width: 10),
-          Expanded(
+          Flexible(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -169,7 +172,7 @@ class _MessageBubbleState extends State<MessageBubble> {
         children: [
           const Icon(Icons.location_on_rounded, color: Colors.teal, size: 32),
           const SizedBox(width: 10),
-          const Expanded(
+          const Flexible(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -309,19 +312,20 @@ class _MessageBubbleState extends State<MessageBubble> {
               ],
 
               const SizedBox(height: 4),
+              // Layout Crash Fix: Spacer() রিমুভ করা হয়েছে কারণ MainAxisSize.min এ Spacer কাজ করে না। 
+              // এর বদলে MainAxisAlignment.end দিয়ে এলাইনমেন্ট ঠিক রাখা হয়েছে।
               Row(
                 mainAxisSize: MainAxisSize.min,
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
-                  const Spacer(),
-                  Text(
-                    _formatTime(widget.message.timestamp),
-                    style: TextStyle(fontSize: 10, color: Colors.grey.shade600),
+                  Padding(
+                    padding: const EdgeInsets.only(right: 4.0),
+                    child: Text(
+                      _formatTime(widget.message.timestamp),
+                      style: TextStyle(fontSize: 10, color: Colors.grey.shade600),
+                    ),
                   ),
-                  if (widget.isMe) ...[
-                    const SizedBox(width: 4),
-                    _buildStatusIcon(),
-                  ],
+                  if (widget.isMe) _buildStatusIcon(),
                 ],
               ),
             ],
