@@ -3,9 +3,16 @@ import 'dart:developer';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/chat_service.dart';
+import '../services/chat_menu_service.dart';
 import '../models/message_model.dart';
 import '../widgets/chat_input_bar.dart';
 import '../widgets/message_bubble.dart';
+import '../widgets/chat_popup_menu.dart';
+import '../widgets/block_dialog.dart';
+import '../widgets/report_dialog.dart';
+import '../widgets/clear_chat_dialog.dart';
+import '../widgets/delete_chat_dialog.dart';
+import '../utils/popup_menu_actions.dart';
 
 class ChatScreen extends StatefulWidget {
   final String chatRoomId;
@@ -13,7 +20,7 @@ class ChatScreen extends StatefulWidget {
   final String receiverName;
   final String receiverProfilePic;
   final String currentUserId;
-  final bool isTeacher; 
+  final bool isTeacher;
 
   const ChatScreen({
     super.key,
@@ -31,6 +38,7 @@ class ChatScreen extends StatefulWidget {
 
 class _ChatScreenState extends State<ChatScreen> {
   final ChatService _chatService = ChatService();
+  final ChatMenuService _chatMenuService = ChatMenuService();
   final ScrollController _scrollController = ScrollController();
   Stream<List<MessageModel>>? _messageStream;
 
@@ -47,8 +55,8 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   void dispose() {
-    _chatService.updateTypingStatus(widget.chatRoomId, widget.currentUserId, false); 
-    _scrollController.dispose(); 
+    _chatService.updateTypingStatus(widget.chatRoomId, widget.currentUserId, false);
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -58,6 +66,80 @@ class _ChatScreenState extends State<ChatScreen> {
 
   void _markMessagesAsRead() async {
     await _chatService.markAsSeen(widget.chatRoomId, widget.currentUserId);
+  }
+
+  void _handleMenuAction(ChatMenuAction action) {
+    switch (action) {
+      case ChatMenuAction.viewProfile:
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Viewing profile of ${widget.receiverName}')),
+        );
+        break;
+
+      case ChatMenuAction.blockUser:
+        showDialog(
+          context: context,
+          builder: (context) => BlockDialog(
+            userName: widget.receiverName,
+            onConfirm: () async {
+              await _chatMenuService.blockUser(widget.currentUserId, widget.receiverId);
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('User blocked successfully')),
+                );
+              }
+            },
+          ),
+        );
+        break;
+
+      case ChatMenuAction.reportUser:
+        showDialog(
+          context: context,
+          builder: (context) => ReportDialog(
+            userName: widget.receiverName,
+            onConfirm: (reason) async {
+              await _chatMenuService.reportUser(widget.currentUserId, widget.receiverId, reason);
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('User reported successfully')),
+                );
+              }
+            },
+          ),
+        );
+        break;
+
+      case ChatMenuAction.clearChat:
+        showDialog(
+          context: context,
+          builder: (context) => ClearChatDialog(
+            onConfirm: () async {
+              await _chatMenuService.clearChat(widget.chatRoomId);
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Chat cleared successfully')),
+                );
+              }
+            },
+          ),
+        );
+        break;
+
+      case ChatMenuAction.deleteConversation:
+        showDialog(
+          context: context,
+          builder: (context) => DeleteChatDialog(
+            onConfirm: () async {
+              await _chatMenuService.deleteConversation(widget.chatRoomId);
+              if (mounted) {
+                Navigator.pop(context);
+              }
+            },
+          ),
+        );
+        break;
+    }
   }
 
   @override
@@ -70,10 +152,10 @@ class _ChatScreenState extends State<ChatScreen> {
         Navigator.of(context).pop();
       },
       child: Scaffold(
-        backgroundColor: const Color(0xFFF5F7FA), 
+        backgroundColor: const Color(0xFFF5F7FA),
         appBar: AppBar(
           automaticallyImplyLeading: false,
-          backgroundColor: const Color(0xFF1E4C7A), 
+          backgroundColor: const Color(0xFF1E4C7A),
           titleSpacing: 0,
           scrolledUnderElevation: 0,
           title: Row(
@@ -104,10 +186,10 @@ class _ChatScreenState extends State<ChatScreen> {
                     Text(
                       widget.receiverName,
                       style: const TextStyle(
-                        fontSize: 16, 
-                        fontWeight: FontWeight.bold, 
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
                         color: Colors.white,
-                        letterSpacing: 0.2
+                        letterSpacing: 0.2,
                       ),
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -129,9 +211,9 @@ class _ChatScreenState extends State<ChatScreen> {
                           return const Text(
                             'typing...',
                             style: TextStyle(
-                              fontSize: 12, 
-                              color: Color(0xFFA2E8DD), 
-                              fontWeight: FontWeight.bold
+                              fontSize: 12,
+                              color: Color(0xFFA2E8DD),
+                              fontWeight: FontWeight.bold,
                             ),
                           );
                         }
@@ -144,9 +226,9 @@ class _ChatScreenState extends State<ChatScreen> {
                               return Text(
                                 isOnline ? 'Online' : 'Offline',
                                 style: TextStyle(
-                                  fontSize: 11, 
+                                  fontSize: 11,
                                   fontWeight: FontWeight.w500,
-                                  color: isOnline ? const Color(0xFF25D366) : Colors.white70
+                                  color: isOnline ? const Color(0xFF25D366) : Colors.white70,
                                 ),
                               );
                             }
@@ -161,14 +243,7 @@ class _ChatScreenState extends State<ChatScreen> {
             ],
           ),
           actions: [
-            // Phase 2: Removed Video Call and Phone Call Icons
-            // Kept only Three Dot Menu for Phase 3 implementation
-            IconButton(
-              icon: const Icon(Icons.more_vert_rounded, color: Colors.white, size: 22), 
-              onPressed: () {
-                // Phase 3 তে এখানে Modular Menu System অ্যাড করা হবে
-              }
-            ),
+            ChatPopupMenu(onSelected: _handleMenuAction),
             const SizedBox(width: 4),
           ],
         ),
@@ -222,7 +297,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
                         return ListView.builder(
                           controller: _scrollController,
-                          reverse: true, 
+                          reverse: true,
                           physics: const BouncingScrollPhysics(),
                           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                           itemCount: messages.length,
@@ -238,8 +313,8 @@ class _ChatScreenState extends State<ChatScreen> {
                               onReplyPressed: (repliedMessage) {
                                 setState(() {
                                   _replyToMessageId = repliedMessage.messageId;
-                                  _replyToText = repliedMessage.type == 'text' 
-                                      ? repliedMessage.content 
+                                  _replyToText = repliedMessage.type == 'text'
+                                      ? repliedMessage.content
                                       : 'Attachment';
                                 });
                               },
