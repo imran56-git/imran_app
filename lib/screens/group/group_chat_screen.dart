@@ -51,24 +51,6 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
     return FileImage(File(_backgroundImage));
   }
 
-  void _handleSendMessage(String text, String type, {Map<String, dynamic>? mediaData}) async {
-    if (text.trim().isEmpty) return;
-
-    await _chatService.sendGroupMessage(
-      groupId: widget.groupId,
-      senderId: widget.currentUserId,
-      message: text,
-      type: type,
-    );
-
-    setState(() {
-      _replyToMessageId = null;
-      _replyToText = null;
-    });
-    
-    _scrollToBottom();
-  }
-
   void _scrollToBottom() {
     if (_scrollController.hasClients) {
       _scrollController.animateTo(
@@ -137,7 +119,7 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
           children: [
             Expanded(
               child: StreamBuilder<List<MessageModel>>(
-                stream: _chatService.getGroupMessagesStream(widget.groupId), // ChatService ডাটা কাস্টিং সিঙ্ক (রুল ৪)
+                stream: _chatService.getGroupMessagesStream(widget.groupId),
                 builder: (context, snapshot) {
                   if (snapshot.hasError) {
                     return const Center(child: Text('Failed to load group messages.', style: TextStyle(color: Colors.red)));
@@ -208,9 +190,7 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
                     _replyToText = null;
                   });
                 },
-                onTypingChanged: (isTyping) {
-                  // গ্রুপে টাইপিং ইন্ডিকেটর সাইলেন্ট বা হ্যান্ডেল করা যেতে পারে
-                },
+                onTypingChanged: (isTyping) {},
               ),
             ),
           ],
