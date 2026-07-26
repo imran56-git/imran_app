@@ -1,6 +1,6 @@
 import 'dart:developer';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import '../models/message_model.dart';
+import 'package:find_your_best_teacher_today/models/message_model.dart';
 
 class ChatService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
