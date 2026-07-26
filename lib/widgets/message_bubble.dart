@@ -37,7 +37,6 @@ class _MessageBubbleState extends State<MessageBubble> {
   void initState() {
     super.initState();
     _audioPlayer = AudioPlayer();
-    // Memory leak ফিক্স করার জন্য Subscription সেভ রাখা হলো
     _audioSubscription = _audioPlayer.onPlayerComplete.listen((event) {
       if (mounted) setState(() => _isPlaying = false);
     });
@@ -45,7 +44,7 @@ class _MessageBubbleState extends State<MessageBubble> {
 
   @override
   void dispose() {
-    _audioSubscription?.cancel(); // Memory Leak Prevention
+    _audioSubscription?.cancel();
     _audioPlayer.dispose();
     super.dispose();
   }
@@ -312,8 +311,6 @@ class _MessageBubbleState extends State<MessageBubble> {
               ],
 
               const SizedBox(height: 4),
-              // Layout Crash Fix: Spacer() রিমুভ করা হয়েছে কারণ MainAxisSize.min এ Spacer কাজ করে না। 
-              // এর বদলে MainAxisAlignment.end দিয়ে এলাইনমেন্ট ঠিক রাখা হয়েছে।
               Row(
                 mainAxisSize: MainAxisSize.min,
                 mainAxisAlignment: MainAxisAlignment.end,
