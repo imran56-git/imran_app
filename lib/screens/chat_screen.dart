@@ -273,7 +273,6 @@ class _ChatScreenState extends State<ChatScreen> {
             ],
           ),
           actions: [
-            // Extra Option for Changing Chat Theme from Gallery
             IconButton(
               icon: const Icon(Icons.wallpaper_rounded, color: Colors.white, size: 22),
               tooltip: 'Change Chat Theme',
