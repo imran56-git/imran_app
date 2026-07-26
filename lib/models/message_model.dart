@@ -1,111 +1,290 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/material.dart';
+import '../services/chat_service.dart';
 
-class MessageModel {
-  final String messageId;
+class ChatInputBar extends StatefulWidget {
+  final String chatRoomId;
   final String senderId;
   final String receiverId;
-  final String content; 
-  final DateTime? timestamp;
-  final String type;
-  final String status;
-  final bool isDeletedForEveryone;
-  final List<String> deletedForUsers;
-  final List<String> starredBy;
-  final Map<String, String> reactions;
+  final Function(bool) onTypingChanged;
   final String? replyToMessageId;
-  final bool isEdited;
-  final DateTime? editTimestamp;
-  final Map<String, dynamic>? mediaMetaData;
+  final String? replyToText;
+  final VoidCallback? onCancelReply;
 
-  MessageModel({
-    required this.messageId,
+  const ChatInputBar({
+    super.key,
+    required this.chatRoomId,
     required this.senderId,
     required this.receiverId,
-    required this.content,
-    this.timestamp,
-    required this.type,
-    required this.status,
-    required this.isDeletedForEveryone,
-    required this.deletedForUsers,
-    required this.starredBy,
-    required this.reactions,
+    required this.onTypingChanged,
     this.replyToMessageId,
-    this.isEdited = false,
-    this.editTimestamp,
-    this.mediaMetaData,
+    this.replyToText,
+    this.onCancelReply,
   });
 
-  factory MessageModel.fromMap(Map<String, dynamic> map) {
-    return MessageModel(
-      messageId: map['messageId']?.toString() ?? '',
-      senderId: map['senderId']?.toString() ?? '',
-      receiverId: map['receiverId']?.toString() ?? '',
-      content: map['content']?.toString() ?? map['message']?.toString() ?? '', 
-      
-      // Timestamp Safe Parsing
-      timestamp: map['timestamp'] != null
-          ? (map['timestamp'] is Timestamp 
-              ? (map['timestamp'] as Timestamp).toDate() 
-              : DateTime.tryParse(map['timestamp'].toString()))
-          : null,
-          
-      type: map['type']?.toString() ?? 'text',
-      status: map['status']?.toString() ?? 'sent',
-      isDeletedForEveryone: map['isDeletedForEveryone'] ?? false,
-      
-      // 100% Safe List Casting to prevent Stream crashes
-      deletedForUsers: (map['deletedForUsers'] as List<dynamic>?)
-              ?.map((e) => e.toString())
-              .toList() ?? 
-          [],
-          
-      starredBy: (map['starredBy'] as List<dynamic>?)
-              ?.map((e) => e.toString())
-              .toList() ?? 
-          [],
-          
-      // 100% Safe Map Casting
-      reactions: (map['reactions'] as Map<dynamic, dynamic>?)
-              ?.map((key, value) => MapEntry(key.toString(), value.toString())) ?? 
-          {},
-          
-      replyToMessageId: map['replyToMessageId']?.toString(),
-      isEdited: map['isEdited'] ?? false,
-      
-      // Edit Timestamp Safe Parsing
-      editTimestamp: map['editTimestamp'] != null
-          ? (map['editTimestamp'] is Timestamp 
-              ? (map['editTimestamp'] as Timestamp).toDate() 
-              : DateTime.tryParse(map['editTimestamp'].toString()))
-          : null,
-          
-      mediaMetaData: map['mediaMetaData'] != null
-          ? Map<String, dynamic>.from(map['mediaMetaData'] as Map<dynamic, dynamic>)
-          : null,
+  @override
+  State<ChatInputBar> createState() => _ChatInputBarState();
+}
+
+class _ChatInputBarState extends State<ChatInputBar> {
+  final TextEditingController _controller = TextEditingController();
+  final ChatService _chatService = ChatService();
+  bool _isTyping = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.addListener(_onTextChanged);
+  }
+
+  @override
+  void dispose() {
+    if (_isTyping) {
+      _chatService.updateTypingStatus(widget.chatRoomId, widget.senderId, false);
+    }
+    _controller.removeListener(_onTextChanged);
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _onTextChanged() {
+    final bool typing = _controller.text.trim().isNotEmpty;
+    if (_isTyping != typing) {
+      setState(() => _isTyping = typing);
+      widget.onTypingChanged(_isTyping);
+      _chatService.updateTypingStatus(widget.chatRoomId, widget.senderId, _isTyping);
+    }
+  }
+
+  void _showAttachmentBottomSheet() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        margin: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Colors.white, 
+          borderRadius: BorderRadius.circular(24),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              "Send Document / Media", 
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+            const SizedBox(height: 20),
+            GridView.count(
+              crossAxisCount: 3,
+              shrinkWrap: true,
+              mainAxisSpacing: 16,
+              crossAxisSpacing: 16,
+              children: [
+                _attachmentTile(Icons.image, "Gallery", Colors.purple, 'image'),
+                _attachmentTile(Icons.description, "Document", Colors.blue, 'document'),
+                _attachmentTile(Icons.audiotrack, "Audio", Colors.orange, 'audio'),
+                _attachmentTile(Icons.video_library, "Video", Colors.red, 'video'),
+                _attachmentTile(Icons.location_on, "Location", Colors.teal, 'location'),
+                _attachmentTile(Icons.mic, "Voice", Colors.green, 'voice'),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 
-  Map<String, dynamic> toMap() {
-    return {
-      'messageId': messageId,
-      'senderId': senderId,
-      'receiverId': receiverId,
-      'content': content,
-      'timestamp': timestamp != null
-          ? Timestamp.fromDate(timestamp!)
-          : FieldValue.serverTimestamp(), 
-      'type': type,
-      'status': status,
-      'isDeletedForEveryone': isDeletedForEveryone,
-      'deletedForUsers': deletedForUsers,
-      'starredBy': starredBy,
-      'reactions': reactions,
-      'replyToMessageId': replyToMessageId,
-      'isEdited': isEdited,
-      'editTimestamp': editTimestamp != null
-          ? Timestamp.fromDate(editTimestamp!)
-          : null,
-      'mediaMetaData': mediaMetaData,
-    };
+  Widget _attachmentTile(IconData icon, String label, Color color, String type) {
+    return InkWell(
+      onTap: () async {
+        Navigator.pop(context);
+        
+        // এখানে রিয়েল ফাইলপিকার বা স্টোরেজ আপলোড ইন্টিগ্রেট করা যেতে পারে। 
+        // আপাতত টেস্টিংয়ের জন্য ভ্যালিড ডামি ইউআরএল বা রিয়েল অ্যাকশন হ্যান্ডেল করা হলো:
+        String sampleUrl = "https://images.unsplash.com/photo-1579353977828-2a4eab540b9f";
+
+        if (type == 'location') {
+          await _chatService.sendLocation(
+            widget.chatRoomId, 
+            widget.senderId, 
+            widget.receiverId, 
+            22.5726, 
+            88.3639,
+          );
+        } else if (type == 'document') {
+          await _chatService.sendDocument(
+            widget.chatRoomId, 
+            widget.senderId, 
+            widget.receiverId, 
+            "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf", 
+            "Document.pdf",
+          );
+        } else if (type == 'image') {
+          await _chatService.sendImage(widget.chatRoomId, widget.senderId, widget.receiverId, sampleUrl);
+        } else if (type == 'video') {
+          await _chatService.sendVideo(widget.chatRoomId, widget.senderId, widget.receiverId, "https://flutter.github.io/assets-for-api-docs/assets/videos/bee.mp4");
+        } else if (type == 'audio') {
+          await _chatService.sendAudio(widget.chatRoomId, widget.senderId, widget.receiverId, sampleUrl);
+        } else if (type == 'voice') {
+          await _chatService.sendVoice(widget.chatRoomId, widget.senderId, widget.receiverId, sampleUrl);
+        }
+      },
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          CircleAvatar(
+            radius: 26, 
+            backgroundColor: color.withOpacity(0.1), 
+            child: Icon(icon, color: color, size: 24),
+          ),
+          const SizedBox(height: 6),
+          Text(label, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+        ],
+      ),
+    );
+  }
+
+  void _handleSend() async {
+    final text = _controller.text.trim();
+    if (text.isEmpty) return;
+
+    final String? currentReplyId = widget.replyToMessageId;
+
+    _controller.clear();
+    setState(() => _isTyping = false);
+    widget.onTypingChanged(false);
+    _chatService.updateTypingStatus(widget.chatRoomId, widget.senderId, false);
+
+    if (widget.onCancelReply != null) {
+      widget.onCancelReply!();
+    }
+
+    await _chatService.sendMessage(
+      chatId: widget.chatRoomId,
+      senderId: widget.senderId,
+      receiverId: widget.receiverId,
+      message: text,
+      type: 'text',
+      replyToMessageId: currentReplyId,
+    );
+  }
+
+  void _handleMicTap() async {
+    // ভয়েস বা অডিও রেকর্ড করার ফিচার না থাকলে ডেমো ভয়েস মেসেজ সেন্ড করার হ্যান্ডলার
+    await _chatService.sendVoice(
+      widget.chatRoomId,
+      widget.senderId,
+      widget.receiverId,
+      "https://www.soundhelix.examples/samples/mp3/SoundHelix-Song-1.mp3",
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (widget.replyToMessageId != null && widget.replyToText != null)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: Colors.grey.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(12),
+              border: const Border(left: BorderSide(color: Color(0xFF006653), width: 4)),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        "Reply to Message",
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold, 
+                          color: Color(0xFF006653), 
+                          fontSize: 12,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        widget.replyToText!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(color: Colors.black.withOpacity(0.87), fontSize: 14),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close, size: 18, color: Colors.grey),
+                  onPressed: widget.onCancelReply,
+                ),
+              ],
+            ),
+          ),
+
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 6.0),
+          child: Row(
+            children: [
+              Expanded(
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(25.0),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.05), 
+                        blurRadius: 5, 
+                        offset: const Offset(0, 1),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.emoji_emotions_outlined, color: Colors.grey),
+                        onPressed: () {}, 
+                      ),
+                      Expanded(
+                        child: TextField(
+                          controller: _controller,
+                          minLines: 1,
+                          maxLines: 5,
+                          decoration: const InputDecoration(
+                            hintText: 'Message',
+                            border: InputBorder.none,
+                            contentPadding: EdgeInsets.symmetric(vertical: 10.0, horizontal: 4),
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.collections_rounded, color: Colors.grey),
+                        onPressed: _showAttachmentBottomSheet,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6.0),
+              GestureDetector(
+                onTap: _isTyping ? _handleSend : _handleMicTap,
+                child: CircleAvatar(
+                  radius: 22,
+                  backgroundColor: const Color(0xFF006653),
+                  child: Icon(
+                    _isTyping ? Icons.send : Icons.mic,
+                    color: Colors.white,
+                    size: 20,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
   }
 }
