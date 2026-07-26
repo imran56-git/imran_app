@@ -1,7 +1,10 @@
+import 'dart:io';
 import 'dart:async';
 import 'dart:developer';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/chat_service.dart';
 import '../services/chat_menu_service.dart';
 import '../models/message_model.dart';
@@ -44,11 +47,13 @@ class _ChatScreenState extends State<ChatScreen> {
 
   String? _replyToMessageId;
   String? _replyToText;
+  String? _customBgImagePath;
 
   @override
   void initState() {
     super.initState();
     _initChatStream();
+    _loadCustomTheme();
     _chatService.updateTypingStatus(widget.chatRoomId, widget.currentUserId, false);
     _markMessagesAsRead();
   }
@@ -66,6 +71,31 @@ class _ChatScreenState extends State<ChatScreen> {
 
   void _markMessagesAsRead() async {
     await _chatService.markAsSeen(widget.chatRoomId, widget.currentUserId);
+  }
+
+  Future<void> _loadCustomTheme() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _customBgImagePath = prefs.getString('chat_theme_${widget.chatRoomId}');
+    });
+  }
+
+  Future<void> _changeChatThemeFromGallery() async {
+    final picker = ImagePicker();
+    final pickedFile = await picker.pickImage(source: ImageSource.gallery);
+
+    if (pickedFile != null) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('chat_theme_${widget.chatRoomId}', pickedFile.path);
+      setState(() {
+        _customBgImagePath = pickedFile.path;
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Chat theme updated successfully')),
+        );
+      }
+    }
   }
 
   void _handleMenuAction(ChatMenuAction action) {
@@ -243,116 +273,133 @@ class _ChatScreenState extends State<ChatScreen> {
             ],
           ),
           actions: [
+            // Extra Option for Changing Chat Theme from Gallery
+            IconButton(
+              icon: const Icon(Icons.wallpaper_rounded, color: Colors.white, size: 22),
+              tooltip: 'Change Chat Theme',
+              onPressed: _changeChatThemeFromGallery,
+            ),
             ChatPopupMenu(onSelected: _handleMenuAction),
             const SizedBox(width: 4),
           ],
         ),
-        body: Column(
-          children: [
-            Expanded(
-              child: _messageStream == null
-                  ? const Center(child: CircularProgressIndicator(color: Color(0xFF1E4C7A), strokeWidth: 3))
-                  : StreamBuilder<List<MessageModel>>(
-                      stream: _messageStream,
-                      builder: (context, snapshot) {
-                        if (snapshot.hasError) {
-                          return const Center(
-                            child: Text(
-                              'Failed to load messages.',
-                              style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold),
-                            ),
-                          );
-                        }
-
-                        if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
-                          return const Center(child: CircularProgressIndicator(color: Color(0xFF1E4C7A), strokeWidth: 3));
-                        }
-
-                        final messages = snapshot.data ?? [];
-
-                        if (messages.isEmpty) {
-                          return Center(
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-                              decoration: BoxDecoration(
-                                color: Colors.black.withOpacity(0.05),
-                                borderRadius: BorderRadius.circular(16),
+        body: Container(
+          decoration: BoxDecoration(
+            color: const Color(0xFFF5F7FA),
+            image: _customBgImagePath != null
+                ? DecorationImage(
+                    image: FileImage(File(_customBgImagePath!)),
+                    fit: BoxFit.cover,
+                  )
+                : null,
+          ),
+          child: Column(
+            children: [
+              Expanded(
+                child: _messageStream == null
+                    ? const Center(child: CircularProgressIndicator(color: Color(0xFF1E4C7A), strokeWidth: 3))
+                    : StreamBuilder<List<MessageModel>>(
+                        stream: _messageStream,
+                        builder: (context, snapshot) {
+                          if (snapshot.hasError) {
+                            return Center(
+                              child: Text(
+                                'Failed to load messages: ${snapshot.error}',
+                                style: const TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold),
                               ),
-                              child: const Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(Icons.lock_outline_rounded, size: 14, color: Colors.black54),
-                                  SizedBox(width: 6),
-                                  Text(
-                                    'Messages are end-to-end encrypted',
-                                    style: TextStyle(color: Colors.black54, fontSize: 12, fontWeight: FontWeight.w500),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          );
-                        }
-
-                        WidgetsBinding.instance.addPostFrameCallback((_) => _markMessagesAsRead());
-
-                        return ListView.builder(
-                          controller: _scrollController,
-                          reverse: true,
-                          physics: const BouncingScrollPhysics(),
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                          itemCount: messages.length,
-                          itemBuilder: (context, index) {
-                            final message = messages[index];
-                            final bool isMe = message.senderId == widget.currentUserId;
-
-                            return MessageBubble(
-                              message: message,
-                              isMe: isMe,
-                              chatRoomId: widget.chatRoomId,
-                              currentUserId: widget.currentUserId,
-                              onReplyPressed: (repliedMessage) {
-                                setState(() {
-                                  _replyToMessageId = repliedMessage.messageId;
-                                  _replyToText = repliedMessage.type == 'text'
-                                      ? repliedMessage.content
-                                      : 'Attachment';
-                                });
-                              },
                             );
-                          },
-                        );
-                      },
+                          }
+
+                          if (snapshot.connectionState == ConnectionState.waiting) {
+                            return const Center(child: CircularProgressIndicator(color: Color(0xFF1E4C7A), strokeWidth: 3));
+                          }
+
+                          final messages = snapshot.data ?? [];
+
+                          if (messages.isEmpty) {
+                            return Center(
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withOpacity(0.05),
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                                child: const Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.lock_outline_rounded, size: 14, color: Colors.black54),
+                                    SizedBox(width: 6),
+                                    Text(
+                                      'Messages are end-to-end encrypted',
+                                      style: TextStyle(color: Colors.black54, fontSize: 12, fontWeight: FontWeight.w500),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          }
+
+                          WidgetsBinding.instance.addPostFrameCallback((_) => _markMessagesAsRead());
+
+                          return ListView.builder(
+                            controller: _scrollController,
+                            reverse: true,
+                            physics: const BouncingScrollPhysics(),
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                            itemCount: messages.length,
+                            itemBuilder: (context, index) {
+                              final message = messages[index];
+                              final bool isMe = message.senderId == widget.currentUserId;
+
+                              return MessageBubble(
+                                message: message,
+                                isMe: isMe,
+                                chatRoomId: widget.chatRoomId,
+                                currentUserId: widget.currentUserId,
+                                onReplyPressed: (repliedMessage) {
+                                  setState(() {
+                                    _replyToMessageId = repliedMessage.messageId;
+                                    _replyToText = repliedMessage.type == 'text'
+                                        ? repliedMessage.content
+                                        : 'Attachment';
+                                  });
+                                },
+                              );
+                            },
+                          );
+                        },
+                      ),
+              ),
+              Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.03),
+                      blurRadius: 10,
+                      offset: const Offset(0, -3),
                     ),
-            ),
-            Container(
-              decoration: BoxDecoration(
-                color: Colors.white,
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.03),
-                    blurRadius: 10,
-                    offset: const Offset(0, -3),
-                  ),
-                ],
+                  ],
+                ),
+                child: ChatInputBar(
+                  chatRoomId: widget.chatRoomId,
+                  senderId: widget.currentUserId,
+                  receiverId: widget.receiverId,
+                  replyToMessageId: _replyToMessageId,
+                  replyToText: _replyToText,
+                  onCancelReply: () {
+                    setState(() {
+                      _replyToMessageId = null;
+                      _replyToText = null;
+                    });
+                  },
+                  onTypingChanged: (isTyping) {
+                    _chatService.updateTypingStatus(widget.chatRoomId, widget.currentUserId, isTyping);
+                  },
+                ),
               ),
-              child: ChatInputBar(
-                chatRoomId: widget.chatRoomId,
-                senderId: widget.currentUserId,
-                receiverId: widget.receiverId,
-                replyToMessageId: _replyToMessageId,
-                replyToText: _replyToText,
-                onCancelReply: () {
-                  setState(() {
-                    _replyToMessageId = null;
-                    _replyToText = null;
-                  });
-                },
-                onTypingChanged: (isTyping) {
-                  _chatService.updateTypingStatus(widget.chatRoomId, widget.currentUserId, isTyping);
-                },
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
