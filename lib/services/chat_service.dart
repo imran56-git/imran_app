@@ -166,7 +166,6 @@ class ChatService {
     }
   }
 
-  // Added Group Message Method to fix compilation error
   Future<void> sendGroupMessage({
     required String groupId,
     required String senderId,
@@ -177,7 +176,7 @@ class ChatService {
   }) async {
     try {
       final messageRef = _firestore.collection('groups').doc(groupId).collection('messages').doc();
-      
+
       final Map<String, dynamic> messageData = {
         'messageId': messageRef.id,
         'senderId': senderId,
@@ -208,18 +207,17 @@ class ChatService {
         .collection('messages')
         .orderBy('timestamp', descending: true)
         .snapshots()
-        .handleError((error) {
-      _handleError('getMessages (Stream Error)', error);
-    }).map((snapshot) {
+        .map((snapshot) {
       return snapshot.docs.map((doc) {
         final data = doc.data();
         data['messageId'] = doc.id;
         return MessageModel.fromMap(data);
       }).toList();
+    }).handleError((error) {
+      _handleError('getMessages (Stream Error)', error);
     });
   }
 
-  // Added Group Messages Stream Method to fix compilation error
   Stream<List<MessageModel>> getGroupMessagesStream(String groupId) {
     return _firestore
         .collection('groups')
@@ -227,14 +225,14 @@ class ChatService {
         .collection('messages')
         .orderBy('timestamp', descending: true)
         .snapshots()
-        .handleError((error) {
-      _handleError('getGroupMessagesStream (Stream Error)', error);
-    }).map((snapshot) {
+        .map((snapshot) {
       return snapshot.docs.map((doc) {
         final data = doc.data();
         data['messageId'] = doc.id;
         return MessageModel.fromMap(data);
       }).toList();
+    }).handleError((error) {
+      _handleError('getGroupMessagesStream (Stream Error)', error);
     });
   }
 
