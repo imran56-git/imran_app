@@ -5,17 +5,17 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../services/chat_service.dart';
-import '../services/chat_menu_service.dart';
-import '../models/message_model.dart';
-import '../widgets/chat_input_bar.dart';
-import '../widgets/message_bubble.dart';
-import '../widgets/chat_popup_menu.dart';
-import '../widgets/block_dialog.dart';
-import '../widgets/report_dialog.dart';
-import '../widgets/clear_chat_dialog.dart';
-import '../widgets/delete_chat_dialog.dart';
-import '../utils/popup_menu_actions.dart';
+import 'package:find_your_best_teacher_today/services/chat_service.dart';
+import 'package:find_your_best_teacher_today/services/chat_menu_service.dart';
+import 'package:find_your_best_teacher_today/models/message_model.dart';
+import 'package:find_your_best_teacher_today/widgets/chat_input_bar.dart';
+import 'package:find_your_best_teacher_today/widgets/message_bubble.dart';
+import 'package:find_your_best_teacher_today/widgets/chat_popup_menu.dart';
+import 'package:find_your_best_teacher_today/widgets/block_dialog.dart';
+import 'package:find_your_best_teacher_today/widgets/report_dialog.dart';
+import 'package:find_your_best_teacher_today/widgets/clear_chat_dialog.dart';
+import 'package:find_your_best_teacher_today/widgets/delete_chat_dialog.dart';
+import 'package:find_your_best_teacher_today/utils/popup_menu_actions.dart';
 
 class ChatScreen extends StatefulWidget {
   final String chatRoomId;
