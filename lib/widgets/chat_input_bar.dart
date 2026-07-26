@@ -98,7 +98,10 @@ class _ChatInputBarState extends State<ChatInputBar> {
     return InkWell(
       onTap: () async {
         Navigator.pop(context);
-        String mockUrl = "https://firebasestorage.googleapis.com/v0/b/mock/o/$type";
+        
+        // এখানে রিয়েল ফাইলপিকার বা স্টোরেজ আপলোড ইন্টিগ্রেট করা যেতে পারে। 
+        // আপাতত টেস্টিংয়ের জন্য ভ্যালিড ডামি ইউআরএল বা রিয়েল অ্যাকশন হ্যান্ডেল করা হলো:
+        String sampleUrl = "https://images.unsplash.com/photo-1579353977828-2a4eab540b9f";
 
         if (type == 'location') {
           await _chatService.sendLocation(
@@ -113,17 +116,17 @@ class _ChatInputBarState extends State<ChatInputBar> {
             widget.chatRoomId, 
             widget.senderId, 
             widget.receiverId, 
-            mockUrl, 
+            "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf", 
             "Document.pdf",
           );
         } else if (type == 'image') {
-          await _chatService.sendImage(widget.chatRoomId, widget.senderId, widget.receiverId, mockUrl);
+          await _chatService.sendImage(widget.chatRoomId, widget.senderId, widget.receiverId, sampleUrl);
         } else if (type == 'video') {
-          await _chatService.sendVideo(widget.chatRoomId, widget.senderId, widget.receiverId, mockUrl);
+          await _chatService.sendVideo(widget.chatRoomId, widget.senderId, widget.receiverId, "https://flutter.github.io/assets-for-api-docs/assets/videos/bee.mp4");
         } else if (type == 'audio') {
-          await _chatService.sendAudio(widget.chatRoomId, widget.senderId, widget.receiverId, mockUrl);
+          await _chatService.sendAudio(widget.chatRoomId, widget.senderId, widget.receiverId, sampleUrl);
         } else if (type == 'voice') {
-          await _chatService.sendVoice(widget.chatRoomId, widget.senderId, widget.receiverId, mockUrl);
+          await _chatService.sendVoice(widget.chatRoomId, widget.senderId, widget.receiverId, sampleUrl);
         }
       },
       child: Column(
@@ -163,6 +166,16 @@ class _ChatInputBarState extends State<ChatInputBar> {
       message: text,
       type: 'text',
       replyToMessageId: currentReplyId,
+    );
+  }
+
+  void _handleMicTap() async {
+    // ভয়েস বা অডিও রেকর্ড করার ফিচার না থাকলে ডেমো ভয়েস মেসেজ সেন্ড করার হ্যান্ডলার
+    await _chatService.sendVoice(
+      widget.chatRoomId,
+      widget.senderId,
+      widget.receiverId,
+      "https://www.soundhelix.examples/samples/mp3/SoundHelix-Song-1.mp3",
     );
   }
 
@@ -257,7 +270,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
               ),
               const SizedBox(width: 6.0),
               GestureDetector(
-                onTap: _isTyping ? _handleSend : null,
+                onTap: _isTyping ? _handleSend : _handleMicTap,
                 child: CircleAvatar(
                   radius: 22,
                   backgroundColor: const Color(0xFF006653),
