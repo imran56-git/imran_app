@@ -32,7 +32,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
   final TextEditingController _controller = TextEditingController();
   final ChatService _chatService = ChatService();
   final ImagePicker _imagePicker = ImagePicker();
-  
+
   bool _isTyping = false;
   bool _isUploading = false;
 
@@ -63,7 +63,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
 
   void _showAttachmentBottomSheet() {
     if (_isUploading) return;
-    
+
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -78,8 +78,8 @@ class _ChatInputBarState extends State<ChatInputBar> {
           mainAxisSize: MainAxisSize.min,
           children: [
             const Text(
-              "Send Document / Media", 
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+              "Send Attachment", 
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Color(0xFF1E4C7A)),
             ),
             const SizedBox(height: 20),
             GridView.count(
@@ -88,12 +88,12 @@ class _ChatInputBarState extends State<ChatInputBar> {
               mainAxisSpacing: 16,
               crossAxisSpacing: 16,
               children: [
-                _attachmentTile(Icons.photo_library, "Gallery", Colors.purple, 'gallery'),
-                _attachmentTile(Icons.camera_alt, "Camera", Colors.pink, 'camera'),
-                _attachmentTile(Icons.description, "Document", Colors.blue, 'document'),
-                _attachmentTile(Icons.audiotrack, "Audio", Colors.orange, 'audio'),
-                _attachmentTile(Icons.video_library, "Video", Colors.red, 'video'),
-                _attachmentTile(Icons.location_on, "Location", Colors.teal, 'location'),
+                _attachmentTile(Icons.photo_library_rounded, "Gallery", Colors.purple, 'gallery'),
+                _attachmentTile(Icons.camera_alt_rounded, "Camera", Colors.pink, 'camera'),
+                _attachmentTile(Icons.description_rounded, "Document", Colors.blue, 'document'),
+                _attachmentTile(Icons.audiotrack_rounded, "Audio", Colors.orange, 'audio'),
+                _attachmentTile(Icons.video_library_rounded, "Video", Colors.red, 'video'),
+                _attachmentTile(Icons.location_on_rounded, "Location", Colors.teal, 'location'),
               ],
             ),
           ],
@@ -108,16 +108,17 @@ class _ChatInputBarState extends State<ChatInputBar> {
         Navigator.pop(context);
         await _handleAttachmentPick(type);
       },
+      borderRadius: BorderRadius.circular(16),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           CircleAvatar(
             radius: 26, 
-            backgroundColor: color.withOpacity(0.1), 
+            backgroundColor: color.withOpacity(0.12), 
             child: Icon(icon, color: color, size: 24),
           ),
           const SizedBox(height: 6),
-          Text(label, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+          Text(label, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: Colors.black87)),
         ],
       ),
     );
@@ -159,7 +160,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
       } else if (type == 'document') {
         final FilePickerResult? result = await FilePicker.platform.pickFiles(
           type: FileType.custom,
-          allowedExtensions: ['pdf', 'doc', 'docx', 'txt'],
+          allowedExtensions: ['pdf', 'doc', 'docx', 'txt', 'zip'],
         );
         if (result != null && result.files.single.path != null) {
           await _chatService.sendDocumentFile(
@@ -181,7 +182,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
           );
         }
       } else if (type == 'location') {
-        // লোকেশন ডেটা পাঠানো (ডিফল্ট/কারেন্ট কোঅর্ডিনেট)
+        // Shared location with fallback values
         await _chatService.sendLocation(
           widget.chatRoomId, 
           widget.senderId, 
@@ -205,7 +206,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
 
   void _handleSend() async {
     final text = _controller.text.trim();
-    if (text.isEmpty) return;
+    if (text.isEmpty || _isUploading) return;
 
     final String? currentReplyId = widget.replyToMessageId;
 
@@ -238,7 +239,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
 
   void _handleMicTap() {
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Hold to record voice message')),
+      const SnackBar(content: Text('Voice recording feature coming soon')),
     );
   }
 
@@ -250,7 +251,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
         if (_isUploading)
           const LinearProgressIndicator(
             backgroundColor: Colors.transparent,
-            valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF006653)),
+            valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF1E4C7A)),
           ),
         if (widget.replyToMessageId != null && widget.replyToText != null)
           Container(
@@ -259,7 +260,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
             decoration: BoxDecoration(
               color: Colors.grey.withOpacity(0.1),
               borderRadius: BorderRadius.circular(12),
-              border: const Border(left: BorderSide(color: Color(0xFF006653), width: 4)),
+              border: const Border(left: BorderSide(color: Color(0xFF1E4C7A), width: 4)),
             ),
             child: Row(
               children: [
@@ -268,10 +269,10 @@ class _ChatInputBarState extends State<ChatInputBar> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text(
-                        "Reply to Message",
+                        "Replying to Message",
                         style: TextStyle(
                           fontWeight: FontWeight.bold, 
-                          color: Color(0xFF006653), 
+                          color: Color(0xFF1E4C7A), 
                           fontSize: 12,
                         ),
                       ),
@@ -280,7 +281,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
                         widget.replyToText!,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: TextStyle(color: Colors.black.withOpacity(0.87), fontSize: 14),
+                        style: TextStyle(color: Colors.black.withOpacity(0.87), fontSize: 13),
                       ),
                     ],
                   ),
@@ -323,14 +324,14 @@ class _ChatInputBarState extends State<ChatInputBar> {
                           maxLines: 5,
                           enabled: !_isUploading,
                           decoration: const InputDecoration(
-                            hintText: 'Message',
+                            hintText: 'Type a message...',
                             border: InputBorder.none,
                             contentPadding: EdgeInsets.symmetric(vertical: 10.0, horizontal: 4),
                           ),
                         ),
                       ),
                       IconButton(
-                        icon: const Icon(Icons.collections_rounded, color: Colors.grey),
+                        icon: const Icon(Icons.attach_file_rounded, color: Colors.grey),
                         onPressed: _isUploading ? null : _showAttachmentBottomSheet,
                       ),
                     ],
@@ -342,7 +343,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
                 onTap: _isTyping ? _handleSend : _handleMicTap,
                 child: CircleAvatar(
                   radius: 22,
-                  backgroundColor: const Color(0xFF006653),
+                  backgroundColor: const Color(0xFF1E4C7A),
                   child: Icon(
                     _isTyping ? Icons.send : Icons.mic,
                     color: Colors.white,
