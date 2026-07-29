@@ -48,14 +48,16 @@ class _ChatScreenState extends State<ChatScreen> {
   String? _replyToMessageId;
   String? _replyToText;
   String? _customBgImagePath;
+  bool _isMarkingRead = false;
 
   @override
   void initState() {
     super.initState();
+    _initializeChatRoom();
     _initChatStream();
     _loadCustomTheme();
     _chatService.updateTypingStatus(widget.chatRoomId, widget.currentUserId, false);
-    _markMessagesAsRead();
+    _markMessagesAsReadSafe();
   }
 
   @override
@@ -65,19 +67,39 @@ class _ChatScreenState extends State<ChatScreen> {
     super.dispose();
   }
 
+  Future<void> _initializeChatRoom() async {
+    // Ensuring chat document exists before streaming
+    String teacherId = widget.isTeacher ? widget.currentUserId : widget.receiverId;
+    String studentId = widget.isTeacher ? widget.receiverId : widget.currentUserId;
+
+    await _chatService.createOrInitializeChat(
+      teacherId: teacherId,
+      studentId: studentId,
+      teacherName: widget.isTeacher ? 'Me' : widget.receiverName,
+      studentName: widget.isTeacher ? widget.receiverName : 'Me',
+      teacherImage: widget.isTeacher ? '' : widget.receiverProfilePic,
+      studentImage: widget.isTeacher ? widget.receiverProfilePic : '',
+    );
+  }
+
   void _initChatStream() {
     _messageStream = _chatService.getMessages(widget.chatRoomId);
   }
 
-  void _markMessagesAsRead() async {
+  Future<void> _markMessagesAsReadSafe() async {
+    if (_isMarkingRead) return;
+    _isMarkingRead = true;
     await _chatService.markAsSeen(widget.chatRoomId, widget.currentUserId);
+    _isMarkingRead = false;
   }
 
   Future<void> _loadCustomTheme() async {
     final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      _customBgImagePath = prefs.getString('chat_theme_${widget.chatRoomId}');
-    });
+    if (mounted) {
+      setState(() {
+        _customBgImagePath = prefs.getString('chat_theme_${widget.chatRoomId}');
+      });
+    }
   }
 
   Future<void> _changeChatThemeFromGallery() async {
@@ -87,10 +109,10 @@ class _ChatScreenState extends State<ChatScreen> {
     if (pickedFile != null) {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('chat_theme_${widget.chatRoomId}', pickedFile.path);
-      setState(() {
-        _customBgImagePath = pickedFile.path;
-      });
       if (mounted) {
+        setState(() {
+          _customBgImagePath = pickedFile.path;
+        });
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Chat theme updated successfully')),
         );
@@ -248,8 +270,13 @@ class _ChatScreenState extends State<ChatScreen> {
                           );
                         }
 
+                        // Pass correct boolean flag for receiver collection lookup:
+                        // If current user is teacher, receiver is student (isTeacher = false).
                         return StreamBuilder<Map<String, dynamic>>(
-                          stream: _chatService.getUserStatusStream(widget.receiverId, !widget.isTeacher),
+                          stream: _chatService.getUserStatusStream(
+                            widget.receiverId, 
+                            !widget.isTeacher,
+                          ),
                           builder: (context, statusSnapshot) {
                             if (statusSnapshot.hasData) {
                               bool isOnline = statusSnapshot.data!['isOnline'] ?? false;
@@ -338,7 +365,7 @@ class _ChatScreenState extends State<ChatScreen> {
                             );
                           }
 
-                          WidgetsBinding.instance.addPostFrameCallback((_) => _markMessagesAsRead());
+                          WidgetsBinding.instance.addPostFrameCallback((_) => _markMessagesAsReadSafe());
 
                           return ListView.builder(
                             controller: _scrollController,
