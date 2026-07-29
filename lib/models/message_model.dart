@@ -36,24 +36,26 @@ class MessageModel {
   });
 
   factory MessageModel.fromMap(Map<String, dynamic> map) {
+    DateTime? parseDateTime(dynamic raw) {
+      if (raw == null) return null;
+      if (raw is Timestamp) return raw.toDate();
+      if (raw is int) return DateTime.fromMillisecondsSinceEpoch(raw);
+      if (raw is String) return DateTime.tryParse(raw);
+      return null;
+    }
+
     return MessageModel(
       messageId: map['messageId']?.toString() ?? '',
       senderId: map['senderId']?.toString() ?? '',
       receiverId: map['receiverId']?.toString() ?? '',
       content: map['content']?.toString() ?? map['message']?.toString() ?? '', 
 
-      // Timestamp Safe Parsing
-      timestamp: map['timestamp'] != null
-          ? (map['timestamp'] is Timestamp 
-              ? (map['timestamp'] as Timestamp).toDate() 
-              : DateTime.tryParse(map['timestamp'].toString()))
-          : null,
+      timestamp: parseDateTime(map['timestamp']),
 
       type: map['type']?.toString() ?? 'text',
       status: map['status']?.toString() ?? 'sent',
-      isDeletedForEveryone: map['isDeletedForEveryone'] ?? false,
+      isDeletedForEveryone: map['isDeletedForEveryone'] as bool? ?? false,
 
-      // 100% Safe List Casting to prevent Stream crashes
       deletedForUsers: (map['deletedForUsers'] as List<dynamic>?)
               ?.map((e) => e.toString())
               .toList() ?? 
@@ -64,20 +66,14 @@ class MessageModel {
               .toList() ?? 
           [],
 
-      // 100% Safe Map Casting
       reactions: (map['reactions'] as Map<dynamic, dynamic>?)
               ?.map((key, value) => MapEntry(key.toString(), value.toString())) ?? 
           {},
 
       replyToMessageId: map['replyToMessageId']?.toString(),
-      isEdited: map['isEdited'] ?? false,
+      isEdited: map['isEdited'] as bool? ?? false,
 
-      // Edit Timestamp Safe Parsing
-      editTimestamp: map['editTimestamp'] != null
-          ? (map['editTimestamp'] is Timestamp 
-              ? (map['editTimestamp'] as Timestamp).toDate() 
-              : DateTime.tryParse(map['editTimestamp'].toString()))
-          : null,
+      editTimestamp: parseDateTime(map['editTimestamp']),
 
       mediaMetaData: map['mediaMetaData'] != null
           ? Map<String, dynamic>.from(map['mediaMetaData'] as Map<dynamic, dynamic>)
@@ -107,5 +103,41 @@ class MessageModel {
           : null,
       'mediaMetaData': mediaMetaData,
     };
+  }
+
+  MessageModel copyWith({
+    String? messageId,
+    String? senderId,
+    String? receiverId,
+    String? content,
+    DateTime? timestamp,
+    String? type,
+    String? status,
+    bool? isDeletedForEveryone,
+    List<String>? deletedForUsers,
+    List<String>? starredBy,
+    Map<String, String>? reactions,
+    String? replyToMessageId,
+    bool? isEdited,
+    DateTime? editTimestamp,
+    Map<String, dynamic>? mediaMetaData,
+  }) {
+    return MessageModel(
+      messageId: messageId ?? this.messageId,
+      senderId: senderId ?? this.senderId,
+      receiverId: receiverId ?? this.receiverId,
+      content: content ?? this.content,
+      timestamp: timestamp ?? this.timestamp,
+      type: type ?? this.type,
+      status: status ?? this.status,
+      isDeletedForEveryone: isDeletedForEveryone ?? this.isDeletedForEveryone,
+      deletedForUsers: deletedForUsers ?? this.deletedForUsers,
+      starredBy: starredBy ?? this.starredBy,
+      reactions: reactions ?? this.reactions,
+      replyToMessageId: replyToMessageId ?? this.replyToMessageId,
+      isEdited: isEdited ?? this.isEdited,
+      editTimestamp: editTimestamp ?? this.editTimestamp,
+      mediaMetaData: mediaMetaData ?? this.mediaMetaData,
+    );
   }
 }
