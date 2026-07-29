@@ -170,13 +170,18 @@ class ChatService {
     }
   }
 
-  // --- Real File Upload Methods ---
-  
+  // --- File Upload Helpers ---
+
   Future<String> _uploadFileToStorage(File file, String folder) async {
-    final fileName = '${DateTime.now().millisecondsSinceEpoch}_${file.path.split('/').last}';
-    final ref = _storage.ref().child('chat_attachments/$folder/$fileName');
-    final uploadTask = await ref.putFile(file);
-    return await uploadTask.ref.getDownloadURL();
+    try {
+      final fileName = '${DateTime.now().millisecondsSinceEpoch}_${file.path.split('/').last}';
+      final ref = _storage.ref().child('chat_attachments/$folder/$fileName');
+      final uploadTask = await ref.putFile(file);
+      return await uploadTask.ref.getDownloadURL();
+    } catch (e) {
+      _handleError('_uploadFileToStorage', e);
+      rethrow;
+    }
   }
 
   Future<void> sendImageFile({
@@ -323,7 +328,7 @@ class ChatService {
           .collection('messages')
           .where('receiverId', isEqualTo: currentUserId)
           .where('status', isEqualTo: 'sent')
-          .limit(20)
+          .limit(50)
           .get();
 
       if (querySnapshot.docs.isEmpty) return;
