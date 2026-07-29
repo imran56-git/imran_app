@@ -32,6 +32,9 @@ class _MessageBubbleState extends State<MessageBubble> {
   late final AudioPlayer _audioPlayer;
   StreamSubscription? _playerCompleteSubscription;
   StreamSubscription? _playerStateSubscription;
+  StreamSubscription? _durationSubscription;
+  StreamSubscription? _positionSubscription;
+
   final ChatService _chatService = ChatService();
   bool _isPlaying = false;
   Duration _duration = Duration.zero;
@@ -62,11 +65,11 @@ class _MessageBubbleState extends State<MessageBubble> {
       }
     });
 
-    _audioPlayer.onDurationChanged.listen((newDuration) {
+    _durationSubscription = _audioPlayer.onDurationChanged.listen((newDuration) {
       if (mounted) setState(() => _duration = newDuration);
     });
 
-    _audioPlayer.onPositionChanged.listen((newPosition) {
+    _positionSubscription = _audioPlayer.onPositionChanged.listen((newPosition) {
       if (mounted) setState(() => _position = newPosition);
     });
   }
@@ -75,6 +78,8 @@ class _MessageBubbleState extends State<MessageBubble> {
   void dispose() {
     _playerCompleteSubscription?.cancel();
     _playerStateSubscription?.cancel();
+    _durationSubscription?.cancel();
+    _positionSubscription?.cancel();
     _audioPlayer.dispose();
     super.dispose();
   }
@@ -102,15 +107,19 @@ class _MessageBubbleState extends State<MessageBubble> {
   }
 
   Future<void> _openUrl(String url) async {
-    final Uri uri = Uri.parse(url);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } else {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not open link')),
-        );
+    try {
+      final Uri uri = Uri.parse(url);
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Could not open link')),
+          );
+        }
       }
+    } catch (e) {
+      debugPrint('Error launching URL: $e');
     }
   }
 
@@ -254,7 +263,7 @@ class _MessageBubbleState extends State<MessageBubble> {
 
   Widget _buildLocationBubble() {
     return InkWell(
-      onTap: () => _openUrl(widget.message.content),
+      onTap: () => _openUrl("https://www.google.com/maps/search/?api=1&query=${widget.message.content}"),
       borderRadius: BorderRadius.circular(12),
       child: Container(
         padding: const EdgeInsets.all(10),
