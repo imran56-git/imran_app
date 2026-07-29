@@ -69,7 +69,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
-      builder: (context) => Container(
+      builder: (ctx) => Container(
         margin: const EdgeInsets.all(16),
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
@@ -250,9 +250,11 @@ class _ChatInputBarState extends State<ChatInputBar> {
   }
 
   void _handleMicTap() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Voice recording feature coming soon')),
-    );
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Voice recording feature coming soon')),
+      );
+    }
   }
 
   @override
