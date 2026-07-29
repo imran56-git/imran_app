@@ -1,12 +1,36 @@
 import 'package:flutter/material.dart';
 
-class ClearChatDialog extends StatelessWidget {
-  final VoidCallback onConfirm;
+class ClearChatDialog extends StatefulWidget {
+  final Future<void> Function() onConfirm;
 
   const ClearChatDialog({
     super.key,
     required this.onConfirm,
   });
+
+  @override
+  State<ClearChatDialog> createState() => _ClearChatDialogState();
+}
+
+class _ClearChatDialogState extends State<ClearChatDialog> {
+  bool _isLoading = false;
+
+  Future<void> _handleClearChat() async {
+    setState(() => _isLoading = true);
+    try {
+      await widget.onConfirm();
+      if (mounted) {
+        Navigator.pop(context);
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to clear chat: $e')),
+        );
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -31,7 +55,7 @@ class ClearChatDialog extends StatelessWidget {
       ),
       actions: [
         TextButton(
-          onPressed: () => Navigator.pop(context),
+          onPressed: _isLoading ? null : () => Navigator.pop(context),
           child: const Text(
             'Cancel',
             style: TextStyle(color: Colors.grey, fontWeight: FontWeight.w600),
@@ -45,11 +69,17 @@ class ClearChatDialog extends StatelessWidget {
               borderRadius: BorderRadius.circular(10),
             ),
           ),
-          onPressed: () {
-            Navigator.pop(context);
-            onConfirm();
-          },
-          child: const Text('Clear', style: TextStyle(fontWeight: FontWeight.bold)),
+          onPressed: _isLoading ? null : _handleClearChat,
+          child: _isLoading
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                  ),
+                )
+              : const Text('Clear', style: TextStyle(fontWeight: FontWeight.bold)),
         ),
       ],
     );
