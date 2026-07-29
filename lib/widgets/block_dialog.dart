@@ -1,14 +1,38 @@
 import 'package:flutter/material.dart';
 
-class BlockDialog extends StatelessWidget {
+class BlockDialog extends StatefulWidget {
   final String userName;
-  final VoidCallback onConfirm;
+  final Future<void> Function() onConfirm;
 
   const BlockDialog({
     super.key,
     required this.userName,
     required this.onConfirm,
   });
+
+  @override
+  State<BlockDialog> createState() => _BlockDialogState();
+}
+
+class _BlockDialogState extends State<BlockDialog> {
+  bool _isLoading = false;
+
+  Future<void> _handleBlock() async {
+    setState(() => _isLoading = true);
+    try {
+      await widget.onConfirm();
+      if (mounted) {
+        Navigator.pop(context);
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to block user: $e')),
+        );
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -24,7 +48,7 @@ class BlockDialog extends StatelessWidget {
         ),
       ),
       content: Text(
-        'Are you sure you want to block $userName? You will no longer receive messages from this user.',
+        'Are you sure you want to block ${widget.userName}? You will no longer receive messages or calls from this user.',
         style: const TextStyle(
           fontSize: 14,
           color: Colors.black87,
@@ -33,7 +57,7 @@ class BlockDialog extends StatelessWidget {
       ),
       actions: [
         TextButton(
-          onPressed: () => Navigator.pop(context),
+          onPressed: _isLoading ? null : () => Navigator.pop(context),
           child: const Text(
             'Cancel',
             style: TextStyle(color: Colors.grey, fontWeight: FontWeight.w600),
@@ -47,11 +71,17 @@ class BlockDialog extends StatelessWidget {
               borderRadius: BorderRadius.circular(10),
             ),
           ),
-          onPressed: () {
-            Navigator.pop(context);
-            onConfirm();
-          },
-          child: const Text('Block', style: TextStyle(fontWeight: FontWeight.bold)),
+          onPressed: _isLoading ? null : _handleBlock,
+          child: _isLoading
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                  ),
+                )
+              : const Text('Block', style: TextStyle(fontWeight: FontWeight.bold)),
         ),
       ],
     );
