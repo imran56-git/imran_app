@@ -1,12 +1,36 @@
 import 'package:flutter/material.dart';
 
-class DeleteChatDialog extends StatelessWidget {
-  final VoidCallback onConfirm;
+class DeleteChatDialog extends StatefulWidget {
+  final Future<void> Function() onConfirm;
 
   const DeleteChatDialog({
     super.key,
     required this.onConfirm,
   });
+
+  @override
+  State<DeleteChatDialog> createState() => _DeleteChatDialogState();
+}
+
+class _DeleteChatDialogState extends State<DeleteChatDialog> {
+  bool _isLoading = false;
+
+  Future<void> _handleDelete() async {
+    setState(() => _isLoading = true);
+    try {
+      await widget.onConfirm();
+      if (mounted) {
+        Navigator.pop(context);
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to delete conversation: $e')),
+        );
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -31,7 +55,7 @@ class DeleteChatDialog extends StatelessWidget {
       ),
       actions: [
         TextButton(
-          onPressed: () => Navigator.pop(context),
+          onPressed: _isLoading ? null : () => Navigator.pop(context),
           child: const Text(
             'Cancel',
             style: TextStyle(color: Colors.grey, fontWeight: FontWeight.w600),
@@ -45,11 +69,17 @@ class DeleteChatDialog extends StatelessWidget {
               borderRadius: BorderRadius.circular(10),
             ),
           ),
-          onPressed: () {
-            Navigator.pop(context);
-            onConfirm();
-          },
-          child: const Text('Delete', style: TextStyle(fontWeight: FontWeight.bold)),
+          onPressed: _isLoading ? null : _handleDelete,
+          child: _isLoading
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                  ),
+                )
+              : const Text('Delete', style: TextStyle(fontWeight: FontWeight.bold)),
         ),
       ],
     );
