@@ -2,29 +2,41 @@ import 'package:flutter/material.dart';
 
 class SuccessToast {
   static void show(BuildContext context, String message) {
-    final overlay = Overlay.of(context);
-    final overlayEntry = OverlayEntry(
-      builder: (context) => _SuccessToastWidget(message: message),
+    final overlay = Overlay.maybeOf(context);
+    if (overlay == null) return;
+
+    late OverlayEntry overlayEntry;
+    
+    overlayEntry = OverlayEntry(
+      builder: (context) => _SuccessToastWidget(
+        message: message,
+        onDismissed: () {
+          if (overlayEntry.mounted) {
+            overlayEntry.remove();
+          }
+        },
+      ),
     );
 
     overlay.insert(overlayEntry);
-
-    Future.delayed(const Duration(seconds: 3), () {
-      overlayEntry.remove();
-    });
   }
 }
 
 class _SuccessToastWidget extends StatefulWidget {
   final String message;
+  final VoidCallback onDismissed;
 
-  const _SuccessToastWidget({required this.message});
+  const _SuccessToastWidget({
+    required this.message,
+    required this.onDismissed,
+  });
 
   @override
   State<_SuccessToastWidget> createState() => _SuccessToastWidgetState();
 }
 
-class _SuccessToastWidgetState extends State<_SuccessToastWidget> with SingleTickerProviderStateMixin {
+class _SuccessToastWidgetState extends State<_SuccessToastWidget>
+    with SingleTickerProviderStateMixin {
   late AnimationController _controller;
   late Animation<Offset> _offsetAnimation;
   late Animation<double> _fadeAnimation;
@@ -33,16 +45,18 @@ class _SuccessToastWidgetState extends State<_SuccessToastWidget> with SingleTic
   void initState() {
     super.initState();
     _controller = AnimationController(
-      duration: const Duration(milliseconds: 400),
+      duration: const Duration(milliseconds: 350),
+      reverseDuration: const Duration(milliseconds: 300),
       vsync: this,
     );
 
     _offsetAnimation = Tween<Offset>(
-      begin: const Offset(0.0, -1.0),
+      begin: const Offset(0.0, -0.8),
       end: Offset.zero,
     ).animate(CurvedAnimation(
       parent: _controller,
       curve: Curves.easeOutBack,
+      reverseCurve: Curves.easeInCubic,
     ));
 
     _fadeAnimation = Tween<double>(
@@ -55,9 +69,14 @@ class _SuccessToastWidgetState extends State<_SuccessToastWidget> with SingleTic
 
     _controller.forward();
 
-    Future.delayed(const Duration(seconds: 2, milliseconds: 500), () {
+    // ২.৫ সেকেন্ড পর টোস্টটি নিজে থেকেই ডিসমিস হবে
+    Future.delayed(const Duration(milliseconds: 2500), () {
       if (mounted) {
-        _controller.reverse();
+        _controller.reverse().then((_) {
+          if (mounted) {
+            widget.onDismissed();
+          }
+        });
       }
     });
   }
@@ -71,7 +90,7 @@ class _SuccessToastWidgetState extends State<_SuccessToastWidget> with SingleTic
   @override
   Widget build(BuildContext context) {
     return Positioned(
-      top: MediaQuery.of(context).padding.top + 12,
+      top: MediaQuery.of(context).padding.top + 10,
       left: 16,
       right: 16,
       child: SlideTransition(
@@ -81,14 +100,14 @@ class _SuccessToastWidgetState extends State<_SuccessToastWidget> with SingleTic
           child: Material(
             color: Colors.transparent,
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               decoration: BoxDecoration(
-                color: const Color(0xFF10B981),
-                borderRadius: BorderRadius.circular(16),
+                color: const Color(0xFF10B981), // Fresh emerald green
+                borderRadius: BorderRadius.circular(14),
                 boxShadow: [
                   BoxShadow(
                     color: const Color(0xFF10B981).withOpacity(0.3),
-                    blurRadius: 12,
+                    blurRadius: 10,
                     offset: const Offset(0, 4),
                   ),
                 ],
@@ -96,26 +115,26 @@ class _SuccessToastWidgetState extends State<_SuccessToastWidget> with SingleTic
               child: Row(
                 children: [
                   Container(
-                    padding: const EdgeInsets.all(6),
+                    padding: const EdgeInsets.all(5),
                     decoration: const BoxDecoration(
                       color: Colors.white24,
                       shape: BoxShape.circle,
                     ),
                     child: const Icon(
-                      Icons.check_circle_rounded,
+                      Icons.check_rounded,
                       color: Colors.white,
-                      size: 22,
+                      size: 20,
                     ),
                   ),
-                  const SizedBox(width: 14),
+                  const SizedBox(width: 12),
                   Expanded(
                     child: Text(
                       widget.message,
                       style: const TextStyle(
                         color: Colors.white,
-                        fontSize: 15,
+                        fontSize: 14,
                         fontWeight: FontWeight.bold,
-                        letterSpacing: 0.3,
+                        letterSpacing: 0.2,
                       ),
                     ),
                   ),
