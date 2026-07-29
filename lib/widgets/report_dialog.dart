@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 class ReportDialog extends StatefulWidget {
   final String userName;
-  final Function(String reason) onConfirm;
+  final Future<void> Function(String reason) onConfirm;
 
   const ReportDialog({
     super.key,
@@ -17,11 +17,35 @@ class ReportDialog extends StatefulWidget {
 class _ReportDialogState extends State<ReportDialog> {
   final TextEditingController _reasonController = TextEditingController();
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
+  bool _isLoading = false;
 
   @override
   void dispose() {
     _reasonController.dispose();
     super.dispose();
+  }
+
+  Future<void> _handleSubmit() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() => _isLoading = true);
+    try {
+      final reason = _reasonController.text.trim();
+      await widget.onConfirm(reason);
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Report submitted successfully')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to submit report: $e')),
+        );
+      }
+    }
   }
 
   @override
@@ -51,6 +75,7 @@ class _ReportDialogState extends State<ReportDialog> {
             const SizedBox(height: 12),
             TextFormField(
               controller: _reasonController,
+              enabled: !_isLoading,
               maxLines: 3,
               decoration: InputDecoration(
                 hintText: 'Type reason here...',
@@ -76,7 +101,7 @@ class _ReportDialogState extends State<ReportDialog> {
       ),
       actions: [
         TextButton(
-          onPressed: () => Navigator.pop(context),
+          onPressed: _isLoading ? null : () => Navigator.pop(context),
           child: const Text(
             'Cancel',
             style: TextStyle(color: Colors.grey, fontWeight: FontWeight.w600),
@@ -90,14 +115,17 @@ class _ReportDialogState extends State<ReportDialog> {
               borderRadius: BorderRadius.circular(10),
             ),
           ),
-          onPressed: () {
-            if (_formKey.currentState!.validate()) {
-              final reason = _reasonController.text.trim();
-              Navigator.pop(context);
-              widget.onConfirm(reason);
-            }
-          },
-          child: const Text('Submit', style: TextStyle(fontWeight: FontWeight.bold)),
+          onPressed: _isLoading ? null : _handleSubmit,
+          child: _isLoading
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                  ),
+                )
+              : const Text('Submit', style: TextStyle(fontWeight: FontWeight.bold)),
         ),
       ],
     );
