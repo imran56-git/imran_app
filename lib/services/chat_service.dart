@@ -1,9 +1,12 @@
 import 'dart:developer';
+import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:find_your_best_teacher_today/models/message_model.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import '../models/message_model.dart';
 
 class ChatService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseStorage _storage = FirebaseStorage.instance;
 
   Future<Map<String, dynamic>?> getUserProfile(String userId, bool isTeacher) async {
     try {
@@ -20,6 +23,7 @@ class ChatService {
     return _firestore
         .collection('chats')
         .where('participants', arrayContains: userId)
+        .orderBy('lastMessageTime', descending: true)
         .snapshots()
         .handleError((error) {
       _handleError('getUserChatsStream', error);
@@ -166,6 +170,81 @@ class ChatService {
     }
   }
 
+  // --- Real File Upload Methods ---
+  
+  Future<String> _uploadFileToStorage(File file, String folder) async {
+    final fileName = '${DateTime.now().millisecondsSinceEpoch}_${file.path.split('/').last}';
+    final ref = _storage.ref().child('chat_attachments/$folder/$fileName');
+    final uploadTask = await ref.putFile(file);
+    return await uploadTask.ref.getDownloadURL();
+  }
+
+  Future<void> sendImageFile({
+    required String chatRoomId,
+    required String senderId,
+    required String receiverId,
+    required File file,
+  }) async {
+    final url = await _uploadFileToStorage(file, 'images');
+    await sendMessage(
+      chatId: chatRoomId,
+      senderId: senderId,
+      receiverId: receiverId,
+      message: url,
+      type: 'image',
+    );
+  }
+
+  Future<void> sendVideoFile({
+    required String chatRoomId,
+    required String senderId,
+    required String receiverId,
+    required File file,
+  }) async {
+    final url = await _uploadFileToStorage(file, 'videos');
+    await sendMessage(
+      chatId: chatRoomId,
+      senderId: senderId,
+      receiverId: receiverId,
+      message: url,
+      type: 'video',
+    );
+  }
+
+  Future<void> sendDocumentFile({
+    required String chatRoomId,
+    required String senderId,
+    required String receiverId,
+    required File file,
+    required String fileName,
+  }) async {
+    final url = await _uploadFileToStorage(file, 'documents');
+    await sendMessage(
+      chatId: chatRoomId,
+      senderId: senderId,
+      receiverId: receiverId,
+      message: url,
+      type: 'document',
+      mediaMetaData: {'fileName': fileName},
+    );
+  }
+
+  Future<void> sendAudioFile({
+    required String chatRoomId,
+    required String senderId,
+    required String receiverId,
+    required File file,
+  }) async {
+    final url = await _uploadFileToStorage(file, 'audio');
+    await sendMessage(
+      chatId: chatRoomId,
+      senderId: senderId,
+      receiverId: receiverId,
+      message: url,
+      type: 'audio',
+    );
+  }
+
   Future<void> sendGroupMessage({
     required String groupId,
     required String senderId,
@@ -243,7 +322,8 @@ class ChatService {
           .doc(chatId)
           .collection('messages')
           .where('receiverId', isEqualTo: currentUserId)
-          .where('status', isNotEqualTo: 'seen')
+          .where('status', isEqualTo: 'sent')
+          .limit(20)
           .get();
 
       if (querySnapshot.docs.isEmpty) return;
