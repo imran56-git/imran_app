@@ -12,7 +12,13 @@ class ChatService {
     try {
       final String collectionPath = isTeacher ? 'teachers' : 'students';
       final doc = await _firestore.collection(collectionPath).doc(userId).get();
-      return doc.data();
+      if (doc.exists && doc.data() != null) {
+        return doc.data();
+      }
+      
+      // Fallback: Check 'users' collection if not found in specific role collection
+      final userDoc = await _firestore.collection('users').doc(userId).get();
+      return userDoc.data();
     } catch (e) {
       _handleError('getUserProfile', e);
       return null;
@@ -38,7 +44,7 @@ class ChatService {
         'isOnline': isOnline,
         'status': isOnline ? 'Online' : 'Offline',
         'lastSeen': FieldValue.serverTimestamp(),
-      });
+      }).catchError((_) {});
 
       await _firestore.collection('users').doc(userId).update({
         'status': isOnline ? 'Online' : 'Offline',
@@ -92,24 +98,35 @@ class ChatService {
       final chatRef = _firestore.collection('chats').doc(chatId);
       final doc = await chatRef.get();
 
+      Map<String, dynamic> updateData = {
+        'chatId': chatId,
+        'teacherId': teacherId,
+        'studentId': studentId,
+        'participants': [teacherId, studentId],
+        'isGroup': false,
+      };
+
+      // Real Name & Profile Image আপডেট রাখা
+      if (teacherName.isNotEmpty && teacherName != 'Me' && teacherName != 'User') {
+        updateData['teacherName'] = teacherName;
+      }
+      if (studentName.isNotEmpty && studentName != 'Me' && studentName != 'User') {
+        updateData['studentName'] = studentName;
+      }
+      if (teacherImage.isNotEmpty) updateData['teacherImage'] = teacherImage;
+      if (studentImage.isNotEmpty) updateData['studentImage'] = studentImage;
+
       if (!doc.exists) {
-        await chatRef.set({
-          'chatId': chatId,
-          'teacherId': teacherId,
-          'studentId': studentId,
-          'teacherName': teacherName,
-          'studentName': studentName,
-          'teacherImage': teacherImage,
-          'studentImage': studentImage,
-          'participants': [teacherId, studentId],
-          'lastMessageContent': 'Chat initialized',
-          'lastMessageTime': FieldValue.serverTimestamp(),
-          'unreadCount': 0,
-          'isGroup': false,
-          'pinnedBy': [],
-          'blockedBy': [],
-          'createdAt': FieldValue.serverTimestamp(),
-        });
+        updateData['lastMessageContent'] = 'Chat initialized';
+        updateData['lastMessageTime'] = FieldValue.serverTimestamp();
+        updateData['unreadCount'] = 0;
+        updateData['unreadFor'] = ''; // কোন ইউজারের জন্য আনরিড মেসেজ জমছে
+        updateData['pinnedBy'] = [];
+        updateData['blockedBy'] = [];
+        updateData['createdAt'] = FieldValue.serverTimestamp();
+        await chatRef.set(updateData);
+      } else {
+        await chatRef.set(updateData, SetOptions(merge: true));
       }
     } catch (e) {
       _handleError('createOrInitializeChat', e);
@@ -156,10 +173,25 @@ class ChatService {
       if (type == 'document') previewText = '📄 Document';
       if (type == 'location') previewText = '📍 Location';
 
+      // Unread Count কেবল প্রাপক (Receiver) এর জন্যই বাড়বে
+      final chatDoc = await chatRef.get();
+      int currentUnread = 0;
+      String currentUnreadFor = '';
+
+      if (chatDoc.exists) {
+        final data = chatDoc.data();
+        currentUnreadFor = data?['unreadFor'] ?? '';
+        if (currentUnreadFor == receiverId) {
+          currentUnread = (data?['unreadCount'] ?? 0) as int;
+        }
+      }
+
       batch.set(chatRef, {
         'lastMessageContent': previewText,
         'lastMessageTime': FieldValue.serverTimestamp(),
-        'unreadCount': FieldValue.increment(1),
+        'lastSenderId': senderId,
+        'unreadCount': currentUnread + 1,
+        'unreadFor': receiverId, // শুধুমাত্র রিসিভারের জন্যই Unread
         'participants': FieldValue.arrayUnion([senderId, receiverId]), 
       }, SetOptions(merge: true));
 
@@ -167,6 +199,40 @@ class ChatService {
     } catch (e) {
       _handleError('sendMessage', e);
       throw Exception('Failed to send message: $e');
+    }
+  }
+
+  Future<void> markAsSeen(String chatId, String currentUserId) async {
+    try {
+      final querySnapshot = await _firestore
+          .collection('chats')
+          .doc(chatId)
+          .collection('messages')
+          .where('receiverId', isEqualTo: currentUserId)
+          .where('status', isEqualTo: 'sent')
+          .get();
+
+      final batch = _firestore.batch();
+
+      for (var doc in querySnapshot.docs) {
+        batch.update(doc.reference, {'status': 'seen'});
+      }
+
+      // বর্তমান ইউজার চ্যাট ওপেন করলে তার Unread Count ০ হয়ে যাবে
+      final chatDoc = await _firestore.collection('chats').doc(chatId).get();
+      if (chatDoc.exists) {
+        final unreadFor = chatDoc.data()?['unreadFor'];
+        if (unreadFor == currentUserId) {
+          batch.set(_firestore.collection('chats').doc(chatId), {
+            'unreadCount': 0,
+            'unreadFor': '',
+          }, SetOptions(merge: true));
+        }
+      }
+
+      await batch.commit();
+    } catch (e) {
+      _handleError('markAsSeen', e);
     }
   }
 
@@ -318,35 +384,6 @@ class ChatService {
     }).handleError((error) {
       _handleError('getGroupMessagesStream (Stream Error)', error);
     });
-  }
-
-  Future<void> markAsSeen(String chatId, String currentUserId) async {
-    try {
-      final querySnapshot = await _firestore
-          .collection('chats')
-          .doc(chatId)
-          .collection('messages')
-          .where('receiverId', isEqualTo: currentUserId)
-          .where('status', isEqualTo: 'sent')
-          .limit(50)
-          .get();
-
-      if (querySnapshot.docs.isEmpty) return;
-
-      final batch = _firestore.batch();
-
-      for (var doc in querySnapshot.docs) {
-        batch.update(doc.reference, {'status': 'seen'});
-      }
-
-      batch.set(_firestore.collection('chats').doc(chatId), {
-        'unreadCount': 0,
-      }, SetOptions(merge: true));
-
-      await batch.commit();
-    } catch (e) {
-      _handleError('markAsSeen', e);
-    }
   }
 
   Future<void> editMessage(String chatId, String messageId, String newText) async {
