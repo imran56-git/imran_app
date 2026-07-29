@@ -17,7 +17,7 @@ class MessageModel {
   final DateTime? editTimestamp;
   final Map<String, dynamic>? mediaMetaData;
 
-  MessageModel({
+  const MessageModel({
     required this.messageId,
     required this.senderId,
     required this.receiverId,
@@ -59,16 +59,16 @@ class MessageModel {
       deletedForUsers: (map['deletedForUsers'] as List<dynamic>?)
               ?.map((e) => e.toString())
               .toList() ?? 
-          [],
+          const [],
 
       starredBy: (map['starredBy'] as List<dynamic>?)
               ?.map((e) => e.toString())
               .toList() ?? 
-          [],
+          const [],
 
       reactions: (map['reactions'] as Map<dynamic, dynamic>?)
               ?.map((key, value) => MapEntry(key.toString(), value.toString())) ?? 
-          {},
+          const {},
 
       replyToMessageId: map['replyToMessageId']?.toString(),
       isEdited: map['isEdited'] as bool? ?? false,
@@ -139,5 +139,32 @@ class MessageModel {
       editTimestamp: editTimestamp ?? this.editTimestamp,
       mediaMetaData: mediaMetaData ?? this.mediaMetaData,
     );
+  }
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+
+    return other is MessageModel &&
+        other.messageId == messageId &&
+        other.senderId == senderId &&
+        other.receiverId == receiverId &&
+        other.content == content &&
+        other.type == type &&
+        other.status == status &&
+        other.isDeletedForEveryone == isDeletedForEveryone &&
+        other.isEdited == isEdited;
+  }
+
+  @override
+  int get hashCode {
+    return messageId.hashCode ^
+        senderId.hashCode ^
+        receiverId.hashCode ^
+        content.hashCode ^
+        type.hashCode ^
+        status.hashCode ^
+        isDeletedForEveryone.hashCode ^
+        isEdited.hashCode;
   }
 }
