@@ -6,7 +6,7 @@ import 'group/group_chat_screen.dart';
 
 class ChatListScreen extends StatefulWidget {
   final String currentUserId;
-  final bool isTeacher; 
+  final bool isTeacher;
 
   const ChatListScreen({
     super.key,
@@ -39,10 +39,17 @@ class _ChatListScreenState extends State<ChatListScreen> {
 
   Future<void> _loadCurrentUserName() async {
     try {
-      final data = await _chatService.getUserProfile(widget.currentUserId, widget.isTeacher);
+      final data = await _chatService.getUserProfile(
+        widget.currentUserId,
+        widget.isTeacher,
+      );
       if (data != null && mounted) {
         setState(() {
-          _currentUserName = (data['name'] ?? data['displayName'] ?? 'User').toString();
+          _currentUserName = (data['fullName'] ??
+                  data['name'] ??
+                  data['displayName'] ??
+                  'User')
+              .toString();
         });
       }
     } catch (e) {
@@ -60,7 +67,8 @@ class _ChatListScreenState extends State<ChatListScreen> {
     if (timestamp == null) return '';
     final date = timestamp.toDate();
     final now = DateTime.now();
-    final isToday = date.year == now.year && date.month == now.month && date.day == now.day;
+    final isToday =
+        date.year == now.year && date.month == now.month && date.day == now.day;
 
     if (isToday) {
       final hour = date.hour % 12 == 0 ? 12 : date.hour % 12;
@@ -81,7 +89,8 @@ class _ChatListScreenState extends State<ChatListScreen> {
     final bool isGroup = chatData['isGroup'] == true;
 
     if (isGroup) {
-      final String groupName = (chatData['groupName'] ?? 'Group Chat').toString();
+      final String groupName =
+          (chatData['groupName'] ?? 'Group Chat').toString();
       Navigator.push(
         context,
         MaterialPageRoute(
@@ -113,39 +122,80 @@ class _ChatListScreenState extends State<ChatListScreen> {
   bool _matchesSearch(Map<String, dynamic> chatData, String otherUserName) {
     if (_searchText.isEmpty) return true;
     final name = otherUserName.toLowerCase();
-    final lastMessage = (chatData['lastMessage'] ?? '').toString().toLowerCase();
+    final lastMessage =
+        (chatData['lastMessage'] ?? '').toString().toLowerCase();
     return name.contains(_searchText) || lastMessage.contains(_searchText);
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF006653), 
-        elevation: 0,
-        automaticallyImplyLeading: false,
-        title: const Text(
-          'FYBTT Chats',
-          style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold, letterSpacing: 0.5),
-        ),
-        actions: [
-          IconButton(icon: const Icon(Icons.search, color: Colors.white), onPressed: () {}),
-          IconButton(icon: const Icon(Icons.more_vert, color: Colors.white), onPressed: () {}),
-        ],
-      ),
+      backgroundColor: const Color(0xFFF4F6F9),
       body: Column(
         children: [
-          _buildSearchBar(),
+          // প্রোফাইল ও টিচার্স স্ক্রিনের সাথে মেলানো ডার্ক ব্লু হেডার
+          Container(
+            padding: EdgeInsets.only(
+              top: MediaQuery.of(context).padding.top + 12,
+              bottom: 16,
+              left: 16,
+              right: 16,
+            ),
+            decoration: const BoxDecoration(
+              color: Color(0xFF1E4C7A),
+              borderRadius: BorderRadius.vertical(
+                bottom: Radius.circular(20),
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Image.asset(
+                      'assets/logo.png',
+                      height: 30,
+                      errorBuilder: (_, __, ___) => const Icon(
+                        Icons.chat_bubble_rounded,
+                        color: Colors.white,
+                        size: 26,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    const Text(
+                      'FYBTT Chats',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                _buildSearchBar(),
+              ],
+            ),
+          ),
+
+          // চ্যাট লিস্ট
           Expanded(
             child: StreamBuilder<QuerySnapshot>(
               stream: _chatService.getUserChatsStream(widget.currentUserId),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator(color: Color(0xFF006653)));
+                  return const Center(
+                    child: CircularProgressIndicator(color: Color(0xFF1E4C7A)),
+                  );
                 }
                 if (snapshot.hasError) {
-                  return const Center(child: Text('Failed to load chats.', style: TextStyle(fontSize: 14, color: Colors.red)));
+                  return const Center(
+                    child: Text(
+                      'Failed to load chats.',
+                      style: TextStyle(fontSize: 14, color: Colors.red),
+                    ),
+                  );
                 }
                 if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
                   return _buildEmptyState();
@@ -165,21 +215,28 @@ class _ChatListScreenState extends State<ChatListScreen> {
                 });
 
                 return ListView.builder(
+                  padding: const EdgeInsets.symmetric(vertical: 10),
                   physics: const BouncingScrollPhysics(),
                   itemCount: chatDocs.length,
                   itemBuilder: (context, index) {
                     final doc = chatDocs[index];
                     final chatData = doc.data() as Map<String, dynamic>;
                     final bool isGroup = chatData['isGroup'] == true;
-                    final String lastMessage = (chatData['lastMessage'] ?? '').toString();
-                    final Timestamp? lastTime = chatData['lastMessageTime'] as Timestamp?;
+                    final String lastMessage =
+                        (chatData['lastMessage'] ?? '').toString();
+                    final Timestamp? lastTime =
+                        chatData['lastMessageTime'] as Timestamp?;
                     final int unreadCount = chatData['unreadCount'] ?? 0;
 
                     if (isGroup) {
-                      final String groupName = (chatData['groupName'] ?? 'Group Chat').toString();
-                      final String groupImageUrl = (chatData['groupImage'] ?? '').toString();
+                      final String groupName =
+                          (chatData['groupName'] ?? 'Group Chat').toString();
+                      final String groupImageUrl =
+                          (chatData['groupImage'] ?? '').toString();
 
-                      if (!_matchesSearch(chatData, groupName)) return const SizedBox.shrink();
+                      if (!_matchesSearch(chatData, groupName)) {
+                        return const SizedBox.shrink();
+                      }
 
                       return _ChatCard(
                         name: groupName,
@@ -198,14 +255,21 @@ class _ChatListScreenState extends State<ChatListScreen> {
                         ),
                       );
                     } else {
-                      final List<dynamic> participants = chatData['participants'] ?? [];
-                      final List<String> participantsList = List<String>.from(participants);
+                      final List<dynamic> participants =
+                          chatData['participants'] ?? [];
+                      final List<String> participantsList =
+                          List<String>.from(participants);
                       participantsList.remove(widget.currentUserId);
-                      if (participantsList.isEmpty) return const SizedBox.shrink();
+                      if (participantsList.isEmpty) {
+                        return const SizedBox.shrink();
+                      }
                       final String receiverId = participantsList.first;
 
                       return StreamBuilder<dynamic>(
-                        stream: _chatService.getUserStatusStream(receiverId, !widget.isTeacher),
+                        stream: _chatService.getUserStatusStream(
+                          receiverId,
+                          !widget.isTeacher,
+                        ),
                         builder: (context, userSnapshot) {
                           String finalName = "User";
                           String finalImageUrl = "";
@@ -213,21 +277,39 @@ class _ChatListScreenState extends State<ChatListScreen> {
 
                           if (userSnapshot.hasData) {
                             final userData = userSnapshot.data;
-                            if (userData is DocumentSnapshot && userData.exists) {
-                              final mapData = userData.data() as Map<String, dynamic>?;
+                            if (userData is DocumentSnapshot &&
+                                userData.exists) {
+                              final mapData =
+                                  userData.data() as Map<String, dynamic>?;
                               if (mapData != null) {
-                                finalName = (mapData['name'] ?? mapData['displayName'] ?? 'User').toString();
-                                finalImageUrl = (mapData['profileImageUrl'] ?? mapData['profilePic'] ?? '').toString();
+                                finalName = (mapData['fullName'] ??
+                                        mapData['name'] ??
+                                        mapData['displayName'] ??
+                                        'User')
+                                    .toString();
+                                finalImageUrl = (mapData['profileImageUrl'] ??
+                                        mapData['profilePic'] ??
+                                        '')
+                                    .toString();
                                 isOnline = mapData['isOnline'] == true;
                               }
                             } else if (userData is Map<String, dynamic>) {
-                              finalName = (userData['name'] ?? userData['displayName'] ?? 'User').toString();
-                              finalImageUrl = (userData['profileImageUrl'] ?? userData['profilePic'] ?? '').toString();
+                              finalName = (userData['fullName'] ??
+                                      userData['name'] ??
+                                      userData['displayName'] ??
+                                      'User')
+                                  .toString();
+                              finalImageUrl = (userData['profileImageUrl'] ??
+                                      userData['profilePic'] ??
+                                      '')
+                                  .toString();
                               isOnline = userData['isOnline'] == true;
                             }
                           }
 
-                          if (!_matchesSearch(chatData, finalName)) return const SizedBox.shrink();
+                          if (!_matchesSearch(chatData, finalName)) {
+                            return const SizedBox.shrink();
+                          }
 
                           return _ChatCard(
                             name: finalName,
@@ -259,23 +341,28 @@ class _ChatListScreenState extends State<ChatListScreen> {
   }
 
   Widget _buildSearchBar() {
-    return Padding(
-      padding: const EdgeInsets.all(10.0),
-      child: Container(
-        height: 45,
-        decoration: BoxDecoration(color: const Color(0xFFF0F2F5), borderRadius: BorderRadius.circular(24)),
-        child: TextField(
-          controller: _searchController,
-          decoration: InputDecoration(
-            hintText: 'Search chats...',
-            hintStyle: const TextStyle(color: Colors.grey, fontSize: 14),
-            prefixIcon: const Icon(Icons.search, color: Colors.grey, size: 20),
-            suffixIcon: _searchText.isNotEmpty
-                ? IconButton(icon: const Icon(Icons.close, color: Colors.grey, size: 18), onPressed: _searchController.clear)
-                : null,
-            border: InputBorder.none,
-            contentPadding: const EdgeInsets.symmetric(vertical: 10),
-          ),
+    return Container(
+      height: 42,
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.18),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: TextField(
+        controller: _searchController,
+        style: const TextStyle(color: Colors.white, fontSize: 14),
+        decoration: InputDecoration(
+          hintText: 'Search chats...',
+          hintStyle:
+              TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 14),
+          prefixIcon: const Icon(Icons.search, color: Colors.white70, size: 20),
+          suffixIcon: _searchText.isNotEmpty
+              ? IconButton(
+                  icon: const Icon(Icons.close, color: Colors.white70, size: 18),
+                  onPressed: _searchController.clear,
+                )
+              : null,
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(vertical: 10),
         ),
       ),
     );
@@ -286,9 +373,17 @@ class _ChatListScreenState extends State<ChatListScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.chat_bubble_outline, size: 60, color: Colors.grey.shade400),
+          Icon(Icons.chat_bubble_outline,
+              size: 60, color: Colors.grey.shade400),
           const SizedBox(height: 12),
-          const Text('No chats yet', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.grey)),
+          const Text(
+            'No chats yet',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: Colors.grey,
+            ),
+          ),
         ],
       ),
     );
@@ -318,51 +413,116 @@ class _ChatCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      onTap: onTap,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
-      leading: Stack(
-        children: [
-          CircleAvatar(
-            radius: 26,
-            backgroundColor: Colors.grey.shade100,
-            backgroundImage: imageUrl.isNotEmpty ? NetworkImage(imageUrl) : null,
-            child: imageUrl.isEmpty ? Icon(isGroup ? Icons.groups : Icons.person, size: 26, color: Colors.grey) : null,
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
           ),
-          if (isOnline && !isGroup)
-            Positioned(
-              right: 2,
-              bottom: 2,
-              child: Container(
-                width: 12, height: 12,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF22C55E), 
-                  shape: BoxShape.circle, 
-                  border: Border.all(color: Colors.white, width: 2),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(16),
+        child: ListTile(
+          onTap: onTap,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+          leading: Stack(
+            children: [
+              CircleAvatar(
+                radius: 26,
+                backgroundColor: const Color(0xFF1E4C7A).withOpacity(0.1),
+                backgroundImage:
+                    imageUrl.isNotEmpty ? NetworkImage(imageUrl) : null,
+                child: imageUrl.isEmpty
+                    ? Icon(
+                        isGroup ? Icons.groups : Icons.person,
+                        size: 26,
+                        color: const Color(0xFF1E4C7A),
+                      )
+                    : null,
+              ),
+              if (isOnline && !isGroup)
+                Positioned(
+                  right: 0,
+                  bottom: 0,
+                  child: Container(
+                    width: 12,
+                    height: 12,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF22C55E),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 2),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          title: Text(
+            name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: Colors.black87,
+            ),
+          ),
+          subtitle: Padding(
+            padding: const EdgeInsets.only(top: 3.0),
+            child: Text(
+              lastMessage,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+            ),
+          ),
+          trailing: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                timeText,
+                style: TextStyle(
+                  fontSize: 11,
+                  color: unreadCount > 0
+                      ? const Color(0xFF1E4C7A)
+                      : Colors.grey.shade500,
+                  fontWeight: unreadCount > 0
+                      ? FontWeight.bold
+                      : FontWeight.normal,
                 ),
               ),
-            ),
-        ],
-      ),
-      title: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black87)),
-      subtitle: Padding(
-        padding: const EdgeInsets.only(top: 3.0),
-        child: Text(lastMessage, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14, color: Colors.grey)),
-      ),
-      trailing: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          Text(timeText, style: TextStyle(fontSize: 11, color: unreadCount > 0 ? const Color(0xFF006653) : Colors.grey)),
-          if (unreadCount > 0) ...[
-            const SizedBox(height: 5),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-              decoration: BoxDecoration(color: const Color(0xFF006653), borderRadius: BorderRadius.circular(10)),
-              child: Text(unreadCount.toString(), style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
-            ),
-          ],
-        ],
+              if (unreadCount > 0) ...[
+                const SizedBox(height: 5),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1E4C7A),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    unreadCount.toString(),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
       ),
     );
   }
