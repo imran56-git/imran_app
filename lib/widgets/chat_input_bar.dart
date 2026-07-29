@@ -55,7 +55,9 @@ class _ChatInputBarState extends State<ChatInputBar> {
   void _onTextChanged() {
     final bool typing = _controller.text.trim().isNotEmpty;
     if (_isTyping != typing) {
-      setState(() => _isTyping = typing);
+      if (mounted) {
+        setState(() => _isTyping = typing);
+      }
       widget.onTypingChanged(_isTyping);
       _chatService.updateTypingStatus(widget.chatRoomId, widget.senderId, _isTyping);
     }
@@ -71,15 +73,19 @@ class _ChatInputBarState extends State<ChatInputBar> {
         margin: const EdgeInsets.all(16),
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
-          color: Colors.white, 
+          color: Colors.white,
           borderRadius: BorderRadius.circular(24),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             const Text(
-              "Send Attachment", 
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Color(0xFF1E4C7A)),
+              "Send Attachment",
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+                color: Color(0xFF1E4C7A),
+              ),
             ),
             const SizedBox(height: 20),
             GridView.count(
@@ -113,19 +119,26 @@ class _ChatInputBarState extends State<ChatInputBar> {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           CircleAvatar(
-            radius: 26, 
-            backgroundColor: color.withOpacity(0.12), 
+            radius: 26,
+            backgroundColor: color.withOpacity(0.12),
             child: Icon(icon, color: color, size: 24),
           ),
           const SizedBox(height: 6),
-          Text(label, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: Colors.black87)),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+              color: Colors.black87,
+            ),
+          ),
         ],
       ),
     );
   }
 
   Future<void> _handleAttachmentPick(String type) async {
-    setState(() => _isUploading = true);
+    if (mounted) setState(() => _isUploading = true);
     try {
       if (type == 'gallery') {
         final XFile? image = await _imagePicker.pickImage(source: ImageSource.gallery, imageQuality: 80);
@@ -182,12 +195,11 @@ class _ChatInputBarState extends State<ChatInputBar> {
           );
         }
       } else if (type == 'location') {
-        // Shared location with fallback values
         await _chatService.sendLocation(
-          widget.chatRoomId, 
-          widget.senderId, 
-          widget.receiverId, 
-          22.5726, 
+          widget.chatRoomId,
+          widget.senderId,
+          widget.receiverId,
+          22.5726,
           88.3639,
         );
       }
@@ -211,7 +223,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
     final String? currentReplyId = widget.replyToMessageId;
 
     _controller.clear();
-    setState(() => _isTyping = false);
+    if (mounted) setState(() => _isTyping = false);
     widget.onTypingChanged(false);
     _chatService.updateTypingStatus(widget.chatRoomId, widget.senderId, false);
 
@@ -271,8 +283,8 @@ class _ChatInputBarState extends State<ChatInputBar> {
                       const Text(
                         "Replying to Message",
                         style: TextStyle(
-                          fontWeight: FontWeight.bold, 
-                          color: Color(0xFF1E4C7A), 
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF1E4C7A),
                           fontSize: 12,
                         ),
                       ),
@@ -293,7 +305,6 @@ class _ChatInputBarState extends State<ChatInputBar> {
               ],
             ),
           ),
-
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 6.0),
           child: Row(
@@ -305,8 +316,8 @@ class _ChatInputBarState extends State<ChatInputBar> {
                     borderRadius: BorderRadius.circular(25.0),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.05), 
-                        blurRadius: 5, 
+                        color: Colors.black.withOpacity(0.05),
+                        blurRadius: 5,
                         offset: const Offset(0, 1),
                       ),
                     ],
@@ -315,7 +326,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
                     children: [
                       IconButton(
                         icon: const Icon(Icons.emoji_emotions_outlined, color: Colors.grey),
-                        onPressed: () {}, 
+                        onPressed: () {},
                       ),
                       Expanded(
                         child: TextField(
