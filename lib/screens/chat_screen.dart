@@ -49,15 +49,13 @@ class _ChatScreenState extends State<ChatScreen> {
   String? _replyToText;
   String? _customBgImagePath;
   bool _isMarkingRead = false;
+  bool _isInitializing = true;
 
   @override
   void initState() {
     super.initState();
-    _initializeChatRoom();
-    _initChatStream();
+    _setupChatRoom();
     _loadCustomTheme();
-    _chatService.updateTypingStatus(widget.chatRoomId, widget.currentUserId, false);
-    _markMessagesAsReadSafe();
   }
 
   @override
@@ -67,30 +65,49 @@ class _ChatScreenState extends State<ChatScreen> {
     super.dispose();
   }
 
-  Future<void> _initializeChatRoom() async {
-    // Ensuring chat document exists before streaming
-    String teacherId = widget.isTeacher ? widget.currentUserId : widget.receiverId;
-    String studentId = widget.isTeacher ? widget.receiverId : widget.currentUserId;
+  Future<void> _setupChatRoom() async {
+    try {
+      String teacherId = widget.isTeacher ? widget.currentUserId : widget.receiverId;
+      String studentId = widget.isTeacher ? widget.receiverId : widget.currentUserId;
 
-    await _chatService.createOrInitializeChat(
-      teacherId: teacherId,
-      studentId: studentId,
-      teacherName: widget.isTeacher ? 'Me' : widget.receiverName,
-      studentName: widget.isTeacher ? widget.receiverName : 'Me',
-      teacherImage: widget.isTeacher ? '' : widget.receiverProfilePic,
-      studentImage: widget.isTeacher ? widget.receiverProfilePic : '',
-    );
-  }
+      await _chatService.createOrInitializeChat(
+        teacherId: teacherId,
+        studentId: studentId,
+        teacherName: widget.isTeacher ? 'Me' : widget.receiverName,
+        studentName: widget.isTeacher ? widget.receiverName : 'Me',
+        teacherImage: widget.isTeacher ? '' : widget.receiverProfilePic,
+        studentImage: widget.isTeacher ? widget.receiverProfilePic : '',
+      );
 
-  void _initChatStream() {
-    _messageStream = _chatService.getMessages(widget.chatRoomId);
+      if (mounted) {
+        setState(() {
+          _messageStream = _chatService.getMessages(widget.chatRoomId);
+          _isInitializing = false;
+        });
+        _chatService.updateTypingStatus(widget.chatRoomId, widget.currentUserId, false);
+        _markMessagesAsReadSafe();
+      }
+    } catch (e) {
+      log("Chat setup error: $e");
+      if (mounted) {
+        setState(() {
+          _messageStream = _chatService.getMessages(widget.chatRoomId);
+          _isInitializing = false;
+        });
+      }
+    }
   }
 
   Future<void> _markMessagesAsReadSafe() async {
     if (_isMarkingRead) return;
     _isMarkingRead = true;
-    await _chatService.markAsSeen(widget.chatRoomId, widget.currentUserId);
-    _isMarkingRead = false;
+    try {
+      await _chatService.markAsSeen(widget.chatRoomId, widget.currentUserId);
+    } catch (e) {
+      log("Error marking as read: $e");
+    } finally {
+      _isMarkingRead = false;
+    }
   }
 
   Future<void> _loadCustomTheme() async {
@@ -208,6 +225,7 @@ class _ChatScreenState extends State<ChatScreen> {
         appBar: AppBar(
           automaticallyImplyLeading: false,
           backgroundColor: const Color(0xFF1E4C7A),
+          elevation: 0,
           titleSpacing: 0,
           scrolledUnderElevation: 0,
           title: Row(
@@ -229,7 +247,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     ? const Icon(Icons.person_rounded, color: Colors.white, size: 20)
                     : null,
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 10),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -270,22 +288,20 @@ class _ChatScreenState extends State<ChatScreen> {
                           );
                         }
 
-                        // Pass correct boolean flag for receiver collection lookup:
-                        // If current user is teacher, receiver is student (isTeacher = false).
                         return StreamBuilder<Map<String, dynamic>>(
                           stream: _chatService.getUserStatusStream(
                             widget.receiverId, 
                             !widget.isTeacher,
                           ),
                           builder: (context, statusSnapshot) {
-                            if (statusSnapshot.hasData) {
+                            if (statusSnapshot.hasData && statusSnapshot.data != null) {
                               bool isOnline = statusSnapshot.data!['isOnline'] ?? false;
                               return Text(
                                 isOnline ? 'Online' : 'Offline',
                                 style: TextStyle(
                                   fontSize: 11,
                                   fontWeight: FontWeight.w500,
-                                  color: isOnline ? const Color(0xFF25D366) : Colors.white70,
+                                  color: isOnline ? const Color(0xFF22C55E) : Colors.white70,
                                 ),
                               );
                             }
@@ -322,7 +338,7 @@ class _ChatScreenState extends State<ChatScreen> {
           child: Column(
             children: [
               Expanded(
-                child: _messageStream == null
+                child: _isInitializing || _messageStream == null
                     ? const Center(child: CircularProgressIndicator(color: Color(0xFF1E4C7A), strokeWidth: 3))
                     : StreamBuilder<List<MessageModel>>(
                         stream: _messageStream,
@@ -330,8 +346,8 @@ class _ChatScreenState extends State<ChatScreen> {
                           if (snapshot.hasError) {
                             return Center(
                               child: Text(
-                                'Failed to load messages: ${snapshot.error}',
-                                style: const TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold),
+                                'Failed to load messages.',
+                                style: TextStyle(color: Colors.red.shade400, fontWeight: FontWeight.bold),
                               ),
                             );
                           }
