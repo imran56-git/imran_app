@@ -1,4 +1,7 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:file_picker/file_picker.dart';
 import '../services/chat_service.dart';
 
 class ChatInputBar extends StatefulWidget {
@@ -28,7 +31,10 @@ class ChatInputBar extends StatefulWidget {
 class _ChatInputBarState extends State<ChatInputBar> {
   final TextEditingController _controller = TextEditingController();
   final ChatService _chatService = ChatService();
+  final ImagePicker _imagePicker = ImagePicker();
+  
   bool _isTyping = false;
+  bool _isUploading = false;
 
   @override
   void initState() {
@@ -56,6 +62,8 @@ class _ChatInputBarState extends State<ChatInputBar> {
   }
 
   void _showAttachmentBottomSheet() {
+    if (_isUploading) return;
+    
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -80,12 +88,12 @@ class _ChatInputBarState extends State<ChatInputBar> {
               mainAxisSpacing: 16,
               crossAxisSpacing: 16,
               children: [
-                _attachmentTile(Icons.image, "Gallery", Colors.purple, 'image'),
+                _attachmentTile(Icons.photo_library, "Gallery", Colors.purple, 'gallery'),
+                _attachmentTile(Icons.camera_alt, "Camera", Colors.pink, 'camera'),
                 _attachmentTile(Icons.description, "Document", Colors.blue, 'document'),
                 _attachmentTile(Icons.audiotrack, "Audio", Colors.orange, 'audio'),
                 _attachmentTile(Icons.video_library, "Video", Colors.red, 'video'),
                 _attachmentTile(Icons.location_on, "Location", Colors.teal, 'location'),
-                _attachmentTile(Icons.mic, "Voice", Colors.green, 'voice'),
               ],
             ),
           ],
@@ -98,36 +106,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
     return InkWell(
       onTap: () async {
         Navigator.pop(context);
-        
-        // এখানে রিয়েল ফাইলপিকার বা স্টোরেজ আপলোড ইন্টিগ্রেট করা যেতে পারে। 
-        // আপাতত টেস্টিংয়ের জন্য ভ্যালিড ডামি ইউআরএল বা রিয়েল অ্যাকশন হ্যান্ডেল করা হলো:
-        String sampleUrl = "https://images.unsplash.com/photo-1579353977828-2a4eab540b9f";
-
-        if (type == 'location') {
-          await _chatService.sendLocation(
-            widget.chatRoomId, 
-            widget.senderId, 
-            widget.receiverId, 
-            22.5726, 
-            88.3639,
-          );
-        } else if (type == 'document') {
-          await _chatService.sendDocument(
-            widget.chatRoomId, 
-            widget.senderId, 
-            widget.receiverId, 
-            "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf", 
-            "Document.pdf",
-          );
-        } else if (type == 'image') {
-          await _chatService.sendImage(widget.chatRoomId, widget.senderId, widget.receiverId, sampleUrl);
-        } else if (type == 'video') {
-          await _chatService.sendVideo(widget.chatRoomId, widget.senderId, widget.receiverId, "https://flutter.github.io/assets-for-api-docs/assets/videos/bee.mp4");
-        } else if (type == 'audio') {
-          await _chatService.sendAudio(widget.chatRoomId, widget.senderId, widget.receiverId, sampleUrl);
-        } else if (type == 'voice') {
-          await _chatService.sendVoice(widget.chatRoomId, widget.senderId, widget.receiverId, sampleUrl);
-        }
+        await _handleAttachmentPick(type);
       },
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -142,6 +121,86 @@ class _ChatInputBarState extends State<ChatInputBar> {
         ],
       ),
     );
+  }
+
+  Future<void> _handleAttachmentPick(String type) async {
+    setState(() => _isUploading = true);
+    try {
+      if (type == 'gallery') {
+        final XFile? image = await _imagePicker.pickImage(source: ImageSource.gallery, imageQuality: 80);
+        if (image != null) {
+          await _chatService.sendImageFile(
+            chatRoomId: widget.chatRoomId,
+            senderId: widget.senderId,
+            receiverId: widget.receiverId,
+            file: File(image.path),
+          );
+        }
+      } else if (type == 'camera') {
+        final XFile? image = await _imagePicker.pickImage(source: ImageSource.camera, imageQuality: 80);
+        if (image != null) {
+          await _chatService.sendImageFile(
+            chatRoomId: widget.chatRoomId,
+            senderId: widget.senderId,
+            receiverId: widget.receiverId,
+            file: File(image.path),
+          );
+        }
+      } else if (type == 'video') {
+        final XFile? video = await _imagePicker.pickVideo(source: ImageSource.gallery);
+        if (video != null) {
+          await _chatService.sendVideoFile(
+            chatRoomId: widget.chatRoomId,
+            senderId: widget.senderId,
+            receiverId: widget.receiverId,
+            file: File(video.path),
+          );
+        }
+      } else if (type == 'document') {
+        final FilePickerResult? result = await FilePicker.platform.pickFiles(
+          type: FileType.custom,
+          allowedExtensions: ['pdf', 'doc', 'docx', 'txt'],
+        );
+        if (result != null && result.files.single.path != null) {
+          await _chatService.sendDocumentFile(
+            chatRoomId: widget.chatRoomId,
+            senderId: widget.senderId,
+            receiverId: widget.receiverId,
+            file: File(result.files.single.path!),
+            fileName: result.files.single.name,
+          );
+        }
+      } else if (type == 'audio') {
+        final FilePickerResult? result = await FilePicker.platform.pickFiles(type: FileType.audio);
+        if (result != null && result.files.single.path != null) {
+          await _chatService.sendAudioFile(
+            chatRoomId: widget.chatRoomId,
+            senderId: widget.senderId,
+            receiverId: widget.receiverId,
+            file: File(result.files.single.path!),
+          );
+        }
+      } else if (type == 'location') {
+        // লোকেশন ডেটা পাঠানো (ডিফল্ট/কারেন্ট কোঅর্ডিনেট)
+        await _chatService.sendLocation(
+          widget.chatRoomId, 
+          widget.senderId, 
+          widget.receiverId, 
+          22.5726, 
+          88.3639,
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to send attachment: $e')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isUploading = false);
+      }
+    }
   }
 
   void _handleSend() async {
@@ -159,23 +218,27 @@ class _ChatInputBarState extends State<ChatInputBar> {
       widget.onCancelReply!();
     }
 
-    await _chatService.sendMessage(
-      chatId: widget.chatRoomId,
-      senderId: widget.senderId,
-      receiverId: widget.receiverId,
-      message: text,
-      type: 'text',
-      replyToMessageId: currentReplyId,
-    );
+    try {
+      await _chatService.sendMessage(
+        chatId: widget.chatRoomId,
+        senderId: widget.senderId,
+        receiverId: widget.receiverId,
+        message: text,
+        type: 'text',
+        replyToMessageId: currentReplyId,
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to send message: $e')),
+        );
+      }
+    }
   }
 
-  void _handleMicTap() async {
-    // ভয়েস বা অডিও রেকর্ড করার ফিচার না থাকলে ডেমো ভয়েস মেসেজ সেন্ড করার হ্যান্ডলার
-    await _chatService.sendVoice(
-      widget.chatRoomId,
-      widget.senderId,
-      widget.receiverId,
-      "https://www.soundhelix.examples/samples/mp3/SoundHelix-Song-1.mp3",
+  void _handleMicTap() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Hold to record voice message')),
     );
   }
 
@@ -184,6 +247,11 @@ class _ChatInputBarState extends State<ChatInputBar> {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
+        if (_isUploading)
+          const LinearProgressIndicator(
+            backgroundColor: Colors.transparent,
+            valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF006653)),
+          ),
         if (widget.replyToMessageId != null && widget.replyToText != null)
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -253,6 +321,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
                           controller: _controller,
                           minLines: 1,
                           maxLines: 5,
+                          enabled: !_isUploading,
                           decoration: const InputDecoration(
                             hintText: 'Message',
                             border: InputBorder.none,
@@ -262,7 +331,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
                       ),
                       IconButton(
                         icon: const Icon(Icons.collections_rounded, color: Colors.grey),
-                        onPressed: _showAttachmentBottomSheet,
+                        onPressed: _isUploading ? null : _showAttachmentBottomSheet,
                       ),
                     ],
                   ),
