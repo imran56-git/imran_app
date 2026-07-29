@@ -44,11 +44,15 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
     super.dispose();
   }
 
-  ImageProvider _buildBackgroundProvider() {
-    if (_backgroundImage.startsWith('assets/')) {
-      return AssetImage(_backgroundImage);
+  ImageProvider? _buildBackgroundProvider() {
+    try {
+      if (_backgroundImage.startsWith('assets/')) {
+        return AssetImage(_backgroundImage);
+      }
+      return FileImage(File(_backgroundImage));
+    } catch (_) {
+      return null;
     }
-    return FileImage(File(_backgroundImage));
   }
 
   void _scrollToBottom() {
@@ -63,6 +67,8 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final bgProvider = _buildBackgroundProvider();
+
     return Scaffold(
       backgroundColor: const Color(0xFFF4F6F9),
       appBar: AppBar(
@@ -75,10 +81,10 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
         ),
         title: Row(
           children: [
-            CircleAvatar(
+            const CircleAvatar(
               radius: 18,
               backgroundColor: Colors.white24,
-              child: const Icon(Icons.groups_rounded, color: Colors.white, size: 20),
+              child: Icon(Icons.groups_rounded, color: Colors.white, size: 20),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -88,11 +94,19 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
                   Text(
                     widget.groupName,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white, letterSpacing: 0.2),
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                      letterSpacing: 0.2,
+                    ),
                   ),
                   Text(
-                    'Tap for group info',
-                    style: TextStyle(fontSize: 11, color: Colors.white.withOpacity(0.75)),
+                    'Group Chat',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Colors.white.withOpacity(0.75),
+                    ),
                   ),
                 ],
               ),
@@ -109,11 +123,14 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
       body: Container(
         decoration: BoxDecoration(
           color: const Color(0xFFF4F6F9),
-          image: DecorationImage(
-            image: _buildBackgroundProvider(),
-            fit: BoxFit.cover,
-            opacity: 0.04,
-          ),
+          image: bgProvider != null
+              ? DecorationImage(
+                  image: bgProvider,
+                  fit: BoxFit.cover,
+                  opacity: 0.04,
+                  onError: (_, __) {},
+                )
+              : null,
         ),
         child: Column(
           children: [
@@ -122,11 +139,18 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
                 stream: _chatService.getGroupMessagesStream(widget.groupId),
                 builder: (context, snapshot) {
                   if (snapshot.hasError) {
-                    return const Center(child: Text('Failed to load group messages.', style: TextStyle(color: Colors.red)));
+                    return const Center(
+                      child: Text(
+                        'Failed to load group messages.',
+                        style: TextStyle(color: Colors.red),
+                      ),
+                    );
                   }
 
                   if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(child: CircularProgressIndicator(color: Color(0xFF1E4C7A)));
+                    return const Center(
+                      child: CircularProgressIndicator(color: Color(0xFF1E4C7A)),
+                    );
                   }
 
                   final messages = snapshot.data;
@@ -134,9 +158,16 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
                   if (messages == null || messages.isEmpty) {
                     return Center(
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                        decoration: BoxDecoration(color: Colors.black.withOpacity(0.05), borderRadius: BorderRadius.circular(12)),
-                        child: const Text('Welcome to Group Chat', style: TextStyle(color: Colors.black54, fontSize: 13)),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.05),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Text(
+                          'Welcome to Group Chat',
+                          style: TextStyle(color: Colors.black54, fontSize: 13),
+                        ),
                       ),
                     );
                   }
@@ -144,11 +175,13 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
                   return ListView.builder(
                     controller: _scrollController,
                     reverse: true,
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 10),
                     itemCount: messages.length,
                     itemBuilder: (context, index) {
                       final message = messages[index];
-                      final bool isMe = message.senderId == widget.currentUserId;
+                      final bool isMe =
+                          message.senderId == widget.currentUserId;
 
                       return MessageBubble(
                         message: message,
@@ -158,7 +191,9 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
                         onReplyPressed: (repliedMsg) {
                           setState(() {
                             _replyToMessageId = repliedMsg.messageId;
-                            _replyToText = repliedMsg.type == 'text' ? repliedMsg.content : 'Attachment';
+                            _replyToText = repliedMsg.type == 'text'
+                                ? repliedMsg.content
+                                : 'Attachment';
                           });
                         },
                       );
