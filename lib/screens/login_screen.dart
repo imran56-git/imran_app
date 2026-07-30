@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
-import 'package:shared_preferences/shared_preferences.dart'; // সেশন ট্র্যাকিংয়ের জন্য যুক্ত করা হয়েছে
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'student_home_screen.dart';
 import 'teacher_home_screen.dart';
@@ -33,7 +33,6 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  // SharedPreferences-এ সেশন ও রোল সেভ করার প্রফেশনাল মেথড
   Future<void> _saveUserSession(String uid, String role) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('isLoggedIn', true);
@@ -71,7 +70,6 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => _isLoading = true);
 
     try {
-      // ওল্ড সেশন ক্লিয়ার করে ফ্রেশ সাইন-ইন নিশ্চিত করা
       await _googleSignIn.signOut();
       final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
 
@@ -103,7 +101,6 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _checkAndNavigateUser(User user) async {
-    // ১. প্রথমে টিচার কালেকশন চেক করা হচ্ছে (Clean Architecture)
     DocumentSnapshot teacherDoc = await _firestore.collection('teachers').doc(user.uid).get();
 
     String userType = 'student';
@@ -111,38 +108,40 @@ class _LoginScreenState extends State<LoginScreen> {
     if (teacherDoc.exists) {
       userType = 'teacher';
     } else {
-      // ২. টিচার না হলে স্টুডেন্ট কালেকশন চেক করা
       DocumentSnapshot studentDoc = await _firestore.collection('students').doc(user.uid).get();
       if (studentDoc.exists) {
         userType = 'student';
       } else {
-        // যদি কোনো কালেকশনেই ডেটা না থাকে (নতুন গুগল সাইন-ইন ইউজার)
-        userType = 'student'; // ডিফল্ট রোল স্টুডেন্ট
+        userType = 'student';
 
-        // "No Name" বাগ ফিক্স: গুগলের নাম অথবা ইমেলের প্রথম অংশ ব্যাকআপ হিসেবে নেওয়া হলো
         String finalName = user.displayName ?? user.email!.split('@')[0];
 
         await _firestore.collection('students').doc(user.uid).set({
           'uid': user.uid,
-          'name': finalName, // 'name' ফিল্ড নিশ্চিত করা হলো
+          'name': finalName,
           'email': user.email,
           'userType': 'student',
           'createdAt': FieldValue.serverTimestamp(),
-        });
+        }, SetOptions(merge: true));
+
+        await _firestore.collection('users').doc(user.uid).set({
+          'uid': user.uid,
+          'name': finalName,
+          'email': user.email,
+          'role': 'student',
+          'createdAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
       }
     }
 
-    // SharedPreferences সেশন স্টোর করা হলো
     await _saveUserSession(user.uid, userType);
 
     if (!mounted) return;
 
-    // Navigation Stack সম্পূর্ণ ক্লিন করে হোম স্ক্রিনে রিডাইরেক্ট
     Navigator.pushAndRemoveUntil(
       context,
       MaterialPageRoute(
         builder: (_) => userType == 'teacher'
-            // বাগ ফিক্স: TeacherHomeScreen-এ রিকোয়ার্ড প্যারামিটার 'currentUserId' পাস করা হলো
             ? TeacherHomeScreen(currentUserId: user.uid)
             : StudentHomeScreen(currentUserId: user.uid),
       ),
@@ -191,7 +190,6 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 const SizedBox(height: 40),
 
-                // ইমেল ইনপুট
                 TextFormField(
                   controller: _emailController,
                   keyboardType: TextInputType.emailAddress,
@@ -212,7 +210,6 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 const SizedBox(height: 20),
 
-                // পাসওয়ার্ড ইনপুট
                 TextFormField(
                   controller: _passwordController,
                   obscureText: true,
@@ -247,7 +244,6 @@ class _LoginScreenState extends State<LoginScreen> {
                     ? const CircularProgressIndicator(color: Color(0xFF128C7E))
                     : Column(
                         children: [
-                          // লগইন বাটন
                           SizedBox(
                             width: double.infinity,
                             height: 55,
@@ -279,7 +275,6 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                           const SizedBox(height: 25),
 
-                          // গুগল লগইন বাটন
                           SizedBox(
                             width: double.infinity,
                             height: 55,
@@ -291,14 +286,9 @@ class _LoginScreenState extends State<LoginScreen> {
                                   borderRadius: BorderRadius.circular(12),
                                 ),
                               ),
-                              icon: const Icon(
-                                Icons.g_mobiledata_rounded,
-                                size: 35,
-                                color: Colors.red,
-                              ),
+                              icon: const GoogleLogoWidget(size: 24),
                               label: const Text(
                                 'Continue with Google',
-                                // বাগ ফিক্স: Colors.blackDE এর জায়গায় স্ট্যান্ডার্ড Colors.black87 ব্যবহার করা হলো
                                 style: TextStyle(fontSize: 16, color: Colors.black87, fontWeight: FontWeight.bold),
                               ),
                             ),
@@ -334,9 +324,9 @@ class GoogleLogoPainter extends CustomPainter {
     final double h = size.height;
 
     final Paint paint = Paint()
-      style = PaintingStyle.stroke
-      strokeWidth = w * 0.22
-      strokeCap = StrokeCap.butt;
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = w * 0.22
+      ..strokeCap = StrokeCap.butt;
 
     final Rect rect = Rect.fromLTWH(w * 0.11, h * 0.11, w * 0.78, h * 0.78);
 
@@ -349,12 +339,12 @@ class GoogleLogoPainter extends CustomPainter {
     paint.color = const Color(0xFFFBBC05);
     canvas.drawArc(rect, 2.8, 1.0, false, paint);
 
-    paint.color = const Color(0xFEA4235);
+    paint.color = const Color(0xEA4235FF);
     canvas.drawArc(rect, 3.8, 1.8, false, paint);
 
     final Paint barPaint = Paint()
-      color = const Color(0xFF4285F4)
-      style = PaintingStyle.fill;
+      ..color = const Color(0xFF4285F4)
+      ..style = PaintingStyle.fill;
 
     canvas.drawRect(
       Rect.fromLTWH(w * 0.45, h * 0.4, w * 0.48, h * 0.2),
