@@ -313,3 +313,55 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 }
+
+class GoogleLogoWidget extends StatelessWidget {
+  final double size;
+  const GoogleLogoWidget({super.key, this.size = 24});
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(
+      size: Size(size, size),
+      painter: GoogleLogoPainter(),
+    );
+  }
+}
+
+class GoogleLogoPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final double w = size.width;
+    final double h = size.height;
+
+    final Paint paint = Paint()
+      style = PaintingStyle.stroke
+      strokeWidth = w * 0.22
+      strokeCap = StrokeCap.butt;
+
+    final Rect rect = Rect.fromLTWH(w * 0.11, h * 0.11, w * 0.78, h * 0.78);
+
+    paint.color = const Color(0xFF4285F4);
+    canvas.drawArc(rect, -0.6, 1.8, false, paint);
+
+    paint.color = const Color(0xFF34A853);
+    canvas.drawArc(rect, 1.2, 1.6, false, paint);
+
+    paint.color = const Color(0xFFFBBC05);
+    canvas.drawArc(rect, 2.8, 1.0, false, paint);
+
+    paint.color = const Color(0xFEA4235);
+    canvas.drawArc(rect, 3.8, 1.8, false, paint);
+
+    final Paint barPaint = Paint()
+      color = const Color(0xFF4285F4)
+      style = PaintingStyle.fill;
+
+    canvas.drawRect(
+      Rect.fromLTWH(w * 0.45, h * 0.4, w * 0.48, h * 0.2),
+      barPaint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
