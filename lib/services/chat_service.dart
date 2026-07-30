@@ -30,7 +30,7 @@ class ChatService {
         .collection('chats')
         .where('participants', arrayContains: userId)
         .orderBy('lastMessageTime', descending: true)
-        .snapshots()
+        .snapshots(includeMetadataChanges: true) // 👈 Realtime Multi-device Sync Fix
         .handleError((error) {
       _handleError('getUserChatsStream', error);
     });
@@ -81,8 +81,11 @@ class ChatService {
     });
   }
 
+  // 🔴 FIX 1: Alphabetical Sorting to ensure EXACT SAME Chat Room ID across all devices
   String getChatRoomId(String user1, String user2) {
-    return user1.compareTo(user2) <= 0 ? '${user1}_$user2' : '${user2}_$user1';
+    List<String> ids = [user1, user2];
+    ids.sort(); // সবসময় Alphabetically Sort করবে
+    return '${ids[0]}_${ids[1]}';
   }
 
   Future<void> createOrInitializeChat({
@@ -120,7 +123,7 @@ class ChatService {
         updateData['lastMessageContent'] = 'Chat initialized';
         updateData['lastMessageTime'] = FieldValue.serverTimestamp();
         updateData['unreadCount'] = 0;
-        updateData['unreadFor'] = ''; // কোন ইউজারের জন্য আনরিড মেসেজ জমছে
+        updateData['unreadFor'] = ''; 
         updateData['pinnedBy'] = [];
         updateData['blockedBy'] = [];
         updateData['createdAt'] = FieldValue.serverTimestamp();
@@ -144,7 +147,10 @@ class ChatService {
   }) async {
     try {
       final batch = _firestore.batch();
-      final chatRef = _firestore.collection('chats').doc(chatId);
+      
+      // 🔴 FIX 2: chatId পুনরায় ভ্যালিডেশান সহ ফিক্স করা
+      final String correctChatId = getChatRoomId(senderId, receiverId);
+      final chatRef = _firestore.collection('chats').doc(correctChatId);
       final messageRef = chatRef.collection('messages').doc();
 
       final Map<String, dynamic> messageData = {
@@ -173,7 +179,7 @@ class ChatService {
       if (type == 'document') previewText = '📄 Document';
       if (type == 'location') previewText = '📍 Location';
 
-      // Unread Count কেবল প্রাপক (Receiver) এর জন্যই বাড়বে
+      // Unread Count ফেচ লজিক
       final chatDoc = await chatRef.get();
       int currentUnread = 0;
       String currentUnreadFor = '';
@@ -187,12 +193,13 @@ class ChatService {
       }
 
       batch.set(chatRef, {
+        'chatId': correctChatId,
         'lastMessageContent': previewText,
         'lastMessageTime': FieldValue.serverTimestamp(),
         'lastSenderId': senderId,
         'unreadCount': currentUnread + 1,
-        'unreadFor': receiverId, // শুধুমাত্র রিসিভারের জন্যই Unread
-        'participants': FieldValue.arrayUnion([senderId, receiverId]), 
+        'unreadFor': receiverId,
+        'participants': [senderId, receiverId], // Array নিশ্চিত করা
       }, SetOptions(merge: true));
 
       await batch.commit();
@@ -218,7 +225,6 @@ class ChatService {
         batch.update(doc.reference, {'status': 'seen'});
       }
 
-      // বর্তমান ইউজার চ্যাট ওপেন করলে তার Unread Count ০ হয়ে যাবে
       final chatDoc = await _firestore.collection('chats').doc(chatId).get();
       if (chatDoc.exists) {
         final unreadFor = chatDoc.data()?['unreadFor'];
@@ -350,13 +356,14 @@ class ChatService {
     }
   }
 
+  // 🔴 FIX 3: includeMetadataChanges: true দিয়ে Realtime Stream নিশ্চিত করা
   Stream<List<MessageModel>> getMessages(String chatId) {
     return _firestore
         .collection('chats')
         .doc(chatId)
         .collection('messages')
         .orderBy('timestamp', descending: true)
-        .snapshots()
+        .snapshots(includeMetadataChanges: true) 
         .map((snapshot) {
       return snapshot.docs.map((doc) {
         final data = doc.data();
@@ -374,7 +381,7 @@ class ChatService {
         .doc(groupId)
         .collection('messages')
         .orderBy('timestamp', descending: true)
-        .snapshots()
+        .snapshots(includeMetadataChanges: true)
         .map((snapshot) {
       return snapshot.docs.map((doc) {
         final data = doc.data();
