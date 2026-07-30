@@ -14,19 +14,23 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 }
 
 void main() async {
-  // ২. উইজেট বাইন্ডিং নিশ্চিত করা হলো (ইতিমধ্যে আপনার কোডে ছিল)
   WidgetsFlutterBinding.ensureInitialized();
 
-  // ৩. পুরো অ্যাপের সব স্ক্রিন থেকে ওপরের বার হাইড করার ম্যাজিক লাইন
+  // স্ট্যাটাস বার হাইড করার সেটিংস
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
 
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
+  // 🔴 FIX 1: Firestore Offline Persistence & Sync Settings (নতুন ফোনে মেসেজিং সিঙ্ক ফিক্সের জন্য)
+  FirebaseFirestore.instance.settings = const Settings(
+    persistenceEnabled: true,
+    cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
+  );
+
   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
-  // আপনার অ্যাপের মূল ক্লাসটি রান করা হচ্ছে
   runApp(const FindYourBestTeacherTodayApp());
 }
 
@@ -52,7 +56,7 @@ class _FindYourBestTeacherTodayAppState extends State<FindYourBestTeacherTodayAp
 
   Future<void> _initializeAppData() async {
     await _setupNotifications();
-    await _setUserOnlineStatus(true);
+    await _setUserOnlineStatusAndToken(true); // 🔴 FIX 2: Token সিঙ্ক সহ কল
   }
 
   Future<void> _setupNotifications() async {
@@ -61,6 +65,11 @@ class _FindYourBestTeacherTodayAppState extends State<FindYourBestTeacherTodayAp
       badge: true,
       sound: true,
     );
+
+    // 🔴 FIX 3: অ্যাপ অপেন হওয়ার পর FCM Token পরিবর্তিত হলে সাথে সাথে সিঙ্ক করা
+    _messaging.onTokenRefresh.listen((newToken) {
+      _updateFcmTokenInFirestore(newToken);
+    });
 
     FirebaseMessaging.onMessage.listen((RemoteMessage message) {
       if (message.notification != null) {
@@ -78,23 +87,52 @@ class _FindYourBestTeacherTodayAppState extends State<FindYourBestTeacherTodayAp
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      _setUserOnlineStatus(true);
+      _setUserOnlineStatusAndToken(true);
     } else {
-      _setUserOnlineStatus(false);
+      _setUserOnlineStatusAndToken(false);
     }
   }
 
-  Future<void> _setUserOnlineStatus(bool isOnline) async {
+  // 🔴 FIX 4: নতুন ডিভাইসে লগইন করলেও FCM Token ও Role ভিত্তিক কালেকশন আপডেট
+  Future<void> _setUserOnlineStatusAndToken(bool isOnline) async {
     final User? user = _auth.currentUser;
-    if (user != null) {
-      try {
-        await _firestore.collection('users').doc(user.uid).update({
-          'isOnline': isOnline,
-          'lastSeen': FieldValue.serverTimestamp(),
-        });
-      } catch (e) {
-        debugPrint("Firestore Update Error: $e");
+    if (user == null) return;
+
+    try {
+      String? token = await _messaging.getToken();
+
+      Map<String, dynamic> updateData = {
+        'isOnline': isOnline,
+        'status': isOnline ? 'Online' : 'Offline',
+        'lastSeen': FieldValue.serverTimestamp(),
+      };
+
+      if (token != null) {
+        updateData['fcmToken'] = token; // ২য় ফোনের ডিভাইস টোকেন সিঙ্ক করবে
       }
+
+      // ১. মূল 'users' কালেকশনে আপডেট
+      await _firestore.collection('users').doc(user.uid).update(updateData).catchError((_) {});
+
+      // ২. টিচার বা স্টুডেন্ট যেই কালেকশনেই থাকুক সেখানেও আপডেট
+      await _firestore.collection('teachers').doc(user.uid).update(updateData).catchError((_) {});
+      await _firestore.collection('students').doc(user.uid).update(updateData).catchError((_) {});
+
+    } catch (e) {
+      debugPrint("Firestore Online/Token Update Error: $e");
+    }
+  }
+
+  Future<void> _updateFcmTokenInFirestore(String token) async {
+    final User? user = _auth.currentUser;
+    if (user == null) return;
+
+    try {
+      await _firestore.collection('users').doc(user.uid).update({'fcmToken': token}).catchError((_) {});
+      await _firestore.collection('teachers').doc(user.uid).update({'fcmToken': token}).catchError((_) {});
+      await _firestore.collection('students').doc(user.uid).update({'fcmToken': token}).catchError((_) {});
+    } catch (e) {
+      debugPrint("Token Refresh Error: $e");
     }
   }
 
