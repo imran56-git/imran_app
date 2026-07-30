@@ -92,6 +92,80 @@ class _MessageBubbleState extends State<MessageBubble> {
     return '$hour:$minute $amPm';
   }
 
+  // 🔴 ১০ মিনিটের বেশি হয়েছে কিনা এবং মেসেজটি নিজের ও টেক্সট টাইপ কিনা চেক করার লজিক 🔴
+  bool _canEditMessage() {
+    if (!widget.isMe) return false;
+    if (widget.message.type.toLowerCase() != 'text') return false;
+    if (widget.message.isDeletedForEveryone) return false;
+    if (widget.message.timestamp == null) return false;
+
+    final messageTime = widget.message.timestamp!;
+    final currentTime = DateTime.now();
+    final difference = currentTime.difference(messageTime);
+
+    return difference.inMinutes < 10;
+  }
+
+  // 🔴 মেসেজ এডিট করার ডায়ালগ পপ-আপ 🔴
+  void _showEditDialog(BuildContext context) {
+    final TextEditingController editController = TextEditingController(text: widget.message.content);
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text('Edit Message', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          content: TextField(
+            controller: editController,
+            maxLines: null,
+            autofocus: true,
+            decoration: const InputDecoration(
+              hintText: 'Edit your message...',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF1E4C7A),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+              onPressed: () async {
+                final newText = editController.text.trim();
+                if (newText.isNotEmpty && newText != widget.message.content) {
+                  Navigator.pop(dialogContext);
+                  try {
+                    // ChatService-এ মেসেজ আপডেট ফায়ারবেস ট্রানজেকশন
+                    await FirebaseFirestore.instance
+                        .collection('chats')
+                        .doc(widget.chatRoomId)
+                        .collection('messages')
+                        .doc(widget.message.messageId)
+                        .update({'content': newText, 'isEdited': true});
+                    
+                    if (context.mounted) {
+                      SuccessToast.show(context, "Message edited");
+                    }
+                  } catch (e) {
+                    debugPrint('Error editing message: $e');
+                  }
+                } else {
+                  Navigator.pop(dialogContext);
+                }
+              },
+              child: const Text('Save', style: TextStyle(color: Colors.white)),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   Future<void> _toggleAudio() async {
     if (widget.message.content.trim().isEmpty) return;
     try {
@@ -320,6 +394,18 @@ class _MessageBubbleState extends State<MessageBubble> {
                   widget.onReplyPressed(widget.message);
                 },
               ),
+
+            // 🔴 ১০ মিনিটের মধ্যে পাঠালে এখানে 'Edit' অপশনটি দেখাবে 🔴
+            if (_canEditMessage())
+              ListWhiteTiles(
+                leading: const Icon(Icons.edit_outlined, color: Colors.blue),
+                title: const Text('Edit', style: TextStyle(color: Colors.blue, fontWeight: FontWeight.w600)),
+                onTap: () {
+                  Navigator.pop(context);
+                  _showEditDialog(context);
+                },
+              ),
+
             ListWhiteTiles(
               leading: const Icon(Icons.delete_outline_rounded, color: Colors.red),
               title: const Text('Delete for Me', style: TextStyle(color: Colors.red)),
