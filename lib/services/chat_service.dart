@@ -8,15 +8,21 @@ class ChatService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseStorage _storage = FirebaseStorage.instance;
 
+  // 🟢 FIX 1: স্মার্ট প্রোফাইল ফেচিং (সকল কালেকশনে অটোমেটিক সার্চ)
   Future<Map<String, dynamic>?> getUserProfile(String userId, bool isTeacher) async {
     try {
-      final String collectionPath = isTeacher ? 'teachers' : 'students';
-      final doc = await _firestore.collection(collectionPath).doc(userId).get();
-      if (doc.exists && doc.data() != null) {
-        return doc.data();
-      }
-      
-      // Fallback: Check 'users' collection if not found in specific role collection
+      final String primaryCollection = isTeacher ? 'teachers' : 'students';
+      final String secondaryCollection = isTeacher ? 'students' : 'teachers';
+
+      // ১. প্রাইমারি কালেকশন চেক
+      var doc = await _firestore.collection(primaryCollection).doc(userId).get();
+      if (doc.exists && doc.data() != null) return doc.data();
+
+      // ২. সেকেন্ডারি কালেকশন চেক
+      doc = await _firestore.collection(secondaryCollection).doc(userId).get();
+      if (doc.exists && doc.data() != null) return doc.data();
+
+      // ৩. সাধারণ 'users' কালেকশন চেক
       final userDoc = await _firestore.collection('users').doc(userId).get();
       return userDoc.data();
     } catch (e) {
@@ -30,7 +36,7 @@ class ChatService {
         .collection('chats')
         .where('participants', arrayContains: userId)
         .orderBy('lastMessageTime', descending: true)
-        .snapshots(includeMetadataChanges: true) // 👈 Realtime Multi-device Sync Fix
+        .snapshots(includeMetadataChanges: true)
         .handleError((error) {
       _handleError('getUserChatsStream', error);
     });
@@ -66,25 +72,46 @@ class ChatService {
     }
   }
 
+  // 🟢 FIX 2: getUserStatusStream অটোমেটিক টিচার ও স্টুডেন্ট উভয়ের ডাটা স্ট্রিম করবে
   Stream<Map<String, dynamic>> getUserStatusStream(String userId, bool isTeacher) {
     final String collectionPath = isTeacher ? 'teachers' : 'students';
-    return _firestore.collection(collectionPath).doc(userId).snapshots().map((doc) {
-      if (!doc.exists) return {'status': 'Offline', 'lastSeen': null, 'isOnline': false};
-      final data = doc.data();
-      return {
-        'status': data?['status'] ?? 'Offline',
-        'isOnline': data?['isOnline'] ?? false,
-        'lastSeen': data?['lastSeen'] as Timestamp?,
-      };
+    
+    return _firestore.collection(collectionPath).doc(userId).snapshots().asyncMap((doc) async {
+      if (doc.exists && doc.data() != null) {
+        final data = doc.data()!;
+        return {
+          'status': data['status'] ?? 'Offline',
+          'isOnline': data['isOnline'] ?? false,
+          'lastSeen': data['lastSeen'] as Timestamp?,
+          'fullName': data['fullName'] ?? data['name'] ?? data['displayName'],
+          'profileImageUrl': data['profileImageUrl'] ?? data['profilePic'],
+        };
+      }
+
+      // যদি প্রাইমারি কালেকশনে না পাওয়া যায়, তবে বিপরীত কালেকশন থেকে চেক করবে
+      final String altCollection = isTeacher ? 'students' : 'teachers';
+      final altDoc = await _firestore.collection(altCollection).doc(userId).get();
+      if (altDoc.exists && altDoc.data() != null) {
+        final data = altDoc.data()!;
+        return {
+          'status': data['status'] ?? 'Offline',
+          'isOnline': data['isOnline'] ?? false,
+          'lastSeen': data['lastSeen'] as Timestamp?,
+          'fullName': data['fullName'] ?? data['name'] ?? data['displayName'],
+          'profileImageUrl': data['profileImageUrl'] ?? data['profilePic'],
+        };
+      }
+
+      return {'status': 'Offline', 'lastSeen': null, 'isOnline': false};
     }).handleError((error) {
       _handleError('getUserStatusStream', error);
     });
   }
 
-  // 🔴 FIX 1: Alphabetical Sorting to ensure EXACT SAME Chat Room ID across all devices
+  // Alphabetical Sorting to ensure EXACT SAME Chat Room ID
   String getChatRoomId(String user1, String user2) {
     List<String> ids = [user1, user2];
-    ids.sort(); // সবসময় Alphabetically Sort করবে
+    ids.sort();
     return '${ids[0]}_${ids[1]}';
   }
 
@@ -109,7 +136,6 @@ class ChatService {
         'isGroup': false,
       };
 
-      // Real Name & Profile Image আপডেট রাখা
       if (teacherName.isNotEmpty && teacherName != 'Me' && teacherName != 'User') {
         updateData['teacherName'] = teacherName;
       }
@@ -120,6 +146,7 @@ class ChatService {
       if (studentImage.isNotEmpty) updateData['studentImage'] = studentImage;
 
       if (!doc.exists) {
+        updateData['lastMessage'] = 'Chat initialized';
         updateData['lastMessageContent'] = 'Chat initialized';
         updateData['lastMessageTime'] = FieldValue.serverTimestamp();
         updateData['unreadCount'] = 0;
@@ -147,8 +174,7 @@ class ChatService {
   }) async {
     try {
       final batch = _firestore.batch();
-      
-      // 🔴 FIX 2: chatId পুনরায় ভ্যালিডেশান সহ ফিক্স করা
+
       final String correctChatId = getChatRoomId(senderId, receiverId);
       final chatRef = _firestore.collection('chats').doc(correctChatId);
       final messageRef = chatRef.collection('messages').doc();
@@ -179,7 +205,6 @@ class ChatService {
       if (type == 'document') previewText = '📄 Document';
       if (type == 'location') previewText = '📍 Location';
 
-      // Unread Count ফেচ লজিক
       final chatDoc = await chatRef.get();
       int currentUnread = 0;
       String currentUnreadFor = '';
@@ -192,14 +217,16 @@ class ChatService {
         }
       }
 
+      // 🟢 FIX 3: lastMessage এবং lastMessageContent দুটি ফিল্ডই একসাথে আপডেট রাখা হয়েছে
       batch.set(chatRef, {
         'chatId': correctChatId,
+        'lastMessage': previewText,
         'lastMessageContent': previewText,
         'lastMessageTime': FieldValue.serverTimestamp(),
         'lastSenderId': senderId,
         'unreadCount': currentUnread + 1,
         'unreadFor': receiverId,
-        'participants': [senderId, receiverId], // Array নিশ্চিত করা
+        'participants': [senderId, receiverId],
       }, SetOptions(merge: true));
 
       await batch.commit();
@@ -356,7 +383,6 @@ class ChatService {
     }
   }
 
-  // 🔴 FIX 3: includeMetadataChanges: true দিয়ে Realtime Stream নিশ্চিত করা
   Stream<List<MessageModel>> getMessages(String chatId) {
     return _firestore
         .collection('chats')
