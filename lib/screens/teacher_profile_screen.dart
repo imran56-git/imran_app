@@ -9,7 +9,9 @@ import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart'; 
 
 import '../models/rating_model.dart';
+import '../services/follow_service.dart';
 import '../utils/image_utils.dart';
+import '../widgets/follow_button.dart';
 import '../widgets/success_toast.dart';
 import 'location_picker_screen.dart';
 import 'tuition_management_screen.dart';
@@ -34,13 +36,13 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseStorage _storage = FirebaseStorage.instance;
   final ImagePicker _picker = ImagePicker();
+  final FollowService _followService = FollowService();
 
   late AnimationController _glowController;
   late Animation<double> _glowAnimation;
 
   Map<String, dynamic>? teacherData;
   bool isLoading = true, isEditing = false;
-  String requestStatus = 'none'; // none, pending, accepted
   File? _selectedImage;
 
   final TextEditingController _nameController = TextEditingController();
@@ -60,7 +62,6 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
   void initState() {
     super.initState();
     fetchTeacherData();
-    checkFollowRequestStatus();
     checkUnreadNotifications();
 
     _glowController = AnimationController(
@@ -106,20 +107,6 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
     }
   }
 
-  void checkFollowRequestStatus() async {
-    final currentUID = _auth.currentUser?.uid;
-    if (currentUID == null || isOwnProfile) return;
-
-    final doc = await _firestore.collection('follow_requests').doc('${currentUID}_${widget.currentUserId}').get();
-    if (mounted) {
-      if (doc.exists) {
-        setState(() => requestStatus = doc.data()?['status'] ?? 'pending');
-      } else {
-        setState(() => requestStatus = 'none');
-      }
-    }
-  }
-
   void checkUnreadNotifications() async {
     final currentUID = _auth.currentUser?.uid;
     if (currentUID == null) return;
@@ -158,44 +145,6 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
         );
       }
     }
-  }
-
-  void triggerFollowAction() async {
-    final currentUID = _auth.currentUser?.uid;
-    if (currentUID == null || isOwnProfile) return;
-
-    final requestDocRef = _firestore.collection('follow_requests').doc('${currentUID}_${widget.currentUserId}');
-
-    if (requestStatus == 'none') {
-      final studentDoc = await _firestore.collection('students').doc(currentUID).get();
-      final studentData = studentDoc.data() ?? {};
-
-      await requestDocRef.set({
-        'teacherId': widget.currentUserId,
-        'studentId': currentUID,
-        'studentName': studentData['name'] ?? 'A Student',
-        'studentPhotoUrl': studentData['photoUrl'] ?? '',
-        'status': 'pending',
-        'timestamp': FieldValue.serverTimestamp(),
-      });
-
-      await _firestore.collection('notifications').add({
-        'receiverId': widget.currentUserId,
-        'senderId': currentUID,
-        'senderName': studentData['name'] ?? 'A Student',
-        'senderPhotoUrl': studentData['photoUrl'] ?? '',
-        'message': 'wants to follow you.',
-        'type': 'follow_request',
-        'isRead': false,
-        'timestamp': FieldValue.serverTimestamp(),
-      });
-
-      if (mounted) SuccessToast.show(context, 'Follow request sent!');
-    } else {
-      await requestDocRef.delete();
-      if (mounted) SuccessToast.show(context, 'Unfollowed / Request removed');
-    }
-    checkFollowRequestStatus();
   }
 
   void _openMapPicker() async {
@@ -396,7 +345,8 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
                           const SizedBox(height: 12),
 
                           if (!isEditing) _buildFollowStats(),
-                          if (!isOwnProfile) _buildFollowButton(),
+                          if (!isOwnProfile) const SizedBox(height: 10),
+                          if (!isOwnProfile) _buildFollowButtonWidget(),
                           if (!isOwnProfile) _buildStudentRatingActionButton(),
 
                           const SizedBox(height: 20),
@@ -638,7 +588,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
       ],
     );
   }
-
+  
   Widget _buildProfileImage(double radius) {
     final url = teacherData?['profileImageUrl'];
     return GestureDetector(
@@ -669,43 +619,49 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
     ]);
   }
 
+  // Real-time Stream Followers Count Widget
   Widget _buildFollowStats() {
-    return StreamBuilder<QuerySnapshot>(
-      stream: _firestore.collection('follow_requests').where('teacherId', isEqualTo: widget.currentUserId).where('status', isEqualTo: 'accepted').snapshots(),
-      builder: (context, snap) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-        decoration: BoxDecoration(color: Colors.blue[50], borderRadius: BorderRadius.circular(20)),
-        child: Text('Followers: ${snap.data?.docs.length ?? 0}', style: TextStyle(color: Colors.blue[800], fontWeight: FontWeight.bold, fontSize: 13)),
-      ),
+    return StreamBuilder<int>(
+      stream: _followService.streamFollowersCount(widget.currentUserId),
+      builder: (context, snapshot) {
+        int count = snapshot.data ?? 0;
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+          decoration: BoxDecoration(color: Colors.blue[50], borderRadius: BorderRadius.circular(20)),
+          child: Text(
+            'Followers: $count',
+            style: TextStyle(color: Colors.blue[800], fontWeight: FontWeight.bold, fontSize: 13),
+          ),
+        );
+      },
     );
   }
 
-  Widget _buildFollowButton() {
-    String label = 'Follow Teacher';
-    Color btnColor = Colors.blue[800]!;
-    IconData icon = Icons.person_add;
+  // Connected to standalone FollowButton Widget with full features
+  Widget _buildFollowButtonWidget() {
+    final currentUID = _auth.currentUser?.uid ?? "";
+    if (currentUID.isEmpty) return const SizedBox();
 
-    if (requestStatus == 'pending') {
-      label = 'Requested';
-      btnColor = Colors.orange;
-      icon = Icons.hourglass_empty;
-    } else if (requestStatus == 'accepted') {
-      label = 'Following';
-      btnColor = Colors.green;
-      icon = Icons.check;
-    }
+    return FutureBuilder<DocumentSnapshot>(
+      future: _firestore.collection('students').doc(currentUID).get(),
+      builder: (context, snapshot) {
+        final studentData = snapshot.data?.data() as Map<String, dynamic>? ?? {};
+        final studentName = studentData['name'] ?? 'A Student';
+        final studentPhoto = studentData['photoUrl'] ?? '';
 
-    return Padding(
-      padding: const EdgeInsets.only(top: 10),
-      child: ElevatedButton.icon(
-        onPressed: triggerFollowAction,
-        icon: Icon(icon),
-        label: Text(label),
-        style: ElevatedButton.styleFrom(backgroundColor: btnColor, foregroundColor: Colors.white, minimumSize: const Size(180, 42)),
-      ),
+        return FollowButton(
+          teacherId: widget.currentUserId,
+          studentId: currentUID,
+          teacherName: _nameController.text.isEmpty ? 'Teacher' : _nameController.text,
+          studentName: studentName,
+          teacherPhoto: teacherData?['profileImageUrl'] ?? '',
+          studentPhoto: studentPhoto,
+        );
+      },
     );
   }
-Widget _buildViewProfile() {
+
+  Widget _buildViewProfile() {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       _buildMaterial3Card("Bio", _bioController.text, Icons.description_outlined, const Color(0xFF3B82F6)),
       _buildMaterial3Card("Phone Number", isOwnProfile ? _phoneController.text : "Hidden for Privacy", Icons.phone_outlined, Colors.deepPurple),
@@ -843,8 +799,8 @@ Widget _buildViewProfile() {
       ),
     );
   }
-
-Widget _buildEditForm() {
+  
+  Widget _buildEditForm() {
     final query = _subjectSearchController.text.trim();
     final list = _subjects.where((s) => s.toLowerCase().contains(query.toLowerCase())).toList();
 
