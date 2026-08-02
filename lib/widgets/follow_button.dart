@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/follow_service.dart';
 
-class FollowButton extends StatelessWidget {
+class FollowButton extends StatefulWidget {
   final String teacherId;
   final String studentId;
   final String teacherName;
@@ -20,75 +20,120 @@ class FollowButton extends StatelessWidget {
   });
 
   @override
+  State<FollowButton> createState() => _FollowButtonState();
+}
+
+class _FollowButtonState extends State<FollowButton> {
+  final FollowService _followService = FollowService();
+  bool _isLoading = false;
+
+  void _showSnackBar(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final FollowService followService = FollowService();
+    // Check for valid IDs to prevent silent crashes
+    if (widget.teacherId.isEmpty || widget.studentId.isEmpty) {
+      return ElevatedButton(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.grey,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        ),
+        onPressed: () => _showSnackBar('User identity missing. Unable to follow.'),
+        child: const Text('Follow Teacher', style: TextStyle(color: Colors.white)),
+      );
+    }
 
     return StreamBuilder<String>(
-      stream: followService.streamFollowStatus(teacherId, studentId),
+      stream: _followService.streamFollowStatus(widget.teacherId, widget.studentId),
       builder: (context, snapshot) {
         final status = snapshot.data ?? 'none';
 
-        String buttonText = 'Follow';
-        Color buttonColor = Colors.blue;
+        String buttonText = 'Follow Teacher';
+        Color buttonColor = const Color(0xFF1E63B5);
         Color textColor = Colors.white;
-        VoidCallback? onPressed;
+        IconData buttonIcon = Icons.person_add_rounded;
 
         if (status == 'pending') {
           buttonText = 'Requested';
-          buttonColor = Colors.orange;
-          onPressed = () async {
-            await followService.cancelRequest(teacherId, studentId);
-          };
+          buttonColor = Colors.orange.shade700;
+          buttonIcon = Icons.access_time_rounded;
         } else if (status == 'accepted') {
           buttonText = 'Following';
           buttonColor = Colors.grey.shade300;
           textColor = Colors.black87;
-          onPressed = () async {
-            await followService.unfollowTeacher(teacherId, studentId);
-          };
+          buttonIcon = Icons.check_circle_rounded;
         } else if (status == 'rejected') {
           buttonText = 'Follow Again';
-          buttonColor = Colors.blue;
-          onPressed = () async {
-            await followService.sendFollowRequest(
-              teacherId: teacherId,
-              studentId: studentId,
-              teacherName: teacherName,
-              studentName: studentName,
-              teacherPhoto: teacherPhoto,
-              studentPhoto: studentPhoto,
-            );
-          };
-        } else {
-          buttonText = 'Follow';
-          buttonColor = Colors.blue;
-          onPressed = () async {
-            await followService.sendFollowRequest(
-              teacherId: teacherId,
-              studentId: studentId,
-              teacherName: teacherName,
-              studentName: studentName,
-              teacherPhoto: teacherPhoto,
-              studentPhoto: studentPhoto,
-            );
-          };
+          buttonColor = const Color(0xFF1E63B5);
+          buttonIcon = Icons.refresh_rounded;
         }
 
-        return ElevatedButton(
+        return ElevatedButton.icon(
           style: ElevatedButton.styleFrom(
             backgroundColor: buttonColor,
             foregroundColor: textColor,
-            elevation: 0,
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+            elevation: 2,
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 11),
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(20),
+              borderRadius: BorderRadius.circular(25),
             ),
           ),
-          onPressed: onPressed,
-          child: Text(
+          icon: _isLoading
+              ? SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(textColor),
+                  ),
+                )
+              : Icon(buttonIcon, size: 18, color: textColor),
+          label: Text(
             buttonText,
-            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 14,
+              color: textColor,
+            ),
           ),
+          onPressed: _isLoading
+              ? null
+              : () async {
+                  setState(() => _isLoading = true);
+                  try {
+                    if (status == 'pending') {
+                      await _followService.cancelRequest(widget.teacherId, widget.studentId);
+                      _showSnackBar('Follow request cancelled.');
+                    } else if (status == 'accepted') {
+                      await _followService.unfollowTeacher(widget.teacherId, widget.studentId);
+                      _showSnackBar('Unfollowed teacher.');
+                    } else {
+                      await _followService.sendFollowRequest(
+                        teacherId: widget.teacherId,
+                        studentId: widget.studentId,
+                        teacherName: widget.teacherName,
+                        studentName: widget.studentName,
+                        teacherPhoto: widget.teacherPhoto,
+                        studentPhoto: widget.studentPhoto,
+                      );
+                      _showSnackBar('Follow request sent successfully!');
+                    }
+                  } catch (e) {
+                    _showSnackBar('Operation failed. Please try again.');
+                  } finally {
+                    if (mounted) {
+                      setState(() => _isLoading = false);
+                    }
+                  }
+                },
         );
       },
     );
