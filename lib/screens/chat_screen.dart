@@ -228,92 +228,109 @@ class _ChatScreenState extends State<ChatScreen> {
           elevation: 0,
           titleSpacing: 0,
           scrolledUnderElevation: 0,
-          title: Row(
-            children: [
-              IconButton(
-                icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
-                onPressed: () {
-                  _chatService.updateTypingStatus(widget.chatRoomId, widget.currentUserId, false);
-                  Navigator.pop(context);
-                },
-              ),
-              CircleAvatar(
-                radius: 18,
-                backgroundColor: Colors.white24,
-                backgroundImage: widget.receiverProfilePic.isNotEmpty
-                    ? NetworkImage(widget.receiverProfilePic)
-                    : null,
-                child: widget.receiverProfilePic.isEmpty
-                    ? const Icon(Icons.person_rounded, color: Colors.white, size: 20)
-                    : null,
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      widget.receiverName,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                        letterSpacing: 0.2,
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 2),
-                    StreamBuilder<DocumentSnapshot>(
-                      stream: FirebaseFirestore.instance
-                          .collection('typing')
-                          .doc(widget.chatRoomId)
-                          .snapshots()
-                          .handleError((error) => log('Typing Stream Error: $error')),
-                      builder: (context, typingSnapshot) {
-                        bool isTyping = false;
-                        if (typingSnapshot.hasData && typingSnapshot.data!.exists) {
-                          var data = typingSnapshot.data!.data() as Map<String, dynamic>?;
-                          isTyping = data?[widget.receiverId] ?? false;
-                        }
+          title: StreamBuilder<Map<String, dynamic>>(
+            stream: _chatService.getUserStatusStream(
+              widget.receiverId, 
+              widget.isTeacher, // 🟢 FIX: সরাসরি নির্দেশ করা যাতে অটোমেটিক উভয় কালেকশনে রিয়েলটাইম সার্চ হয়
+            ),
+            builder: (context, statusSnapshot) {
+              String displayName = widget.receiverName;
+              String displayPic = widget.receiverProfilePic;
+              bool isOnline = false;
 
-                        if (isTyping) {
-                          return const Text(
-                            'typing...',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Color(0xFFA2E8DD),
-                              fontWeight: FontWeight.bold,
-                            ),
-                          );
-                        }
+              if (statusSnapshot.hasData && statusSnapshot.data != null) {
+                final data = statusSnapshot.data!;
+                isOnline = data['isOnline'] == true;
+                
+                // যদি ব্যাকএন্ড স্ট্রীমে নাম বা ছবি পাওয়া যায় তা ডাইনামিকালি আপডেট করবে
+                if (data['fullName'] != null && data['fullName'].toString().isNotEmpty) {
+                  displayName = data['fullName'].toString();
+                }
+                if (data['profileImageUrl'] != null && data['profileImageUrl'].toString().isNotEmpty) {
+                  displayPic = data['profileImageUrl'].toString();
+                }
+              }
 
-                        return StreamBuilder<Map<String, dynamic>>(
-                          stream: _chatService.getUserStatusStream(
-                            widget.receiverId, 
-                            !widget.isTeacher,
+              if (displayName.isEmpty || displayName == 'User') {
+                displayName = widget.receiverName.isNotEmpty ? widget.receiverName : 'User';
+              }
+
+              return Row(
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
+                    onPressed: () {
+                      _chatService.updateTypingStatus(widget.chatRoomId, widget.currentUserId, false);
+                      Navigator.pop(context);
+                    },
+                  ),
+                  CircleAvatar(
+                    radius: 18,
+                    backgroundColor: Colors.white24,
+                    backgroundImage: displayPic.isNotEmpty
+                        ? NetworkImage(displayPic)
+                        : null,
+                    child: displayPic.isEmpty
+                        ? const Icon(Icons.person_rounded, color: Colors.white, size: 20)
+                        : null,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          displayName,
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                            letterSpacing: 0.2,
                           ),
-                          builder: (context, statusSnapshot) {
-                            if (statusSnapshot.hasData && statusSnapshot.data != null) {
-                              bool isOnline = statusSnapshot.data!['isOnline'] ?? false;
-                              return Text(
-                                isOnline ? 'Online' : 'Offline',
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 2),
+                        StreamBuilder<DocumentSnapshot>(
+                          stream: FirebaseFirestore.instance
+                              .collection('typing')
+                              .doc(widget.chatRoomId)
+                              .snapshots()
+                              .handleError((error) => log('Typing Stream Error: $error')),
+                          builder: (context, typingSnapshot) {
+                            bool isTyping = false;
+                            if (typingSnapshot.hasData && typingSnapshot.data!.exists) {
+                              var data = typingSnapshot.data!.data() as Map<String, dynamic>?;
+                              isTyping = data?[widget.receiverId] ?? false;
+                            }
+
+                            if (isTyping) {
+                              return const Text(
+                                'typing...',
                                 style: TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w500,
-                                  color: isOnline ? const Color(0xFF22C55E) : Colors.white70,
+                                  fontSize: 12,
+                                  color: Color(0xFFA2E8DD),
+                                  fontWeight: FontWeight.bold,
                                 ),
                               );
                             }
-                            return const Text('Offline', style: TextStyle(fontSize: 11, color: Colors.white70));
+
+                            return Text(
+                              isOnline ? 'Online' : 'Offline',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w500,
+                                color: isOnline ? const Color(0xFF22C55E) : Colors.white70,
+                              ),
+                            );
                           },
-                        );
-                      },
+                        ),
+                      ],
                     ),
-                  ],
-                ),
-              ),
-            ],
+                  ),
+                ],
+              );
+            },
           ),
           actions: [
             IconButton(
