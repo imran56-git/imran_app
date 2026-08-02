@@ -133,7 +133,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
       backgroundColor: const Color(0xFFF4F6F9),
       body: Column(
         children: [
-          // প্রোফাইল ও টিচার্স স্ক্রিনের সাথে মেলানো ডার্ক ব্লু হেডার
+          // ডার্ক ব্লু হেডার
           Container(
             padding: EdgeInsets.only(
               top: MediaQuery.of(context).padding.top + 12,
@@ -265,45 +265,49 @@ class _ChatListScreenState extends State<ChatListScreen> {
                       }
                       final String receiverId = participantsList.first;
 
+                      // Firestore-এ সরাসরি চ্যাট ডকুমেন্টে যদি Receiver Name সেভ থাকে তা ব্যাকআপ হিসেবে নেওয়া
+                      String fallbackName = chatData['receiverName'] ??
+                          chatData['teacherName'] ??
+                          chatData['studentName'] ??
+                          'User';
+
                       return StreamBuilder<dynamic>(
                         stream: _chatService.getUserStatusStream(
                           receiverId,
                           !widget.isTeacher,
                         ),
                         builder: (context, userSnapshot) {
-                          String finalName = "User";
+                          String finalName = fallbackName;
                           String finalImageUrl = "";
                           bool isOnline = false;
 
-                          if (userSnapshot.hasData) {
+                          if (userSnapshot.hasData && userSnapshot.data != null) {
                             final userData = userSnapshot.data;
-                            if (userData is DocumentSnapshot &&
-                                userData.exists) {
-                              final mapData =
-                                  userData.data() as Map<String, dynamic>?;
-                              if (mapData != null) {
-                                finalName = (mapData['fullName'] ??
-                                        mapData['name'] ??
-                                        mapData['displayName'] ??
-                                        'User')
-                                    .toString();
-                                finalImageUrl = (mapData['profileImageUrl'] ??
-                                        mapData['profilePic'] ??
-                                        '')
-                                    .toString();
-                                isOnline = mapData['isOnline'] == true;
-                              }
+                            Map<String, dynamic>? mapData;
+
+                            if (userData is DocumentSnapshot && userData.exists) {
+                              mapData = userData.data() as Map<String, dynamic>?;
                             } else if (userData is Map<String, dynamic>) {
-                              finalName = (userData['fullName'] ??
-                                      userData['name'] ??
-                                      userData['displayName'] ??
-                                      'User')
-                                  .toString();
-                              finalImageUrl = (userData['profileImageUrl'] ??
-                                      userData['profilePic'] ??
+                              mapData = userData;
+                            }
+
+                            if (mapData != null) {
+                              final extractedName = (mapData['fullName'] ??
+                                      mapData['name'] ??
+                                      mapData['displayName'] ??
+                                      mapData['teacherName'] ??
+                                      mapData['studentName'])
+                                  ?.toString();
+                              
+                              if (extractedName != null && extractedName.isNotEmpty) {
+                                finalName = extractedName;
+                              }
+
+                              finalImageUrl = (mapData['profileImageUrl'] ??
+                                      mapData['profilePic'] ??
                                       '')
                                   .toString();
-                              isOnline = userData['isOnline'] == true;
+                              isOnline = mapData['isOnline'] == true;
                             }
                           }
 
