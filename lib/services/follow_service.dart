@@ -5,7 +5,7 @@ import '../models/follow_model.dart';
 class FollowService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  // Send Follow Request (Student to Teacher)
+  // Send or Resend Follow Request (Student to Teacher)
   Future<void> sendFollowRequest({
     required String teacherId,
     required String studentId,
@@ -30,7 +30,8 @@ class FollowService {
         requestedAt: Timestamp.now(),
       );
 
-      await docRef.set(followModel.toMap());
+      // Set options merge use simplified status updates
+      await docRef.set(followModel.toMap(), SetOptions(merge: true));
     } catch (e) {
       log('Error in sendFollowRequest: $e');
       throw Exception('Failed to send follow request: $e');
@@ -63,11 +64,12 @@ class FollowService {
         'acceptedAt': Timestamp.now(),
       });
 
-      // 2. Increment teacher's acceptedStudentsCount
+      // 2. Increment teacher's count (Both followersCount & acceptedStudentsCount)
       final teacherRef = _firestore.collection('teachers').doc(teacherId);
-      batch.update(teacherRef, {
+      batch.set(teacherRef, {
+        'followersCount': FieldValue.increment(1),
         'acceptedStudentsCount': FieldValue.increment(1),
-      });
+      }, SetOptions(merge: true));
 
       await batch.commit();
     } catch (e) {
@@ -93,17 +95,27 @@ class FollowService {
   Future<void> unfollowTeacher(String teacherId, String studentId) async {
     try {
       final String docId = '${teacherId}_$studentId';
+      
+      final docSnap = await _firestore.collection('follow_requests').doc(docId).get();
+      bool wasAccepted = false;
+      if (docSnap.exists) {
+        wasAccepted = docSnap.data()?['status'] == 'accepted';
+      }
+
       final batch = _firestore.batch();
 
-      // 1. Delete or update status to cancelled
+      // 1. Delete follow request doc
       final requestRef = _firestore.collection('follow_requests').doc(docId);
       batch.delete(requestRef);
 
-      // 2. Decrement teacher's acceptedStudentsCount
-      final teacherRef = _firestore.collection('teachers').doc(teacherId);
-      batch.update(teacherRef, {
-        'acceptedStudentsCount': FieldValue.increment(-1),
-      });
+      // 2. Decrement teacher's count if it was accepted previously
+      if (wasAccepted) {
+        final teacherRef = _firestore.collection('teachers').doc(teacherId);
+        batch.set(teacherRef, {
+          'followersCount': FieldValue.increment(-1),
+          'acceptedStudentsCount': FieldValue.increment(-1),
+        }, SetOptions(merge: true));
+      }
 
       await batch.commit();
     } catch (e) {
@@ -113,6 +125,9 @@ class FollowService {
 
   // Stream Follow Status between specific student and teacher
   Stream<String> streamFollowStatus(String teacherId, String studentId) {
+    if (teacherId.isEmpty || studentId.isEmpty) {
+      return Stream.value('none');
+    }
     final String docId = '${teacherId}_$studentId';
     return _firestore
         .collection('follow_requests')
@@ -124,6 +139,17 @@ class FollowService {
       }
       return snapshot.data()!['status'] ?? 'none';
     });
+  }
+
+  // Realtime Followers Count Stream for Teacher Profile
+  Stream<int> streamFollowersCount(String teacherId) {
+    if (teacherId.isEmpty) return Stream.value(0);
+    return _firestore
+        .collection('follow_requests')
+        .where('teacherId', isEqualTo: teacherId)
+        .where('status', isEqualTo: 'accepted')
+        .snapshots()
+        .map((snapshot) => snapshot.docs.length);
   }
 
   // Check if student is accepted by teacher (for Rating & Review permission)
