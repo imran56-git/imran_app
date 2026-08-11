@@ -588,8 +588,8 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
       ],
     );
   }
-  
-  Widget _buildProfileImage(double radius) {
+
+Widget _buildProfileImage(double radius) {
     final url = teacherData?['profileImageUrl'];
     return GestureDetector(
       onTap: isEditing ? () async {
@@ -637,26 +637,56 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
     );
   }
 
-  // Connected to standalone FollowButton Widget with full features
+  // Connected to standalone FollowButton Widget with fallback support for both Student & Teacher profiles
   Widget _buildFollowButtonWidget() {
     final currentUID = _auth.currentUser?.uid ?? "";
     if (currentUID.isEmpty) return const SizedBox();
 
     return FutureBuilder<DocumentSnapshot>(
       future: _firestore.collection('students').doc(currentUID).get(),
-      builder: (context, snapshot) {
-        final studentData = snapshot.data?.data() as Map<String, dynamic>? ?? {};
-        final studentName = studentData['name'] ?? 'A Student';
-        final studentPhoto = studentData['photoUrl'] ?? '';
+      builder: (context, studentSnapshot) {
+        if (studentSnapshot.connectionState == ConnectionState.waiting) {
+          return const SizedBox(
+            height: 40,
+            child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+          );
+        }
 
-        return FollowButton(
-          teacherId: widget.currentUserId,
-          studentId: currentUID,
-          teacherName: _nameController.text.isEmpty ? 'Teacher' : _nameController.text,
-          studentName: studentName,
-          teacherPhoto: teacherData?['profileImageUrl'] ?? '',
-          studentPhoto: studentPhoto,
-        );
+        bool isStudent = studentSnapshot.hasData && studentSnapshot.data!.exists;
+
+        if (isStudent) {
+          final studentData = studentSnapshot.data!.data() as Map<String, dynamic>? ?? {};
+          final studentName = studentData['name'] ?? studentData['fullName'] ?? 'Student';
+          final studentPhoto = studentData['photoUrl'] ?? studentData['profileImageUrl'] ?? '';
+
+          return FollowButton(
+            teacherId: widget.currentUserId,
+            studentId: currentUID,
+            teacherName: _nameController.text.isEmpty ? 'Teacher' : _nameController.text,
+            studentName: studentName,
+            teacherPhoto: teacherData?['profileImageUrl'] ?? '',
+            studentPhoto: studentPhoto,
+          );
+        } else {
+          // যদি কারেন্ট ইউজার স্টুডেন্ট না হয়ে অন্য একজন শিক্ষক হন (Fallback)
+          return FutureBuilder<DocumentSnapshot>(
+            future: _firestore.collection('teachers').doc(currentUID).get(),
+            builder: (context, teacherSnapshot) {
+              final tData = teacherSnapshot.data?.data() as Map<String, dynamic>? ?? {};
+              final currentUserName = tData['name'] ?? 'User';
+              final currentUserPhoto = tData['profileImageUrl'] ?? '';
+
+              return FollowButton(
+                teacherId: widget.currentUserId,
+                studentId: currentUID,
+                teacherName: _nameController.text.isEmpty ? 'Teacher' : _nameController.text,
+                studentName: currentUserName,
+                teacherPhoto: teacherData?['profileImageUrl'] ?? '',
+                studentPhoto: currentUserPhoto,
+              );
+            },
+          );
+        }
       },
     );
   }
@@ -712,7 +742,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
     );
   }               
 
-  Widget _buildDashboardSection() {
+Widget _buildDashboardSection() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -799,7 +829,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
       ),
     );
   }
-  
+
   Widget _buildEditForm() {
     final query = _subjectSearchController.text.trim();
     final list = _subjects.where((s) => s.toLowerCase().contains(query.toLowerCase())).toList();
