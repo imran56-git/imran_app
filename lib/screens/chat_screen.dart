@@ -39,7 +39,7 @@ class ChatScreen extends StatefulWidget {
   State<ChatScreen> createState() => _ChatScreenState();
 }
 
-class _ChatScreenState extends State<ChatScreen> {
+class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   final ChatService _chatService = ChatService();
   final ChatMenuService _chatMenuService = ChatMenuService();
   final ScrollController _scrollController = ScrollController();
@@ -54,15 +54,28 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this); // 🟢 App Lifecycle Monitor
     _setupChatRoom();
     _loadCustomTheme();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _chatService.updateTypingStatus(widget.chatRoomId, widget.currentUserId, false);
+    _markMessagesAsReadSafe(); // 🟢 স্ক্রিন বন্ধ করার সময়ও মেসেজ রিড হিসেবে মার্ক করা
     _scrollController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      // 🟢 ইউজার অ্যাপে পুনরায় ফিরে আসলে মেসেজগুলো রিড মার্ক করে দেবে
+      _markMessagesAsReadSafe();
+    } else if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
+      _chatService.updateTypingStatus(widget.chatRoomId, widget.currentUserId, false);
+    }
   }
 
   Future<void> _setupChatRoom() async {
@@ -106,7 +119,9 @@ class _ChatScreenState extends State<ChatScreen> {
     } catch (e) {
       log("Error marking as read: $e");
     } finally {
-      _isMarkingRead = false;
+      if (mounted) {
+        _isMarkingRead = false;
+      }
     }
   }
 
@@ -215,10 +230,13 @@ class _ChatScreenState extends State<ChatScreen> {
   Widget build(BuildContext context) {
     return PopScope(
       canPop: false,
-      onPopInvokedWithResult: (didPop, result) {
+      onPopInvokedWithResult: (didPop, result) async {
         if (didPop) return;
         _chatService.updateTypingStatus(widget.chatRoomId, widget.currentUserId, false);
-        Navigator.of(context).pop();
+        await _markMessagesAsReadSafe(); // 🟢 ব্যাক বাটনে চাপ দিলে Unread ডট ক্লিয়ার করা নিশ্চিতকরণ
+        if (context.mounted) {
+          Navigator.of(context).pop();
+        }
       },
       child: Scaffold(
         backgroundColor: const Color(0xFFF5F7FA),
@@ -231,7 +249,7 @@ class _ChatScreenState extends State<ChatScreen> {
           title: StreamBuilder<Map<String, dynamic>>(
             stream: _chatService.getUserStatusStream(
               widget.receiverId, 
-              widget.isTeacher, // 🟢 FIX: সরাসরি নির্দেশ করা যাতে অটোমেটিক উভয় কালেকশনে রিয়েলটাইম সার্চ হয়
+              widget.isTeacher,
             ),
             builder: (context, statusSnapshot) {
               String displayName = widget.receiverName;
@@ -241,8 +259,7 @@ class _ChatScreenState extends State<ChatScreen> {
               if (statusSnapshot.hasData && statusSnapshot.data != null) {
                 final data = statusSnapshot.data!;
                 isOnline = data['isOnline'] == true;
-                
-                // যদি ব্যাকএন্ড স্ট্রীমে নাম বা ছবি পাওয়া যায় তা ডাইনামিকালি আপডেট করবে
+
                 if (data['fullName'] != null && data['fullName'].toString().isNotEmpty) {
                   displayName = data['fullName'].toString();
                 }
@@ -259,9 +276,12 @@ class _ChatScreenState extends State<ChatScreen> {
                 children: [
                   IconButton(
                     icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
-                    onPressed: () {
+                    onPressed: () async {
                       _chatService.updateTypingStatus(widget.chatRoomId, widget.currentUserId, false);
-                      Navigator.pop(context);
+                      await _markMessagesAsReadSafe();
+                      if (context.mounted) {
+                        Navigator.pop(context);
+                      }
                     },
                   ),
                   CircleAvatar(
@@ -398,6 +418,7 @@ class _ChatScreenState extends State<ChatScreen> {
                             );
                           }
 
+                          // 🟢 ফ্রেম রেন্ডার হবার পর মেথড নিশ্চিত কল করা
                           WidgetsBinding.instance.addPostFrameCallback((_) => _markMessagesAsReadSafe());
 
                           return ListView.builder(
