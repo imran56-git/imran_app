@@ -18,7 +18,7 @@ class ChatListScreen extends StatefulWidget {
   State<ChatListScreen> createState() => _ChatListScreenState();
 }
 
-class _ChatListScreenState extends State<ChatListScreen> {
+class _ChatListScreenState extends State<ChatListScreen> with WidgetsBindingObserver {
   final ChatService _chatService = ChatService();
   final TextEditingController _searchController = TextEditingController();
   String _searchText = '';
@@ -27,6 +27,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this); // 🟢 App Lifecycle Monitor
     _loadCurrentUserName();
     _searchController.addListener(() {
       if (mounted) {
@@ -35,6 +36,14 @@ class _ChatListScreenState extends State<ChatListScreen> {
         });
       }
     });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      // 🟢 ইউজার ব্যাকগ্রাউন্ড থেকে অ্যাপে ফিরলে লিস্ট রিফ্রেশ বা স্টেট আপডেট করার জন্য
+      if (mounted) setState(() {});
+    }
   }
 
   Future<void> _loadCurrentUserName() async {
@@ -59,6 +68,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _searchController.dispose();
     super.dispose();
   }
@@ -226,7 +236,14 @@ class _ChatListScreenState extends State<ChatListScreen> {
                         (chatData['lastMessage'] ?? '').toString();
                     final Timestamp? lastTime =
                         chatData['lastMessageTime'] as Timestamp?;
-                    final int unreadCount = chatData['unreadCount'] ?? 0;
+                    
+                    // 🟢 ইউজার স্পেসিফিক আনরিড কাউন্ট চেক করা (যাতে সঠিক ইউজারের ব্যাজ দেখায়)
+                    int unreadCount = 0;
+                    if (chatData.containsKey('unreadCount_${widget.currentUserId}')) {
+                      unreadCount = chatData['unreadCount_${widget.currentUserId}'] ?? 0;
+                    } else {
+                      unreadCount = chatData['unreadCount'] ?? 0;
+                    }
 
                     if (isGroup) {
                       final String groupName =
@@ -265,16 +282,15 @@ class _ChatListScreenState extends State<ChatListScreen> {
                       }
                       final String receiverId = participantsList.first;
 
-                      // Firestore-এ সরাসরি চ্যাট ডকুমেন্টে যদি Receiver Name সেভ থাকে তা ব্যাকআপ হিসেবে নেওয়া
                       String fallbackName = chatData['receiverName'] ??
                           chatData['teacherName'] ??
                           chatData['studentName'] ??
                           'User';
 
-                      return StreamBuilder<dynamic>(
+                      return StreamBuilder<Map<String, dynamic>>(
                         stream: _chatService.getUserStatusStream(
                           receiverId,
-                          !widget.isTeacher,
+                          !widget.isTeacher, // 🟢 সঠিক কালেকশন থেকে স্ট্যাটাস ও নাম রিড করার জন্য
                         ),
                         builder: (context, userSnapshot) {
                           String finalName = fallbackName;
@@ -282,33 +298,24 @@ class _ChatListScreenState extends State<ChatListScreen> {
                           bool isOnline = false;
 
                           if (userSnapshot.hasData && userSnapshot.data != null) {
-                            final userData = userSnapshot.data;
-                            Map<String, dynamic>? mapData;
+                            final mapData = userSnapshot.data!;
 
-                            if (userData is DocumentSnapshot && userData.exists) {
-                              mapData = userData.data() as Map<String, dynamic>?;
-                            } else if (userData is Map<String, dynamic>) {
-                              mapData = userData;
+                            final extractedName = (mapData['fullName'] ??
+                                    mapData['name'] ??
+                                    mapData['displayName'] ??
+                                    mapData['teacherName'] ??
+                                    mapData['studentName'])
+                                ?.toString();
+
+                            if (extractedName != null && extractedName.isNotEmpty) {
+                              finalName = extractedName;
                             }
 
-                            if (mapData != null) {
-                              final extractedName = (mapData['fullName'] ??
-                                      mapData['name'] ??
-                                      mapData['displayName'] ??
-                                      mapData['teacherName'] ??
-                                      mapData['studentName'])
-                                  ?.toString();
-                              
-                              if (extractedName != null && extractedName.isNotEmpty) {
-                                finalName = extractedName;
-                              }
-
-                              finalImageUrl = (mapData['profileImageUrl'] ??
-                                      mapData['profilePic'] ??
-                                      '')
-                                  .toString();
-                              isOnline = mapData['isOnline'] == true;
-                            }
+                            finalImageUrl = (mapData['profileImageUrl'] ??
+                                    mapData['profilePic'] ??
+                                    '')
+                                .toString();
+                            isOnline = mapData['isOnline'] == true;
                           }
 
                           if (!_matchesSearch(chatData, finalName)) {
