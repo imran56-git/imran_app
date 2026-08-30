@@ -30,11 +30,11 @@ class FollowService {
         requestedAt: Timestamp.now(),
       );
 
-      // Set options merge use simplified status updates
+      // set with merge handles both creation and update safely
       await docRef.set(followModel.toMap(), SetOptions(merge: true));
     } catch (e) {
       log('Error in sendFollowRequest: $e');
-      throw Exception('Failed to send follow request: $e');
+      rethrow;
     }
   }
 
@@ -42,12 +42,16 @@ class FollowService {
   Future<void> cancelRequest(String teacherId, String studentId) async {
     try {
       final String docId = '${teacherId}_$studentId';
-      await _firestore.collection('follow_requests').doc(docId).update({
+      final docRef = _firestore.collection('follow_requests').doc(docId);
+
+      // Using set with merge avoids crash if doc doesn't exist
+      await docRef.set({
         'status': 'cancelled',
         'rejectedAt': Timestamp.now(),
-      });
+      }, SetOptions(merge: true));
     } catch (e) {
       log('Error in cancelRequest: $e');
+      rethrow;
     }
   }
 
@@ -59,12 +63,12 @@ class FollowService {
 
       // 1. Update follow request status
       final requestRef = _firestore.collection('follow_requests').doc(docId);
-      batch.update(requestRef, {
+      batch.set(requestRef, {
         'status': 'accepted',
         'acceptedAt': Timestamp.now(),
-      });
+      }, SetOptions(merge: true));
 
-      // 2. Increment teacher's count (Both followersCount & acceptedStudentsCount)
+      // 2. Increment teacher's count
       final teacherRef = _firestore.collection('teachers').doc(teacherId);
       batch.set(teacherRef, {
         'followersCount': FieldValue.increment(1),
@@ -74,7 +78,7 @@ class FollowService {
       await batch.commit();
     } catch (e) {
       log('Error in acceptRequest: $e');
-      throw Exception('Failed to accept request: $e');
+      rethrow;
     }
   }
 
@@ -82,12 +86,15 @@ class FollowService {
   Future<void> rejectRequest(String teacherId, String studentId) async {
     try {
       final String docId = '${teacherId}_$studentId';
-      await _firestore.collection('follow_requests').doc(docId).update({
+      final docRef = _firestore.collection('follow_requests').doc(docId);
+
+      await docRef.set({
         'status': 'rejected',
         'rejectedAt': Timestamp.now(),
-      });
+      }, SetOptions(merge: true));
     } catch (e) {
       log('Error in rejectRequest: $e');
+      rethrow;
     }
   }
 
@@ -95,8 +102,9 @@ class FollowService {
   Future<void> unfollowTeacher(String teacherId, String studentId) async {
     try {
       final String docId = '${teacherId}_$studentId';
-      
-      final docSnap = await _firestore.collection('follow_requests').doc(docId).get();
+      final requestRef = _firestore.collection('follow_requests').doc(docId);
+
+      final docSnap = await requestRef.get();
       bool wasAccepted = false;
       if (docSnap.exists) {
         wasAccepted = docSnap.data()?['status'] == 'accepted';
@@ -104,9 +112,10 @@ class FollowService {
 
       final batch = _firestore.batch();
 
-      // 1. Delete follow request doc
-      final requestRef = _firestore.collection('follow_requests').doc(docId);
-      batch.delete(requestRef);
+      // 1. Delete follow request doc if exists
+      if (docSnap.exists) {
+        batch.delete(requestRef);
+      }
 
       // 2. Decrement teacher's count if it was accepted previously
       if (wasAccepted) {
@@ -120,6 +129,7 @@ class FollowService {
       await batch.commit();
     } catch (e) {
       log('Error in unfollowTeacher: $e');
+      rethrow;
     }
   }
 
@@ -152,7 +162,7 @@ class FollowService {
         .map((snapshot) => snapshot.docs.length);
   }
 
-  // Check if student is accepted by teacher (for Rating & Review permission)
+  // Check if student is accepted by teacher
   Future<bool> isAcceptedStudent(String teacherId, String studentId) async {
     try {
       final String docId = '${teacherId}_$studentId';
