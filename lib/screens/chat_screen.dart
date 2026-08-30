@@ -43,6 +43,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   final ChatService _chatService = ChatService();
   final ChatMenuService _chatMenuService = ChatMenuService();
   final ScrollController _scrollController = ScrollController();
+  
+  late String _activeChatRoomId;
   Stream<List<MessageModel>>? _messageStream;
 
   String? _replyToMessageId;
@@ -54,7 +56,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this); // 🟢 App Lifecycle Monitor
+    WidgetsBinding.instance.addObserver(this);
+    // প্রাথমিক চ্যাটরুম আইডি সেট
+    _activeChatRoomId = widget.chatRoomId;
     _setupChatRoom();
     _loadCustomTheme();
   }
@@ -62,8 +66,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _chatService.updateTypingStatus(widget.chatRoomId, widget.currentUserId, false);
-    _markMessagesAsReadSafe(); // 🟢 স্ক্রিন বন্ধ করার সময়ও মেসেজ রিড হিসেবে মার্ক করা
+    _chatService.updateTypingStatus(_activeChatRoomId, widget.currentUserId, false);
+    _markMessagesAsReadSafe();
     _scrollController.dispose();
     super.dispose();
   }
@@ -71,10 +75,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      // 🟢 ইউজার অ্যাপে পুনরায় ফিরে আসলে মেসেজগুলো রিড মার্ক করে দেবে
       _markMessagesAsReadSafe();
     } else if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
-      _chatService.updateTypingStatus(widget.chatRoomId, widget.currentUserId, false);
+      _chatService.updateTypingStatus(_activeChatRoomId, widget.currentUserId, false);
     }
   }
 
@@ -83,7 +86,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       String teacherId = widget.isTeacher ? widget.currentUserId : widget.receiverId;
       String studentId = widget.isTeacher ? widget.receiverId : widget.currentUserId;
 
-      await _chatService.createOrInitializeChat(
+      // ফায়ারবেসে চ্যাটরুম তৈরি নিশ্চিত করা এবং সঠিক আসল Chat Room ID নেওয়া
+      String actualRoomId = await _chatService.createOrInitializeChat(
         teacherId: teacherId,
         studentId: studentId,
         teacherName: widget.isTeacher ? 'Me' : widget.receiverName,
@@ -94,17 +98,21 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
       if (mounted) {
         setState(() {
-          _messageStream = _chatService.getMessages(widget.chatRoomId);
+          // যদি রিটার্ন আসা আসল আইডি আগের আইডির চেয়ে আলাদা হয়, তবে আপডেট হবে
+          if (actualRoomId.isNotEmpty) {
+            _activeChatRoomId = actualRoomId;
+          }
+          _messageStream = _chatService.getMessages(_activeChatRoomId);
           _isInitializing = false;
         });
-        _chatService.updateTypingStatus(widget.chatRoomId, widget.currentUserId, false);
+        _chatService.updateTypingStatus(_activeChatRoomId, widget.currentUserId, false);
         _markMessagesAsReadSafe();
       }
     } catch (e) {
       log("Chat setup error: $e");
       if (mounted) {
         setState(() {
-          _messageStream = _chatService.getMessages(widget.chatRoomId);
+          _messageStream = _chatService.getMessages(_activeChatRoomId);
           _isInitializing = false;
         });
       }
@@ -115,7 +123,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     if (_isMarkingRead) return;
     _isMarkingRead = true;
     try {
-      await _chatService.markAsSeen(widget.chatRoomId, widget.currentUserId);
+      await _chatService.markAsSeen(_activeChatRoomId, widget.currentUserId);
     } catch (e) {
       log("Error marking as read: $e");
     } finally {
@@ -129,7 +137,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     final prefs = await SharedPreferences.getInstance();
     if (mounted) {
       setState(() {
-        _customBgImagePath = prefs.getString('chat_theme_${widget.chatRoomId}');
+        _customBgImagePath = prefs.getString('chat_theme_$_activeChatRoomId');
       });
     }
   }
@@ -140,7 +148,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
     if (pickedFile != null) {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('chat_theme_${widget.chatRoomId}', pickedFile.path);
+      await prefs.setString('chat_theme_$_activeChatRoomId', pickedFile.path);
       if (mounted) {
         setState(() {
           _customBgImagePath = pickedFile.path;
@@ -199,7 +207,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           context: context,
           builder: (context) => ClearChatDialog(
             onConfirm: () async {
-              await _chatMenuService.clearChat(widget.chatRoomId);
+              await _chatMenuService.clearChat(_activeChatRoomId);
               if (mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('Chat cleared successfully')),
@@ -215,7 +223,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           context: context,
           builder: (context) => DeleteChatDialog(
             onConfirm: () async {
-              await _chatMenuService.deleteConversation(widget.chatRoomId);
+              await _chatMenuService.deleteConversation(_activeChatRoomId);
               if (mounted) {
                 Navigator.pop(context);
               }
@@ -232,8 +240,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       canPop: false,
       onPopInvokedWithResult: (didPop, result) async {
         if (didPop) return;
-        _chatService.updateTypingStatus(widget.chatRoomId, widget.currentUserId, false);
-        await _markMessagesAsReadSafe(); // 🟢 ব্যাক বাটনে চাপ দিলে Unread ডট ক্লিয়ার করা নিশ্চিতকরণ
+        _chatService.updateTypingStatus(_activeChatRoomId, widget.currentUserId, false);
+        await _markMessagesAsReadSafe();
         if (context.mounted) {
           Navigator.of(context).pop();
         }
@@ -277,7 +285,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                   IconButton(
                     icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
                     onPressed: () async {
-                      _chatService.updateTypingStatus(widget.chatRoomId, widget.currentUserId, false);
+                      _chatService.updateTypingStatus(_activeChatRoomId, widget.currentUserId, false);
                       await _markMessagesAsReadSafe();
                       if (context.mounted) {
                         Navigator.pop(context);
@@ -314,7 +322,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                         StreamBuilder<DocumentSnapshot>(
                           stream: FirebaseFirestore.instance
                               .collection('typing')
-                              .doc(widget.chatRoomId)
+                              .doc(_activeChatRoomId)
                               .snapshots()
                               .handleError((error) => log('Typing Stream Error: $error')),
                           builder: (context, typingSnapshot) {
@@ -418,7 +426,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                             );
                           }
 
-                          // 🟢 ফ্রেম রেন্ডার হবার পর মেথড নিশ্চিত কল করা
                           WidgetsBinding.instance.addPostFrameCallback((_) => _markMessagesAsReadSafe());
 
                           return ListView.builder(
@@ -434,7 +441,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                               return MessageBubble(
                                 message: message,
                                 isMe: isMe,
-                                chatRoomId: widget.chatRoomId,
+                                chatRoomId: _activeChatRoomId,
                                 currentUserId: widget.currentUserId,
                                 onReplyPressed: (repliedMessage) {
                                   setState(() {
@@ -462,7 +469,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                   ],
                 ),
                 child: ChatInputBar(
-                  chatRoomId: widget.chatRoomId,
+                  chatRoomId: _activeChatRoomId,
                   senderId: widget.currentUserId,
                   receiverId: widget.receiverId,
                   replyToMessageId: _replyToMessageId,
@@ -474,7 +481,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                     });
                   },
                   onTypingChanged: (isTyping) {
-                    _chatService.updateTypingStatus(widget.chatRoomId, widget.currentUserId, isTyping);
+                    _chatService.updateTypingStatus(_activeChatRoomId, widget.currentUserId, isTyping);
                   },
                 ),
               ),
