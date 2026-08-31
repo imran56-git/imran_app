@@ -8,7 +8,7 @@ class ChatService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseStorage _storage = FirebaseStorage.instance;
 
-  // 🟢 FIX 1: স্মার্ট প্রোফাইল ফেচিং (সকল কালেকশনে অটোমেটিক সার্চ)
+  // 🟢 স্মার্ট প্রোফাইল ফেচিং (সকল কালেকশনে অটোমেটিক সার্চ)
   Future<Map<String, dynamic>?> getUserProfile(String userId, bool isTeacher) async {
     try {
       final String primaryCollection = isTeacher ? 'teachers' : 'students';
@@ -42,20 +42,21 @@ class ChatService {
     });
   }
 
+  // 🟢 FIX 1: অনলাইন স্ট্যাটাস সিঙ্ক (Set with Merge ব্যবহার নিশ্চিত করা হয়েছে)
   Future<void> updateOnlineStatus(String userId, bool isOnline, bool isTeacher) async {
     try {
       final String collectionPath = isTeacher ? 'teachers' : 'students';
-
-      await _firestore.collection(collectionPath).doc(userId).update({
+      final Map<String, dynamic> statusData = {
         'isOnline': isOnline,
         'status': isOnline ? 'Online' : 'Offline',
         'lastSeen': FieldValue.serverTimestamp(),
-      }).catchError((_) {});
+      };
 
-      await _firestore.collection('users').doc(userId).update({
-        'status': isOnline ? 'Online' : 'Offline',
-        'lastSeen': FieldValue.serverTimestamp(),
-      }).catchError((_) {}); 
+      // ১. মূল কালেকশন সেটিং (ডকুমেন্ট না থাকলেও সেফলি ক্রিয়েট বা মার্চ হবে)
+      await _firestore.collection(collectionPath).doc(userId).set(statusData, SetOptions(merge: true));
+
+      // ২. সাধারণ 'users' কালেকশনেও রিয়েলটাইম সিঙ্ক
+      await _firestore.collection('users').doc(userId).set(statusData, SetOptions(merge: true));
     } catch (e) {
       _handleError('updateOnlineStatus', e);
     }
@@ -72,30 +73,43 @@ class ChatService {
     }
   }
 
-  // 🟢 FIX 2: getUserStatusStream অটোমেটিক টিচার ও স্টুডেন্ট উভয়ের ডাটা স্ট্রিম করবে
+  // 🟢 FIX 2: রিয়েলটাইম ফলব্যাক স্ট্রিম (যে কালেকশনেই থাকুক নিখুঁত স্ট্যাটাস ফেচ করবে)
   Stream<Map<String, dynamic>> getUserStatusStream(String userId, bool isTeacher) {
-    final String collectionPath = isTeacher ? 'teachers' : 'students';
-    
-    return _firestore.collection(collectionPath).doc(userId).snapshots().asyncMap((doc) async {
+    final String primaryCollection = isTeacher ? 'teachers' : 'students';
+
+    return _firestore.collection(primaryCollection).doc(userId).snapshots().asyncMap((doc) async {
       if (doc.exists && doc.data() != null) {
         final data = doc.data()!;
         return {
-          'status': data['status'] ?? 'Offline',
-          'isOnline': data['isOnline'] ?? false,
+          'status': data['status'] ?? (data['isOnline'] == true ? 'Online' : 'Offline'),
+          'isOnline': data['isOnline'] == true,
           'lastSeen': data['lastSeen'] as Timestamp?,
           'fullName': data['fullName'] ?? data['name'] ?? data['displayName'],
           'profileImageUrl': data['profileImageUrl'] ?? data['profilePic'],
         };
       }
 
-      // যদি প্রাইমারি কালেকশনে না পাওয়া যায়, তবে বিপরীত কালেকশন থেকে চেক করবে
+      // প্রাইমারি কালেকশনে না পাওয়া গেলে 'users' থেকে লাইভ ফেচ করবে
+      final userDoc = await _firestore.collection('users').doc(userId).get();
+      if (userDoc.exists && userDoc.data() != null) {
+        final data = userDoc.data()!;
+        return {
+          'status': data['status'] ?? (data['isOnline'] == true ? 'Online' : 'Offline'),
+          'isOnline': data['isOnline'] == true,
+          'lastSeen': data['lastSeen'] as Timestamp?,
+          'fullName': data['fullName'] ?? data['name'] ?? data['displayName'],
+          'profileImageUrl': data['profileImageUrl'] ?? data['profilePic'],
+        };
+      }
+
+      // সেকেন্ডারি কালেকশন চেক
       final String altCollection = isTeacher ? 'students' : 'teachers';
       final altDoc = await _firestore.collection(altCollection).doc(userId).get();
       if (altDoc.exists && altDoc.data() != null) {
         final data = altDoc.data()!;
         return {
-          'status': data['status'] ?? 'Offline',
-          'isOnline': data['isOnline'] ?? false,
+          'status': data['status'] ?? (data['isOnline'] == true ? 'Online' : 'Offline'),
+          'isOnline': data['isOnline'] == true,
           'lastSeen': data['lastSeen'] as Timestamp?,
           'fullName': data['fullName'] ?? data['name'] ?? data['displayName'],
           'profileImageUrl': data['profileImageUrl'] ?? data['profilePic'],
@@ -217,7 +231,6 @@ class ChatService {
         }
       }
 
-      // 🟢 FIX 3: lastMessage এবং lastMessageContent দুটি ফিল্ডই একসাথে আপডেট রাখা হয়েছে
       batch.set(chatRef, {
         'chatId': correctChatId,
         'lastMessage': previewText,
