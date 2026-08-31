@@ -43,7 +43,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   final ChatService _chatService = ChatService();
   final ChatMenuService _chatMenuService = ChatMenuService();
   final ScrollController _scrollController = ScrollController();
-  
+
   late String _activeChatRoomId;
   Stream<List<MessageModel>>? _messageStream;
 
@@ -86,8 +86,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       String teacherId = widget.isTeacher ? widget.currentUserId : widget.receiverId;
       String studentId = widget.isTeacher ? widget.receiverId : widget.currentUserId;
 
-      // ফায়ারবেসে চ্যাটরুম তৈরি নিশ্চিত করা এবং সঠিক আসল Chat Room ID নেওয়া
-      String actualRoomId = await _chatService.createOrInitializeChat(
+      // ফায়ারবেসে চ্যাটরুম তৈরি নিশ্চিত করা
+      await _chatService.createOrInitializeChat(
         teacherId: teacherId,
         studentId: studentId,
         teacherName: widget.isTeacher ? 'Me' : widget.receiverName,
@@ -98,10 +98,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
       if (mounted) {
         setState(() {
-          // যদি রিটার্ন আসা আসল আইডি আগের আইডির চেয়ে আলাদা হয়, তবে আপডেট হবে
-          if (actualRoomId.isNotEmpty) {
-            _activeChatRoomId = actualRoomId;
-          }
           _messageStream = _chatService.getMessages(_activeChatRoomId);
           _isInitializing = false;
         });
