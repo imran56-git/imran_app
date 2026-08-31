@@ -18,11 +18,16 @@ class ChatListScreen extends StatefulWidget {
   State<ChatListScreen> createState() => _ChatListScreenState();
 }
 
-class _ChatListScreenState extends State<ChatListScreen> with WidgetsBindingObserver {
+class _ChatListScreenState extends State<ChatListScreen>
+    with WidgetsBindingObserver {
   final ChatService _chatService = ChatService();
   final TextEditingController _searchController = TextEditingController();
   String _searchText = '';
   String _currentUserName = 'User';
+
+  final Set<String> _selectedChatDocIds = {};
+
+  bool get _isSelectionMode => _selectedChatDocIds.isNotEmpty;
 
   @override
   void initState() {
@@ -41,7 +46,6 @@ class _ChatListScreenState extends State<ChatListScreen> with WidgetsBindingObse
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      // 🟢 ইউজার ব্যাকগ্রাউন্ড থেকে অ্যাপে ফিরলে লিস্ট রিফ্রেশ বা স্টেট আপডেট করার জন্য
       if (mounted) setState(() {});
     }
   }
@@ -71,6 +75,53 @@ class _ChatListScreenState extends State<ChatListScreen> with WidgetsBindingObse
     WidgetsBinding.instance.removeObserver(this);
     _searchController.dispose();
     super.dispose();
+  }
+
+  void _toggleSelection(String docId) {
+    setState(() {
+      if (_selectedChatDocIds.contains(docId)) {
+        _selectedChatDocIds.remove(docId);
+      } else {
+        _selectedChatDocIds.add(docId);
+      }
+    });
+  }
+
+  void _clearSelection() {
+    setState(() {
+      _selectedChatDocIds.clear();
+    });
+  }
+
+  void _confirmDeleteSelected() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Delete Selected Chats?'),
+        content: Text(
+            'Are you sure you want to delete ${_selectedChatDocIds.length} selected chat(s)?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8)),
+            ),
+            onPressed: () {
+              Navigator.pop(ctx);
+              
+              _clearSelection();
+            },
+            child: const Text('Delete', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
   }
 
   String _formatTime(Timestamp? timestamp) {
@@ -139,214 +190,302 @@ class _ChatListScreenState extends State<ChatListScreen> with WidgetsBindingObse
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF4F6F9),
-      body: Column(
-        children: [
-          // ডার্ক ব্লু হেডার
-          Container(
-            padding: EdgeInsets.only(
-              top: MediaQuery.of(context).padding.top + 12,
-              bottom: 16,
-              left: 16,
-              right: 16,
-            ),
-            decoration: const BoxDecoration(
-              color: Color(0xFF1E4C7A),
-              borderRadius: BorderRadius.vertical(
-                bottom: Radius.circular(20),
-              ),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Image.asset(
-                      'assets/logo.png',
-                      height: 30,
-                      errorBuilder: (_, __, ___) => const Icon(
-                        Icons.chat_bubble_rounded,
-                        color: Colors.white,
-                        size: 26,
+    return PopScope(
+      canPop: !_isSelectionMode,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop && _isSelectionMode) {
+          _clearSelection();
+        }
+      },
+      child: Scaffold(
+        backgroundColor: const Color(0xFFF4F6F9),
+        body: Column(
+          children: [
+            _buildTopHeader(),
+           
+            Expanded(
+              child: StreamBuilder<QuerySnapshot>(
+                stream: _chatService.getUserChatsStream(widget.currentUserId),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(
+                      child:
+                          CircularProgressIndicator(color: Color(0xFF1E4C7A)),
+                    );
+                  }
+                  if (snapshot.hasError) {
+                    return const Center(
+                      child: Text(
+                        'Failed to load chats.',
+                        style: TextStyle(fontSize: 14, color: Colors.red),
                       ),
-                    ),
-                    const SizedBox(width: 10),
-                    const Text(
-                      'FYBTT Chats',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 0.5,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 14),
-                _buildSearchBar(),
-              ],
-            ),
-          ),
+                    );
+                  }
+                  if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                    return _buildEmptyState();
+                  }
 
-          // চ্যাট লিস্ট
-          Expanded(
-            child: StreamBuilder<QuerySnapshot>(
-              stream: _chatService.getUserChatsStream(widget.currentUserId),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(
-                    child: CircularProgressIndicator(color: Color(0xFF1E4C7A)),
-                  );
-                }
-                if (snapshot.hasError) {
-                  return const Center(
-                    child: Text(
-                      'Failed to load chats.',
-                      style: TextStyle(fontSize: 14, color: Colors.red),
-                    ),
-                  );
-                }
-                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                  return _buildEmptyState();
-                }
+                  final chatDocs = snapshot.data!.docs;
 
-                final chatDocs = snapshot.data!.docs;
+                  chatDocs.sort((a, b) {
+                    final aData = a.data() as Map<String, dynamic>;
+                    final bData = b.data() as Map<String, dynamic>;
+                    final aTime = aData['lastMessageTime'] as Timestamp?;
+                    final bTime = bData['lastMessageTime'] as Timestamp?;
+                    if (aTime == null && bTime == null) return 0;
+                    if (aTime == null) return 1;
+                    if (bTime == null) return -1;
+                    return bTime.compareTo(aTime);
+                  });
 
-                chatDocs.sort((a, b) {
-                  final aData = a.data() as Map<String, dynamic>;
-                  final bData = b.data() as Map<String, dynamic>;
-                  final aTime = aData['lastMessageTime'] as Timestamp?;
-                  final bTime = bData['lastMessageTime'] as Timestamp?;
-                  if (aTime == null && bTime == null) return 0;
-                  if (aTime == null) return 1;
-                  if (bTime == null) return -1;
-                  return bTime.compareTo(aTime);
-                });
+                  return ListView.builder(
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    physics: const BouncingScrollPhysics(),
+                    itemCount: chatDocs.length,
+                    itemBuilder: (context, index) {
+                      final doc = chatDocs[index];
+                      final chatData = doc.data() as Map<String, dynamic>;
+                      final bool isGroup = chatData['isGroup'] == true;
+                      final String lastMessage =
+                          (chatData['lastMessage'] ?? '').toString();
+                      final Timestamp? lastTime =
+                          chatData['lastMessageTime'] as Timestamp?;
+                      final bool isSelected =
+                          _selectedChatDocIds.contains(doc.id);
 
-                return ListView.builder(
-                  padding: const EdgeInsets.symmetric(vertical: 10),
-                  physics: const BouncingScrollPhysics(),
-                  itemCount: chatDocs.length,
-                  itemBuilder: (context, index) {
-                    final doc = chatDocs[index];
-                    final chatData = doc.data() as Map<String, dynamic>;
-                    final bool isGroup = chatData['isGroup'] == true;
-                    final String lastMessage =
-                        (chatData['lastMessage'] ?? '').toString();
-                    final Timestamp? lastTime =
-                        chatData['lastMessageTime'] as Timestamp?;
-                    
-                    // 🟢 ইউজার স্পেসিফিক আনরিড কাউন্ট চেক করা (যাতে সঠিক ইউজারের ব্যাজ দেখায়)
-                    int unreadCount = 0;
-                    if (chatData.containsKey('unreadCount_${widget.currentUserId}')) {
-                      unreadCount = chatData['unreadCount_${widget.currentUserId}'] ?? 0;
-                    } else {
-                      unreadCount = chatData['unreadCount'] ?? 0;
-                    }
-
-                    if (isGroup) {
-                      final String groupName =
-                          (chatData['groupName'] ?? 'Group Chat').toString();
-                      final String groupImageUrl =
-                          (chatData['groupImage'] ?? '').toString();
-
-                      if (!_matchesSearch(chatData, groupName)) {
-                        return const SizedBox.shrink();
+                      int unreadCount = 0;
+                      if (chatData.containsKey(
+                          'unreadCount_${widget.currentUserId}')) {
+                        unreadCount =
+                            chatData['unreadCount_${widget.currentUserId}'] ??
+                                0;
+                      } else {
+                        unreadCount = chatData['unreadCount'] ?? 0;
                       }
 
-                      return _ChatCard(
-                        name: groupName,
-                        lastMessage: lastMessage,
-                        timeText: _formatTime(lastTime),
-                        unreadCount: unreadCount,
-                        imageUrl: groupImageUrl,
-                        isOnline: false,
-                        isGroup: true,
-                        onTap: () => _openChat(
-                          chatData: chatData,
-                          chatDocId: doc.id,
-                          receiverName: groupName,
-                          receiverId: '',
-                          receiverImage: groupImageUrl,
-                        ),
-                      );
-                    } else {
-                      final List<dynamic> participants =
-                          chatData['participants'] ?? [];
-                      final List<String> participantsList =
-                          List<String>.from(participants);
-                      participantsList.remove(widget.currentUserId);
-                      if (participantsList.isEmpty) {
-                        return const SizedBox.shrink();
-                      }
-                      final String receiverId = participantsList.first;
+                      if (isGroup) {
+                        final String groupName =
+                            (chatData['groupName'] ?? 'Group Chat').toString();
+                        final String groupImageUrl =
+                            (chatData['groupImage'] ?? '').toString();
 
-                      String fallbackName = chatData['receiverName'] ??
-                          chatData['teacherName'] ??
-                          chatData['studentName'] ??
-                          'User';
+                        if (!_matchesSearch(chatData, groupName)) {
+                          return const SizedBox.shrink();
+                        }
 
-                      return StreamBuilder<Map<String, dynamic>>(
-                        stream: _chatService.getUserStatusStream(
-                          receiverId,
-                          !widget.isTeacher, // 🟢 সঠিক কালেকশন থেকে স্ট্যাটাস ও নাম রিড করার জন্য
-                        ),
-                        builder: (context, userSnapshot) {
-                          String finalName = fallbackName;
-                          String finalImageUrl = "";
-                          bool isOnline = false;
+                        return _ChatCard(
+                          name: groupName,
+                          lastMessage: lastMessage,
+                          timeText: _formatTime(lastTime),
+                          unreadCount: unreadCount,
+                          imageUrl: groupImageUrl,
+                          isOnline: false,
+                          isGroup: true,
+                          isSelected: isSelected,
+                          onLongPress: () => _toggleSelection(doc.id),
+                          onTap: () {
+                            if (_isSelectionMode) {
+                              _toggleSelection(doc.id);
+                            } else {
+                              _openChat(
+                                chatData: chatData,
+                                chatDocId: doc.id,
+                                receiverName: groupName,
+                                receiverId: '',
+                                receiverImage: groupImageUrl,
+                              );
+                            }
+                          },
+                        );
+                      } else {
+                        final List<dynamic> participants =
+                            chatData['participants'] ?? [];
+                        final List<String> participantsList =
+                            List<String>.from(participants);
+                        participantsList.remove(widget.currentUserId);
+                        if (participantsList.isEmpty) {
+                          return const SizedBox.shrink();
+                        }
+                        final String receiverId = participantsList.first;
 
-                          if (userSnapshot.hasData && userSnapshot.data != null) {
-                            final mapData = userSnapshot.data!;
+                        String fallbackName = chatData['receiverName'] ??
+                            chatData['teacherName'] ??
+                            chatData['studentName'] ??
+                            'User';
 
-                            final extractedName = (mapData['fullName'] ??
-                                    mapData['name'] ??
-                                    mapData['displayName'] ??
-                                    mapData['teacherName'] ??
-                                    mapData['studentName'])
-                                ?.toString();
+                        return StreamBuilder<Map<String, dynamic>>(
+                          stream: _chatService.getUserStatusStream(
+                            receiverId,
+                            !widget.isTeacher,
+                          ),
+                          builder: (context, userSnapshot) {
+                            String finalName = fallbackName;
+                            String finalImageUrl = "";
+                            bool isOnline = false;
 
-                            if (extractedName != null && extractedName.isNotEmpty) {
-                              finalName = extractedName;
+                            if (userSnapshot.hasData &&
+                                userSnapshot.data != null) {
+                              final mapData = userSnapshot.data!;
+
+                              final extractedName = (mapData['fullName'] ??
+                                      mapData['name'] ??
+                                      mapData['displayName'] ??
+                                      mapData['teacherName'] ??
+                                      mapData['studentName'])
+                                  ?.toString();
+
+                              if (extractedName != null &&
+                                  extractedName.isNotEmpty) {
+                                finalName = extractedName;
+                              }
+
+                              finalImageUrl = (mapData['profileImageUrl'] ??
+                                      mapData['profilePic'] ??
+                                      '')
+                                  .toString();
+                              isOnline = mapData['isOnline'] == true;
                             }
 
-                            finalImageUrl = (mapData['profileImageUrl'] ??
-                                    mapData['profilePic'] ??
-                                    '')
-                                .toString();
-                            isOnline = mapData['isOnline'] == true;
-                          }
+                            if (!_matchesSearch(chatData, finalName)) {
+                              return const SizedBox.shrink();
+                            }
 
-                          if (!_matchesSearch(chatData, finalName)) {
-                            return const SizedBox.shrink();
-                          }
-
-                          return _ChatCard(
-                            name: finalName,
-                            lastMessage: lastMessage,
-                            timeText: _formatTime(lastTime),
-                            unreadCount: unreadCount,
-                            imageUrl: finalImageUrl,
-                            isOnline: isOnline,
-                            isGroup: false,
-                            onTap: () => _openChat(
-                              chatData: chatData,
-                              chatDocId: doc.id,
-                              receiverName: finalName,
-                              receiverId: receiverId,
-                              receiverImage: finalImageUrl,
-                            ),
-                          );
-                        },
-                      );
-                    }
-                  },
-                );
-              },
+                            return _ChatCard(
+                              name: finalName,
+                              lastMessage: lastMessage,
+                              timeText: _formatTime(lastTime),
+                              unreadCount: unreadCount,
+                              imageUrl: finalImageUrl,
+                              isOnline: isOnline,
+                              isGroup: false,
+                              isSelected: isSelected,
+                              onLongPress: () => _toggleSelection(doc.id),
+                              onTap: () {
+                                if (_isSelectionMode) {
+                                  _toggleSelection(doc.id);
+                                } else {
+                                  _openChat(
+                                    chatData: chatData,
+                                    chatDocId: doc.id,
+                                    receiverName: finalName,
+                                    receiverId: receiverId,
+                                    receiverImage: finalImageUrl,
+                                  );
+                                }
+                              },
+                            );
+                          },
+                        );
+                      }
+                    },
+                  );
+                },
+              ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTopHeader() {
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 250),
+      child: Container(
+        key: ValueKey<bool>(_isSelectionMode),
+        padding: EdgeInsets.only(
+          top: MediaQuery.of(context).padding.top + 12,
+          bottom: 16,
+          left: 16,
+          right: 16,
+        ),
+        decoration: const BoxDecoration(
+          color: Color(0xFF1E4C7A),
+          borderRadius: BorderRadius.vertical(
+            bottom: Radius.circular(20),
           ),
-        ],
+        ),
+        child: _isSelectionMode
+            ? Row(
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.close, color: Colors.white),
+                    onPressed: _clearSelection,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    '${_selectedChatDocIds.length} Selected',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    icon: const Icon(Icons.delete_outline, color: Colors.white),
+                    onPressed: _confirmDeleteSelected,
+                  ),
+                  PopupMenuButton<String>(
+                    icon: const Icon(Icons.more_vert, color: Colors.white),
+                    onSelected: (value) {
+                      if (value == 'clear') _clearSelection();
+                    },
+                    itemBuilder: (context) => [
+                      const PopupMenuItem(
+                        value: 'pin',
+                        child: Row(
+                          children: [
+                            Icon(Icons.push_pin_outlined, color: Colors.black87),
+                            SizedBox(width: 8),
+                            Text('Pin Chats'),
+                          ],
+                        ),
+                      ),
+                      const PopupMenuItem(
+                        value: 'clear',
+                        child: Row(
+                          children: [
+                            Icon(Icons.clear_all, color: Colors.black87),
+                            SizedBox(width: 8),
+                            Text('Deselect All'),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              )
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Image.asset(
+                        'assets/logo.png',
+                        height: 30,
+                        errorBuilder: (_, __, ___) => const Icon(
+                          Icons.chat_bubble_rounded,
+                          color: Colors.white,
+                          size: 26,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      const Text(
+                        'FYBTT Chats',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  _buildSearchBar(),
+                ],
+              ),
       ),
     );
   }
@@ -409,7 +548,9 @@ class _ChatCard extends StatelessWidget {
   final String imageUrl;
   final bool isOnline;
   final bool isGroup;
+  final bool isSelected;
   final VoidCallback onTap;
+  final VoidCallback onLongPress;
 
   const _ChatCard({
     required this.name,
@@ -419,16 +560,25 @@ class _ChatCard extends StatelessWidget {
     required this.imageUrl,
     required this.isOnline,
     required this.isGroup,
+    required this.isSelected,
     required this.onTap,
+    required this.onLongPress,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
       margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: isSelected
+            ? const Color(0xFF1E4C7A).withOpacity(0.08)
+            : Colors.white,
         borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: isSelected ? const Color(0xFF1E4C7A) : Colors.transparent,
+          width: 1.5,
+        ),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.04),
@@ -442,11 +592,12 @@ class _ChatCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         child: ListTile(
           onTap: onTap,
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          onLongPress: onLongPress,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           contentPadding:
               const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
           leading: Stack(
+            alignment: Alignment.center,
             children: [
               CircleAvatar(
                 radius: 26,
@@ -461,7 +612,8 @@ class _ChatCard extends StatelessWidget {
                       )
                     : null,
               ),
-              if (isOnline && !isGroup)
+
+              if (isOnline && !isGroup && !isSelected)
                 Positioned(
                   right: 0,
                   bottom: 0,
@@ -475,6 +627,25 @@ class _ChatCard extends StatelessWidget {
                     ),
                   ),
                 ),
+
+              AnimatedScale(
+                duration: const Duration(milliseconds: 200),
+                scale: isSelected ? 1.0 : 0.0,
+                child: AnimatedOpacity(
+                  duration: const Duration(milliseconds: 200),
+                  opacity: isSelected ? 1.0 : 0.0,
+                  child: Container(
+                    width: 52,
+                    height: 52,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1E4C7A).withOpacity(0.85),
+                      shape: BoxShape.circle,
+                    ),
+                    child:
+                        const Icon(Icons.check, color: Colors.white, size: 26),
+                  ),
+                ),
+              ),
             ],
           ),
           title: Text(
@@ -512,7 +683,7 @@ class _ChatCard extends StatelessWidget {
                       : FontWeight.normal,
                 ),
               ),
-              if (unreadCount > 0) ...[
+              if (unreadCount > 0 && !isSelected) ...[
                 const SizedBox(height: 5),
                 Container(
                   padding:
