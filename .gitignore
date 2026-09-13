@@ -84,3 +84,7 @@ local.properties
 .flutter-plugins
 .flutter-plugins-dependencies
 >>>>>>> d12d8648942cee63aa51dbd4ddeb0e2609699879
+
+# Firebase config
+android/app/google-services.json
+
