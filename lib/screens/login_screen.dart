@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
@@ -56,9 +57,28 @@ class _LoginScreenState extends State<LoginScreen> {
         await _checkAndNavigateUser(user);
       }
     } on FirebaseAuthException catch (e) {
-      _showError(e.message ?? 'Login failed');
+      String errorMessage;
+      switch (e.code) {
+        case 'user-not-found':
+        case 'invalid-email':
+          errorMessage = 'No account found with this email.';
+          break;
+        case 'wrong-password':
+        case 'invalid-credential':
+          errorMessage = 'Incorrect password. Please try again.';
+          break;
+        case 'user-disabled':
+          errorMessage = 'This account has been disabled.';
+          break;
+        case 'too-many-requests':
+          errorMessage = 'Too many failed attempts. Please try again later.';
+          break;
+        default:
+          errorMessage = 'Login failed. Please check your credentials.';
+      }
+      _showError(errorMessage);
     } catch (e) {
-      _showError('Login failed: $e');
+      _showError('Login failed. Please try again.');
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
@@ -91,8 +111,10 @@ class _LoginScreenState extends State<LoginScreen> {
       if (user != null) {
         await _checkAndNavigateUser(user);
       }
+    } on PlatformException catch (_) {
+      _showError('Google sign-in failed. Please try again.');
     } catch (e) {
-      _showError('Google sign-in failed: $e');
+      _showError('Google sign-in failed. Please try again.');
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
@@ -286,7 +308,16 @@ class _LoginScreenState extends State<LoginScreen> {
                                   borderRadius: BorderRadius.circular(12),
                                 ),
                               ),
-                              icon: const GoogleLogoWidget(size: 24),
+                              icon: Image.asset(
+                                'assets/images/google_logo.png',
+                                height: 24,
+                                width: 24,
+                                errorBuilder: (context, error, stackTrace) => const Icon(
+                                  Icons.g_mobiledata,
+                                  size: 30,
+                                  color: Colors.red,
+                                ),
+                              ),
                               label: const Text(
                                 'Continue with Google',
                                 style: TextStyle(fontSize: 16, color: Colors.black87, fontWeight: FontWeight.bold),
@@ -302,56 +333,4 @@ class _LoginScreenState extends State<LoginScreen> {
       ),
     );
   }
-}
-
-class GoogleLogoWidget extends StatelessWidget {
-  final double size;
-  const GoogleLogoWidget({super.key, this.size = 24});
-
-  @override
-  Widget build(BuildContext context) {
-    return CustomPaint(
-      size: Size(size, size),
-      painter: GoogleLogoPainter(),
-    );
-  }
-}
-
-class GoogleLogoPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final double w = size.width;
-    final double h = size.height;
-
-    final Paint paint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = w * 0.22
-      ..strokeCap = StrokeCap.butt;
-
-    final Rect rect = Rect.fromLTWH(w * 0.11, h * 0.11, w * 0.78, h * 0.78);
-
-    paint.color = const Color(0xFF4285F4);
-    canvas.drawArc(rect, -0.6, 1.8, false, paint);
-
-    paint.color = const Color(0xFF34A853);
-    canvas.drawArc(rect, 1.2, 1.6, false, paint);
-
-    paint.color = const Color(0xFFFBBC05);
-    canvas.drawArc(rect, 2.8, 1.0, false, paint);
-
-    paint.color = const Color(0xEA4235FF);
-    canvas.drawArc(rect, 3.8, 1.8, false, paint);
-
-    final Paint barPaint = Paint()
-      ..color = const Color(0xFF4285F4)
-      ..style = PaintingStyle.fill;
-
-    canvas.drawRect(
-      Rect.fromLTWH(w * 0.45, h * 0.4, w * 0.48, h * 0.2),
-      barPaint,
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
