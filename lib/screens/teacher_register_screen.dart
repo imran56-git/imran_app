@@ -24,6 +24,10 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
   final _phoneController = TextEditingController();
   final _locationController = TextEditingController();
   final _usernameController = TextEditingController();
+  
+  // নতুন দুটি কন্ট্রোলার
+  final _tuitionNameController = TextEditingController();
+  final _experienceController = TextEditingController();
 
   List<String> _selectedSubjects = [];
   File? _profileImage;
@@ -53,6 +57,8 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
     _phoneController.dispose();
     _locationController.dispose();
     _usernameController.dispose();
+    _tuitionNameController.dispose();
+    _experienceController.dispose();
     super.dispose();
   }
 
@@ -135,7 +141,6 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
 
       final String uid = userCredential.user!.uid;
 
-      // ছবি সিলেক্ট করা থাকলে আপলোড হবে, না থাকলে খালি স্ট্রিং স্টোর হবে
       String profileUrl = "";
       if (_profileImage != null) {
         try {
@@ -163,12 +168,15 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
         }
       }
 
+      // ফায়ারবেসে সকল ফিল্ড সেভ করা হচ্ছে (নতুন দুটি ফিল্ডসহ)
       await FirebaseFirestore.instance.collection('teachers').doc(uid).set({
         'uid': uid,
         'username': _usernameController.text.trim(),
         'name': _nameController.text.trim(),
         'email': _emailController.text.trim(),
         'phone': _phoneController.text.trim(),
+        'tuitionName': _tuitionNameController.text.trim(),
+        'experience': _experienceController.text.trim().isEmpty ? '0' : _experienceController.text.trim(),
         'teachingLocation': _locationController.text.trim(),
         'subjects': _selectedSubjects,
         'profileUrl': profileUrl,
@@ -191,6 +199,7 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
           context: context,
           barrierDismissible: false,
           builder: (ctx) => AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
             title: const Text("Verify Your Email"),
             content: const Text("A verification link has been sent to your email. Please check your inbox and verify to login."),
             actions: [
@@ -199,7 +208,7 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
                   Navigator.pop(ctx);
                   Navigator.pop(context);
                 },
-                child: const Text("OK"),
+                child: const Text("OK", style: TextStyle(fontWeight: FontWeight.bold)),
               )
             ],
           ),
@@ -221,11 +230,37 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
     return null;
   }
 
+  InputDecoration _buildInputDecoration(String label, IconData icon, {Widget? suffix}) {
+    return InputDecoration(
+      labelText: label,
+      prefixIcon: Icon(icon, color: Colors.blueAccent),
+      suffixIcon: suffix,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: Colors.grey.shade300),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: Colors.blueAccent, width: 2),
+      ),
+      filled: true,
+      fillColor: Colors.grey.shade50,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("Teacher Registration")),
-      body: _isLoading 
+      backgroundColor: const Color(0xFFF4F6F9),
+      appBar: AppBar(
+        title: const Text("Teacher Registration", style: TextStyle(fontWeight: FontWeight.bold)),
+        elevation: 0,
+        backgroundColor: Colors.white,
+        foregroundColor: Colors.black87,
+      ),
+      body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : SingleChildScrollView(
               padding: const EdgeInsets.all(16),
@@ -233,71 +268,98 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
                 key: _formKey,
                 child: Column(
                   children: [
+                    // প্রফাইল ফোটো এবং পার্সোনাল ইনফরমেশন কার্ড
                     Card(
-                      elevation: 4,
+                      elevation: 2,
+                      shadowColor: Colors.black12,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                       child: Padding(
-                        padding: const EdgeInsets.all(16.0),
+                        padding: const EdgeInsets.all(20.0),
                         child: Column(
                           children: [
                             GestureDetector(
                               onTap: () => _pickImage((f) => setState(() => _profileImage = f)),
-                              child: CircleAvatar(
-                                radius: 50, 
-                                backgroundImage: _profileImage != null ? FileImage(_profileImage!) : null, 
-                                child: _profileImage == null ? const Icon(Icons.camera_alt, size: 50) : null
+                              child: Stack(
+                                children: [
+                                  CircleAvatar(
+                                    radius: 52,
+                                    backgroundColor: Colors.blue.shade100,
+                                    backgroundImage: _profileImage != null ? FileImage(_profileImage!) : null,
+                                    child: _profileImage == null
+                                        ? const Icon(Icons.person, size: 55, color: Colors.blueAccent)
+                                        : null,
+                                  ),
+                                  Positioned(
+                                    bottom: 0,
+                                    right: 0,
+                                    child: CircleAvatar(
+                                      radius: 18,
+                                      backgroundColor: Colors.blueAccent,
+                                      child: const Icon(Icons.camera_alt, size: 18, color: Colors.white),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
-                            const SizedBox(height: 16),
+                            const SizedBox(height: 20),
                             TextFormField(
-                              controller: _nameController, 
-                              decoration: const InputDecoration(labelText: 'Full Name', border: OutlineInputBorder(), floatingLabelBehavior: FloatingLabelBehavior.auto),
+                              controller: _nameController,
+                              decoration: _buildInputDecoration('Full Name', Icons.person_outline),
                               validator: (val) => _validateField(val, "Full Name"),
                             ),
-                            const SizedBox(height: 10),
+                            const SizedBox(height: 14),
                             TextFormField(
                               controller: _usernameController,
-                              decoration: const InputDecoration(
-                                labelText: 'User ID',
-                                border: OutlineInputBorder(),
-                              ),
-                              validator: (value){
-                                if(value == null || value.trim().isEmpty){
+                              decoration: _buildInputDecoration('User ID', Icons.alternate_email),
+                              validator: (value) {
+                                if (value == null || value.trim().isEmpty) {
                                   return "User ID required";
                                 }
                                 return null;
                               },
                             ),
-                            const SizedBox(height: 10),
+                            const SizedBox(height: 14),
                             TextFormField(
-                              controller: _emailController, 
+                              controller: _emailController,
                               keyboardType: TextInputType.emailAddress,
-                              decoration: const InputDecoration(labelText: 'Email Address', border: OutlineInputBorder(), floatingLabelBehavior: FloatingLabelBehavior.auto),
+                              decoration: _buildInputDecoration('Email Address', Icons.email_outlined),
                               validator: (val) => _validateField(val, "Email Address"),
                             ),
-                            const SizedBox(height: 10),
+                            const SizedBox(height: 14),
                             TextFormField(
-                              controller: _passwordController, 
-                              obscureText: true, 
-                              decoration: const InputDecoration(labelText: 'Password', border: OutlineInputBorder(), floatingLabelBehavior: FloatingLabelBehavior.auto),
+                              controller: _passwordController,
+                              obscureText: true,
+                              decoration: _buildInputDecoration('Password', Icons.lock_outline),
                               validator: (val) => _validateField(val, "Password"),
                             ),
-                            const SizedBox(height: 10),
+                            const SizedBox(height: 14),
                             TextFormField(
-                              controller: _phoneController, 
+                              controller: _phoneController,
                               keyboardType: TextInputType.phone,
-                              decoration: const InputDecoration(labelText: 'Phone Number', border: OutlineInputBorder(), floatingLabelBehavior: FloatingLabelBehavior.auto),
+                              decoration: _buildInputDecoration('Phone Number', Icons.phone_outlined),
                               validator: (val) => _validateField(val, "Phone Number"),
                             ),
-                            const SizedBox(height: 10),
+                            const SizedBox(height: 14),
+                            // নতুন টিউশন/ইনস্টিটিউট নাম
+                            TextFormField(
+                              controller: _tuitionNameController,
+                              decoration: _buildInputDecoration('Tuition / Institute Name', Icons.school_outlined),
+                            ),
+                            const SizedBox(height: 14),
+                            // নতুন অভিজ্ঞতা (Experience)
+                            TextFormField(
+                              controller: _experienceController,
+                              keyboardType: TextInputType.number,
+                              decoration: _buildInputDecoration('Teaching Experience (in Years)', Icons.work_outline),
+                            ),
+                            const SizedBox(height: 14),
                             TextFormField(
                               controller: _locationController,
-                              decoration: InputDecoration(
-                                labelText: 'Teaching Location',
-                                border: const OutlineInputBorder(),
-                                floatingLabelBehavior: FloatingLabelBehavior.auto,
-                                suffixIcon: IconButton(
-                                  icon: const Icon(Icons.my_location),
+                              decoration: _buildInputDecoration(
+                                'Teaching Location',
+                                Icons.location_on_outlined,
+                                suffix: IconButton(
+                                  icon: const Icon(Icons.my_location, color: Colors.blueAccent),
                                   onPressed: _getCurrentLocation,
                                 ),
                               ),
@@ -307,61 +369,151 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
                       ),
                     ),
                     const SizedBox(height: 16),
+                    
+                    // বিষয় নির্বাচন (Subjects Selection Card)
                     Card(
-                      elevation: 4,
+                      elevation: 2,
+                      shadowColor: Colors.black12,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                       child: Padding(
                         padding: const EdgeInsets.all(16.0),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text("Select Subjects:", style: TextStyle(fontWeight: FontWeight.bold)),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                const Text(
+                                  "Select Subjects",
+                                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: Colors.blue.shade50,
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Text(
+                                    "${_selectedSubjects.length} Selected",
+                                    style: const TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold, fontSize: 12),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
                             Wrap(
                               spacing: 8,
-                              children: _allSubjects.map((s) => FilterChip(
-                                label: Text(s),
-                                selected: _selectedSubjects.contains(s),
-                                onSelected: (val) => setState(() => val ? _selectedSubjects.add(s) : _selectedSubjects.remove(s)),
-                              )).toList(),
+                              runSpacing: 4,
+                              children: _allSubjects.map((s) {
+                                final isSelected = _selectedSubjects.contains(s);
+                                return FilterChip(
+                                  label: Text(s),
+                                  selected: isSelected,
+                                  selectedColor: Colors.blueAccent.withOpacity(0.2),
+                                  checkmarkColor: Colors.blueAccent,
+                                  labelStyle: TextStyle(
+                                    color: isSelected ? Colors.blueAccent : Colors.black87,
+                                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                    side: BorderSide(
+                                      color: isSelected ? Colors.blueAccent : Colors.grey.shade300,
+                                    ),
+                                  ),
+                                  onSelected: (val) => setState(() {
+                                    val ? _selectedSubjects.add(s) : _selectedSubjects.remove(s);
+                                  }),
+                                );
+                              }).toList(),
                             ),
                           ],
                         ),
                       ),
                     ),
-                    ListTile(
-                      title: const Text("Upload Qualification Certificate (Optional)"),
-                      trailing: IconButton(icon: const Icon(Icons.upload_file), onPressed: () => _pickImage((f) => setState(() => _qualificationCertificate = f))),
-                      subtitle: Text(_qualificationCertificate != null ? "File Selected" : "No file selected"),
+                    const SizedBox(height: 16),
+
+                    // ডকুমেন্ট আপলোড সেকশন
+                    Card(
+                      elevation: 2,
+                      shadowColor: Colors.black12,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        child: Column(
+                          children: [
+                            ListTile(
+                              leading: const Icon(Icons.workspace_premium, color: Colors.blueAccent),
+                              title: const Text("Qualification Certificate (Optional)", style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+                              trailing: ElevatedButton.icon(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: _qualificationCertificate != null ? Colors.green : Colors.blueAccent,
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                ),
+                                icon: Icon(_qualificationCertificate != null ? Icons.check : Icons.upload_file, size: 16, color: Colors.white),
+                                label: Text(_qualificationCertificate != null ? "Selected" : "Upload", style: const TextStyle(color: Colors.white, fontSize: 12)),
+                                onPressed: () => _pickImage((f) => setState(() => _qualificationCertificate = f)),
+                              ),
+                            ),
+                            const Divider(height: 1),
+                            ListTile(
+                              leading: const Icon(Icons.badge_outlined, color: Colors.blueAccent),
+                              title: const Text("ID Proof - NID/Passport/Aadhaar (Optional)", style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+                              trailing: ElevatedButton.icon(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: _idProofImage != null ? Colors.green : Colors.blueAccent,
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                ),
+                                icon: Icon(_idProofImage != null ? Icons.check : Icons.upload_file, size: 16, color: Colors.white),
+                                label: Text(_idProofImage != null ? "Selected" : "Upload", style: const TextStyle(color: Colors.white, fontSize: 12)),
+                                onPressed: () => _pickImage((f) => setState(() => _idProofImage = f)),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
-                    ListTile(
-                      title: const Text("Upload ID Proof - NID/Passport/Aadhaar (Optional)"),
-                      trailing: IconButton(icon: const Icon(Icons.upload_file), onPressed: () => _pickImage((f) => setState(() => _idProofImage = f))),
-                      subtitle: Text(_idProofImage != null ? "File Selected" : "No file selected"),
-                    ),
+                    const SizedBox(height: 10),
+
+                    // শর্তাবলী চেকবক্স
                     Row(
                       children: [
                         Checkbox(
                           value: _isAccepted,
+                          activeColor: Colors.blueAccent,
                           onChanged: (val) => setState(() => _isAccepted = val!),
                         ),
                         Expanded(
                           child: RichText(
                             text: TextSpan(children: [
-                              const TextSpan(text: "I accept the ", style: TextStyle(color: Colors.black)),
-                              TextSpan(text: "Terms & Conditions", style: const TextStyle(color: Colors.blue), recognizer: TapGestureRecognizer()..onTap = _launchUrl),
+                              const TextSpan(text: "I accept the ", style: TextStyle(color: Colors.black87, fontSize: 13)),
+                              TextSpan(
+                                text: "Terms & Conditions",
+                                style: const TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold, fontSize: 13),
+                                recognizer: TapGestureRecognizer()..onTap = _launchUrl,
+                              ),
                             ]),
                           ),
                         ),
                       ],
                     ),
+                    const SizedBox(height: 10),
+
+                    // সাবমিট বাটন
                     ElevatedButton(
                       onPressed: _isAccepted ? _submit : null,
                       style: ElevatedButton.styleFrom(
-                        minimumSize: const Size(double.infinity, 50),
-                        backgroundColor: _isAccepted ? Colors.blue : Colors.grey,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                        minimumSize: const Size(double.infinity, 52),
+                        backgroundColor: _isAccepted ? Colors.blueAccent : Colors.grey.shade400,
+                        elevation: _isAccepted ? 3 : 0,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                       ),
-                      child: const Text("REGISTER AS TEACHER", style: TextStyle(color: Colors.white)),
+                      child: const Text(
+                        "REGISTER AS TEACHER",
+                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+                      ),
                     ),
+                    const SizedBox(height: 20),
                   ],
                 ),
               ),
