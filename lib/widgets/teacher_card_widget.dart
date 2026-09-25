@@ -4,7 +4,7 @@ import 'teacher_badge_widget.dart';
 class TeacherCardWidget extends StatelessWidget {
   final String teacherId;
   final String name;
-  final String? tuitionName; // টিউশন বা ইন্সটিটিউটের নাম
+  final String? tuitionName;
   final String subject;
   final String profileImageUrl;
   final double latitude;
@@ -15,8 +15,8 @@ class TeacherCardWidget extends StatelessWidget {
   final double rating;
   final String locationText;
   final String calculatedDistance;
-  final String? highestBadgeType; // 'master', 'golden', 'verified' অথবা null/empty
-  final bool isVerified; // ডাইনামিক ভেরিফিকেশন চেক
+  final String? highestBadgeType;
+  final bool isVerified;
   final VoidCallback onChatPressed;
   final VoidCallback? onProfilePressed;
   final VoidCallback? onMapPressed;
@@ -43,7 +43,6 @@ class TeacherCardWidget extends StatelessWidget {
     this.onMapPressed,
   });
 
-  // ইমেজ ফুল-স্ক্রিন প্রিভিউ করার ডায়ালগ উইজেট
   void _openFullImage(BuildContext context) {
     showGeneralDialog(
       context: context,
@@ -98,7 +97,6 @@ class TeacherCardWidget extends StatelessWidget {
     );
   }
 
-  // ব্যাজ দেখাবে কি না যাচাই করার মেথড
   bool get _shouldShowBadge {
     return isVerified || (highestBadgeType != null && highestBadgeType!.isNotEmpty);
   }
@@ -170,7 +168,6 @@ class TeacherCardWidget extends StatelessWidget {
                                       : null,
                                 ),
                               ),
-                              // শুধুমাত্র ভেরিফাইড হলে বা ব্যাজ থাকলে ছবির নিচে ব্যাজ দেখাবে
                               if (_shouldShowBadge)
                                 TeacherBadgeWidget(
                                   badgeType: _effectiveBadgeType,
@@ -206,7 +203,6 @@ class TeacherCardWidget extends StatelessWidget {
                                         ),
                                       ),
                                       const SizedBox(width: 6),
-                                      // শুধুমাত্র ভেরিফাইড হলেই নামের পাশে টেক্সট ব্যাজ দেখাবে
                                       if (_shouldShowBadge)
                                         TeacherBadgeWidget(
                                           badgeType: _effectiveBadgeType,
@@ -234,8 +230,6 @@ class TeacherCardWidget extends StatelessWidget {
                                   ),
                               ],
                             ),
-                            
-                            // টিউশন বা ইনস্টিটিউটের নাম (যদি থাকে)
                             if (tuitionName != null && tuitionName!.trim().isNotEmpty) ...[
                               const SizedBox(height: 2),
                               Row(
@@ -258,14 +252,13 @@ class TeacherCardWidget extends StatelessWidget {
                                 ],
                               ),
                             ],
-
                             const SizedBox(height: 4),
                             Text(
                               subject.isNotEmpty ? subject : 'Subjects N/A',
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
-                                color: Colors.slate.shade700,
+                                color: Colors.grey.shade700,
                                 fontWeight: FontWeight.bold,
                                 fontSize: 13,
                               ),
@@ -344,7 +337,6 @@ class TeacherCardWidget extends StatelessWidget {
                   const SizedBox(height: 14),
                   Row(
                     children: [
-                      // Profile Button
                       Expanded(
                         child: SizedBox(
                           height: 42,
@@ -369,7 +361,6 @@ class TeacherCardWidget extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(width: 12),
-                      // Chat Now Button (Direct Navigation)
                       Expanded(
                         child: SizedBox(
                           height: 42,
