@@ -4,6 +4,7 @@ import 'teacher_badge_widget.dart';
 class TeacherCardWidget extends StatelessWidget {
   final String teacherId;
   final String name;
+  final String? tuitionName; // টিউশন বা ইন্সটিটিউটের নাম
   final String subject;
   final String profileImageUrl;
   final double latitude;
@@ -24,6 +25,7 @@ class TeacherCardWidget extends StatelessWidget {
     super.key,
     required this.teacherId,
     required this.name,
+    this.tuitionName,
     required this.subject,
     required this.profileImageUrl,
     required this.latitude,
@@ -34,7 +36,7 @@ class TeacherCardWidget extends StatelessWidget {
     required this.rating,
     required this.locationText,
     required this.calculatedDistance,
-    this.highestBadgeType, // ডিফল্ট 'verified' সরাতে হবে যাতে ভুয়া ব্যাজ না দেখায়
+    this.highestBadgeType,
     this.isVerified = false,
     required this.onChatPressed,
     this.onProfilePressed,
@@ -232,13 +234,38 @@ class TeacherCardWidget extends StatelessWidget {
                                   ),
                               ],
                             ),
+                            
+                            // টিউশন বা ইনস্টিটিউটের নাম (যদি থাকে)
+                            if (tuitionName != null && tuitionName!.trim().isNotEmpty) ...[
+                              const SizedBox(height: 2),
+                              Row(
+                                children: [
+                                  const Icon(Icons.school_outlined,
+                                      size: 14, color: themeColor),
+                                  const SizedBox(width: 4),
+                                  Expanded(
+                                    child: Text(
+                                      tuitionName!,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        color: themeColor,
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 12.5,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+
                             const SizedBox(height: 4),
                             Text(
                               subject.isNotEmpty ? subject : 'Subjects N/A',
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: themeColor,
+                              style: TextStyle(
+                                color: Colors.slate.shade700,
                                 fontWeight: FontWeight.bold,
                                 fontSize: 13,
                               ),
