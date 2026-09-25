@@ -1,4 +1,4 @@
-import 'dart:io';
+ooimport 'dart:io';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
@@ -23,9 +23,6 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
   final _passwordController = TextEditingController();
   final _phoneController = TextEditingController();
   final _locationController = TextEditingController();
-  final _usernameController = TextEditingController();
-  
-  // নতুন দুটি কন্ট্রোলার
   final _tuitionNameController = TextEditingController();
   final _experienceController = TextEditingController();
 
@@ -56,7 +53,6 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
     _passwordController.dispose();
     _phoneController.dispose();
     _locationController.dispose();
-    _usernameController.dispose();
     _tuitionNameController.dispose();
     _experienceController.dispose();
     super.dispose();
@@ -81,21 +77,14 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
       final position = await LocationService.getCurrentLocation();
       _locationController.text = "${position.latitude}, ${position.longitude}";
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Location error: $e")),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Location error: $e"), backgroundColor: Colors.red),
+        );
+      }
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
-  }
-
-  Future<bool> _checkUserIdExists(String userId) async {
-    final result = await FirebaseFirestore.instance
-        .collection('users')
-        .where('username', isEqualTo: userId)
-        .get();
-
-    return result.docs.isNotEmpty;
   }
 
   Future<String> _processAndUpload(File file, String path) async {
@@ -107,15 +96,10 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
   }
 
   Future<void> _submit() async {
-    if (!_formKey.currentState!.validate()) return;
-
-    final userId = _usernameController.text.trim().toLowerCase();
-    final exists = await _checkUserIdExists(userId);
-
-    if (exists) {
+    if (!_formKey.currentState!.validate()) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text("User ID already exists"),
+          content: Text("Please fill all required fields correctly."),
           backgroundColor: Colors.red,
         ),
       );
@@ -124,7 +108,10 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
 
     if (_selectedSubjects.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select at least one subject.')),
+        const SnackBar(
+          content: Text('Please select at least one subject.'),
+          backgroundColor: Colors.red,
+        ),
       );
       return;
     }
@@ -168,10 +155,8 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
         }
       }
 
-      // ফায়ারবেসে সকল ফিল্ড সেভ করা হচ্ছে (নতুন দুটি ফিল্ডসহ)
       await FirebaseFirestore.instance.collection('teachers').doc(uid).set({
         'uid': uid,
-        'username': _usernameController.text.trim(),
         'name': _nameController.text.trim(),
         'email': _emailController.text.trim(),
         'phone': _phoneController.text.trim(),
@@ -189,7 +174,7 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
 
       await FirebaseFirestore.instance.collection('users').doc(uid).set({
         'uid': uid,
-        'username': userId,
+        'email': _emailController.text.trim(),
         'role': 'teacher',
         'createdAt': FieldValue.serverTimestamp(),
       });
@@ -214,13 +199,58 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
           ),
         );
       }
+    } on FirebaseAuthException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.message ?? "Registration failed. Please try again."),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString())),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Error: ${e.toString()}"),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  String? _validateEmail(String? val) {
+    if (val == null || val.trim().isEmpty) {
+      return "Email Address is required";
+    }
+    final emailRegExp = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
+    if (!emailRegExp.hasMatch(val.trim())) {
+      return "Please enter a valid email address";
+    }
+    return null;
+  }
+
+  String? _validatePassword(String? val) {
+    if (val == null || val.trim().isEmpty) {
+      return "Password is required";
+    }
+    if (val.trim().length < 6) {
+      return "Password must be at least 6 characters long";
+    }
+    return null;
+  }
+
+  String? _validatePhone(String? val) {
+    if (val == null || val.trim().isEmpty) {
+      return "Phone Number is required";
+    }
+    if (val.trim().length < 10) {
+      return "Please enter a valid phone number";
+    }
+    return null;
   }
 
   String? _validateField(String? val, String fieldName) {
@@ -245,6 +275,14 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
         borderRadius: BorderRadius.circular(12),
         borderSide: const BorderSide(color: Colors.blueAccent, width: 2),
       ),
+      errorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: Colors.red, width: 1.5),
+      ),
+      focusedErrorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: Colors.red, width: 2),
+      ),
       filled: true,
       fillColor: Colors.grey.shade50,
     );
@@ -266,9 +304,9 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
               padding: const EdgeInsets.all(16),
               child: Form(
                 key: _formKey,
+                autovalidateMode: AutovalidateMode.onUserInteraction,
                 child: Column(
                   children: [
-                    // প্রফাইল ফোটো এবং পার্সোনাল ইনফরমেশন কার্ড
                     Card(
                       elevation: 2,
                       shadowColor: Colors.black12,
@@ -309,44 +347,31 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
                             ),
                             const SizedBox(height: 14),
                             TextFormField(
-                              controller: _usernameController,
-                              decoration: _buildInputDecoration('User ID', Icons.alternate_email),
-                              validator: (value) {
-                                if (value == null || value.trim().isEmpty) {
-                                  return "User ID required";
-                                }
-                                return null;
-                              },
-                            ),
-                            const SizedBox(height: 14),
-                            TextFormField(
                               controller: _emailController,
                               keyboardType: TextInputType.emailAddress,
                               decoration: _buildInputDecoration('Email Address', Icons.email_outlined),
-                              validator: (val) => _validateField(val, "Email Address"),
+                              validator: _validateEmail,
                             ),
                             const SizedBox(height: 14),
                             TextFormField(
                               controller: _passwordController,
                               obscureText: true,
                               decoration: _buildInputDecoration('Password', Icons.lock_outline),
-                              validator: (val) => _validateField(val, "Password"),
+                              validator: _validatePassword,
                             ),
                             const SizedBox(height: 14),
                             TextFormField(
                               controller: _phoneController,
                               keyboardType: TextInputType.phone,
                               decoration: _buildInputDecoration('Phone Number', Icons.phone_outlined),
-                              validator: (val) => _validateField(val, "Phone Number"),
+                              validator: _validatePhone,
                             ),
                             const SizedBox(height: 14),
-                            // নতুন টিউশন/ইনস্টিটিউট নাম
                             TextFormField(
                               controller: _tuitionNameController,
                               decoration: _buildInputDecoration('Tuition / Institute Name', Icons.school_outlined),
                             ),
                             const SizedBox(height: 14),
-                            // নতুন অভিজ্ঞতা (Experience)
                             TextFormField(
                               controller: _experienceController,
                               keyboardType: TextInputType.number,
@@ -363,14 +388,14 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
                                   onPressed: _getCurrentLocation,
                                 ),
                               ),
+                              validator: (val) => _validateField(val, "Teaching Location"),
                             ),
                           ],
                         ),
                       ),
                     ),
                     const SizedBox(height: 16),
-                    
-                    // বিষয় নির্বাচন (Subjects Selection Card)
+
                     Card(
                       elevation: 2,
                       shadowColor: Colors.black12,
@@ -433,7 +458,6 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
                     ),
                     const SizedBox(height: 16),
 
-                    // ডকুমেন্ট আপলোড সেকশন
                     Card(
                       elevation: 2,
                       shadowColor: Colors.black12,
@@ -475,7 +499,6 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
                     ),
                     const SizedBox(height: 10),
 
-                    // শর্তাবলী চেকবক্স
                     Row(
                       children: [
                         Checkbox(
@@ -499,7 +522,6 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
                     ),
                     const SizedBox(height: 10),
 
-                    // সাবমিট বাটন
                     ElevatedButton(
                       onPressed: _isAccepted ? _submit : null,
                       style: ElevatedButton.styleFrom(
