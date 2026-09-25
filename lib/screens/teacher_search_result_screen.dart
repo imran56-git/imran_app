@@ -58,6 +58,31 @@ class TeacherSearchResultScreen extends StatelessWidget {
     }
   }
 
+  /// Safe helper to extract latitude and longitude from Firestore document
+  Map<String, double> _extractCoordinates(Map<String, dynamic> data) {
+    double? lat = double.tryParse(data['latitude']?.toString() ?? '');
+    double? lng = double.tryParse(data['longitude']?.toString() ?? '');
+
+    // Parse "lat, lng" string from teachingLocation if explicit fields aren't found
+    if ((lat == null || lng == null) && data['teachingLocation'] != null) {
+      final parts = data['teachingLocation'].toString().split(',');
+      if (parts.length == 2) {
+        lat = double.tryParse(parts[0].trim());
+        lng = double.tryParse(parts[1].trim());
+      }
+    }
+
+    if ((lat == null || lng == null) && data['location'] != null) {
+      final parts = data['location'].toString().split(',');
+      if (parts.length == 2) {
+        lat = double.tryParse(parts[0].trim());
+        lng = double.tryParse(parts[1].trim());
+      }
+    }
+
+    return {'lat': lat ?? 0.0, 'lng': lng ?? 0.0};
+  }
+
   @override
   Widget build(BuildContext context) {
     final currentUserId = FirebaseAuth.instance.currentUser?.uid ?? '';
@@ -127,7 +152,10 @@ class TeacherSearchResultScreen extends StatelessWidget {
             final String name = (data['name'] ?? data['displayName'] ?? '')
                 .toString()
                 .toLowerCase();
-            final String location = (data['location'] ?? data['address'] ?? '')
+            final String location = (data['teachingLocation'] ??
+                    data['location'] ??
+                    data['address'] ??
+                    '')
                 .toString()
                 .toLowerCase();
 
@@ -156,11 +184,12 @@ class TeacherSearchResultScreen extends StatelessWidget {
 
             // 2. Safe Coordinates & Radius Match Condition
             bool matchesRadius = true;
-            double? tLat = double.tryParse(data['latitude']?.toString() ?? '');
-            double? tLng = double.tryParse(data['longitude']?.toString() ?? '');
+            final coords = _extractCoordinates(data);
+            double tLat = coords['lat']!;
+            double tLng = coords['lng']!;
 
             // Only apply strict radius check if coordinates exist
-            if (tLat != null && tLng != null && tLat != 0.0 && tLng != 0.0) {
+            if (tLat != 0.0 && tLng != 0.0) {
               double distance =
                   _calculateHaversineDistance(_studentLat, _studentLng, tLat, tLng);
               matchesRadius = distance >= minRadius && distance <= maxRadius;
@@ -186,10 +215,9 @@ class TeacherSearchResultScreen extends StatelessWidget {
               final doc = matchedDocs[index];
               final data = doc.data() as Map<String, dynamic>? ?? {};
 
-              double tLat =
-                  double.tryParse(data['latitude']?.toString() ?? '0.0') ?? 0.0;
-              double tLng =
-                  double.tryParse(data['longitude']?.toString() ?? '0.0') ?? 0.0;
+              final coords = _extractCoordinates(data);
+              double tLat = coords['lat']!;
+              double tLng = coords['lng']!;
 
               String distanceText = "N/A";
               if (tLat != 0.0 && tLng != 0.0) {
@@ -210,10 +238,20 @@ class TeacherSearchResultScreen extends StatelessWidget {
 
               final String teacherName =
                   data['name'] ?? data['displayName'] ?? 'Unknown Teacher';
-              final String profilePic =
-                  data['profileImageUrl'] ?? data['photoUrl'] ?? data['profilePic'] ?? '';
+              
+              final String profilePic = data['profileUrl'] ??
+                  data['profileImageUrl'] ??
+                  data['photoUrl'] ??
+                  data['profilePic'] ??
+                  '';
+
               final bool isVerified = data['isVerified'] ?? false;
               final String? highestBadgeType = data['highestBadgeType'];
+              
+              final String locationDisplay = data['teachingLocation'] ??
+                  data['location'] ??
+                  data['address'] ??
+                  'Location N/A';
 
               return TeacherCardWidget(
                 teacherId: doc.id,
@@ -233,12 +271,11 @@ class TeacherSearchResultScreen extends StatelessWidget {
                     : int.tryParse(data['followersCount']?.toString() ?? '0') ?? 0,
                 rating:
                     double.tryParse(data['rating']?.toString() ?? '0.0') ?? 0.0,
-                locationText:
-                    data['location'] ?? data['address'] ?? 'Location N/A',
+                locationText: locationDisplay,
                 calculatedDistance: distanceText,
                 isVerified: isVerified,
                 highestBadgeType: highestBadgeType,
-                // Chat Button Click Handling (Fixed Parameters)
+                // Chat Button Click Handling
                 onChatPressed: () {
                   final String chatRoomId = _getChatRoomId(currentUserId, doc.id);
                   Navigator.push(
@@ -255,7 +292,7 @@ class TeacherSearchResultScreen extends StatelessWidget {
                     ),
                   );
                 },
-                // Profile Click Handling (Fixed Parameters)
+                // Profile Click Handling
                 onProfilePressed: () {
                   Navigator.push(
                     context,
