@@ -90,19 +90,28 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> with Ticker
       });
   }
 
-  Future fetchStudentData() async {
+  Future<void> fetchStudentData() async {
     final targetUid = widget.currentUserId.isNotEmpty ? widget.currentUserId : (_auth.currentUser?.uid ?? "");
-    if (targetUid.isEmpty) return setState(() => isLoading = false);
+    if (targetUid.isEmpty) {
+      if (mounted) setState(() => isLoading = false);
+      return;
+    }
     try {
-      final data = (await _firestore.collection('students').doc(targetUid).get()).data() ?? {};
+      final docSnap = await _firestore.collection('students').doc(targetUid).get();
+      final data = docSnap.data() ?? {};
       if (!mounted) return;
       setState(() {
         studentData = data;
-        _name.text = data['name'] ?? ''; _phone.text = data['phone'] ?? '';
-        _location.text = data['location'] ?? ''; _bio.text = data['bio'] ?? '';
-        _institution.text = data['institution'] ?? ''; _school.text = data['schoolName'] ?? '';
-        _college.text = data['collegeName'] ?? ''; gender = data['gender'];
-        studentClass = data['studentClass']; selectedSubjects = List<String>.from(data['interestedSubjects'] ?? []);
+        _name.text = data['name'] ?? ''; 
+        _phone.text = data['phone'] ?? '';
+        _location.text = data['location'] ?? ''; 
+        _bio.text = data['bio'] ?? '';
+        _institution.text = data['institution'] ?? ''; 
+        _school.text = data['schoolName'] ?? '';
+        _college.text = data['collegeName'] ?? ''; 
+        gender = data['gender'];
+        studentClass = data['studentClass']; 
+        selectedSubjects = List<String>.from(data['interestedSubjects'] ?? []);
         isLoading = false; 
         _triggerAnimation = !_triggerAnimation; 
       });
@@ -112,7 +121,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> with Ticker
     }
   }
 
-  Future _pickProfileImage() async {
+  Future<void> _pickProfileImage() async {
     final picked = await _picker.pickImage(source: ImageSource.gallery, imageQuality: 70);
     if (picked != null && mounted) setState(() => _selectedImage = File(picked.path));
   }
@@ -172,7 +181,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> with Ticker
     );
   }
 
-  Future _handleDeleteAccount() async {
+  Future<void> _handleDeleteAccount() async {
     _showAnimatedPopup(
       title: 'Delete Account',
       message: 'This will permanently delete your account.\n\nAre you sure?',
@@ -180,7 +189,8 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> with Ticker
       isDelete: true,
       onConfirm: () async {
         try {
-          final user = _auth.currentUser; if (user == null) return;
+          final user = _auth.currentUser; 
+          if (user == null) return;
           final uid = user.uid;
           setState(() => isLoading = true);
 
@@ -193,16 +203,18 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> with Ticker
 
           if (mounted) Navigator.pushNamedAndRemoveUntil(context, '/login', (_) => false);
         } catch (e) {
-          setState(() => isLoading = false);
+          if (mounted) setState(() => isLoading = false);
           if (e is FirebaseAuthException && e.code == 'requires-recent-login') {
             _snack('Security Error: Please logout and sign back in to delete your account.', isError: true);
-          } else { _snack('Delete Failed: $e', isError: true); }
+          } else { 
+            _snack('Delete Failed: $e', isError: true); 
+          }
         }
       },
     );
   }
 
-  Future _handleSignOut() async {
+  Future<void> _handleSignOut() async {
     _showAnimatedPopup(
       title: 'Sign Out',
       message: 'Are you sure you want to sign out?',
@@ -216,20 +228,29 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> with Ticker
     );
   }
 
-  Future updateStudentProfile() async {
-    final uid = _auth.currentUser?.uid; if (uid == null) return;
+  Future<void> updateStudentProfile() async {
+    final uid = _auth.currentUser?.uid; 
+    if (uid == null) return;
     setState(() => isLoading = true);
     try {
       String? imageUrl = studentData?['profileImageUrl'];
       if (_selectedImage != null) {
         final ref = _storage.ref('students/$uid/profile.jpg');
-        await ref.putFile(_selectedImage!); imageUrl = await ref.getDownloadURL();
+        await ref.putFile(_selectedImage!); 
+        imageUrl = await ref.getDownloadURL();
       }
       await _firestore.collection('students').doc(uid).set({
-        'name': _name.text.trim(), 'phone': _phone.text.trim(), 'location': _location.text.trim(),
-        'bio': _bio.text.trim(), 'institution': _institution.text.trim(), 'schoolName': _school.text.trim(),
-        'collegeName': _college.text.trim(), 'gender': gender, 'studentClass': studentClass,
-        'interestedSubjects': selectedSubjects, 'profileImageUrl': imageUrl,
+        'name': _name.text.trim(), 
+        'phone': _phone.text.trim(), 
+        'location': _location.text.trim(),
+        'bio': _bio.text.trim(), 
+        'institution': _institution.text.trim(), 
+        'schoolName': _school.text.trim(),
+        'collegeName': _college.text.trim(), 
+        'gender': gender, 
+        'studentClass': studentClass,
+        'interestedSubjects': selectedSubjects, 
+        'profileImageUrl': imageUrl,
       }, SetOptions(merge: true));
 
       if (mounted) {
@@ -239,7 +260,10 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> with Ticker
       }
       await fetchStudentData();
       _snack('Profile updated successfully', isError: false);
-    } catch (e) { if (mounted) setState(() => isLoading = false); _snack('Update failed: $e', isError: true); }
+    } catch (e) { 
+      if (mounted) setState(() => isLoading = false); 
+      _snack('Update failed: $e', isError: true); 
+    }
   }
 
   void _showServiceUnavailableDialog() {
@@ -270,7 +294,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> with Ticker
     return (url != null && url.toString().trim().isNotEmpty) ? NetworkImage(url) : null;
   }
 
-  // Apple/macOS Genie (Zoom with Origin) Route Generator (60 FPS)
+  // macOS/Apple Genie Zoom Transition
   Route _createGenieRoute(Widget page, Offset tapPosition) {
     return PageRouteBuilder(
       transitionDuration: const Duration(milliseconds: 380),
@@ -347,16 +371,24 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> with Ticker
           _buildActionHeaderBar(),
         ],
       ),
-      body: isLoading ? const Center(child: CircularProgressIndicator(color: Color(0xFF1E4C7A), strokeWidth: 3.5)) : SingleChildScrollView(
-        physics: const BouncingScrollPhysics(),
-        child: AnimatedSwitcher(
-          duration: const Duration(milliseconds: 350), 
-          child: Column(key: ValueKey(_triggerAnimation), children: [
-            _buildHeader(), 
-            Padding(padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10), child: isEditing ? _buildEditForm() : _buildProfileDetails())
-          ]),
-        ),
-      ),
+      body: isLoading 
+          ? const Center(child: CircularProgressIndicator(color: Color(0xFF1E4C7A), strokeWidth: 3.5)) 
+          : SingleChildScrollView(
+              physics: const BouncingScrollPhysics(),
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 350), 
+                child: Column(
+                  key: ValueKey(_triggerAnimation), 
+                  children: [
+                    _buildHeader(), 
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10), 
+                      child: isEditing ? _buildEditForm() : _buildProfileDetails(),
+                    )
+                  ],
+                ),
+              ),
+            ),
     );
   }
 
@@ -428,7 +460,6 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> with Ticker
           ),
 
         if (!_isMenuExpanded) ...[
-          // নোটিফিকেশন বেল (Genie zoom transition)
           GestureDetector(
             onTapDown: (details) {
               Navigator.push(
@@ -500,225 +531,356 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> with Ticker
     return FadeInDown(
       duration: const Duration(milliseconds: 400),
       child: Container(
-        width: double.infinity, padding: const EdgeInsets.only(bottom: 25, top: 10),
-        decoration: const BoxDecoration(color: Color(0xFF1E4C7A), borderRadius: BorderRadius.only(bottomLeft: Radius.circular(35), bottomRight: Radius.circular(35))),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.center, children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                isOwnProfile ? 'My Profile' : "Student Profile", 
-                style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold, letterSpacing: 0.3)
+        width: double.infinity, 
+        padding: const EdgeInsets.only(bottom: 25, top: 10),
+        decoration: const BoxDecoration(
+          color: Color(0xFF1E4C7A), 
+          borderRadius: BorderRadius.only(bottomLeft: Radius.circular(35), bottomRight: Radius.circular(35)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.center, 
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  isOwnProfile ? 'My Profile' : "Student Profile", 
+                  style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold, letterSpacing: 0.3),
+                ),
               ),
             ),
-          ),
-          const SizedBox(height: 15),
-          Stack(alignment: Alignment.center, children: [
-            CircleAvatar(radius: 52, backgroundColor: const Color(0xFFA2E8DD), backgroundImage: _profileImage, child: _profileImage == null ? const Icon(Icons.person_rounded, size: 60, color: Colors.white) : null),
-            if (isEditing) Positioned(bottom: 0, right: 0, child: InkWell(onTap: _pickProfileImage, child: Container(padding: const EdgeInsets.all(8), decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle, boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 4)]), child: const Icon(Icons.camera_alt_rounded, color: Color(0xFF1E4C7A), size: 18)))),
-          ]),
-          const SizedBox(height: 14),
-          Text(_name.text.isEmpty ? "No Name Added" : _name.text, style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 5),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: Text(_bio.text.isEmpty ? "No Bio Added" : _bio.text, style: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 13), textAlign: TextAlign.center),
-          ),
-          const SizedBox(height: 18),
-
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.08),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: Colors.white.withOpacity(0.15)),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text("REGISTRATION ID / UID", style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 9, fontWeight: FontWeight.bold, letterSpacing: 0.5)),
-                        const SizedBox(height: 2),
-                        Text(
-                          currentUid, style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 0.3),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
+            const SizedBox(height: 15),
+            Stack(
+              alignment: Alignment.center, 
+              children: [
+                CircleAvatar(
+                  radius: 52, 
+                  backgroundColor: const Color(0xFFA2E8DD), 
+                  backgroundImage: _profileImage, 
+                  child: _profileImage == null ? const Icon(Icons.person_rounded, size: 60, color: Colors.white) : null,
+                ),
+                if (isEditing) 
+                  Positioned(
+                    bottom: 0, 
+                    right: 0, 
+                    child: InkWell(
+                      onTap: _pickProfileImage, 
+                      child: Container(
+                        padding: const EdgeInsets.all(8), 
+                        decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle, boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 4)]), 
+                        child: const Icon(Icons.camera_alt_rounded, color: Color(0xFF1E4C7A), size: 18),
+                      ),
                     ),
                   ),
-                  const SizedBox(width: 10),
-                  InkWell(
-                    onTap: () {
-                      Clipboard.setData(ClipboardData(text: currentUid));
-                      _snack("ID Copied to Clipboard!");
-                    },
-                    borderRadius: BorderRadius.circular(8),
-                    child: Container(
-                      padding: const EdgeInsets.all(6),
-                      decoration: BoxDecoration(color: Colors.white.withOpacity(0.12), borderRadius: BorderRadius.circular(8)),
-                      child: const Icon(Icons.copy_all_rounded, color: Color(0xFFA2E8DD), size: 18),
-                    ),
-                  )
-                ],
-              ),
+              ],
             ),
-          )
-        ]),
+            const SizedBox(height: 14),
+            Text(_name.text.isEmpty ? "No Name Added" : _name.text, style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 5),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Text(_bio.text.isEmpty ? "No Bio Added" : _bio.text, style: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 13), textAlign: TextAlign.center),
+            ),
+            const SizedBox(height: 18),
+
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: Colors.white.withOpacity(0.15)),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text("REGISTRATION ID / UID", style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 9, fontWeight: FontWeight.bold, letterSpacing: 0.5)),
+                          const SizedBox(height: 2),
+                          Text(
+                            currentUid, style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 0.3),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    InkWell(
+                      onTap: () {
+                        Clipboard.setData(ClipboardData(text: currentUid));
+                        _snack("ID Copied to Clipboard!");
+                      },
+                      borderRadius: BorderRadius.circular(8),
+                      child: Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(color: Colors.white.withOpacity(0.12), borderRadius: BorderRadius.circular(8)),
+                        child: const Icon(Icons.copy_all_rounded, color: Color(0xFFA2E8DD), size: 18),
+                      ),
+                    )
+                  ],
+                ),
+              ),
+            )
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildCard(IconData icon, String value) => Expanded(
+Widget _buildCard(IconData icon, String value) => Expanded(
     child: Container(
       padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 10, offset: const Offset(0, 4))]),
-      child: Column(children: [Icon(icon, color: const Color(0xFF1E4C7A), size: 24), const SizedBox(height: 6), Text(value, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.black87), textAlign: TextAlign.center, maxLines: 1, overflow: TextOverflow.ellipsis,)]),
+      decoration: BoxDecoration(
+        color: Colors.white, 
+        borderRadius: BorderRadius.circular(16), 
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 10, offset: const Offset(0, 4))],
+      ),
+      child: Column(
+        children: [
+          Icon(icon, color: const Color(0xFF1E4C7A), size: 24), 
+          const SizedBox(height: 6), 
+          Text(value, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.black87), textAlign: TextAlign.center, maxLines: 1, overflow: TextOverflow.ellipsis),
+        ],
+      ),
     ),
   );
 
   Widget _buildProfileDetails() => FadeInUp(
     duration: const Duration(milliseconds: 400),
-    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      const SizedBox(height: 10),
-      Row(children: [_buildCard(Icons.school_rounded, studentClass ?? "Not Added"), const SizedBox(width: 14), _buildCard(Icons.location_on_rounded, _location.text.isEmpty ? "Not Added" : _location.text)]),
-      const SizedBox(height: 25),
-      const Text("Interested Subjects", style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF1B1B1B))),
-      const SizedBox(height: 12),
-      selectedSubjects.isEmpty ? const Text("No Subjects Selected", style: TextStyle(color: Colors.grey, fontSize: 13)) : Wrap(spacing: 8, runSpacing: 8, children: selectedSubjects.map((s) => Container(padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8), decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(10), border: Border.all(color: Colors.grey.shade200)), child: Text(s, style: const TextStyle(fontSize: 13, color: Colors.black87, fontWeight: FontWeight.w600)))).toList()),
-      const SizedBox(height: 25),
-      Container(
-        padding: const EdgeInsets.all(16), decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.grey.withOpacity(0.1))),
-        child: Column(children: [
-          _info(Icons.person_outline_rounded, "Name", _name.text), const Divider(height: 1, color: Color(0xFFF1F3F5)),
-
-          _info(Icons.wc_outlined, "Gender", isOwnProfile ? (gender ?? "Not Added") : "Hidden for Privacy"), const Divider(height: 1, color: Color(0xFFF1F3F5)),
-          _info(Icons.phone_android_rounded, "Phone", isOwnProfile ? _phone.text : "Hidden for Privacy"), const Divider(height: 1, color: Color(0xFFF1F3F5)),
-
-          _info(Icons.school_outlined, "Class/Grade", studentClass ?? "Not Added"), const Divider(height: 1, color: Color(0xFFF1F3F5)), 
-          _info(Icons.history_edu_rounded, "School Name", _school.text), const Divider(height: 1, color: Color(0xFFF1F3F5)),
-          _info(Icons.account_balance_rounded, "College Name", _college.text), const Divider(height: 1, color: Color(0xFFF1F3F5)),
-          _info(Icons.business_rounded, "Tuition Institution", _institution.text), const Divider(height: 1, color: Color(0xFFF1F3F5)),
-          _info(Icons.map_rounded, "Home Location", _location.text), 
-        ]),
-      ),
-      const SizedBox(height: 25),
-    ]),
-  );
-
-Widget _info(IconData icon, String title, String value) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: 12),
-    child: Row(children: [
-      Icon(icon, color: const Color(0xFF1E4C7A), size: 22), 
-      const SizedBox(width: 16), 
-      Expanded( 
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start, 
-          children: [
-            Text(title, style: const TextStyle(color: Colors.grey, fontSize: 11, fontWeight: FontWeight.w500)), 
-            const SizedBox(height: 3), 
-            Text(value.isEmpty ? "Not Added" : value, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.black87))
-          ]
-        ),
-      )
-    ]),
-  );
-
-  Widget _buildEditForm() => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-    const SizedBox(height: 10),
-    _field(_name, "Full Name", Icons.person_rounded), _gap(),
-    _field(_phone, "Phone Number", Icons.phone_rounded, type: TextInputType.phone), _gap(), 
-    _field(_location, "Home Location", Icons.location_on_rounded), _gap(),
-    _dropDown("Select Gender", Icons.people_rounded, gender, ['Male', 'Female'], (v) => setState(() => gender = v)), _gap(),
-    _dropDown("Select Class", Icons.school_rounded, studentClass, classOptions, (v) => setState(() => studentClass = v)), _gap(),
-    _field(_school, "School Name", Icons.school_outlined), _gap(),
-    _field(_college, "College Name", Icons.account_balance_rounded), _gap(),
-    _field(_institution, "Tuition Institution", Icons.business_rounded), _gap(),
-    _field(_bio, "Write Biography", Icons.info_outline_rounded, maxLines: 3),
-    const SizedBox(height: 25),
-    const Text("Interested Subjects", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xFF1B1B1B))),
-    const SizedBox(height: 12),
-
-    Row(
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start, 
       children: [
-        Expanded(
-          child: TextField(
-            controller: _customSubjectController,
-            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
-            decoration: InputDecoration(
-              hintText: "Enter Custom Subject (e.g., Bengali)",
-              filled: true, fillColor: Colors.white,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade200)),
-              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade200)),
-              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFF1E4C7A), width: 1.5)),
-            ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            _buildCard(Icons.school_rounded, studentClass ?? "Not Added"), 
+            const SizedBox(width: 14), 
+            _buildCard(Icons.location_on_rounded, _location.text.isEmpty ? "Not Added" : _location.text),
+          ],
+        ),
+        const SizedBox(height: 25),
+        const Text("Interested Subjects", style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF1B1B1B))),
+        const SizedBox(height: 12),
+        selectedSubjects.isEmpty 
+            ? const Text("No Subjects Selected", style: TextStyle(color: Colors.grey, fontSize: 13)) 
+            : Wrap(
+                spacing: 8, 
+                runSpacing: 8, 
+                children: selectedSubjects.map((s) => Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8), 
+                  decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(10), border: Border.all(color: Colors.grey.shade200)), 
+                  child: Text(s, style: const TextStyle(fontSize: 13, color: Colors.black87, fontWeight: FontWeight.w600)),
+                )).toList(),
+              ),
+        const SizedBox(height: 25),
+        Container(
+          padding: const EdgeInsets.all(16), 
+          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.grey.withOpacity(0.1))),
+          child: Column(
+            children: [
+              _info(Icons.person_outline_rounded, "Name", _name.text), 
+              const Divider(height: 1, color: Color(0xFFF1F3F5)),
+              _info(Icons.wc_outlined, "Gender", isOwnProfile ? (gender ?? "Not Added") : "Hidden for Privacy"), 
+              const Divider(height: 1, color: Color(0xFFF1F3F5)),
+              _info(Icons.phone_android_rounded, "Phone", isOwnProfile ? _phone.text : "Hidden for Privacy"), 
+              const Divider(height: 1, color: Color(0xFFF1F3F5)),
+              _info(Icons.school_outlined, "Class/Grade", studentClass ?? "Not Added"), 
+              const Divider(height: 1, color: Color(0xFFF1F3F5)), 
+              _info(Icons.history_edu_rounded, "School Name", _school.text), 
+              const Divider(height: 1, color: Color(0xFFF1F3F5)),
+              _info(Icons.account_balance_rounded, "College Name", _college.text), 
+              const Divider(height: 1, color: Color(0xFFF1F3F5)),
+              _info(Icons.business_rounded, "Tuition Institution", _institution.text), 
+              const Divider(height: 1, color: Color(0xFFF1F3F5)),
+              _info(Icons.map_rounded, "Home Location", _location.text), 
+            ],
           ),
         ),
-        const SizedBox(width: 10),
-        SizedBox(
-          height: 48,
-          child: IconButton.filled(
-            style: IconButton.styleFrom(backgroundColor: const Color(0xFF1E4C7A), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-            icon: const Icon(Icons.add, color: Colors.white),
-            onPressed: () {
-              final txt = _customSubjectController.text.trim();
-              if (txt.isNotEmpty) {
-                if (!selectedSubjects.contains(txt)) { setState(() { selectedSubjects.add(txt); }); }
-                _customSubjectController.clear();
-              }
-            },
+        const SizedBox(height: 25),
+      ],
+    ),
+  );
+
+  Widget _info(IconData icon, String title, String value) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 12),
+    child: Row(
+      children: [
+        Icon(icon, color: const Color(0xFF1E4C7A), size: 22), 
+        const SizedBox(width: 16), 
+        Expanded( 
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start, 
+            children: [
+              Text(title, style: const TextStyle(color: Colors.grey, fontSize: 11, fontWeight: FontWeight.w500)), 
+              const SizedBox(height: 3), 
+              Text(value.isEmpty ? "Not Added" : value, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.black87)),
+            ],
           ),
         ),
       ],
     ),
-    const SizedBox(height: 15),
+  );
 
-    Wrap(
-      spacing: 8, runSpacing: 8, 
-      children: [
-        ...subjectOptions.map((subject) => FilterChip(
-          label: Text(subject), 
-          selected: selectedSubjects.contains(subject), 
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-          selectedColor: const Color(0xFFA2E8DD).withOpacity(0.3),
-          checkmarkColor: const Color(0xFF1E4C7A),
-          onSelected: (v) => setState(() { v ? selectedSubjects.add(subject) : selectedSubjects.remove(subject); selectedSubjects = selectedSubjects.toSet().toList(); })
-        )),
-        ...selectedSubjects.where((s) => !subjectOptions.contains(s)).map((customSub) => InputChip(
-          label: Text(customSub),
-          selected: true,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-          selectedColor: const Color(0xFFA2E8DD).withOpacity(0.4),
-          onDeleted: () => setState(() => selectedSubjects.remove(customSub)),
-        )),
-      ]
-    ),
-    const SizedBox(height: 35),
-    Row(children: [
-      Expanded(child: OutlinedButton(style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(48), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))), onPressed: () { setState(() { isEditing = false; _selectedImage = null; _triggerAnimation = !_triggerAnimation; }); _customSubjectController.clear(); fetchStudentData(); }, child: const Text("Cancel"))), 
-      const SizedBox(width: 12), 
-      Expanded(child: ElevatedButton(onPressed: updateStudentProfile, style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1E4C7A), foregroundColor: Colors.white, minimumSize: const Size.fromHeight(48), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))), child: const Text("Save Changes")))
-    ]),
-    const SizedBox(height: 30),
-  ]);
+Widget _buildEditForm() => Column(
+    crossAxisAlignment: CrossAxisAlignment.start, 
+    children: [
+      const SizedBox(height: 10),
+      _field(_name, "Full Name", Icons.person_rounded), 
+      _gap(),
+      _field(_phone, "Phone Number", Icons.phone_rounded, type: TextInputType.phone), 
+      _gap(), 
+      _field(_location, "Home Location", Icons.location_on_rounded), 
+      _gap(),
+      _dropDown("Select Gender", Icons.people_rounded, gender, ['Male', 'Female'], (v) => setState(() => gender = v)), 
+      _gap(),
+      _dropDown("Select Class", Icons.school_rounded, studentClass, classOptions, (v) => setState(() => studentClass = v)), 
+      _gap(),
+      _field(_school, "School Name", Icons.school_outlined), 
+      _gap(),
+      _field(_college, "College Name", Icons.account_balance_rounded), 
+      _gap(),
+      _field(_institution, "Tuition Institution", Icons.business_rounded), 
+      _gap(),
+      _field(_bio, "Write Biography", Icons.info_outline_rounded, maxLines: 3),
+      const SizedBox(height: 25),
+      const Text("Interested Subjects", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xFF1B1B1B))),
+      const SizedBox(height: 12),
 
-  Widget _dropDown(String label, IconData icon, String? value, List<String> items, ValueChanged<String?> onChanged) => DropdownButtonFormField<String>(value: value, decoration: InputDecoration(labelText: label, prefixIcon: Icon(icon, color: const Color(0xFF1E4C7A)), filled: true, fillColor: Colors.white, border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade200)), enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade200))), items: items.map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(), onChanged: onChanged);
+      Row(
+        children: [
+          Expanded(
+            child: TextField(
+              controller: _customSubjectController,
+              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+              decoration: InputDecoration(
+                hintText: "Enter Custom Subject (e.g., Bengali)",
+                filled: true, 
+                fillColor: Colors.white,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade200)),
+                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade200)),
+                focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFF1E4C7A), width: 1.5)),
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          SizedBox(
+            height: 48,
+            child: IconButton.filled(
+              style: IconButton.styleFrom(backgroundColor: const Color(0xFF1E4C7A), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+              icon: const Icon(Icons.add, color: Colors.white),
+              onPressed: () {
+                final txt = _customSubjectController.text.trim();
+                if (txt.isNotEmpty) {
+                  if (!selectedSubjects.contains(txt)) { 
+                    setState(() { selectedSubjects.add(txt); }); 
+                  }
+                  _customSubjectController.clear();
+                }
+              },
+            ),
+          ),
+        ],
+      ),
+      const SizedBox(height: 15),
+
+      Wrap(
+        spacing: 8, 
+        runSpacing: 8, 
+        children: [
+          ...subjectOptions.map((subject) => FilterChip(
+            label: Text(subject), 
+            selected: selectedSubjects.contains(subject), 
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            selectedColor: const Color(0xFFA2E8DD).withOpacity(0.3),
+            checkmarkColor: const Color(0xFF1E4C7A),
+            onSelected: (v) => setState(() { 
+              v ? selectedSubjects.add(subject) : selectedSubjects.remove(subject); 
+              selectedSubjects = selectedSubjects.toSet().toList(); 
+            })
+          )),
+          ...selectedSubjects.where((s) => !subjectOptions.contains(s)).map((customSub) => InputChip(
+            label: Text(customSub),
+            selected: true,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            selectedColor: const Color(0xFFA2E8DD).withOpacity(0.4),
+            onDeleted: () => setState(() => selectedSubjects.remove(customSub)),
+          )),
+        ]
+      ),
+      const SizedBox(height: 35),
+      Row(
+        children: [
+          Expanded(
+            child: OutlinedButton(
+              style: OutlinedButton.styleFrom(
+                minimumSize: const Size.fromHeight(48), 
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              ), 
+              onPressed: () { 
+                setState(() { 
+                  isEditing = false; 
+                  _selectedImage = null; 
+                  _triggerAnimation = !_triggerAnimation; 
+                }); 
+                _customSubjectController.clear(); 
+                fetchStudentData(); 
+              }, 
+              child: const Text("Cancel"),
+            ),
+          ), 
+          const SizedBox(width: 12), 
+          Expanded(
+            child: ElevatedButton(
+              onPressed: updateStudentProfile, 
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF1E4C7A), 
+                foregroundColor: Colors.white, 
+                minimumSize: const Size.fromHeight(48), 
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              ), 
+              child: const Text("Save Changes"),
+            ),
+          )
+        ],
+      ),
+      const SizedBox(height: 30),
+    ],
+  );
+
+Widget _dropDown(String label, IconData icon, String? value, List<String> items, ValueChanged<String?> onChanged) => DropdownButtonFormField<String>(
+    value: value, 
+    decoration: InputDecoration(
+      labelText: label, 
+      prefixIcon: Icon(icon, color: const Color(0xFF1E4C7A)), 
+      filled: true, 
+      fillColor: Colors.white, 
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade200)), 
+      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade200)),
+    ), 
+    items: items.map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(), 
+    onChanged: onChanged,
+  );
 
   Widget _field(TextEditingController c, String lbl, IconData i, {TextInputType type = TextInputType.text, int maxLines = 1}) => TextField(
-    controller: c, keyboardType: type, maxLines: maxLines, 
+    controller: c, 
+    keyboardType: type, 
+    maxLines: maxLines, 
     style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
     decoration: InputDecoration(
-      labelText: lbl, prefixIcon: Icon(i, color: const Color(0xFF1E4C7A)), filled: true, fillColor: Colors.white,
+      labelText: lbl, 
+      prefixIcon: Icon(i, color: const Color(0xFF1E4C7A)), 
+      filled: true, 
+      fillColor: Colors.white,
       border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade200)),
       enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade200)),
       focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFF1E4C7A), width: 1.5)),
-    )
+    ),
   );
 
   Widget _gap() => const SizedBox(height: 15);
