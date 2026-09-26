@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'chat_list_screen.dart';
 import 'search_teacher_screen.dart';
@@ -48,38 +49,69 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
   void _showFilterBottomSheet() {
     showModalBottomSheet(
       context: context,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
       builder: (context) {
-        return Padding(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text(
-                    'Filter Teachers',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1A1C1E)),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.close),
-                    onPressed: () => Navigator.pop(context),
-                  )
-                ],
-              ),
-              const SizedBox(height: 16),
-              const Center(
-                child: Padding(
-                  padding: EdgeInsets.symmetric(vertical: 20),
-                  child: Text('Advanced filters will appear here', style: TextStyle(color: Colors.grey)),
+        return BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+          child: Container(
+            padding: const EdgeInsets.all(24.0),
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black12,
+                  blurRadius: 20,
+                  spreadRadius: 2,
                 ),
-              ),
-            ],
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    margin: const EdgeInsets.only(bottom: 20),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade300,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                ),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'Filter Teachers',
+                      style: TextStyle(
+                        fontSize: 20, 
+                        fontWeight: FontWeight.bold, 
+                        color: Color(0xFF1A1C1E),
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close_rounded),
+                      onPressed: () => Navigator.pop(context),
+                    )
+                  ],
+                ),
+                const SizedBox(height: 20),
+                const Center(
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(vertical: 30),
+                    child: Text(
+                      'Advanced filters will appear here', 
+                      style: TextStyle(color: Colors.grey, fontSize: 15, fontWeight: FontWeight.w500),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+              ],
+            ),
           ),
         );
       },
@@ -97,7 +129,7 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
               SnackBar(
                 content: const Text('All messages marked as read'),
                 behavior: SnackBarBehavior.floating,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               ),
             );
           },
@@ -162,9 +194,14 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
               elevation: 4,  
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
               onPressed: _handleFabPressed,  
-              child: Icon(  
-                _selectedIndex == 0 ? Icons.chat_rounded : Icons.filter_alt_rounded,  
-                color: Colors.white,  
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 250),
+                transitionBuilder: (child, animation) => ScaleTransition(scale: animation, child: child),
+                child: Icon(  
+                  _selectedIndex == 0 ? Icons.chat_rounded : Icons.filter_alt_rounded,  
+                  key: ValueKey<int>(_selectedIndex),
+                  color: Colors.white,  
+                ),
               ),  
             )  
           : null,  
