@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/follow_model.dart';
 import '../services/follow_service.dart';
+import '../screens/student_profile_screen.dart'; // প্রয়োজন অনুযায়ী প্রোফাইল স্ক্রিনের ইম্পোর্ট পাথ ঠিক করে নেবেন
 
 class FollowRequestTile extends StatelessWidget {
   final FollowModel followRequest;
@@ -10,96 +11,142 @@ class FollowRequestTile extends StatelessWidget {
     required this.followRequest,
   });
 
+  void _navigateToStudentProfile(BuildContext context) {
+    if (followRequest.studentId.isEmpty) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => StudentProfileScreen(
+          currentUserId: followRequest.studentId,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final FollowService followService = FollowService();
 
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      padding: const EdgeInsets.all(12),
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.grey.withOpacity(0.1),
-            spreadRadius: 1,
-            blurRadius: 5,
-            offset: const Offset(0, 2),
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
           ),
         ],
+        border: Border.all(
+          color: const Color(0xFF1E4C7A).withOpacity(0.08),
+          width: 1,
+        ),
       ),
       child: Row(
         children: [
-          // Student Profile Photo
-          CircleAvatar(
-            radius: 24,
-            backgroundImage: followRequest.studentPhoto.isNotEmpty
-                ? NetworkImage(followRequest.studentPhoto)
-                as ImageProvider
-                : const AssetImage('assets/images/default_avatar.png'),
+          // Student Profile Photo (Tappable)
+          GestureDetector(
+            onTap: () => _navigateToStudentProfile(context),
+            child: Container(
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: const Color(0xFF1E4C7A).withOpacity(0.2),
+                  width: 1.5,
+                ),
+              ),
+              child: CircleAvatar(
+                radius: 24,
+                backgroundColor: const Color(0xFFEDF4FA),
+                backgroundImage: followRequest.studentPhoto.isNotEmpty
+                    ? NetworkImage(followRequest.studentPhoto) as ImageProvider
+                    : const AssetImage('assets/images/default_avatar.png'),
+                child: followRequest.studentPhoto.isEmpty
+                    ? const Icon(Icons.person, color: Color(0xFF1E4C7A))
+                    : null,
+              ),
+            ),
           ),
           const SizedBox(width: 12),
 
-          // Student Name & Request Time
+          // Student Name & Custom Request Subtitle (Tappable Name)
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  followRequest.studentName,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
+                GestureDetector(
+                  onTap: () => _navigateToStudentProfile(context),
+                  child: Text(
+                    followRequest.studentName,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 15,
+                      color: Color(0xFF1B1B1B),
+                    ),
                   ),
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 3),
                 const Text(
-                  'Wants to follow you',
+                  'wants to become your student',
                   style: TextStyle(
                     color: Colors.grey,
-                    fontSize: 12,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w400,
                   ),
                 ),
               ],
             ),
           ),
+          const SizedBox(width: 8),
 
-          // Accept & Reject Buttons
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Reject Button
-              IconButton(
-                onPressed: () async {
-                  await followService.rejectRequest(
-                    followRequest.teacherId,
-                    followRequest.studentId,
-                  );
-                },
-                icon: const Icon(Icons.close_rounded),
-                color: Colors.red,
-                style: IconButton.styleFrom(
-                  backgroundColor: Colors.red.withOpacity(0.1),
-                ),
+          // Reject Button
+          InkWell(
+            onTap: () async {
+              await followService.rejectRequest(
+                followRequest.teacherId,
+                followRequest.studentId,
+              );
+            },
+            borderRadius: BorderRadius.circular(12),
+            child: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.redAccent.withOpacity(0.1),
+                shape: BoxShape.circle,
               ),
-              const SizedBox(width: 8),
+              child: const Icon(
+                Icons.close_rounded,
+                color: Colors.redAccent,
+                size: 20,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
 
-              // Accept Button
-              IconButton(
-                onPressed: () async {
-                  await followService.acceptRequest(
-                    followRequest.teacherId,
-                    followRequest.studentId,
-                  );
-                },
-                icon: const Icon(Icons.check_rounded),
-                color: Colors.green,
-                style: IconButton.styleFrom(
-                  backgroundColor: Colors.green.withOpacity(0.1),
-                ),
+          // Accept Button
+          InkWell(
+            onTap: () async {
+              await followService.acceptRequest(
+                followRequest.teacherId,
+                followRequest.studentId,
+              );
+            },
+            borderRadius: BorderRadius.circular(12),
+            child: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: const Color(0xFF2E7D32).withOpacity(0.12),
+                shape: BoxShape.circle,
               ),
-            ],
+              child: const Icon(
+                Icons.check_rounded,
+                color: Color(0xFF2E7D32),
+                size: 20,
+              ),
+            ),
           ),
         ],
       ),
