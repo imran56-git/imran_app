@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'chat_list_screen.dart'; 
 import 'teacher_profile_screen.dart'; 
@@ -14,8 +15,12 @@ class TeacherHomeScreen extends StatefulWidget {
   State<TeacherHomeScreen> createState() => _TeacherHomeScreenState();
 }
 
-class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
+class _TeacherHomeScreenState extends State<TeacherHomeScreen> with SingleTickerProviderStateMixin {
   int _selectedIndex = 0;
+  int _previousIndex = 0;
+
+  late AnimationController _animController;
+  late Animation<double> _animation;
 
   List<Widget> get _screens => [
         ChatListScreen(
@@ -25,9 +30,37 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
         TeacherProfileScreen(currentUserId: widget.currentUserId), 
       ];
 
+  @override
+  void initState() {
+    super.initState();
+    _animController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 350),
+    );
+
+    _animation = CurvedAnimation(
+      parent: _animController,
+      curve: Curves.easeInOutCubic,
+    );
+
+    _animController.value = 1.0;
+  }
+
+  @override
+  void dispose() {
+    _animController.dispose();
+    super.dispose();
+  }
+
   void _onTabTapped(int index) {
     if (_selectedIndex == index) return;
-    setState(() => _selectedIndex = index);
+
+    setState(() {
+      _previousIndex = _selectedIndex;
+      _selectedIndex = index;
+    });
+
+    _animController.forward(from: 0.0);
   }
 
   @override
@@ -83,9 +116,33 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
             )
           : null,
 
-      body: IndexedStack(
-        index: _selectedIndex,
-        children: _screens,
+      body: AnimatedBuilder(
+        animation: _animation,
+        builder: (context, child) {
+          double progress = _animation.value;
+          return Stack(
+            children: [
+              // আগের স্ক্রিনের স্ন্যাপশট (পটভূমিতে স্থির ও হালকা ফেড-আউট)
+              if (progress < 1.0)
+                Opacity(
+                  opacity: (1.0 - progress).clamp(0.0, 1.0),
+                  child: Transform.scale(
+                    scale: 1.0 - (progress * 0.05),
+                    child: _screens[_previousIndex],
+                  ),
+                ),
+
+              // নতুন স্ক্রিনের স্মুথ স্লাইড ও ফেড-ইন ট্রানজিশন
+              Opacity(
+                opacity: progress.clamp(0.0, 1.0),
+                child: Transform.translate(
+                  offset: Offset(0, (1.0 - progress) * 20),
+                  child: _screens[_selectedIndex],
+                ),
+              ),
+            ],
+          );
+        },
       ),
 
       floatingActionButton: _selectedIndex == 0 
