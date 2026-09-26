@@ -50,6 +50,8 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
   final TextEditingController _classController = TextEditingController();
   final TextEditingController _bioController = TextEditingController();
   final TextEditingController _subjectSearchController = TextEditingController();
+  // নতুন কন্ট্রোলার: Tuition / Institute Name এর জন্য
+  final TextEditingController _instituteController = TextEditingController();
 
   String? gender;
   List<String> selectedSubjects = [];
@@ -82,6 +84,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
     _classController.dispose();
     _bioController.dispose();
     _subjectSearchController.dispose();
+    _instituteController.dispose(); // ডিসপোজ করা হলো
     super.dispose();
   }
 
@@ -96,6 +99,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
           _phoneController.text = teacherData?['phone'] ?? '';
           _classController.text = teacherData?['class'] ?? '';
           _bioController.text = teacherData?['bio'] ?? '';
+          _instituteController.text = teacherData?['institute'] ?? ''; // ডাটাবেস থেকে ইনস্টিটিউটের নাম আনা
           gender = teacherData?['gender'];
           selectedSubjects = List<String>.from(teacherData?['subjects'] ?? []);
           teacherLocations = List.from(teacherData?['locations'] ?? []);
@@ -190,6 +194,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
         'phone': _phoneController.text.trim(),
         'class': _classController.text.trim(),
         'bio': _bioController.text.trim(),
+        'institute': _instituteController.text.trim(), // ডাটাবেসে ইনস্টিটিউটের নাম সেভ করা
         'gender': gender,
         'profileImageUrl': imageUrl,
         'subjects': selectedSubjects,
@@ -205,6 +210,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
     }
   }
 
+  // পপ-আপ ডায়ালগ (Sign Out / Delete Account এর জন্য)
   void _showAnimatedPopup({
     required String title,
     required String message,
@@ -255,113 +261,167 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
     );
   }
 
+  // নতুন এক্সিট অ্যালার্ট ডায়ালগ (Exit / Cancel বাটনসহ)
+  void _showExitAnimatedPopup() {
+    showGeneralDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: '',
+      transitionDuration: const Duration(milliseconds: 300),
+      pageBuilder: (context, a1, a2) => const SizedBox(),
+      transitionBuilder: (dialogContext, anim, a2, child) {
+        return BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
+          child: ScaleTransition(
+            scale: Tween<double>(begin: 0.85, end: 1.0).animate(CurvedAnimation(parent: anim, curve: Curves.easeOutBack)),
+            child: FadeTransition(
+              opacity: anim,
+              child: AlertDialog(
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                title: const Text("Exit App", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20)),
+                content: const Text("Are you sure you want to exit?", style: TextStyle(fontSize: 15, color: Colors.black87)),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(dialogContext),
+                    child: const Text('Cancel', style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold, fontSize: 15)),
+                  ),
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.redAccent,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                    onPressed: () {
+                      Navigator.pop(dialogContext);
+                      SystemNavigator.pop(); // অ্যাপ থেকে বের হওয়ার কোড
+                    },
+                    child: const Text('Exit', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     double headerHeight = 170.0;
     double profileRadius = 56.0;
     bool canPopScreen = Navigator.canPop(context) && !isOwnProfile;
 
-    return Scaffold(
-      backgroundColor: const Color(0xFFF7F9FC),
-      body: isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : SafeArea(
-              top: false,
-              child: SingleChildScrollView(
-                physics: const BouncingScrollPhysics(),
-                child: Column(
-                  children: [
-                    Stack(
-                      clipBehavior: Clip.none,
-                      alignment: Alignment.center,
-                      children: [
-                        AnimatedBuilder(
-                          animation: _glowAnimation,
-                          builder: (context, child) {
-                            return ClipPath(
-                              clipper: HeaderCurveClipper(),
-                              child: Container(
-                                height: headerHeight,
-                                decoration: BoxDecoration(
-                                  gradient: LinearGradient(
-                                    colors: [Colors.blue[900]!, Colors.blue[700]!],
-                                    begin: Alignment.topLeft,
-                                    end: Alignment.bottomRight,
+    // PopScope দিয়ে ব্যাক প্রেস হ্যান্ডেল করা হয়েছে
+    return PopScope(
+      canPop: canPopScreen,
+      onPopInvoked: (didPop) async {
+        if (didPop) return;
+        // যদি এটি রুট স্ক্রিন হয় (canPopScreen false), তাহলে এক্সিট ডায়ালগ দেখাবে
+        _showExitAnimatedPopup();
+      },
+      child: Scaffold(
+        backgroundColor: const Color(0xFFF7F9FC),
+        body: isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : SafeArea(
+                top: false,
+                child: SingleChildScrollView(
+                  physics: const BouncingScrollPhysics(),
+                  child: Column(
+                    children: [
+                      Stack(
+                        clipBehavior: Clip.none,
+                        alignment: Alignment.center,
+                        children: [
+                          AnimatedBuilder(
+                            animation: _glowAnimation,
+                            builder: (context, child) {
+                              return ClipPath(
+                                clipper: HeaderCurveClipper(),
+                                child: Container(
+                                  height: headerHeight,
+                                  decoration: BoxDecoration(
+                                    gradient: LinearGradient(
+                                      colors: [Colors.blue[900]!, Colors.blue[700]!],
+                                      begin: Alignment.topLeft,
+                                      end: Alignment.bottomRight,
+                                    ),
+                                  ),
+                                  child: Stack(
+                                    children: [
+                                      Positioned(
+                                        top: 40,
+                                        left: 12,
+                                        right: 12,
+                                        child: Row(
+                                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                          children: [
+                                            Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                if (canPopScreen)
+                                                  IconButton(
+                                                    icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
+                                                    onPressed: () => Navigator.pop(context),
+                                                  )
+                                                else
+                                                  const SizedBox(width: 8),
+                                                const Text(
+                                                  'My Profile',
+                                                  style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 20),
+                                                ),
+                                              ],
+                                            ),
+                                            _buildMenu(),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
-                                child: Stack(
-                                  children: [
-                                    Positioned(
-                                      top: 40,
-                                      left: 12,
-                                      right: 12,
-                                      child: Row(
-                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                        children: [
-                                          Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              if (canPopScreen)
-                                                IconButton(
-                                                  icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
-                                                  onPressed: () => Navigator.pop(context),
-                                                )
-                                              else
-                                                const SizedBox(width: 8),
-                                              const Text(
-                                                'My Profile',
-                                                style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 20),
-                                              ),
-                                            ],
-                                          ),
-                                          _buildMenu(),
-                                        ],
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            );
-                          },
-                        ),
-                        Positioned(
-                          top: headerHeight - profileRadius - 10,
-                          child: _buildProfileImage(profileRadius),
-                        ),
-                      ],
-                    ),
-                    SizedBox(height: profileRadius + 12),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: Column(
-                        children: [
-                          _buildNameWithBadge(),
-                          const SizedBox(height: 8),
-
-                          _buildUidIdentityCard(),
-                          const SizedBox(height: 12),
-
-                          _buildRatingSummaryCard(),
-                          const SizedBox(height: 12),
-
-                          if (!isEditing) _buildFollowStats(),
-                          if (!isOwnProfile) const SizedBox(height: 10),
-                          if (!isOwnProfile) _buildFollowButtonWidget(),
-                          if (!isOwnProfile) _buildStudentRatingActionButton(),
-
-                          const SizedBox(height: 20),
-                          isEditing ? _buildEditForm() : _buildViewProfile(),
-                          if (isOwnProfile && !isEditing) _buildDashboardSection(),
-                          if (isOwnProfile && !isEditing) _buildToolsAndPayment(),
-                          if (isEditing) _buildSaveCancelButtons(),
+                              );
+                            },
+                          ),
+                          Positioned(
+                            top: headerHeight - profileRadius - 10,
+                            child: _buildProfileImage(profileRadius),
+                          ),
                         ],
                       ),
-                    ),
-                    const SizedBox(height: 24),
-                  ],
+                      SizedBox(height: profileRadius + 12),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: Column(
+                          children: [
+                            _buildNameWithBadge(),
+                            const SizedBox(height: 8),
+      
+                            _buildUidIdentityCard(),
+                            const SizedBox(height: 12),
+      
+                            _buildRatingSummaryCard(),
+                            const SizedBox(height: 12),
+      
+                            if (!isEditing) _buildFollowStats(),
+                            if (!isOwnProfile) const SizedBox(height: 10),
+                            if (!isOwnProfile) _buildFollowButtonWidget(),
+                            if (!isOwnProfile) _buildStudentRatingActionButton(),
+      
+                            const SizedBox(height: 20),
+                            isEditing ? _buildEditForm() : _buildViewProfile(),
+                            if (isOwnProfile && !isEditing) _buildDashboardSection(),
+                            if (isOwnProfile && !isEditing) _buildToolsAndPayment(),
+                            if (isEditing) _buildSaveCancelButtons(),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                    ],
+                  ),
                 ),
               ),
-            ),
+      ),
     );
   }
 
@@ -405,8 +465,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
                         ),
                       ),
                     ],
-                  ),
-                  const SizedBox(height: 4),
+                  ),                  const SizedBox(height: 4),
                   Text(
                     "All-Time: ★ $allTimeRating ($reviewCount Reviews)",
                     style: TextStyle(fontSize: 12, color: Colors.grey.shade600, fontWeight: FontWeight.w500),
@@ -588,7 +647,6 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
       ],
     );
   }
-
 Widget _buildProfileImage(double radius) {
     final url = teacherData?['profileImageUrl'];
     return GestureDetector(
@@ -690,9 +748,11 @@ Widget _buildProfileImage(double radius) {
       },
     );
   }
-
+  
   Widget _buildViewProfile() {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      // নতুন যুক্ত করা Tuition/Institute ভিউ কার্ড
+      _buildMaterial3Card("Tuition / Institute Name", _instituteController.text, Icons.domain_outlined, Colors.indigo),
       _buildMaterial3Card("Bio", _bioController.text, Icons.description_outlined, const Color(0xFF3B82F6)),
       _buildMaterial3Card("Phone Number", isOwnProfile ? _phoneController.text : "Hidden for Privacy", Icons.phone_outlined, Colors.deepPurple),
       _buildMaterial3Card("Teaching Class", _classController.text, Icons.school_outlined, const Color(0xFF10B981)),
@@ -837,6 +897,8 @@ Widget _buildDashboardSection() {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       _editField("Full Name", _nameController, Icons.person),
       _editField("Mobile Number", _phoneController, Icons.phone, keyboardType: TextInputType.phone),
+      // নতুন যুক্ত করা Tuition/Institute এডিট ফিল্ড
+      _editField("Tuition / Institute Name", _instituteController, Icons.domain_outlined),
       _editField("Bio", _bioController, Icons.info, maxLines: 3),
       _editField("Teaching Class", _classController, Icons.book),
       const Text("Gender", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
@@ -882,7 +944,7 @@ Widget _buildDashboardSection() {
     );
   }
 
-  Widget _buildToolsAndPayment() {
+Widget _buildToolsAndPayment() {
     return Column(children: [
       const SizedBox(height: 16),
       Card(elevation: 0, color: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: const BorderSide(color: Color(0xFFF1F5F9))), child: ListTile(leading: const Icon(Icons.videocam_rounded, color: Colors.red), title: const Text("Go Live", style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)), trailing: const Icon(Icons.chevron_right_rounded), onTap: () {
