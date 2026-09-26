@@ -29,7 +29,6 @@ class _NotificationScreenState extends State<NotificationScreen> {
     final uid = _auth.currentUser?.uid;
     if (uid == null) return;
 
-    // ইউজার কি টিচার নাকি স্টুডেন্ট তা রোল ফিল্টারিং করা হচ্ছে
     final teacherDoc = await _firestore.collection('teachers').doc(uid).get();
     if (mounted) {
       setState(() {
@@ -39,16 +38,14 @@ class _NotificationScreenState extends State<NotificationScreen> {
     }
   }
 
-  // ফিক্সড: নোটিফিকেশন ক্লিনআপ এবং ফলো স্টেট সিঙ্ক রুল (#6, #7)
   Future<void> _handleRequest(String docId, String studentId, String teacherId, bool isAccepted) async {
     try {
       if (isAccepted) {
-        // রিকোয়েস্ট অ্যাকসেপ্ট হলে follow_requests কালেকশন রিয়েল-টাইম আপডেট হবে
-        await _firestore.collection('follow_requests').doc('${studentId}_$teacherId').update({
+        await _firestore.collection('follow_requests').doc('${teacherId}_$studentId').set({
           'status': 'accepted',
-        });
+          'acceptedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
 
-        // স্টুডেন্টের কাছে ডায়নামিক ব্যাক-নোটিফিকেশন রুট করা হচ্ছে
         await _firestore.collection('notifications').add({
           'receiverId': studentId,
           'senderId': teacherId,
@@ -62,23 +59,19 @@ class _NotificationScreenState extends State<NotificationScreen> {
 
         if (mounted) SuccessToast.show(context, 'Request Accepted successfully!');
       } else {
-        // রিজেক্ট করলে সরাসরি ফায়ারবেস ট্র্যাকিং থেকে ডিলিট করা হবে
-        await _firestore.collection('follow_requests').doc('${studentId}_$teacherId').delete();
+        await _firestore.collection('follow_requests').doc('${teacherId}_$studentId').delete();
         if (mounted) SuccessToast.show(context, 'Request Rejected');
       }
 
-      // অ্যাকশন শেষে মেইনস্ট্রিম নোটিফিকেশন হাব ক্লিনআপ (#7)
       await _firestore.collection('notifications').doc(docId).delete();
     } catch (e) {
       debugPrint("Error handling request: $e");
     }
   }
 
-  // ফিক্সড: কন্ডিশনাল রুট নেভিগেশন লুপ ইঞ্জিন (#6)
   void _navigateToProfile(String senderId, String notificationType) async {
     if (senderId.isEmpty) return;
 
-    // যদি নোটিফিকেশন টাইপ 'request_accepted' হয় তার মানে প্রেরক একজন টিচার
     if (notificationType == 'request_accepted') {
       Navigator.push(
         context,
@@ -87,7 +80,6 @@ class _NotificationScreenState extends State<NotificationScreen> {
         ),
       );
     } else {
-      // অন্যথায় প্রেরক স্টুডেন্ট হিসেবে ডিফল্ট প্রোফাইলে রুট হবে
       final teacherDoc = await _firestore.collection('teachers').doc(senderId).get();
       if (!mounted) return;
 
@@ -124,16 +116,22 @@ class _NotificationScreenState extends State<NotificationScreen> {
       body: isLoading
           ? const Center(child: CircularProgressIndicator(color: Color(0xFF1E4C7A)))
           : StreamBuilder<QuerySnapshot>(
+              // ইনডেক্স এরর এড়ানোর জন্য orderBy বাদ দিয়ে ডাটা আনা হচ্ছে
               stream: _firestore.collection('notifications')
                   .where('receiverId', isEqualTo: currentUid)
-                  .orderBy('timestamp', descending: true)
                   .snapshots(),
               builder: (context, snapshot) {
-                if (!snapshot.hasData) {
+                if (snapshot.hasError) {
+                  return Center(
+                    child: Text('Error: ${snapshot.error}', style: const TextStyle(color: Colors.red)),
+                  );
+                }
+
+                if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator(color: Color(0xFF1E4C7A)));
                 }
-                final docs = snapshot.data!.docs;
-                if (docs.isEmpty) {
+
+                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
                   return const Center(
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
@@ -145,6 +143,15 @@ class _NotificationScreenState extends State<NotificationScreen> {
                     ),
                   );
                 }
+
+                // ইন-মেমোরি মেথডে লেটেস্ট নোটিফিকেশন উপরে সাজানো হচ্ছে
+                final docs = snapshot.data!.docs;
+                docs.sort((a, b) {
+                  final aTime = (a.data() as Map<String, dynamic>)['timestamp'] as Timestamp?;
+                  final bTime = (b.data() as Map<String, dynamic>)['timestamp'] as Timestamp?;
+                  if (aTime == null || bTime == null) return 0;
+                  return bTime.compareTo(aTime);
+                });
 
                 return ListView.builder(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -158,7 +165,6 @@ class _NotificationScreenState extends State<NotificationScreen> {
                     final type = data['type'] ?? '';
                     final bool isRead = data['isRead'] ?? false;
 
-                    // ফিক্সড: রাইট অপারেশন কস্ট অপ্টিমাইজেশন ও পোস্ট ফ্রেম হুক রুল (#5)
                     if (!isRead) {
                       WidgetsBinding.instance.addPostFrameCallback((_) {
                         _firestore.collection('notifications').doc(docId).update({'isRead': true});
@@ -170,7 +176,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
                       child: Container(
                         margin: const EdgeInsets.only(bottom: 12),
                         decoration: BoxDecoration(
-                          color: isRead ? Colors.white : const Color(0xFFEDF4FA), // আনরিড নোটিফিকেশনের জন্য স্পেশাল হাইলাইট কালার টোন
+                          color: isRead ? Colors.white : const Color(0xFFEDF4FA),
                           borderRadius: BorderRadius.circular(16),
                           boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 6, offset: const Offset(0, 3))],
                           border: isRead ? null : Border.all(color: const Color(0xFF1E4C7A).withOpacity(0.1), width: 1),
@@ -180,7 +186,6 @@ class _NotificationScreenState extends State<NotificationScreen> {
                           child: Row(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              // প্রোফাইল ফটো বা নামে ট্যাপ করলে প্রোফাইল ওপেন হবে ডায়নামিকলি
                               GestureDetector(
                                 onTap: () => _navigateToProfile(senderId, type),
                                 child: CircleAvatar(
@@ -202,7 +207,6 @@ class _NotificationScreenState extends State<NotificationScreen> {
                                     const SizedBox(height: 3),
                                     Text('${data['message']}', style: const TextStyle(color: Colors.black54, fontSize: 13, height: 1.2)),
 
-                                    // যদি টাইপ 'follow_request' হয় এবং ইউজার টিচার হন তবেই Accept/Reject বাটন আসবে
                                     if (type == 'follow_request' && isTeacher) ...[
                                       const SizedBox(height: 12),
                                       Row(
