@@ -617,7 +617,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
                             );
                           },
                         ),
-                        _buildGlassIconButton(
+_buildGlassIconButton(
                           icon: Icons.delete_forever_rounded,
                           iconColor: Colors.redAccent,
                           tooltip: 'Delete Account',
@@ -651,7 +651,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
               ),
             ),
           ),
-IconButton(
+        IconButton(
           icon: AnimatedSwitcher(
             duration: const Duration(milliseconds: 250),
             child: Icon(
@@ -796,8 +796,7 @@ IconButton(
       },
     );
   }
-
-  Widget _buildUidIdentityCard() {
+Widget _buildUidIdentityCard() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       constraints: const BoxConstraints(maxWidth: 320),
@@ -840,7 +839,8 @@ IconButton(
       ),
     );
   }
-Widget _buildProfileImage(double radius) {
+
+  Widget _buildProfileImage(double radius) {
     final url = teacherData?['profileImageUrl'];
     return GestureDetector(
       onTap: isEditing ? () async {
@@ -938,8 +938,7 @@ Widget _buildProfileImage(double radius) {
       },
     );
   }
-
-  Widget _buildViewProfile() {
+Widget _buildViewProfile() {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       _buildMaterial3Card("Tuition / Institute Name", _instituteController.text, Icons.domain_outlined, Colors.indigo),
       _buildMaterial3Card("Bio", _bioController.text, Icons.description_outlined, const Color(0xFF3B82F6)),
@@ -1046,7 +1045,6 @@ Widget _buildProfileImage(double radius) {
       ],
     );
   }
-
 Widget _buildDashboardCard(String title, String value, IconData icon, Color color) {
     return Container(
       decoration: BoxDecoration(
