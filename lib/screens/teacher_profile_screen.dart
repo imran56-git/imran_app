@@ -491,17 +491,97 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
             child: ClipRRect(
               borderRadius: BorderRadius.circular(25),
               child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.22),
+                    color: Colors.white.withOpacity(0.18),
                     borderRadius: BorderRadius.circular(25),
-                    border: Border.all(color: Colors.white.withOpacity(0.35)),
+                    border: Border.all(color: Colors.white.withOpacity(0.32), width: 1.2),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
+                      // ১. পেন্ডিং ফলো রিকোয়েস্ট বাটন (গ্লাস বারের ভেতরে)
+                      if (isOwnProfile)
+                        StreamBuilder<QuerySnapshot>(
+                          stream: _firestore
+                              .collection('follow_requests')
+                              .where('teacherId', isEqualTo: widget.currentUserId)
+                              .where('status', isEqualTo: 'pending')
+                              .snapshots(),
+                          builder: (context, snapshot) {
+                            int pendingCount = snapshot.hasData ? snapshot.data!.docs.length : 0;
+                            return GestureDetector(
+                              onTapDown: (details) {
+                                _toggleMenu();
+                                Navigator.push(
+                                  context,
+                                  _createGenieRoute(
+                                    TeacherFollowRequestsScreen(teacherId: widget.currentUserId),
+                                    details.globalPosition,
+                                  ),
+                                );
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                child: Stack(
+                                  clipBehavior: Clip.none,
+                                  children: [
+                                    const Icon(Icons.person_add_alt_1_rounded, color: Colors.white, size: 20),
+                                    if (pendingCount > 0)
+                                      Positioned(
+                                        right: -4,
+                                        top: -3,
+                                        child: Container(
+                                          padding: const EdgeInsets.all(3),
+                                          decoration: const BoxDecoration(color: Colors.orangeAccent, shape: BoxShape.circle),
+                                          constraints: const BoxConstraints(minWidth: 15, minHeight: 15),
+                                          child: Text(
+                                            '$pendingCount',
+                                            style: const TextStyle(color: Colors.black, fontSize: 9, fontWeight: FontWeight.bold),
+                                            textAlign: TextAlign.center,
+                                          ),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+
+                      // ২. নোটিফিকেশন বেল আইকন (গ্লাস বারের ভেতরে)
+                      GestureDetector(
+                        onTapDown: (details) {
+                          _toggleMenu();
+                          Navigator.push(
+                            context,
+                            _createGenieRoute(const NotificationScreen(), details.globalPosition),
+                          );
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          child: Stack(
+                            clipBehavior: Clip.none,
+                            children: [
+                              const Icon(Icons.notifications_none_rounded, color: Colors.white, size: 20),
+                              if (hasUnreadNotifications)
+                                Positioned(
+                                  right: 0,
+                                  top: -1,
+                                  child: Container(
+                                    width: 8,
+                                    height: 8,
+                                    decoration: const BoxDecoration(color: Colors.redAccent, shape: BoxShape.circle),
+                                  ),
+                                )
+                            ],
+                          ),
+                        ),
+                      ),
+
+                      // ৩. অন্যান্য অপশনসমূহ
                       if (isOwnProfile) ...[
                         _buildGlassIconButton(
                           icon: Icons.edit_outlined,
@@ -571,97 +651,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
               ),
             ),
           ),
-
-        if (!_isMenuExpanded) ...[
-          // টিচারের নিজস্ব প্রোফাইলে পেন্ডিং ফলো রিকোয়েস্ট বাটনের জন্য
-          if (isOwnProfile)
-            StreamBuilder<QuerySnapshot>(
-              stream: _firestore.collection('follow_requests')
-                  .where('teacherId', isEqualTo: widget.currentUserId)
-                  .where('status', isEqualTo: 'pending')
-                  .snapshots(),
-              builder: (context, snapshot) {
-                int pendingCount = snapshot.hasData ? snapshot.data!.docs.length : 0;
-                return GestureDetector(
-                  onTapDown: (details) {
-                    Navigator.push(
-                      context,
-                      _createGenieRoute(
-                        TeacherFollowRequestsScreen(teacherId: widget.currentUserId),
-                        details.globalPosition,
-                      ),
-                    );
-                  },
-                  child: Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        margin: const EdgeInsets.only(right: 6),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.18),
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(Icons.person_add_alt_1_rounded, color: Colors.white, size: 21),
-                      ),
-                      if (pendingCount > 0)
-                        Positioned(
-                          right: 4,
-                          top: -2,
-                          child: Container(
-                            padding: const EdgeInsets.all(4),
-                            decoration: const BoxDecoration(color: Colors.orangeAccent, shape: BoxShape.circle),
-                            constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
-                            child: Text(
-                              '$pendingCount',
-                              style: const TextStyle(color: Colors.black, fontSize: 10, fontWeight: FontWeight.bold),
-                              textAlign: TextAlign.center,
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                );
-              },
-            ),
-
-          // নোটিফিকেশন বেল আইকন
-          GestureDetector(
-            onTapDown: (details) {
-              Navigator.push(
-                context,
-                _createGenieRoute(const NotificationScreen(), details.globalPosition),
-              );
-            },
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  margin: const EdgeInsets.only(right: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.18),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(Icons.notifications_none_rounded, color: Colors.white, size: 21),
-                ),
-                if (hasUnreadNotifications)
-                  Positioned(
-                    right: 6,
-                    top: 2,
-                    child: Container(
-                      width: 9,
-                      height: 9,
-                      decoration: const BoxDecoration(color: Colors.redAccent, shape: BoxShape.circle),
-                    ),
-                  )
-              ],
-            ),
-          ),
-        ],
-
-        // ৩-ডট বাটন (যার ওপর ক্লিক করলে স্লাইডার অন/অফ হবে)
-        IconButton(
+IconButton(
           icon: AnimatedSwitcher(
             duration: const Duration(milliseconds: 250),
             child: Icon(
@@ -767,7 +757,8 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
       ),
     );
   }
-Widget _buildStudentRatingActionButton() {
+
+  Widget _buildStudentRatingActionButton() {
     String currentUID = _auth.currentUser?.uid ?? "";
     if (currentUID.isEmpty) return const SizedBox();
 
@@ -849,8 +840,7 @@ Widget _buildStudentRatingActionButton() {
       ),
     );
   }
-
-  Widget _buildProfileImage(double radius) {
+Widget _buildProfileImage(double radius) {
     final url = teacherData?['profileImageUrl'];
     return GestureDetector(
       onTap: isEditing ? () async {
@@ -949,7 +939,7 @@ Widget _buildStudentRatingActionButton() {
     );
   }
 
-Widget _buildViewProfile() {
+  Widget _buildViewProfile() {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       _buildMaterial3Card("Tuition / Institute Name", _instituteController.text, Icons.domain_outlined, Colors.indigo),
       _buildMaterial3Card("Bio", _bioController.text, Icons.description_outlined, const Color(0xFF3B82F6)),
@@ -1057,7 +1047,7 @@ Widget _buildViewProfile() {
     );
   }
 
-  Widget _buildDashboardCard(String title, String value, IconData icon, Color color) {
+Widget _buildDashboardCard(String title, String value, IconData icon, Color color) {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -1141,7 +1131,8 @@ Widget _buildViewProfile() {
       ]),
     );
   }
-Widget _buildToolsAndPayment() {
+
+  Widget _buildToolsAndPayment() {
     return Column(children: [
       const SizedBox(height: 16),
       Card(elevation: 0, color: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: const BorderSide(color: Color(0xFFF1F5F9))), child: ListTile(leading: const Icon(Icons.videocam_rounded, color: Colors.red), title: const Text("Go Live", style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)), trailing: const Icon(Icons.chevron_right_rounded), onTap: () {
