@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:ui';
 import 'package:animate_do/animate_do.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -7,7 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart'; 
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart'; 
-import 'notification_screen.dart'; // নোটিফিকেশন স্ক্রিন ইমপোর্ট করা হলো
+import 'notification_screen.dart';
 
 class StudentProfileScreen extends StatefulWidget {
   final String currentUserId;
@@ -21,7 +22,7 @@ class StudentProfileScreen extends StatefulWidget {
   State<StudentProfileScreen> createState() => _StudentProfileScreenState();
 }
 
-class _StudentProfileScreenState extends State<StudentProfileScreen> {
+class _StudentProfileScreenState extends State<StudentProfileScreen> with TickerProviderStateMixin {
   final _auth = FirebaseAuth.instance;
   final _firestore = FirebaseFirestore.instance;
   final _storage = FirebaseStorage.instance;
@@ -33,6 +34,11 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
       _college = TextEditingController(),
       _customSubjectController = TextEditingController(); 
 
+  late AnimationController _menuAnimController;
+  late Animation<double> _menuScaleAnimation;
+  bool _isMenuExpanded = false;
+  bool hasUnreadNotifications = false;
+
   Map<String, dynamic>? studentData;
   File? _selectedImage;
   bool isLoading = true, isEditing = false, _triggerAnimation = true;
@@ -42,16 +48,46 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
   final classOptions = const ['Class 1','Class 2','Class 3','Class 4','Class 5','Class 6','Class 7','Class 8','Class 9','Class 10','Class 11','Class 12','College','University','Others'];
   final subjectOptions = const ["Mathematics","Physics","Chemistry","Biology","English","Computer Science","History","Geography"];
 
-  // ইউজারটি নিজের প্রোফাইল দেখছে নাকি অন্য কেউ দেখছে তা চেক করার লজিক
   bool get isOwnProfile => widget.currentUserId.isEmpty || widget.currentUserId == (_auth.currentUser?.uid ?? "");
 
   @override
-  void initState() { super.initState(); fetchStudentData(); }
+  void initState() {
+    super.initState();
+    fetchStudentData();
+    checkUnreadNotifications();
+
+    _menuAnimController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 300),
+    );
+
+    _menuScaleAnimation = CurvedAnimation(
+      parent: _menuAnimController,
+      curve: Curves.easeOutBack,
+    );
+  }
 
   @override
   void dispose() {
-    for (var c in [_name, _phone, _location, _bio, _institution, _school, _college, _customSubjectController]) { c.dispose(); }
+    _menuAnimController.dispose();
+    for (var c in [_name, _phone, _location, _bio, _institution, _school, _college, _customSubjectController]) {
+      c.dispose();
+    }
     super.dispose();
+  }
+
+  void checkUnreadNotifications() {
+    final currentUID = _auth.currentUser?.uid;
+    if (currentUID == null) return;
+
+    _firestore.collection('notifications')
+      .where('receiverId', isEqualTo: currentUID)
+      .where('isRead', isEqualTo: false)
+      .snapshots().listen((snap) {
+        if (mounted) {
+          setState(() => hasUnreadNotifications = snap.docs.isNotEmpty);
+        }
+      });
   }
 
   Future fetchStudentData() async {
@@ -86,37 +122,98 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
     await prefs.clear(); 
   }
 
+  void _showAnimatedPopup({
+    required String title,
+    required String message,
+    required String confirmText,
+    required Future<void> Function() onConfirm,
+    bool isDelete = false,
+  }) {
+    showGeneralDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: '',
+      transitionDuration: const Duration(milliseconds: 300),
+      pageBuilder: (context, a1, a2) => const SizedBox(),
+      transitionBuilder: (dialogContext, anim, a2, child) {
+        return BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
+          child: ScaleTransition(
+            scale: Tween<double>(begin: 0.85, end: 1.0).animate(CurvedAnimation(parent: anim, curve: Curves.easeOutBack)),
+            child: FadeTransition(
+              opacity: anim,
+              child: AlertDialog(
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 20)),
+                content: Text(message, style: const TextStyle(fontSize: 15, color: Colors.black87)),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(dialogContext),
+                    child: const Text('Cancel', style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold, fontSize: 15)),
+                  ),
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: isDelete ? Colors.redAccent : const Color(0xFF1E4C7A),
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                    onPressed: () async {
+                      Navigator.pop(dialogContext);
+                      await onConfirm();
+                    },
+                    child: Text(confirmText, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Future _handleDeleteAccount() async {
-    final ok = await confirm('Delete Account', 'This will permanently delete your account.\n\nAre you sure?', confirmText: 'Delete', danger: true);
-    if (ok != true) return;
-    try {
-      final user = _auth.currentUser; if (user == null) return;
-      final uid = user.uid;
-      setState(() => isLoading = true);
+    _showAnimatedPopup(
+      title: 'Delete Account',
+      message: 'This will permanently delete your account.\n\nAre you sure?',
+      confirmText: 'Delete',
+      isDelete: true,
+      onConfirm: () async {
+        try {
+          final user = _auth.currentUser; if (user == null) return;
+          final uid = user.uid;
+          setState(() => isLoading = true);
 
-      await _firestore.collection('students').doc(uid).delete();
-      await _firestore.collection('usernames').doc(uid).delete().catchError((_) {});
-      await _storage.ref('students/$uid/profile.jpg').delete().catchError((_) {});
+          await _firestore.collection('students').doc(uid).delete();
+          await _firestore.collection('usernames').doc(uid).delete().catchError((_) {});
+          await _storage.ref('students/$uid/profile.jpg').delete().catchError((_) {});
 
-      await _clearLocalSession(); 
-      await user.delete();
+          await _clearLocalSession(); 
+          await user.delete();
 
-      if (mounted) Navigator.pushNamedAndRemoveUntil(context, '/login', (_) => false);
-    } catch (e) {
-      setState(() => isLoading = false);
-      if (e is FirebaseAuthException && e.code == 'requires-recent-login') {
-        _snack('Security Error: Please logout and sign back in to delete your account.', isError: true);
-      } else { _snack('Delete Failed: $e', isError: true); }
-    }
+          if (mounted) Navigator.pushNamedAndRemoveUntil(context, '/login', (_) => false);
+        } catch (e) {
+          setState(() => isLoading = false);
+          if (e is FirebaseAuthException && e.code == 'requires-recent-login') {
+            _snack('Security Error: Please logout and sign back in to delete your account.', isError: true);
+          } else { _snack('Delete Failed: $e', isError: true); }
+        }
+      },
+    );
   }
 
   Future _handleSignOut() async {
-    if (await confirm('Sign Out', 'Are you sure?') == true) {
-      setState(() => isLoading = true);
-      await _auth.signOut();
-      await _clearLocalSession(); 
-      if (mounted) Navigator.pushNamedAndRemoveUntil(context, '/login', (_) => false);
-    }
+    _showAnimatedPopup(
+      title: 'Sign Out',
+      message: 'Are you sure you want to sign out?',
+      confirmText: 'Sign Out',
+      onConfirm: () async {
+        setState(() => isLoading = true);
+        await _auth.signOut();
+        await _clearLocalSession(); 
+        if (mounted) Navigator.pushNamedAndRemoveUntil(context, '/login', (_) => false);
+      },
+    );
   }
 
   Future updateStudentProfile() async {
@@ -145,36 +242,12 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
     } catch (e) { if (mounted) setState(() => isLoading = false); _snack('Update failed: $e', isError: true); }
   }
 
-  Future<bool?> confirm(String title, String msg, {String confirmText = 'Confirm', bool danger = false}) {
-    return showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)), content: Text(msg),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-        ElevatedButton(
-          style: ElevatedButton.styleFrom(
-            backgroundColor: danger ? Colors.redAccent : const Color(0xFF1E4C7A),
-            foregroundColor: Colors.white,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))
-          ),
-          onPressed: () => Navigator.pop(ctx, true), 
-          child: Text(confirmText)
-        ),
-      ],
-    ));
-  }
-
   void _showServiceUnavailableDialog() {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Service Unavailable', style: TextStyle(fontWeight: FontWeight.bold)),
-        content: const Text('This service is currently disabled.\n\nIt will be available in a future update.\nThank you for your patience.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK', style: TextStyle(color: Color(0xFF1E4C7A)))),
-        ],
-      ),
+    _showAnimatedPopup(
+      title: 'Service Unavailable',
+      message: 'This service is currently disabled.\n\nIt will be available in a future update.\nThank you for your patience.',
+      confirmText: 'OK',
+      onConfirm: () async {},
     );
   }
 
@@ -197,6 +270,50 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
     return (url != null && url.toString().trim().isNotEmpty) ? NetworkImage(url) : null;
   }
 
+  // Apple/macOS Genie (Zoom with Origin) Route Generator (60 FPS)
+  Route _createGenieRoute(Widget page, Offset tapPosition) {
+    return PageRouteBuilder(
+      transitionDuration: const Duration(milliseconds: 380),
+      reverseTransitionDuration: const Duration(milliseconds: 320),
+      pageBuilder: (context, animation, secondaryAnimation) => page,
+      transitionsBuilder: (context, animation, secondaryAnimation, child) {
+        final screenSize = MediaQuery.of(context).size;
+        final double alignX = (tapPosition.dx / screenSize.width) * 2 - 1;
+        final double alignY = (tapPosition.dy / screenSize.height) * 2 - 1;
+        final Alignment alignment = Alignment(alignX, alignY);
+
+        final curve = CurvedAnimation(
+          parent: animation,
+          curve: Curves.easeOutCubic,
+          reverseCurve: Curves.easeInCubic,
+        );
+
+        return Align(
+          alignment: alignment,
+          child: ScaleTransition(
+            scale: curve,
+            alignment: alignment,
+            child: FadeTransition(
+              opacity: curve,
+              child: child,
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _toggleMenu() {
+    setState(() {
+      _isMenuExpanded = !_isMenuExpanded;
+      if (_isMenuExpanded) {
+        _menuAnimController.forward();
+      } else {
+        _menuAnimController.reverse();
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -206,7 +323,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
         foregroundColor: Colors.white, 
         elevation: 0,
         scrolledUnderElevation: 0,
-        automaticallyImplyLeading: !isOwnProfile, // নিজের প্রোফাইল না হলে ব্যাক বাটন শো করবে
+        automaticallyImplyLeading: !isOwnProfile,
         title: Row(
           children: [
             ClipRRect(
@@ -227,29 +344,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
           ],
         ),
         actions: [
-          PopupMenuButton<String>(
-            icon: const Icon(Icons.more_vert_rounded, color: Colors.white),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-            onSelected: (v) { 
-              if (v == 'edit') setState(() { isEditing = true; _triggerAnimation = !_triggerAnimation; }); 
-              if (v == 'notifications') Navigator.push(context, MaterialPageRoute(builder: (_) => const NotificationScreen()));
-              if (v == 'logout') _handleSignOut(); 
-              if (v == 'delete') _handleDeleteAccount(); 
-              if (v == 'payment') _showServiceUnavailableDialog();
-            },
-            itemBuilder: (ctx) => isOwnProfile 
-              ? [
-                  const PopupMenuItem(value: 'edit', child: Row(children: [Icon(Icons.edit_rounded, size: 18, color: Colors.black54), SizedBox(width: 10), Text('Edit Profile')])), 
-                  const PopupMenuItem(value: 'notifications', child: Row(children: [Icon(Icons.notifications_active_outlined, size: 18, color: Colors.black54), SizedBox(width: 10), Text('Notifications')])), 
-                  const PopupMenuItem(value: 'payment', child: Row(children: [Icon(Icons.payment_rounded, size: 18, color: Colors.black54), SizedBox(width: 10), Text('Payment Ticket')])), 
-                  const PopupMenuDivider(),
-                  const PopupMenuItem(value: 'logout', child: Row(children: [Icon(Icons.logout_rounded, size: 18, color: Colors.black54), SizedBox(width: 10), Text('Sign Out')])), 
-                  const PopupMenuItem(value: 'delete', child: Row(children: [Icon(Icons.delete_forever_rounded, size: 18, color: Colors.redAccent), SizedBox(width: 10), Text('Delete Account', style: TextStyle(color: Colors.redAccent))])),
-                ]
-              : [
-                  const PopupMenuItem(value: 'notifications', child: Row(children: [Icon(Icons.notifications_active_outlined, size: 18, color: Colors.black54), SizedBox(width: 10), Text('Notifications')])), 
-                ],
-          )
+          _buildActionHeaderBar(),
         ],
       ),
       body: isLoading ? const Center(child: CircularProgressIndicator(color: Color(0xFF1E4C7A), strokeWidth: 3.5)) : SingleChildScrollView(
@@ -262,6 +357,140 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
           ]),
         ),
       ),
+    );
+  }
+
+  Widget _buildActionHeaderBar() {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (_isMenuExpanded)
+          ScaleTransition(
+            scale: _menuScaleAnimation,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(25),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.22),
+                    borderRadius: BorderRadius.circular(25),
+                    border: Border.all(color: Colors.white.withOpacity(0.35)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (isOwnProfile) ...[
+                        _buildGlassIconButton(
+                          icon: Icons.edit_rounded,
+                          tooltip: 'Edit Profile',
+                          onTap: () {
+                            _toggleMenu();
+                            setState(() {
+                              isEditing = true;
+                              _triggerAnimation = !_triggerAnimation;
+                            });
+                          },
+                        ),
+                        _buildGlassIconButton(
+                          icon: Icons.payment_rounded,
+                          tooltip: 'Payment Ticket',
+                          onTap: () {
+                            _toggleMenu();
+                            _showServiceUnavailableDialog();
+                          },
+                        ),
+                        _buildGlassIconButton(
+                          icon: Icons.logout_rounded,
+                          iconColor: Colors.orangeAccent,
+                          tooltip: 'Sign Out',
+                          onTap: () {
+                            _toggleMenu();
+                            _handleSignOut();
+                          },
+                        ),
+                        _buildGlassIconButton(
+                          icon: Icons.delete_forever_rounded,
+                          iconColor: Colors.redAccent,
+                          tooltip: 'Delete Account',
+                          onTap: () {
+                            _toggleMenu();
+                            _handleDeleteAccount();
+                          },
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+
+        if (!_isMenuExpanded) ...[
+          // নোটিফিকেশন বেল (Genie zoom transition)
+          GestureDetector(
+            onTapDown: (details) {
+              Navigator.push(
+                context,
+                _createGenieRoute(const NotificationScreen(), details.globalPosition),
+              );
+            },
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  margin: const EdgeInsets.only(right: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.18),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.notifications_none_rounded, color: Colors.white, size: 21),
+                ),
+                if (hasUnreadNotifications)
+                  Positioned(
+                    right: 8,
+                    top: 2,
+                    child: Container(
+                      width: 9,
+                      height: 9,
+                      decoration: const BoxDecoration(color: Colors.redAccent, shape: BoxShape.circle),
+                    ),
+                  )
+              ],
+            ),
+          ),
+        ],
+
+        if (isOwnProfile)
+          IconButton(
+            icon: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 250),
+              child: Icon(
+                _isMenuExpanded ? Icons.close_rounded : Icons.more_vert_rounded,
+                key: ValueKey<bool>(_isMenuExpanded),
+                color: Colors.white,
+              ),
+            ),
+            onPressed: _toggleMenu,
+          ),
+      ],
+    );
+  }
+
+  Widget _buildGlassIconButton({
+    required IconData icon,
+    required VoidCallback onTap,
+    required String tooltip,
+    Color iconColor = Colors.white,
+  }) {
+    return IconButton(
+      icon: Icon(icon, color: iconColor, size: 20),
+      tooltip: tooltip,
+      onPressed: onTap,
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      constraints: const BoxConstraints(),
     );
   }
 
@@ -283,7 +512,8 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
                 style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold, letterSpacing: 0.3)
               ),
             ),
-          ),          const SizedBox(height: 15),
+          ),
+          const SizedBox(height: 15),
           Stack(alignment: Alignment.center, children: [
             CircleAvatar(radius: 52, backgroundColor: const Color(0xFFA2E8DD), backgroundImage: _profileImage, child: _profileImage == null ? const Icon(Icons.person_rounded, size: 60, color: Colors.white) : null),
             if (isEditing) Positioned(bottom: 0, right: 0, child: InkWell(onTap: _pickProfileImage, child: Container(padding: const EdgeInsets.all(8), decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle, boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 4)]), child: const Icon(Icons.camera_alt_rounded, color: Color(0xFF1E4C7A), size: 18)))),
@@ -316,13 +546,13 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
                         Text("REGISTRATION ID / UID", style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 9, fontWeight: FontWeight.bold, letterSpacing: 0.5)),
                         const SizedBox(height: 2),
                         Text(
-                          currentUid,
-                          style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 0.3),
+                          currentUid, style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 0.3),
                           overflow: TextOverflow.ellipsis,
                         ),
                       ],
                     ),
-                  ),                  const SizedBox(width: 10),
+                  ),
+                  const SizedBox(width: 10),
                   InkWell(
                     onTap: () {
                       Clipboard.setData(ClipboardData(text: currentUid));
@@ -366,11 +596,10 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
         padding: const EdgeInsets.all(16), decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.grey.withOpacity(0.1))),
         child: Column(children: [
           _info(Icons.person_outline_rounded, "Name", _name.text), const Divider(height: 1, color: Color(0xFFF1F3F5)),
-          
-          // মোবাইল এবং জেন্ডার ফিল্ডে প্রাইভেসি প্রটেকশন দেওয়া হলো
+
           _info(Icons.wc_outlined, "Gender", isOwnProfile ? (gender ?? "Not Added") : "Hidden for Privacy"), const Divider(height: 1, color: Color(0xFFF1F3F5)),
           _info(Icons.phone_android_rounded, "Phone", isOwnProfile ? _phone.text : "Hidden for Privacy"), const Divider(height: 1, color: Color(0xFFF1F3F5)),
-          
+
           _info(Icons.school_outlined, "Class/Grade", studentClass ?? "Not Added"), const Divider(height: 1, color: Color(0xFFF1F3F5)), 
           _info(Icons.history_edu_rounded, "School Name", _school.text), const Divider(height: 1, color: Color(0xFFF1F3F5)),
           _info(Icons.account_balance_rounded, "College Name", _college.text), const Divider(height: 1, color: Color(0xFFF1F3F5)),
@@ -381,7 +610,8 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
       const SizedBox(height: 25),
     ]),
   );
-  Widget _info(IconData icon, String title, String value) => Padding(
+
+Widget _info(IconData icon, String title, String value) => Padding(
     padding: const EdgeInsets.symmetric(vertical: 12),
     child: Row(children: [
       Icon(icon, color: const Color(0xFF1E4C7A), size: 22), 
@@ -470,7 +700,11 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
       ]
     ),
     const SizedBox(height: 35),
-    Row(children: [Expanded(child: OutlinedButton(style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(48), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))), onPressed: () { setState(() { isEditing = false; _selectedImage = null; _triggerAnimation = !_triggerAnimation; }); _customSubjectController.clear(); fetchStudentData(); }, child: const Text("Cancel"))), const SizedBox(width: 12), Expanded(child: ElevatedButton(onPressed: updateStudentProfile, style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1E4C7A), foregroundColor: Colors.white, minimumSize: const Size.fromHeight(48), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))), child: const Text("Save Changes")))]),
+    Row(children: [
+      Expanded(child: OutlinedButton(style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(48), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))), onPressed: () { setState(() { isEditing = false; _selectedImage = null; _triggerAnimation = !_triggerAnimation; }); _customSubjectController.clear(); fetchStudentData(); }, child: const Text("Cancel"))), 
+      const SizedBox(width: 12), 
+      Expanded(child: ElevatedButton(onPressed: updateStudentProfile, style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF1E4C7A), foregroundColor: Colors.white, minimumSize: const Size.fromHeight(48), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))), child: const Text("Save Changes")))
+    ]),
     const SizedBox(height: 30),
   ]);
 
@@ -486,5 +720,6 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
       focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFF1E4C7A), width: 1.5)),
     )
   );
+
   Widget _gap() => const SizedBox(height: 15);
 }
