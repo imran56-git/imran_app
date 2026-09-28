@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'chat_list_screen.dart';
 import 'search_teacher_screen.dart';
 import 'student_profile_screen.dart';
+import 'student_teachers_screen.dart';
 
 class StudentHomeScreen extends StatefulWidget {
   final String currentUserId;
@@ -28,6 +29,7 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
         currentUserId: widget.currentUserId,
         isTeacher: false,
       ),  
+      const StudentTeachersScreen(),
       const TeacherSearchScreen(),  
       StudentProfileScreen(currentUserId: widget.currentUserId),  
     ];
@@ -40,8 +42,8 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
 
   void _handleFabPressed() {
     if (_selectedIndex == 0) {
-      setState(() => _selectedIndex = 1);
-    } else if (_selectedIndex == 1) {
+      setState(() => _selectedIndex = 2);
+    } else if (_selectedIndex == 2) {
       _showFilterBottomSheet();
     }
   }
@@ -142,8 +144,8 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final bool showFab = _selectedIndex != 2;
-    final bool showAppBar = _selectedIndex != 2; 
+    final bool showFab = _selectedIndex == 0 || _selectedIndex == 2;
+    final bool showAppBar = _selectedIndex != 3; 
 
     return Scaffold(  
       backgroundColor: const Color(0xFFF7F9FC),  
@@ -251,13 +253,24 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
               BottomNavigationBarItem(  
                 icon: Padding(
                   padding: EdgeInsets.only(bottom: 4),
+                  child: Icon(Icons.school_outlined, size: 24),
+                ),  
+                activeIcon: Padding(
+                  padding: EdgeInsets.only(bottom: 4),
+                  child: Icon(Icons.school_rounded, size: 24),
+                ),  
+                label: 'Teachers',  
+              ),  
+              BottomNavigationBarItem(  
+                icon: Padding(
+                  padding: EdgeInsets.only(bottom: 4),
                   child: Icon(Icons.search_rounded, size: 24),
                 ),  
                 activeIcon: Padding(
                   padding: EdgeInsets.only(bottom: 4),
                   child: Icon(Icons.manage_search_rounded, size: 24),
                 ),  
-                label: 'Teachers',  
+                label: 'Search',  
               ),  
               BottomNavigationBarItem(  
                 icon: Padding(
