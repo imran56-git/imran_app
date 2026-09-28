@@ -2,6 +2,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'chat_list_screen.dart'; 
 import 'teacher_profile_screen.dart'; 
+import 'teacher_students_screen.dart';
 
 class TeacherHomeScreen extends StatefulWidget {
   final String currentUserId; 
@@ -27,6 +28,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> with SingleTicker
           currentUserId: widget.currentUserId,
           isTeacher: true,
         ),
+        const TeacherStudentsScreen(),
         TeacherProfileScreen(currentUserId: widget.currentUserId), 
       ];
 
@@ -65,7 +67,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> with SingleTicker
 
   @override
   Widget build(BuildContext context) {
-    final bool showAppBar = _selectedIndex == 0;
+    final bool showAppBar = _selectedIndex != 2;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF7F9FC), 
@@ -122,7 +124,6 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> with SingleTicker
           double progress = _animation.value;
           return Stack(
             children: [
-              // আগের স্ক্রিনের স্ন্যাপশট (পটভূমিতে স্থির ও হালকা ফেড-আউট)
               if (progress < 1.0)
                 Opacity(
                   opacity: (1.0 - progress).clamp(0.0, 1.0),
@@ -132,7 +133,6 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> with SingleTicker
                   ),
                 ),
 
-              // নতুন স্ক্রিনের স্মুথ স্লাইড ও ফেড-ইন ট্রানজিশন
               Opacity(
                 opacity: progress.clamp(0.0, 1.0),
                 child: Transform.translate(
@@ -200,6 +200,17 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> with SingleTicker
                   child: Icon(Icons.chat_bubble_rounded, size: 22),
                 ),
                 label: 'Student Chats',
+              ),
+              BottomNavigationBarItem(
+                icon: Padding(
+                  padding: EdgeInsets.only(bottom: 4),
+                  child: Icon(Icons.people_outline_rounded, size: 24),
+                ),
+                activeIcon: Padding(
+                  padding: EdgeInsets.only(bottom: 4),
+                  child: Icon(Icons.people_rounded, size: 24),
+                ),
+                label: 'Students',
               ),
               BottomNavigationBarItem(
                 icon: Padding(
