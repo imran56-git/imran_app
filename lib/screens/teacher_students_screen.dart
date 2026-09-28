@@ -12,7 +12,7 @@ class TeacherStudentsScreen extends StatefulWidget {
   State<TeacherStudentsScreen> createState() => _TeacherStudentsScreenState();
 }
 
-class _TeacherStudentsScreenState extends State<TeacherStudentsScreen> {
+class _TeacherStudentsScreenState extends State<TeacherStudentsScreen> with AutomaticKeepAliveClientMixin {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
@@ -21,66 +21,90 @@ class _TeacherStudentsScreenState extends State<TeacherStudentsScreen> {
   List<ConnectedUserModel> _students = [];
 
   @override
+  bool get wantKeepAlive => true; // ট্যাব পরিবর্তন করলেও স্টেট ধরে রাখবে
+
+  @override
   void initState() {
     super.initState();
     _fetchStudents();
   }
 
   Future<void> _fetchStudents() async {
+    if (!mounted) return;
+    
     setState(() {
-      _isLoading = true;
+      _isLoading = _students.isEmpty; // আগে থেকে ডাটা থাকলে লোডার দেখাবে না
       _errorMessage = null;
     });
 
     try {
       final String? currentUserId = _auth.currentUser?.uid;
       if (currentUserId == null) {
-        setState(() {
-          _errorMessage = "Authentication error. Please log in again.";
-          _isLoading = false;
-        });
+        if (mounted) {
+          setState(() {
+            _errorMessage = "Authentication error. Please log in again.";
+            _isLoading = false;
+          });
+        }
         return;
       }
 
-      QuerySnapshot followSnap = await _firestore
-          .collection('follow_req')
-          .where('senderId', isEqualTo: currentUserId)
-          .where('status', isEqualTo: 'accepted')
-          .get();
+      // follow_requests এবং follow_req উভয় কালেকশন থেকেই প্যারাল্যালের মাধ্যমে চেক করা
+      final collections = ['follow_requests', 'follow_req'];
+      final Set<String> studentIdsSet = {};
 
-      List<String> studentIds = followSnap.docs.map((doc) => doc['receiverId'].toString()).toList();
+      for (String col in collections) {
+        final snap1 = await _firestore
+            .collection(col)
+            .where('senderId', isEqualTo: currentUserId)
+            .where('status', isEqualTo: 'accepted')
+            .get();
 
-      QuerySnapshot reverseSnap = await _firestore
-          .collection('follow_req')
-          .where('receiverId', isEqualTo: currentUserId)
-          .where('status', isEqualTo: 'accepted')
-          .get();
+        for (var doc in snap1.docs) {
+          final data = doc.data();
+          if (data.containsKey('receiverId')) {
+            studentIdsSet.add(data['receiverId'].toString());
+          }
+        }
 
-      for (var doc in reverseSnap.docs) {
-        String sender = doc['senderId'].toString();
-        if (!studentIds.contains(sender)) {
-          studentIds.add(sender);
+        final snap2 = await _firestore
+            .collection(col)
+            .where('receiverId', isEqualTo: currentUserId)
+            .where('status', isEqualTo: 'accepted')
+            .get();
+
+        for (var doc in snap2.docs) {
+          final data = doc.data();
+          if (data.containsKey('senderId')) {
+            studentIdsSet.add(data['senderId'].toString());
+          }
         }
       }
 
-      List<ConnectedUserModel> loadedStudents = [];
+      final List<String> studentIds = studentIdsSet.toList();
 
-      for (String sId in studentIds) {
-        DocumentSnapshot sDoc = await _firestore.collection('students').doc(sId).get();
-        if (!sDoc.exists) {
-          sDoc = await _firestore.collection('users').doc(sId).get();
-        }
+      // Future.wait ব্যবহার করে সব স্টুডেন্টের তথ্য একসাথে (Parallel) দ্রুত ফেচ করা
+      final loadedStudents = await Future.wait(
+        studentIds.map((sId) async {
+          DocumentSnapshot sDoc = await _firestore.collection('students').doc(sId).get();
+          if (!sDoc.exists) {
+            sDoc = await _firestore.collection('users').doc(sId).get();
+          }
 
-        if (sDoc.exists && sDoc.data() != null) {
-          loadedStudents.add(
-            ConnectedUserModel.fromFirestore(sDoc.data() as Map<String, dynamic>, sId, 'student'),
-          );
-        }
-      }
+          if (sDoc.exists && sDoc.data() != null) {
+            return ConnectedUserModel.fromFirestore(
+              sDoc.data() as Map<String, dynamic>,
+              sId,
+              'student',
+            );
+          }
+          return null;
+        }),
+      );
 
       if (mounted) {
         setState(() {
-          _students = loadedStudents;
+          _students = loadedStudents.whereType<ConnectedUserModel>().toList();
           _isLoading = false;
         });
       }
@@ -99,31 +123,38 @@ class _TeacherStudentsScreenState extends State<TeacherStudentsScreen> {
       final String? currentUserId = _auth.currentUser?.uid;
       if (currentUserId == null) return;
 
-      QuerySnapshot snap1 = await _firestore
-          .collection('follow_req')
-          .where('senderId', isEqualTo: currentUserId)
-          .where('receiverId', isEqualTo: student.uid)
-          .get();
+      final collections = ['follow_requests', 'follow_req'];
 
-      for (var doc in snap1.docs) {
-        await doc.reference.delete();
+      for (String col in collections) {
+        final docRef1 = _firestore.collection(col).doc('${currentUserId}_${student.uid}');
+        final docRef2 = _firestore.collection(col).doc('${student.uid}_$currentUserId');
+        await docRef1.delete();
+        await docRef2.delete();
+
+        final snap1 = await _firestore
+            .collection(col)
+            .where('senderId', isEqualTo: currentUserId)
+            .where('receiverId', isEqualTo: student.uid)
+            .get();
+        for (var doc in snap1.docs) {
+          await doc.reference.delete();
+        }
+
+        final snap2 = await _firestore
+            .collection(col)
+            .where('senderId', isEqualTo: student.uid)
+            .where('receiverId', isEqualTo: currentUserId)
+            .get();
+        for (var doc in snap2.docs) {
+          await doc.reference.delete();
+        }
       }
-
-      QuerySnapshot snap2 = await _firestore
-          .collection('follow_req')
-          .where('senderId', isEqualTo: student.uid)
-          .where('receiverId', isEqualTo: currentUserId)
-          .get();
-
-      for (var doc in snap2.docs) {
-        await doc.reference.delete();
-      }
-
-      setState(() {
-        _students.removeWhere((s) => s.uid == student.uid);
-      });
 
       if (mounted) {
+        setState(() {
+          _students.removeWhere((s) => s.uid == student.uid);
+        });
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text("Unfollowed ${student.name}")),
         );
@@ -204,6 +235,8 @@ class _TeacherStudentsScreenState extends State<TeacherStudentsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context); // AutomaticKeepAliveClientMixin-এর জন্য অত্যন্ত জরুরি
+
     return Scaffold(
       appBar: AppBar(
         title: const Text("Students", style: TextStyle(fontWeight: FontWeight.bold)),
