@@ -32,7 +32,7 @@ class ConnectedUserTile extends StatelessWidget {
                       user.name.isNotEmpty ? user.name[0].toUpperCase() : 'U',
                       style: const TextStyle(
                         fontWeight: FontWeight.bold,
-                        color: Colors.black80,
+                        color: Colors.black87, // 'Colors.black80' এর জায়গায় 'Colors.black87'
                       ),
                     )
                   : null,
@@ -50,7 +50,7 @@ class ConnectedUserTile extends StatelessWidget {
                     style: const TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w600,
-                      color: Colors.black90,
+                      color: Colors.black87, // 'Colors.black90' এর জায়গায় 'Colors.black87'
                     ),
                   ),
                   const SizedBox(height: 2),
