@@ -22,19 +22,22 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> with SingleTicker
 
   late AnimationController _animController;
   late Animation<double> _animation;
-
-  List<Widget> get _screens => [
-        ChatListScreen(
-          currentUserId: widget.currentUserId,
-          isTeacher: true,
-        ),
-        const TeacherStudentsScreen(),
-        TeacherProfileScreen(currentUserId: widget.currentUserId), 
-      ];
+  late final List<Widget> _screens;
 
   @override
   void initState() {
     super.initState();
+    
+    // স্ক্রিনগুলোকে মেমরিতে একবারই ইনিশিয়ালাইজ করা হচ্ছে
+    _screens = [
+      ChatListScreen(
+        currentUserId: widget.currentUserId,
+        isTeacher: true,
+      ),
+      const TeacherStudentsScreen(),
+      TeacherProfileScreen(currentUserId: widget.currentUserId), 
+    ];
+
     _animController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 350),
