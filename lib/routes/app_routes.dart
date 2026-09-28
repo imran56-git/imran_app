@@ -11,6 +11,7 @@ import 'package:find_your_best_teacher_today/screens/student_register_screen.dar
 import 'package:find_your_best_teacher_today/screens/teacher_register_screen.dart';
 import 'package:find_your_best_teacher_today/screens/teacher_profile_screen.dart';
 import 'package:find_your_best_teacher_today/screens/student_profile_screen.dart';
+import 'package:find_your_best_teacher_today/animations/screen_pull_route.dart';
 
 class AppRoutes {
   static const String splash = '/';
@@ -25,12 +26,30 @@ class AppRoutes {
   static const String chat = '/chat';
   static const String teacherProfile = '/teacher_profile';
   static const String studentProfile = '/student_profile';
+  static const String notification = '/notification';
 
   static Route<dynamic> generateRoute(RouteSettings settings) {
-    Widget page;
-
     final authUserId = FirebaseAuth.instance.currentUser?.uid ?? '';
     final args = settings.arguments;
+
+    // Custom ScreenPullRoute interceptor when explicit arguments are passed
+    if (args is Map<String, dynamic> &&
+        args.containsKey('useScreenPull') &&
+        args['useScreenPull'] == true) {
+      final Widget destination = args['destination'] as Widget;
+      final Widget currentScreen = args['currentScreen'] as Widget;
+      final Offset pullPoint =
+          args['pullPoint'] as Offset? ?? const Offset(200, 200);
+
+      return ScreenPullRoute(
+        destinationScreen: destination,
+        currentScreen: currentScreen,
+        pullPoint: pullPoint,
+        settings: settings,
+      );
+    }
+
+    Widget page;
 
     switch (settings.name) {
       case splash:
