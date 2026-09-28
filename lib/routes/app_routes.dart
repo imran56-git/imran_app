@@ -9,6 +9,8 @@ import 'package:find_your_best_teacher_today/screens/teacher_home_screen.dart';
 import 'package:find_your_best_teacher_today/screens/teacher_welcome_screen.dart';
 import 'package:find_your_best_teacher_today/screens/student_register_screen.dart';
 import 'package:find_your_best_teacher_today/screens/teacher_register_screen.dart';
+import 'package:find_your_best_teacher_today/screens/teacher_profile_screen.dart';
+import 'package:find_your_best_teacher_today/screens/student_profile_screen.dart';
 
 class AppRoutes {
   static const String splash = '/';
@@ -20,10 +22,13 @@ class AppRoutes {
   static const String studentHome = '/student-home';
   static const String teacherHome = '/teacher-home';
   static const String teacherWelcome = '/teacher-welcome';
+  static const String chat = '/chat';
+  static const String teacherProfile = '/teacher_profile';
+  static const String studentProfile = '/student_profile';
 
   static Route<dynamic> generateRoute(RouteSettings settings) {
     Widget page;
-    
+
     final authUserId = FirebaseAuth.instance.currentUser?.uid ?? '';
     final args = settings.arguments;
 
@@ -71,6 +76,20 @@ class AppRoutes {
         page = TeacherWelcomeScreen(
           currentUserId: userId,
         );
+        break;
+
+      case teacherProfile:
+        final teacherId = (args is Map && args.containsKey('teacherId'))
+            ? args['teacherId'].toString()
+            : (args is String ? args : authUserId);
+        page = TeacherProfileScreen(currentUserId: teacherId);
+        break;
+
+      case studentProfile:
+        final studentId = (args is Map && args.containsKey('studentId'))
+            ? args['studentId'].toString()
+            : (args is String ? args : authUserId);
+        page = StudentProfileScreen(currentUserId: studentId);
         break;
 
       default:
