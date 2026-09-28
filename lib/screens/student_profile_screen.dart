@@ -8,6 +8,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart'; 
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart'; 
+
+import '../animations/animation_constants.dart';
+import '../animations/screen_pull_controller.dart';
+import '../routes/app_routes.dart';
+import '../utils/image_utils.dart';
+import '../widgets/success_toast.dart';
 import 'notification_screen.dart';
 
 class StudentProfileScreen extends StatefulWidget {
@@ -35,7 +41,6 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> with Ticker
       _customSubjectController = TextEditingController(); 
 
   late AnimationController _menuAnimController;
-  late Animation<double> _menuScaleAnimation;
   bool _isMenuExpanded = false;
   bool hasUnreadNotifications = false;
 
@@ -58,12 +63,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> with Ticker
 
     _menuAnimController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 300),
-    );
-
-    _menuScaleAnimation = CurvedAnimation(
-      parent: _menuAnimController,
-      curve: Curves.easeOutBack,
+      duration: const Duration(milliseconds: 350),
     );
   }
 
@@ -294,39 +294,6 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> with Ticker
     return (url != null && url.toString().trim().isNotEmpty) ? NetworkImage(url) : null;
   }
 
-  // macOS/Apple Genie Zoom Transition
-  Route _createGenieRoute(Widget page, Offset tapPosition) {
-    return PageRouteBuilder(
-      transitionDuration: const Duration(milliseconds: 380),
-      reverseTransitionDuration: const Duration(milliseconds: 320),
-      pageBuilder: (context, animation, secondaryAnimation) => page,
-      transitionsBuilder: (context, animation, secondaryAnimation, child) {
-        final screenSize = MediaQuery.of(context).size;
-        final double alignX = (tapPosition.dx / screenSize.width) * 2 - 1;
-        final double alignY = (tapPosition.dy / screenSize.height) * 2 - 1;
-        final Alignment alignment = Alignment(alignX, alignY);
-
-        final curve = CurvedAnimation(
-          parent: animation,
-          curve: Curves.easeOutCubic,
-          reverseCurve: Curves.easeInCubic,
-        );
-
-        return Align(
-          alignment: alignment,
-          child: ScaleTransition(
-            scale: curve,
-            alignment: alignment,
-            child: FadeTransition(
-              opacity: curve,
-              child: child,
-            ),
-          ),
-        );
-      },
-    );
-  }
-
   void _toggleMenu() {
     setState(() {
       _isMenuExpanded = !_isMenuExpanded;
@@ -336,6 +303,31 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> with Ticker
         _menuAnimController.reverse();
       }
     });
+  }
+
+  Widget _buildStaggeredMenuItem({
+    required int index,
+    required int totalItems,
+    required Widget child,
+  }) {
+    final double start = (index * 0.12).clamp(0.0, 0.8);
+    final double end = (start + 0.4).clamp(0.0, 1.0);
+
+    final Animation<double> itemAnimation = CurvedAnimation(
+      parent: _menuAnimController,
+      curve: Interval(start, end, curve: Curves.easeOutBack),
+    );
+
+    return ScaleTransition(
+      scale: itemAnimation,
+      child: SlideTransition(
+        position: Tween<Offset>(
+          begin: const Offset(0.3, 0.0),
+          end: Offset.zero,
+        ).animate(itemAnimation),
+        child: child,
+      ),
+    );
   }
 
   @override
@@ -393,106 +385,126 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> with Ticker
   }
 
   Widget _buildActionHeaderBar() {
+    List<Widget> menuItems = [];
+
+    if (isOwnProfile) {
+      menuItems.addAll([
+        _buildGlassIconButton(
+          icon: Icons.edit_rounded,
+          tooltip: 'Edit Profile',
+          onTap: () {
+            _toggleMenu();
+            setState(() {
+              isEditing = true;
+              _triggerAnimation = !_triggerAnimation;
+            });
+          },
+        ),
+        _buildGlassIconButton(
+          icon: Icons.payment_rounded,
+          tooltip: 'Payment Ticket',
+          onTap: () {
+            _toggleMenu();
+            _showServiceUnavailableDialog();
+          },
+        ),
+        _buildGlassIconButton(
+          icon: Icons.logout_rounded,
+          iconColor: Colors.orangeAccent,
+          tooltip: 'Sign Out',
+          onTap: () {
+            _toggleMenu();
+            _handleSignOut();
+          },
+        ),
+        _buildGlassIconButton(
+          icon: Icons.delete_forever_rounded,
+          iconColor: Colors.redAccent,
+          tooltip: 'Delete Account',
+          onTap: () {
+            _toggleMenu();
+            _handleDeleteAccount();
+          },
+        ),
+      ]);
+    }
+
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (_isMenuExpanded)
-          ScaleTransition(
-            scale: _menuScaleAnimation,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(25),
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.22),
-                    borderRadius: BorderRadius.circular(25),
-                    border: Border.all(color: Colors.white.withOpacity(0.35)),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (isOwnProfile) ...[
-                        _buildGlassIconButton(
-                          icon: Icons.edit_rounded,
-                          tooltip: 'Edit Profile',
-                          onTap: () {
-                            _toggleMenu();
-                            setState(() {
-                              isEditing = true;
-                              _triggerAnimation = !_triggerAnimation;
-                            });
-                          },
-                        ),
-                        _buildGlassIconButton(
-                          icon: Icons.payment_rounded,
-                          tooltip: 'Payment Ticket',
-                          onTap: () {
-                            _toggleMenu();
-                            _showServiceUnavailableDialog();
-                          },
-                        ),
-                        _buildGlassIconButton(
-                          icon: Icons.logout_rounded,
-                          iconColor: Colors.orangeAccent,
-                          tooltip: 'Sign Out',
-                          onTap: () {
-                            _toggleMenu();
-                            _handleSignOut();
-                          },
-                        ),
-                        _buildGlassIconButton(
-                          icon: Icons.delete_forever_rounded,
-                          iconColor: Colors.redAccent,
-                          tooltip: 'Delete Account',
-                          onTap: () {
-                            _toggleMenu();
-                            _handleDeleteAccount();
-                          },
-                        ),
-                      ],
-                    ],
+        if (_isMenuExpanded && menuItems.isNotEmpty)
+          ClipRRect(
+            borderRadius: BorderRadius.circular(25),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.22),
+                  borderRadius: BorderRadius.circular(25),
+                  border: Border.all(color: Colors.white.withOpacity(0.35)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: List.generate(
+                    menuItems.length,
+                    (index) => _buildStaggeredMenuItem(
+                      index: index,
+                      totalItems: menuItems.length,
+                      child: menuItems[index],
+                    ),
                   ),
                 ),
               ),
             ),
           ),
 
-        if (!_isMenuExpanded) ...[
-          GestureDetector(
-            onTapDown: (details) {
-              Navigator.push(
-                context,
-                _createGenieRoute(const NotificationScreen(), details.globalPosition),
-              );
-            },
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  margin: const EdgeInsets.only(right: 6),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.18),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(Icons.notifications_none_rounded, color: Colors.white, size: 21),
+        GestureDetector(
+          onTapDown: (details) {
+            final Offset tapPos = details.globalPosition;
+            if (_isMenuExpanded) _toggleMenu();
+            
+            ScreenPullController.executeSafeNavigation(
+              context: context,
+              navigationAction: () async {
+                Navigator.pushNamed(
+                  context,
+                  AppRoutes.notification,
+                  arguments: {
+                    'useScreenPull': true,
+                    'destination': const NotificationScreen(),
+                    'currentScreen': widget,
+                    'pullPoint': tapPos,
+                  },
+                );
+              },
+            );
+          },
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                margin: const EdgeInsets.only(right: 6),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.18),
+                  shape: BoxShape.circle,
                 ),
-                if (hasUnreadNotifications)
-                  Positioned(
-                    right: 8,
-                    top: 2,
-                    child: Container(
-                      width: 9,
-                      height: 9,
-                      decoration: const BoxDecoration(color: Colors.redAccent, shape: BoxShape.circle),
-                    ),
-                  )
-              ],
-            ),
+                child: const Icon(Icons.notifications_none_rounded, color: Colors.white, size: 21),
+              ),
+              if (hasUnreadNotifications)
+                Positioned(
+                  right: 8,
+                  top: 2,
+                  child: Container(
+                    width: 9,
+                    height: 9,
+                    decoration: const BoxDecoration(color: Colors.redAccent, shape: BoxShape.circle),
+                  ),
+                )
+            ],
           ),
-        ],
+        ),
 
         if (isOwnProfile)
           IconButton(
@@ -551,6 +563,21 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> with Ticker
               ),
             ),
             const SizedBox(height: 15),
+            Stack(
+              alignment: Alignment.center, 
+              children: [
+                CircleAvatar(
+                  radius: 52, 
+                  backgroundColor: const Color(0xFFA2E8DD), 
+                  backgroundImage: _profileImage, 
+                  child: _profileImage == null ? const Icon(Icons.person_rounded, size: 60, color: Colors.white) : null,
+                ),
+                if (isEditing) 
+                  Positioned(
+                    bottom: 0, 
+                    right: 0, 
+                    child: InkWell(
+        const SizedBox(height: 15),
             Stack(
               alignment: Alignment.center, 
               children: [
@@ -632,7 +659,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> with Ticker
     );
   }
 
-Widget _buildCard(IconData icon, String value) => Expanded(
+  Widget _buildCard(IconData icon, String value) => Expanded(
     child: Container(
       padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
       decoration: BoxDecoration(
@@ -701,7 +728,7 @@ Widget _buildCard(IconData icon, String value) => Expanded(
             ],
           ),
         ),
-        const SizedBox(height: 25),
+const SizedBox(height: 25),
       ],
     ),
   );
@@ -726,7 +753,7 @@ Widget _buildCard(IconData icon, String value) => Expanded(
     ),
   );
 
-Widget _buildEditForm() => Column(
+  Widget _buildEditForm() => Column(
     crossAxisAlignment: CrossAxisAlignment.start, 
     children: [
       const SizedBox(height: 10),
@@ -853,7 +880,7 @@ Widget _buildEditForm() => Column(
     ],
   );
 
-Widget _dropDown(String label, IconData icon, String? value, List<String> items, ValueChanged<String?> onChanged) => DropdownButtonFormField<String>(
+  Widget _dropDown(String label, IconData icon, String? value, List<String> items, ValueChanged<String?> onChanged) => DropdownButtonFormField<String>(
     value: value, 
     decoration: InputDecoration(
       labelText: label, 
