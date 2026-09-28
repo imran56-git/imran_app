@@ -463,7 +463,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> with Ticker
           onTapDown: (details) {
             final Offset tapPos = details.globalPosition;
             if (_isMenuExpanded) _toggleMenu();
-            
+
             ScreenPullController.executeSafeNavigation(
               context: context,
               navigationAction: () async {
@@ -538,7 +538,9 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> with Ticker
   }
 
   Widget _buildHeader() {
-    final currentUid = widget.currentUserId.isNotEmpty ? widget.currentUserId : (_auth.currentUser?.uid ?? 'N/A');
+    final currentUid = widget.currentUserId.isNotEmpty 
+        ? widget.currentUserId 
+        : (_auth.currentUser?.uid ?? 'N/A');
 
     return FadeInDown(
       duration: const Duration(milliseconds: 400),
@@ -547,7 +549,10 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> with Ticker
         padding: const EdgeInsets.only(bottom: 25, top: 10),
         decoration: const BoxDecoration(
           color: Color(0xFF1E4C7A), 
-          borderRadius: BorderRadius.only(bottomLeft: Radius.circular(35), bottomRight: Radius.circular(35)),
+          borderRadius: BorderRadius.only(
+            bottomLeft: Radius.circular(35), 
+            bottomRight: Radius.circular(35),
+          ),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.center, 
@@ -558,7 +563,12 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> with Ticker
                 alignment: Alignment.centerLeft,
                 child: Text(
                   isOwnProfile ? 'My Profile' : "Student Profile", 
-                  style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold, letterSpacing: 0.3),
+                  style: const TextStyle(
+                    color: Colors.white, 
+                    fontSize: 24, 
+                    fontWeight: FontWeight.bold, 
+                    letterSpacing: 0.3,
+                  ),
                 ),
               ),
             ),
@@ -570,22 +580,9 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> with Ticker
                   radius: 52, 
                   backgroundColor: const Color(0xFFA2E8DD), 
                   backgroundImage: _profileImage, 
-                  child: _profileImage == null ? const Icon(Icons.person_rounded, size: 60, color: Colors.white) : null,
-                ),
-                if (isEditing) 
-                  Positioned(
-                    bottom: 0, 
-                    right: 0, 
-                    child: InkWell(
-        const SizedBox(height: 15),
-            Stack(
-              alignment: Alignment.center, 
-              children: [
-                CircleAvatar(
-                  radius: 52, 
-                  backgroundColor: const Color(0xFFA2E8DD), 
-                  backgroundImage: _profileImage, 
-                  child: _profileImage == null ? const Icon(Icons.person_rounded, size: 60, color: Colors.white) : null,
+                  child: _profileImage == null 
+                      ? const Icon(Icons.person_rounded, size: 60, color: Colors.white) 
+                      : null,
                 ),
                 if (isEditing) 
                   Positioned(
@@ -595,22 +592,45 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> with Ticker
                       onTap: _pickProfileImage, 
                       child: Container(
                         padding: const EdgeInsets.all(8), 
-                        decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle, boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 4)]), 
-                        child: const Icon(Icons.camera_alt_rounded, color: Color(0xFF1E4C7A), size: 18),
+                        decoration: const BoxDecoration(
+                          color: Colors.white, 
+                          shape: BoxShape.circle, 
+                          boxShadow: [
+                            BoxShadow(color: Colors.black12, blurRadius: 4),
+                          ],
+                        ), 
+                        child: const Icon(
+                          Icons.camera_alt_rounded, 
+                          color: Color(0xFF1E4C7A), 
+                          size: 18,
+                        ),
                       ),
                     ),
                   ),
               ],
             ),
             const SizedBox(height: 14),
-            Text(_name.text.isEmpty ? "No Name Added" : _name.text, style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
+            Text(
+              _name.text.isEmpty ? "No Name Added" : _name.text, 
+              style: const TextStyle(
+                color: Colors.white, 
+                fontSize: 20, 
+                fontWeight: FontWeight.bold,
+              ),
+            ),
             const SizedBox(height: 5),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: Text(_bio.text.isEmpty ? "No Bio Added" : _bio.text, style: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 13), textAlign: TextAlign.center),
+              child: Text(
+                _bio.text.isEmpty ? "No Bio Added" : _bio.text, 
+                style: TextStyle(
+                  color: Colors.white.withOpacity(0.8), 
+                  fontSize: 13,
+                ), 
+                textAlign: TextAlign.center,
+              ),
             ),
             const SizedBox(height: 18),
-
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24),
               child: Container(
@@ -627,10 +647,24 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> with Ticker
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text("REGISTRATION ID / UID", style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 9, fontWeight: FontWeight.bold, letterSpacing: 0.5)),
+                          Text(
+                            "REGISTRATION ID / UID", 
+                            style: TextStyle(
+                              color: Colors.white.withOpacity(0.6), 
+                              fontSize: 9, 
+                              fontWeight: FontWeight.bold, 
+                              letterSpacing: 0.5,
+                            ),
+                          ),
                           const SizedBox(height: 2),
                           Text(
-                            currentUid, style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 0.3),
+                            currentUid, 
+                            style: const TextStyle(
+                              color: Colors.white, 
+                              fontSize: 12, 
+                              fontWeight: FontWeight.w600, 
+                              letterSpacing: 0.3,
+                            ),
                             overflow: TextOverflow.ellipsis,
                           ),
                         ],
@@ -645,8 +679,15 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> with Ticker
                       borderRadius: BorderRadius.circular(8),
                       child: Container(
                         padding: const EdgeInsets.all(6),
-                        decoration: BoxDecoration(color: Colors.white.withOpacity(0.12), borderRadius: BorderRadius.circular(8)),
-                        child: const Icon(Icons.copy_all_rounded, color: Color(0xFFA2E8DD), size: 18),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.12), 
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Icon(
+                          Icons.copy_all_rounded, 
+                          color: Color(0xFFA2E8DD), 
+                          size: 18,
+                        ),
                       ),
                     )
                   ],
@@ -659,7 +700,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> with Ticker
     );
   }
 
-  Widget _buildCard(IconData icon, String value) => Expanded(
+Widget _buildCard(IconData icon, String value) => Expanded(
     child: Container(
       padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
       decoration: BoxDecoration(
@@ -728,7 +769,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> with Ticker
             ],
           ),
         ),
-const SizedBox(height: 25),
+        const SizedBox(height: 25),
       ],
     ),
   );
@@ -814,7 +855,7 @@ const SizedBox(height: 25),
           ),
         ],
       ),
-      const SizedBox(height: 15),
+const SizedBox(height: 15),
 
       Wrap(
         spacing: 8, 
