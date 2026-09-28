@@ -20,11 +20,13 @@ class ScreenPullRoute<T> extends PageRouteBuilder<T> {
           pageBuilder: (context, animation, secondaryAnimation) =>
               destinationScreen,
           transitionsBuilder: (context, animation, secondaryAnimation, child) {
-            return ScreenPullTransition(
-              animation: animation,
-              outgoingChild: currentScreen,
-              incomingChild: child,
-              pullPoint: pullPoint,
+            return RepaintBoundary(
+              child: ScreenPullTransition(
+                animation: animation,
+                outgoingChild: RepaintBoundary(child: currentScreen),
+                incomingChild: child,
+                pullPoint: pullPoint,
+              ),
             );
           },
         );
