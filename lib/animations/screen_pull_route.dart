@@ -17,8 +17,8 @@ class ScreenPullRoute<T> extends PageRouteBuilder<T> {
           reverseTransitionDuration: AnimationConstants.totalTransitionDuration,
           opaque: false,
           barrierDismissible: false,
-          pageBuilder: (context, animation, secondaryAnimation) =>
-              destinationScreen,
+          maintainState: true,
+          pageBuilder: (context, animation, secondaryAnimation) => destinationScreen,
           transitionsBuilder: (context, animation, secondaryAnimation, child) {
             return RepaintBoundary(
               child: ScreenPullTransition(
