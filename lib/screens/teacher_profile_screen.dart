@@ -8,7 +8,10 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart'; 
 
+import '../animations/animation_constants.dart';
+import '../animations/screen_pull_controller.dart';
 import '../models/rating_model.dart';
+import '../routes/app_routes.dart';
 import '../services/follow_service.dart';
 import '../utils/image_utils.dart';
 import '../widgets/follow_button.dart';
@@ -42,9 +45,8 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
   late AnimationController _glowController;
   late Animation<double> _glowAnimation;
 
-  // ৩-ডট পপআপ আইকন স্লাইড অ্যানিমেশন
+  // ৩-ডট পপআপ আইকন স্লাইড সিকোয়েন্স অ্যানিমেশন কন্ট্রোলার
   late AnimationController _menuMenuAnimController;
-  late Animation<double> _menuScaleAnimation;
   bool _isMenuExpanded = false;
 
   Map<String, dynamic>? teacherData;
@@ -82,12 +84,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
 
     _menuMenuAnimController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 300),
-    );
-
-    _menuScaleAnimation = CurvedAnimation(
-      parent: _menuMenuAnimController,
-      curve: Curves.easeOutBack,
+      duration: const Duration(milliseconds: 400),
     );
   }
 
@@ -364,6 +361,31 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
     });
   }
 
+  Widget _buildStaggeredMenuItem({
+    required int index,
+    required int totalItems,
+    required Widget child,
+  }) {
+    final double start = (index * 0.12).clamp(0.0, 0.8);
+    final double end = (start + 0.4).clamp(0.0, 1.0);
+
+    final Animation<double> itemAnimation = CurvedAnimation(
+      parent: _menuMenuAnimController,
+      curve: Interval(start, end, curve: Curves.easeOutBack),
+    );
+
+    return ScaleTransition(
+      scale: itemAnimation,
+      child: SlideTransition(
+        position: Tween<Offset>(
+          begin: const Offset(0.3, 0.0),
+          end: Offset.zero,
+        ).animate(itemAnimation),
+        child: child,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     double headerHeight = 170.0;
@@ -482,170 +504,197 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
   }
 
   Widget _buildActionHeaderBar() {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (_isMenuExpanded)
-          ScaleTransition(
-            scale: _menuScaleAnimation,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(25),
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.18),
-                    borderRadius: BorderRadius.circular(25),
-                    border: Border.all(color: Colors.white.withOpacity(0.32), width: 1.2),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // ১. পেন্ডিং ফলো রিকোয়েস্ট বাটন (গ্লাস বারের ভেতরে)
-                      if (isOwnProfile)
-                        StreamBuilder<QuerySnapshot>(
-                          stream: _firestore
-                              .collection('follow_requests')
-                              .where('teacherId', isEqualTo: widget.currentUserId)
-                              .where('status', isEqualTo: 'pending')
-                              .snapshots(),
-                          builder: (context, snapshot) {
-                            int pendingCount = snapshot.hasData ? snapshot.data!.docs.length : 0;
-                            return GestureDetector(
-                              onTapDown: (details) {
-                                _toggleMenu();
-                                Navigator.push(
-                                  context,
-                                  _createGenieRoute(
-                                    TeacherFollowRequestsScreen(teacherId: widget.currentUserId),
-                                    details.globalPosition,
-                                  ),
-                                );
-                              },
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                child: Stack(
-                                  clipBehavior: Clip.none,
-                                  children: [
-                                    const Icon(Icons.person_add_alt_1_rounded, color: Colors.white, size: 20),
-                                    if (pendingCount > 0)
-                                      Positioned(
-                                        right: -4,
-                                        top: -3,
-                                        child: Container(
-                                          padding: const EdgeInsets.all(3),
-                                          decoration: const BoxDecoration(color: Colors.orangeAccent, shape: BoxShape.circle),
-                                          constraints: const BoxConstraints(minWidth: 15, minHeight: 15),
-                                          child: Text(
-                                            '$pendingCount',
-                                            style: const TextStyle(color: Colors.black, fontSize: 9, fontWeight: FontWeight.bold),
-                                            textAlign: TextAlign.center,
-                                          ),
-                                        ),
-                                      ),
-                                  ],
-                                ),
-                              ),
-                            );
-                          },
-                        ),
+    List<Widget> menuItems = [];
 
-                      // ২. নোটিফিকেশন বেল আইকন (গ্লাস বারের ভেতরে)
-                      GestureDetector(
-                        onTapDown: (details) {
-                          _toggleMenu();
-                          Navigator.push(
-                            context,
-                            _createGenieRoute(const NotificationScreen(), details.globalPosition),
-                          );
-                        },
+    // ১. পেন্ডিং ফলো রিকোয়েস্ট বাটন
+    if (isOwnProfile) {
+      menuItems.add(
+        StreamBuilder<QuerySnapshot>(
+          stream: _firestore
+              .collection('follow_requests')
+              .where('teacherId', isEqualTo: widget.currentUserId)
+              .where('status', isEqualTo: 'pending')
+              .snapshots(),
+          builder: (context, snapshot) {
+            int pendingCount = snapshot.hasData ? snapshot.data!.docs.length : 0;
+            return GestureDetector(
+              onTapDown: (details) {
+                _toggleMenu();
+                Navigator.push(
+                  context,
+                  _createGenieRoute(
+                    TeacherFollowRequestsScreen(teacherId: widget.currentUserId),
+                    details.globalPosition,
+                  ),
+                );
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    const Icon(Icons.person_add_alt_1_rounded, color: Colors.white, size: 20),
+                    if (pendingCount > 0)
+                      Positioned(
+                        right: -4,
+                        top: -3,
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          child: Stack(
-                            clipBehavior: Clip.none,
-                            children: [
-                              const Icon(Icons.notifications_none_rounded, color: Colors.white, size: 20),
-                              if (hasUnreadNotifications)
-                                Positioned(
-                                  right: 0,
-                                  top: -1,
-                                  child: Container(
-                                    width: 8,
-                                    height: 8,
-                                    decoration: const BoxDecoration(color: Colors.redAccent, shape: BoxShape.circle),
-                                  ),
-                                )
-                            ],
+                          padding: const EdgeInsets.all(3),
+                          decoration: const BoxDecoration(color: Colors.orangeAccent, shape: BoxShape.circle),
+                          constraints: const BoxConstraints(minWidth: 15, minHeight: 15),
+                          child: Text(
+                            '$pendingCount',
+                            style: const TextStyle(color: Colors.black, fontSize: 9, fontWeight: FontWeight.bold),
+                            textAlign: TextAlign.center,
                           ),
                         ),
                       ),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
+      );
+    }
 
-                      // ৩. অন্যান্য অপশনসমূহ
-                      if (isOwnProfile) ...[
-                        _buildGlassIconButton(
-                          icon: Icons.edit_outlined,
-                          tooltip: 'Edit Profile',
-                          onTap: () {
-                            _toggleMenu();
-                            setState(() => isEditing = true);
-                          },
-                        ),
-                        _buildGlassIconButton(
-                          icon: Icons.share_outlined,
-                          tooltip: 'Share Profile',
-                          onTap: () {
-                            _toggleMenu();
-                            Clipboard.setData(ClipboardData(text: "Check out this teacher profile on FYBTT. UID: ${widget.currentUserId}"));
-                            SuccessToast.show(context, 'Profile link copied!');
-                          },
-                        ),
-                        _buildGlassIconButton(
-                          icon: Icons.logout_rounded,
-                          iconColor: Colors.orangeAccent,
-                          tooltip: 'Sign Out',
-                          onTap: () {
-                            _toggleMenu();
-                            _showAnimatedPopup(
-                              title: 'Sign Out', 
-                              message: 'Are you sure you want to sign out?', 
-                              confirmText: 'Confirm', 
-                              onConfirm: () async {
-                                await _auth.signOut();
-                                await _clearLocalSessionAndNavigate();
-                              }
-                            );
-                          },
-                        ),
-_buildGlassIconButton(
-                          icon: Icons.delete_forever_rounded,
-                          iconColor: Colors.redAccent,
-                          tooltip: 'Delete Account',
-                          onTap: () {
-                            _toggleMenu();
-                            _showAnimatedPopup(
-                              title: 'Delete Account', 
-                              message: 'This will permanently delete your account. Are you sure?', 
-                              confirmText: 'Delete', 
-                              isDelete: true,
-                              onConfirm: () async {
-                                await _deleteAccount();
-                              }
-                            );
-                          },
-                        ),
-                      ] else ...[
-                        _buildGlassIconButton(
-                          icon: Icons.share_outlined,
-                          tooltip: 'Share Profile',
-                          onTap: () {
-                            _toggleMenu();
-                            Clipboard.setData(ClipboardData(text: "Check out this teacher profile on FYBTT. UID: ${widget.currentUserId}"));
-                            SuccessToast.show(context, 'Profile link copied!');
-                          },
-                        ),
-                      ],
-                    ],
+    // ২. নোটিফিকেশন বেল আইকন (ScreenPullTransition সহ)
+    menuItems.add(
+      GestureDetector(
+        onTapDown: (details) {
+          final Offset tapPos = details.globalPosition;
+          _toggleMenu();
+          ScreenPullController.executeSafeNavigation(
+            context: context,
+            navigationAction: () async {
+              Navigator.pushNamed(
+                context,
+                AppRoutes.notification,
+                arguments: {
+                  'useScreenPull': true,
+                  'destination': const NotificationScreen(),
+                  'currentScreen': widget,
+                  'pullPoint': tapPos,
+                },
+              );
+            },
+          );
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              const Icon(Icons.notifications_none_rounded, color: Colors.white, size: 20),
+              if (hasUnreadNotifications)
+                Positioned(
+                  right: 0,
+                  top: -1,
+                  child: Container(
+                    width: 8,
+                    height: 8,
+                    decoration: const BoxDecoration(color: Colors.redAccent, shape: BoxShape.circle),
+                  ),
+                )
+            ],
+          ),
+        ),
+      ),
+    );
+
+    // ৩. অন্যান্য অপশনসমূহ
+    if (isOwnProfile) {
+      menuItems.addAll([
+        _buildGlassIconButton(
+          icon: Icons.edit_outlined,
+          tooltip: 'Edit Profile',
+          onTap: () {
+            _toggleMenu();
+            setState(() => isEditing = true);
+          },
+        ),
+        _buildGlassIconButton(
+          icon: Icons.share_outlined,
+          tooltip: 'Share Profile',
+          onTap: () {
+            _toggleMenu();
+            Clipboard.setData(ClipboardData(text: "Check out this teacher profile on FYBTT. UID: ${widget.currentUserId}"));
+            SuccessToast.show(context, 'Profile link copied!');
+          },
+        ),
+        _buildGlassIconButton(
+          icon: Icons.logout_rounded,
+          iconColor: Colors.orangeAccent,
+          tooltip: 'Sign Out',
+          onTap: () {
+            _toggleMenu();
+            _showAnimatedPopup(
+              title: 'Sign Out', 
+              message: 'Are you sure you want to sign out?', 
+              confirmText: 'Confirm', 
+              onConfirm: () async {
+                await _auth.signOut();
+                await _clearLocalSessionAndNavigate();
+              }
+            );
+          },
+        ),
+        _buildGlassIconButton(
+          icon: Icons.delete_forever_rounded,
+          iconColor: Colors.redAccent,
+          tooltip: 'Delete Account',
+          onTap: () {
+            _toggleMenu();
+            _showAnimatedPopup(
+              title: 'Delete Account', 
+              message: 'This will permanently delete your account. Are you sure?', 
+              confirmText: 'Delete', 
+              isDelete: true,
+              onConfirm: () async {
+                await _deleteAccount();
+              }
+            );
+          },
+        ),
+      ]);
+    } else {
+      menuItems.add(
+        _buildGlassIconButton(
+          icon: Icons.share_outlined,
+          tooltip: 'Share Profile',
+          onTap: () {
+            _toggleMenu();
+            Clipboard.setData(ClipboardData(text: "Check out this teacher profile on FYBTT. UID: ${widget.currentUserId}"));
+            SuccessToast.show(context, 'Profile link copied!');
+          },
+        ),
+      );
+    }
+
+return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (_isMenuExpanded)
+          ClipRRect(
+            borderRadius: BorderRadius.circular(25),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.18),
+                  borderRadius: BorderRadius.circular(25),
+                  border: Border.all(color: Colors.white.withOpacity(0.32), width: 1.2),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: List.generate(
+                    menuItems.length,
+                    (index) => _buildStaggeredMenuItem(
+                      index: index,
+                      totalItems: menuItems.length,
+                      child: menuItems[index],
+                    ),
                   ),
                 ),
               ),
@@ -796,6 +845,7 @@ _buildGlassIconButton(
       },
     );
   }
+
 Widget _buildUidIdentityCard() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -938,7 +988,8 @@ Widget _buildUidIdentityCard() {
       },
     );
   }
-Widget _buildViewProfile() {
+
+  Widget _buildViewProfile() {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       _buildMaterial3Card("Tuition / Institute Name", _instituteController.text, Icons.domain_outlined, Colors.indigo),
       _buildMaterial3Card("Bio", _bioController.text, Icons.description_outlined, const Color(0xFF3B82F6)),
@@ -990,7 +1041,7 @@ Widget _buildViewProfile() {
     );
   }               
 
-  Widget _buildDashboardSection() {
+Widget _buildDashboardSection() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1045,7 +1096,8 @@ Widget _buildViewProfile() {
       ],
     );
   }
-Widget _buildDashboardCard(String title, String value, IconData icon, Color color) {
+
+  Widget _buildDashboardCard(String title, String value, IconData icon, Color color) {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
