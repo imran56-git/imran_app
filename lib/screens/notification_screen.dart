@@ -29,12 +29,18 @@ class _NotificationScreenState extends State<NotificationScreen> {
     final uid = _auth.currentUser?.uid;
     if (uid == null) return;
 
-    final teacherDoc = await _firestore.collection('teachers').doc(uid).get();
-    if (mounted) {
-      setState(() {
-        isTeacher = teacherDoc.exists;
-        isLoading = false;
-      });
+    try {
+      final teacherDoc = await _firestore.collection('teachers').doc(uid).get();
+      if (mounted) {
+        setState(() {
+          isTeacher = teacherDoc.exists;
+          isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => isLoading = false);
+      }
     }
   }
 
@@ -116,7 +122,8 @@ class _NotificationScreenState extends State<NotificationScreen> {
       body: isLoading
           ? const Center(child: CircularProgressIndicator(color: Color(0xFF1E4C7A)))
           : StreamBuilder<QuerySnapshot>(
-              stream: _firestore.collection('notifications')
+              stream: _firestore
+                  .collection('notifications')
                   .where('receiverId', isEqualTo: currentUid)
                   .snapshots(),
               builder: (context, snapshot) {
@@ -143,7 +150,8 @@ class _NotificationScreenState extends State<NotificationScreen> {
                   );
                 }
 
-                final docs = snapshot.data!.docs;
+                // মূল লিস্ট এর কপি নিয়ে নিরাপদে সর্ট করা হচ্ছে
+                final docs = List<QueryDocumentSnapshot>.from(snapshot.data!.docs);
                 docs.sort((a, b) {
                   final aTime = (a.data() as Map<String, dynamic>)['timestamp'] as Timestamp?;
                   final bTime = (b.data() as Map<String, dynamic>)['timestamp'] as Timestamp?;
@@ -172,7 +180,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
                     return FadeInLeft(
                       duration: Duration(milliseconds: 200 + (index * 60)),
                       child: GenieDismissible(
-                        key: Key(docId),
+                        key: ValueKey(docId),
                         onDismissed: () async {
                           await _firestore.collection('notifications').doc(docId).delete();
                         },
@@ -195,6 +203,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
                                     radius: 24,
                                     backgroundColor: const Color(0xFFA2E8DD),
                                     backgroundImage: photoUrl.isNotEmpty ? NetworkImage(photoUrl) : null,
+                                    onBackgroundImageError: photoUrl.isNotEmpty ? (_, __) {} : null,
                                     child: photoUrl.isEmpty ? const Icon(Icons.person, color: Colors.white) : null,
                                   ),
                                 ),
@@ -210,7 +219,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
                                       const SizedBox(height: 3),
                                       Text('${data['message']}', style: const TextStyle(color: Colors.black54, fontSize: 13, height: 1.2)),
 
-                                      if (type == 'follow_request' && isTeacher) ...[
+                                      if (type == 'follow_request' && isTeacher && currentUid != null) ...[
                                         const SizedBox(height: 12),
                                         Row(
                                           children: [
@@ -224,7 +233,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
                                                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                                                 elevation: 0,
                                               ),
-                                              onPressed: () => _handleRequest(docId, senderId, currentUid!, true),
+                                              onPressed: () => _handleRequest(docId, senderId, currentUid, true),
                                               child: const Text('Accept', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, letterSpacing: 0.3)),
                                             ),
                                             const SizedBox(width: 10),
@@ -237,7 +246,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
                                                 minimumSize: Size.zero,
                                                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                                               ),
-                                              onPressed: () => _handleRequest(docId, senderId, currentUid!, false),
+                                              onPressed: () => _handleRequest(docId, senderId, currentUid, false),
                                               child: const Text('Reject', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, letterSpacing: 0.3)),
                                             ),
                                           ],
@@ -255,7 +264,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
                   },
                 );
               },
-          ),
+            ),
     );
   }
 }
@@ -303,21 +312,25 @@ class _GenieDismissibleState extends State<GenieDismissible> with SingleTickerPr
   }
 
   void _dismiss() {
-    setState(() {
-      _isDismissing = true;
-    });
-    _controller.forward();
+    if (mounted) {
+      setState(() {
+        _isDismissing = true;
+      });
+      _controller.forward();
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    final itemKey = widget.key ?? UniqueKey();
+
     if (!_isDismissing) {
       return Dismissible(
-        key: widget.key!,
+        key: itemKey,
         direction: DismissDirection.endToStart,
         confirmDismiss: (direction) async {
           _dismiss();
-          return false; // Let custom genie animation complete dismissal
+          return false;
         },
         background: Container(
           alignment: Alignment.centerRight,
@@ -368,7 +381,6 @@ class GenieClipper extends CustomClipper<Path> {
     path.moveTo(0, 0);
     path.lineTo(size.width - topRightShift, 0);
     
-    // Curved Funnel Edge for macOS Genie Effect
     path.quadraticBezierTo(
       size.width * (1 - progress * 0.5), 
       size.height * 0.5, 
