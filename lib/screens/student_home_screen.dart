@@ -4,6 +4,7 @@ import 'chat_list_screen.dart';
 import 'search_teacher_screen.dart';
 import 'student_profile_screen.dart';
 import 'student_teachers_screen.dart';
+import 'notification_screen.dart';
 
 class StudentHomeScreen extends StatefulWidget {
   final String currentUserId;
@@ -51,69 +52,58 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
   void _showFilterBottomSheet() {
     showModalBottomSheet(
       context: context,
-      backgroundColor: Colors.transparent,
+      backgroundColor: Colors.white,
       isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
       builder: (context) {
-        return BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-          child: Container(
-            padding: const EdgeInsets.all(24.0),
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black12,
-                  blurRadius: 20,
-                  spreadRadius: 2,
-                ),
-              ],
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Center(
-                  child: Container(
-                    width: 40,
-                    height: 4,
-                    margin: const EdgeInsets.only(bottom: 20),
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade300,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
+        return Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 20),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(10),
                   ),
                 ),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text(
-                      'Filter Teachers',
-                      style: TextStyle(
-                        fontSize: 20, 
-                        fontWeight: FontWeight.bold, 
-                        color: Color(0xFF1A1C1E),
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.close_rounded),
-                      onPressed: () => Navigator.pop(context),
-                    )
-                  ],
-                ),
-                const SizedBox(height: 20),
-                const Center(
-                  child: Padding(
-                    padding: EdgeInsets.symmetric(vertical: 30),
-                    child: Text(
-                      'Advanced filters will appear here', 
-                      style: TextStyle(color: Colors.grey, fontSize: 15, fontWeight: FontWeight.w500),
+              ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'Filter Teachers',
+                    style: TextStyle(
+                      fontSize: 20, 
+                      fontWeight: FontWeight.bold, 
+                      color: Color(0xFF1A1C1E),
                     ),
                   ),
+                  IconButton(
+                    icon: const Icon(Icons.close_rounded),
+                    onPressed: () => Navigator.pop(context),
+                  )
+                ],
+              ),
+              const SizedBox(height: 20),
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.symmetric(vertical: 30),
+                  child: Text(
+                    'Advanced filters will appear here', 
+                    style: TextStyle(color: Colors.grey, fontSize: 15, fontWeight: FontWeight.w500),
+                  ),
                 ),
-                const SizedBox(height: 10),
-              ],
-            ),
+              ),
+              const SizedBox(height: 10),
+            ],
           ),
         );
       },
@@ -121,8 +111,18 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
   }
 
   List<Widget> _buildAppBarActions() {
-    if (_selectedIndex == 0) {
-      return [
+    return [
+      IconButton(
+        tooltip: 'Notifications',
+        icon: const Icon(Icons.notifications_none_rounded, color: Color(0xFF1E4C7A), size: 24),
+        onPressed: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const NotificationScreen()),
+          );
+        },
+      ),
+      if (_selectedIndex == 0) ...[
         IconButton(
           tooltip: 'Mark all as read',
           icon: const Icon(Icons.mark_chat_read_outlined, color: Color(0xFF1E4C7A), size: 22),
@@ -136,10 +136,9 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
             );
           },
         ),
-        const SizedBox(width: 8),
-      ];
-    }
-    return [];
+      ],
+      const SizedBox(width: 8),
+    ];
   }
 
   @override
