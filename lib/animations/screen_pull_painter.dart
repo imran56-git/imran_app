@@ -3,7 +3,8 @@ import 'package:flutter/material.dart';
 
 class ScreenPullWarpWidget extends StatelessWidget {
   final Widget child;
-  final double progress; // 0.0 (Full Screen) -> 1.0 (Pulled into point)
+  /// 0.0 (Full Screen) -> 1.0 (Pulled into target point)
+  final double progress;
   final Offset pullPoint;
   final bool isDisappearing;
 
@@ -17,38 +18,31 @@ class ScreenPullWarpWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // ১. প্রারম্ভিক এবং প্রান্তিক অবস্থা সরাসরি হ্যান্ডেল করা
     if (progress <= 0.001 && isDisappearing) return child;
     if (progress >= 0.999 && !isDisappearing) return child;
+    if (progress >= 0.999 && isDisappearing) return const SizedBox.shrink();
 
     final Size size = MediaQuery.of(context).size;
+    if (size.width == 0 || size.height == 0) return child;
 
-    // Relative pull point in normalized alignment coordinates (-1.0 to 1.0)
-    final double alignX = (size.width > 0)
-        ? ((pullPoint.dx / size.width) * 2 - 1.0).clamp(-1.0, 1.0)
-        : 0.0;
-    final double alignY = (size.height > 0)
-        ? ((pullPoint.dy / size.height) * 2 - 1.0).clamp(-1.0, 1.0)
-        : 0.0;
+    // ২. Pull Point-কে Normalized Alignment (-1.0 to 1.0) এ রূপান্তর
+    final double alignX = ((pullPoint.dx / size.width) * 2 - 1.0).clamp(-1.0, 1.0);
+    final double alignY = ((pullPoint.dy / size.height) * 2 - 1.0).clamp(-1.0, 1.0);
 
-    final double effectiveProgress =
-        isDisappearing ? progress : (1.0 - progress);
+    final double effectiveProgress = isDisappearing ? progress : (1.0 - progress);
 
-    // Perspective & non-uniform suction matrix calculation
+    // ৩. ৩ডি স্কেলিং ও পার্সপেক্টিভ হিসেব
     final double scale = (1.0 - effectiveProgress).clamp(0.001, 1.0);
     final double perspective = 0.002 * effectiveProgress;
-
-    final double transX =
-        (pullPoint.dx - (size.width / 2)) * effectiveProgress;
-    final double transY =
-        (pullPoint.dy - (size.height / 2)) * effectiveProgress;
+    final double rotationZ = (isDisappearing ? 0.05 : -0.05) * effectiveProgress;
 
     return Transform(
       alignment: Alignment(alignX, alignY),
       transform: Matrix4.identity()
         ..setEntry(3, 2, perspective)
-        ..translate(transX, transY)
         ..scale(scale, scale, 1.0)
-        ..rotateZ((isDisappearing ? 0.04 : -0.04) * effectiveProgress),
+        ..rotateZ(rotationZ),
       child: Opacity(
         opacity: (1.0 - (effectiveProgress * 0.85)).clamp(0.0, 1.0),
         child: ClipRect(
