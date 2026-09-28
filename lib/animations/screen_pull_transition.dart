@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'animation_constants.dart';
-import 'screen_pull_painter.dart';
+import 'screen_pull_warp_widget.dart'; 
 
 class ScreenPullTransition extends StatelessWidget {
   final Animation<double> animation;
@@ -18,32 +18,42 @@ class ScreenPullTransition extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final Animation<double> pullAnimation = CurvedAnimation(
+      parent: animation,
+      curve: Interval(
+        0.0,
+        0.5,
+        curve: AnimationConstants.pullCurve,
+      ),
+    );
+
+    final Animation<double> emergeAnimation = CurvedAnimation(
+      parent: animation,
+      curve: Interval(
+        0.5,
+        1.0,
+        curve: AnimationConstants.emergeCurve,
+      ),
+    );
+
     return AnimatedBuilder(
       animation: animation,
       builder: (context, child) {
         final double val = animation.value;
 
-        // Phase 1: Pull Outgoing Screen into Vanishing Point (0.0 to 0.5)
+        // Phase 1: Pull Outgoing Screen into Vanishing Point (0.0 -> 0.5)
         if (val <= 0.5) {
-          final double pullProgress = (val / 0.5).clamp(0.0, 1.0);
-          final double curvedProgress =
-              AnimationConstants.pullCurve.transform(pullProgress);
-
           return ScreenPullWarpWidget(
-            progress: curvedProgress,
+            progress: pullAnimation.value,
             pullPoint: pullPoint,
             isDisappearing: true,
             child: outgoingChild,
           );
         }
-        // Phase 2: Emerge Incoming Screen from Vanishing Point (0.5 to 1.0)
+        // Phase 2: Emerge Incoming Screen from Vanishing Point (0.5 -> 1.0)
         else {
-          final double emergeProgress = ((val - 0.5) / 0.5).clamp(0.0, 1.0);
-          final double curvedProgress =
-              AnimationConstants.emergeCurve.transform(emergeProgress);
-
           return ScreenPullWarpWidget(
-            progress: 1.0 - curvedProgress,
+            progress: emergeAnimation.value, 
             pullPoint: pullPoint,
             isDisappearing: false,
             child: incomingChild,
