@@ -12,7 +12,7 @@ class GeminiService {
 
   void _initModel() {
     _model = GenerativeModel(
-      model: 'gemini-2.0-flash', 
+      model: 'gemini-2.5-flash', 
       apiKey: _apiKey,
     );
   }
