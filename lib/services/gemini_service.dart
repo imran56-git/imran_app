@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';
+import '../constants/ai_knowledge.dart';
 
 class GeminiService {
   static const String _apiKey = String.fromEnvironment('GEMINI_API_KEY');
@@ -15,6 +16,7 @@ class GeminiService {
     _model = GenerativeModel(
       model: 'gemini-3.8-flash',
       apiKey: _apiKey,
+      systemInstruction: Content.system(AiKnowledge.systemInstruction),
     );
     _chatSession = _model.startChat();
   }
