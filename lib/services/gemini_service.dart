@@ -11,9 +11,6 @@ class GeminiService {
   }
 
   void _initModel() {
-    if (_apiKey.isEmpty) {
-      debugPrint("Warning: GEMINI_API_KEY is missing!");
-    }
     _model = GenerativeModel(
       model: 'gemini-1.5-flash',
       apiKey: _apiKey,
@@ -22,12 +19,15 @@ class GeminiService {
 
   Future<String?> generateResponse(String prompt) async {
     try {
+      if (_apiKey.isEmpty) {
+        return "Error: GEMINI_API_KEY is empty! Check GitHub Secret setup.";
+      }
       final content = [Content.text(prompt)];
       final response = await _model.generateContent(content);
       return response.text;
     } catch (e) {
       debugPrint("Gemini AI Error: $e");
-      return "Sorry, unable to connect to the AI server. Please try again later.";
+      return "Error Details: $e"; 
     }
   }
 }
