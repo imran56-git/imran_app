@@ -5,29 +5,37 @@ class GeminiService {
   static const String _apiKey = String.fromEnvironment('GEMINI_API_KEY');
 
   late final GenerativeModel _model;
+  ChatSession? _chatSession;
 
   GeminiService() {
     _initModel();
   }
 
   void _initModel() {
-    if (_apiKey.isEmpty) {
-      debugPrint("Warning: GEMINI_API_KEY is missing!");
-    }
     _model = GenerativeModel(
       model: 'gemini-3.8-flash',
       apiKey: _apiKey,
     );
+    _chatSession = _model.startChat();
   }
 
-  Future<String?> generateResponse(String prompt) async {
+  Future<String?> sendChatMessage(String prompt) async {
     try {
-      final content = [Content.text(prompt)];
-      final response = await _model.generateContent(content);
+      if (_apiKey.isEmpty) {
+        return "Error: GEMINI_API_KEY is empty! Check GitHub Secret setup.";
+      }
+
+      _chatSession ??= _model.startChat();
+
+      final response = await _chatSession!.sendMessage(Content.text(prompt));
       return response.text;
     } catch (e) {
       debugPrint("Gemini AI Error: $e");
-      return "Sorry, unable to connect to the AI server. Please try again later.";
+      return "Error Details: $e";
     }
+  }
+
+  void resetChat() {
+    _chatSession = _model.startChat();
   }
 }
