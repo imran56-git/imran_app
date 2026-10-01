@@ -5,6 +5,7 @@ import 'search_teacher_screen.dart';
 import 'student_profile_screen.dart';
 import 'student_teachers_screen.dart';
 import 'notification_screen.dart';
+import 'ai_assistant_screen.dart'; // AI Assistant স্ক্রিন ইমপোর্ট করা হলো
 
 class StudentHomeScreen extends StatefulWidget {
   final String currentUserId;
@@ -32,6 +33,7 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
       ),  
       const StudentTeachersScreen(),
       const TeacherSearchScreen(),  
+      const AiAssistantScreen(), // ৩ নম্বর ট্যাবে AI Assistant যুক্ত করা হলো
       StudentProfileScreen(currentUserId: widget.currentUserId),  
     ];
   }
@@ -144,7 +146,8 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
   @override
   Widget build(BuildContext context) {
     final bool showFab = _selectedIndex == 0 || _selectedIndex == 2;
-    final bool showAppBar = _selectedIndex != 3; 
+    // AI Assistant (index 3) এবং Profile (index 4) স্ক্রিনের নিজস্ব অ্যাপবার থাকায় মূল অ্যাপবার হাইড করা হলো
+    final bool showAppBar = _selectedIndex == 0 || _selectedIndex == 1 || _selectedIndex == 2; 
 
     return Scaffold(  
       backgroundColor: const Color(0xFFF7F9FC),  
@@ -230,12 +233,12 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
             unselectedItemColor: Colors.grey.shade400,  
             selectedLabelStyle: const TextStyle(  
               fontWeight: FontWeight.bold,  
-              fontSize: 12,  
+              fontSize: 11,  
               letterSpacing: 0.3,
             ),  
             unselectedLabelStyle: const TextStyle(  
               fontWeight: FontWeight.w600,  
-              fontSize: 12,  
+              fontSize: 11,  
             ),  
             items: const [  
               BottomNavigationBarItem(  
@@ -270,6 +273,17 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
                   child: Icon(Icons.manage_search_rounded, size: 24),
                 ),  
                 label: 'Search',  
+              ),  
+              BottomNavigationBarItem(  
+                icon: Padding(
+                  padding: EdgeInsets.only(bottom: 4),
+                  child: Icon(Icons.auto_awesome_outlined, size: 22),
+                ),  
+                activeIcon: Padding(
+                  padding: EdgeInsets.only(bottom: 4),
+                  child: Icon(Icons.auto_awesome_rounded, size: 22),
+                ),  
+                label: 'AI Assistant',  
               ),  
               BottomNavigationBarItem(  
                 icon: Padding(
