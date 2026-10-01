@@ -52,7 +52,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
     _scrollToBottom();
 
     try {
-      final response = await _geminiService.generateResponse(text);
+      final response = await _geminiService.sendChatMessage(text);
 
       if (!mounted) return;
 
@@ -124,7 +124,6 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
       ),
       body: Column(
         children: [
-          // চ্যাট মেসেজ লিস্ট অথবা ওয়েলকাম স্ক্রিন
           Expanded(
             child: _messages.isEmpty
                 ? _buildEmptyState()
@@ -137,8 +136,6 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                     },
                   ),
           ),
-
-          // এআই চিন্তা করার সময় লোডিং ইন্ডিকেটর
           if (_isLoading)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
@@ -171,15 +168,12 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                 ],
               ),
             ),
-
-          // ইনপুট সেকশন (Textfield & Send button)
           _buildInputSection(),
         ],
       ),
     );
   }
 
-  // ওয়েলকাম স্ক্রিন এবং সাজেস্টেড চিপস
   Widget _buildEmptyState() {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24.0),
@@ -215,8 +209,6 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
             style: TextStyle(fontSize: 14, color: Colors.grey.shade600, height: 1.4),
           ),
           const SizedBox(height: 30),
-
-          // Quick Action Chips
           Align(
             alignment: Alignment.centerLeft,
             child: Text(
@@ -248,7 +240,6 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
     );
   }
 
-  // প্রফেশনাল চ্যাট বাবল উইজেট
   Widget _buildMessageBubble(ChatMessage message) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12.0),
@@ -307,7 +298,6 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
     );
   }
 
-  // ইনপুট ফিল্ড সেকশন
   Widget _buildInputSection() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
