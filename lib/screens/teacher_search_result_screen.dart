@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../services/gemini_service.dart'; // 🔴 Gemini Service Import
 import '../widgets/teacher_card_widget.dart';
 import 'chat_screen.dart'; 
 import 'teacher_profile_screen.dart'; 
@@ -238,7 +239,7 @@ class TeacherSearchResultScreen extends StatelessWidget {
 
               final String teacherName =
                   data['name'] ?? data['displayName'] ?? 'Unknown Teacher';
-              
+
               final String profilePic = data['profileUrl'] ??
                   data['profileImageUrl'] ??
                   data['photoUrl'] ??
@@ -247,7 +248,7 @@ class TeacherSearchResultScreen extends StatelessWidget {
 
               final bool isVerified = data['isVerified'] ?? false;
               final String? highestBadgeType = data['highestBadgeType'];
-              
+
               final String locationDisplay = data['teachingLocation'] ??
                   data['location'] ??
                   data['address'] ??
@@ -311,6 +312,66 @@ class TeacherSearchResultScreen extends StatelessWidget {
             },
           );
         },
+      ),
+      // 🔴 স্ক্রিনের একদম নিচে টেস্ট বাটন যুক্ত করা হলো
+      bottomNavigationBar: Container(
+        padding: const EdgeInsets.all(12.0),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 10,
+              offset: const Offset(0, -3),
+            ),
+          ],
+        ),
+        child: SafeArea(
+          child: ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF1E4C7A),
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            icon: const Icon(Icons.auto_awesome, size: 20),
+            label: const Text(
+              'Test Gemini AI',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+            ),
+            onPressed: () async {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Testing Gemini AI connection...'),
+                  duration: Duration(seconds: 2),
+                ),
+              );
+
+              final gemini = GeminiService();
+              final result = await gemini.generateResponse(
+                "Hello, write a 1-line welcome message for Find Your Best Teacher Today app.",
+              );
+
+              if (context.mounted) {
+                showDialog(
+                  context: context,
+                  builder: (context) => AlertDialog(
+                    title: const Text('Gemini AI Test'),
+                    content: Text(result ?? 'No response received'),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text('Close'),
+                      ),
+                    ],
+                  ),
+                );
+              }
+            },
+          ),
+        ),
       ),
     );
   }
