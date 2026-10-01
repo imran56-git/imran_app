@@ -12,7 +12,7 @@ class GeminiService {
 
   void _initModel() {
     _model = GenerativeModel(
-      model: 'gemini-1.5-flash',
+      model: 'gemini-2.0-flash', 
       apiKey: _apiKey,
     );
   }
@@ -27,7 +27,7 @@ class GeminiService {
       return response.text;
     } catch (e) {
       debugPrint("Gemini AI Error: $e");
-      return "Error Details: $e"; 
+      return "Error Details: $e";
     }
   }
 }
