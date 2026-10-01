@@ -5,7 +5,7 @@ import 'search_teacher_screen.dart';
 import 'student_profile_screen.dart';
 import 'student_teachers_screen.dart';
 import 'notification_screen.dart';
-import 'ai_assistant_screen.dart'; // AI Assistant স্ক্রিন ইমপোর্ট করা হলো
+import 'ai_assistant_screen.dart'; 
 
 class StudentHomeScreen extends StatefulWidget {
   final String currentUserId;
@@ -33,7 +33,7 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
       ),  
       const StudentTeachersScreen(),
       const TeacherSearchScreen(),  
-      const AiAssistantScreen(), // ৩ নম্বর ট্যাবে AI Assistant যুক্ত করা হলো
+      const AiAssistantScreen(), 
       StudentProfileScreen(currentUserId: widget.currentUserId),  
     ];
   }
