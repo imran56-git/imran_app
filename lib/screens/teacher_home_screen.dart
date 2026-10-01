@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'chat_list_screen.dart'; 
 import 'teacher_profile_screen.dart'; 
 import 'teacher_students_screen.dart';
+import 'ai_assistant_screen.dart'; // AI Assistant স্ক্রিন ইমপোর্ট করা হলো
 
 class TeacherHomeScreen extends StatefulWidget {
   final String currentUserId; 
@@ -27,14 +28,15 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> with SingleTicker
   @override
   void initState() {
     super.initState();
-    
-    // স্ক্রিনগুলোকে মেমরিতে একবারই ইনিশিয়ালাইজ করা হচ্ছে
+
+    // ৪টি স্ক্রিন মেমরিতে লোড করা হচ্ছে (AI Assistant সহ)
     _screens = [
       ChatListScreen(
         currentUserId: widget.currentUserId,
         isTeacher: true,
       ),
       const TeacherStudentsScreen(),
+      const AiAssistantScreen(), // ৩ নম্বর ট্যাবে এআই যুক্ত হলো
       TeacherProfileScreen(currentUserId: widget.currentUserId), 
     ];
 
@@ -70,7 +72,8 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> with SingleTicker
 
   @override
   Widget build(BuildContext context) {
-    final bool showAppBar = _selectedIndex != 2;
+    // AI Assistant (index 2) এবং Profile (index 3)-এর নিজস্ব অ্যাপ বার থাকায় মেইন অ্যাপ বার হাইড রাখা হচ্ছে
+    final bool showAppBar = _selectedIndex == 0 || _selectedIndex == 1;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF7F9FC), 
@@ -214,6 +217,17 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> with SingleTicker
                   child: Icon(Icons.people_rounded, size: 24),
                 ),
                 label: 'Students',
+              ),
+              BottomNavigationBarItem(
+                icon: Padding(
+                  padding: EdgeInsets.only(bottom: 4),
+                  child: Icon(Icons.auto_awesome_outlined, size: 22),
+                ),
+                activeIcon: Padding(
+                  padding: EdgeInsets.only(bottom: 4),
+                  child: Icon(Icons.auto_awesome_rounded, size: 22),
+                ),
+                label: 'AI Assistant',
               ),
               BottomNavigationBarItem(
                 icon: Padding(
