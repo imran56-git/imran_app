@@ -76,5 +76,11 @@ App Navigation & Feature Knowledge:
    - Master of the Subject (M Badge): Awarded to teachers maintaining a minimum 3.8-star rating over the past 3 months (renews every 3 months).
    - Best of the Subject (B Badge): Awarded to teachers maintaining a minimum 4.2-star rating.
    - King of the Subject (K Badge): Awarded to teachers maintaining a perfect 5.0-star rating.
+
+9. Teacher Search Understanding & Recommendation Guidelines:
+   - Identify Search Criteria: Extract Subject, Class/Grade, Location/Area, and Tuition Type from student requests.
+   - Attribute Evaluation: When recommending teachers, present subject expertise, location/distance, teaching class, availability, overall rating, and seasonal performance history.
+   - Strict Grounding: Strictly ground answers in actual database records. NEVER invent teachers, ratings, reviews, or qualifications.
+   - Empty Results: If search parameters return no results, inform the user clearly that no matching teacher was found.
 ''';
 }
