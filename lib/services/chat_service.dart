@@ -179,6 +179,7 @@ class ChatService {
     required String message,
     required String type,
     String? replyToMessageId,
+    String? replyToText, // 🟢 রিপ্লাই টেক্সট সিঙ্ক করার জন্য যোগ করা হয়েছে
     Map<String, dynamic>? mediaMetaData,
   }) async {
     try {
@@ -203,6 +204,7 @@ class ChatService {
       };
 
       if (replyToMessageId != null) messageData['replyToMessageId'] = replyToMessageId;
+      if (replyToText != null) messageData['replyToText'] = replyToText;
       if (mediaMetaData != null) messageData['mediaMetaData'] = mediaMetaData;
 
       batch.set(messageRef, messageData);
@@ -498,6 +500,7 @@ class ChatService {
     required String receiverId,
     required String message,
     required String replyToMessageId,
+    String? replyToText,
   }) async {
     await sendMessage(
       chatId: chatId,
@@ -506,6 +509,7 @@ class ChatService {
       message: message,
       type: 'text',
       replyToMessageId: replyToMessageId,
+      replyToText: replyToText,
     );
   }
 
