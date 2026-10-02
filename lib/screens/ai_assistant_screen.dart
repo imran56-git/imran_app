@@ -1,12 +1,19 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_tts/flutter_tts.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import '../services/gemini_service.dart';
 
 class ChatMessage {
   final String text;
   final bool isUser;
+  bool? isLiked; // true = liked, false = disliked, null = no reaction
 
-  ChatMessage({required this.text, required this.isUser});
+  ChatMessage({
+    required this.text,
+    required this.isUser,
+    this.isLiked,
+  });
 }
 
 class AiAssistantScreen extends StatefulWidget {
@@ -21,24 +28,50 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
   final GeminiService _geminiService = GeminiService();
   final List<ChatMessage> _messages = [];
   final Set<int> _selectedIndices = {};
-  
-  // Speech to text variables
+
+  // Speech-to-Text & Text-to-Speech Variables
   late stt.SpeechToText _speechToText;
+  late FlutterTts _flutterTts;
+  
   bool _isListening = false;
   bool _isLoading = false;
   bool _isSelectionMode = false;
+  int? _currentlySpeakingIndex;
 
   @override
   void initState() {
     super.initState();
     _speechToText = stt.SpeechToText();
+    _initTts();
   }
 
-  // STEP 1: Text cleaner function to remove '**' and format text cleanly
+  void _initTts() {
+    _flutterTts = FlutterTts();
+    _flutterTts.setCompletionHandler(() {
+      setState(() {
+        _currentlySpeakingIndex = null;
+      });
+    });
+    _flutterTts.setErrorHandler((msg) {
+      setState(() {
+        _currentlySpeakingIndex = null;
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _flutterTts.stop();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  // STEP 1: Text cleaner function
   String _cleanText(String text) {
     return text.replaceAll('**', '').replaceAll('* ', '• ');
   }
 
+  // AI Response Request & Stop Logic
   void _sendMessage() async {
     final text = _controller.text.trim();
     if (text.isEmpty || _isLoading) return;
@@ -55,7 +88,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
 
     final response = await _geminiService.sendChatMessage(text);
 
-    if (!mounted) return;
+    if (!mounted || !_isLoading) return; // _isLoading false মানে ইউজার স্টপ বাটনে চাপ দিয়েছেন
 
     final cleanedResponse = _cleanText(response ?? "An unexpected error occurred.");
 
@@ -68,7 +101,14 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
     });
   }
 
-  // STEP 4: Voice Input Logic
+  // Stop Generating Response Logic
+  void _stopGenerating() {
+    setState(() {
+      _isLoading = false;
+    });
+  }
+
+  // STEP 4: Voice Input Logic (STT)
   void _toggleListening() async {
     if (!_isListening) {
       bool available = await _speechToText.initialize(
@@ -77,7 +117,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
             setState(() => _isListening = false);
           }
         },
-        onError: (errorNotification) {
+        onError: (_) {
           setState(() => _isListening = false);
         },
       );
@@ -102,6 +142,34 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
     setState(() => _isListening = false);
   }
 
+  // STEP 5: Voice Output Logic (TTS)
+  Future<void> _toggleSpeak(int index, String text) async {
+    if (_currentlySpeakingIndex == index) {
+      await _flutterTts.stop();
+      setState(() {
+        _currentlySpeakingIndex = null;
+      });
+    } else {
+      await _flutterTts.stop();
+      setState(() {
+        _currentlySpeakingIndex = index;
+      });
+      await _flutterTts.speak(text);
+    }
+  }
+
+  // STEP 6: Copy Text Logic
+  void _copyToClipboard(String text) {
+    Clipboard.setData(ClipboardData(text: text));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text("Copied to clipboard"),
+        duration: Duration(seconds: 2),
+      ),
+    );
+  }
+
+  // Selection & Message Delete Management
   void _toggleSelection(int index) {
     setState(() {
       if (_selectedIndices.contains(index)) {
@@ -156,10 +224,12 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
           TextButton(
             onPressed: () {
               Navigator.pop(context);
+              _flutterTts.stop();
               setState(() {
                 _messages.clear();
                 _selectedIndices.clear();
                 _isSelectionMode = false;
+                _currentlySpeakingIndex = null;
               });
               _geminiService.resetChat();
             },
@@ -272,6 +342,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                     itemBuilder: (context, index) {
                       final message = _messages[index];
                       final isSelected = _selectedIndices.contains(index);
+                      final isSpeaking = _currentlySpeakingIndex == index;
 
                       return GestureDetector(
                         onLongPress: () {
@@ -349,17 +420,92 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                                           ),
                                         ),
                                       )
-                                    : Padding(
-                                        padding: const EdgeInsets.only(top: 2),
-                                        child: Text(
-                                          message.text,
-                                          style: const TextStyle(
-                                            color: Color(0xFF1E293B),
-                                            fontSize: 15,
-                                            height: 1.5,
-                                            fontWeight: FontWeight.w400,
+                                    : Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Padding(
+                                            padding: const EdgeInsets.only(top: 2),
+                                            child: Text(
+                                              message.text,
+                                              style: const TextStyle(
+                                                color: Color(0xFF1E293B),
+                                                fontSize: 15,
+                                                height: 1.5,
+                                                fontWeight: FontWeight.w400,
+                                              ),
+                                            ),
                                           ),
-                                        ),
+                                          const SizedBox(height: 8),
+                                          // STEP 5 & STEP 6: Interaction Bar (TTS, Copy, Like, Dislike)
+                                          Row(
+                                            children: [
+                                              IconButton(
+                                                constraints: const BoxConstraints(),
+                                                padding: const EdgeInsets.only(right: 12),
+                                                icon: Icon(
+                                                  isSpeaking
+                                                      ? Icons.volume_up_rounded
+                                                      : Icons.volume_mute_rounded,
+                                                  size: 18,
+                                                  color: isSpeaking
+                                                      ? const Color(0xFF1E4C7A)
+                                                      : Colors.grey.shade500,
+                                                ),
+                                                onPressed: () => _toggleSpeak(index, message.text),
+                                                tooltip: isSpeaking ? 'Stop Audio' : 'Listen',
+                                              ),
+                                              IconButton(
+                                                constraints: const BoxConstraints(),
+                                                padding: const EdgeInsets.only(right: 12),
+                                                icon: Icon(
+                                                  Icons.copy_rounded,
+                                                  size: 16,
+                                                  color: Colors.grey.shade500,
+                                                ),
+                                                onPressed: () => _copyToClipboard(message.text),
+                                                tooltip: 'Copy',
+                                              ),
+                                              IconButton(
+                                                constraints: const BoxConstraints(),
+                                                padding: const EdgeInsets.only(right: 12),
+                                                icon: Icon(
+                                                  message.isLiked == true
+                                                      ? Icons.thumb_up_rounded
+                                                      : Icons.thumb_up_outlined,
+                                                  size: 16,
+                                                  color: message.isLiked == true
+                                                      ? const Color(0xFF1E4C7A)
+                                                      : Colors.grey.shade500,
+                                                ),
+                                                onPressed: () {
+                                                  setState(() {
+                                                    message.isLiked = message.isLiked == true ? null : true;
+                                                  });
+                                                },
+                                                tooltip: 'Like',
+                                              ),
+                                              IconButton(
+                                                constraints: const BoxConstraints(),
+                                                padding: const EdgeInsets.only(right: 12),
+                                                icon: Icon(
+                                                  message.isLiked == false
+                                                      ? Icons.thumb_down_rounded
+                                                      : Icons.thumb_down_outlined,
+                                                  size: 16,
+       color: message.isLiked == false
+                                                      ? Colors.red.shade400
+                                                      : Colors.grey.shade500,
+                                                ),
+                                                onPressed: () {
+                                                  setState(() {
+                                                    message.isLiked = message.isLiked == false ? null : false;
+                                                  });
+                                                },
+                                                tooltip: 'Dislike',
+                                              ),
+                                            ],
+                                          ),
+                                        ],
                                       ),
                               ),
                               if (message.isUser) ...[
@@ -390,8 +536,11 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                   Expanded(
                     child: TextField(
                       controller: _controller,
+                      enabled: !_isLoading, // এআই উত্তর তৈরি করার সময় ইনপুট ডিসেবল থাকবে
                       decoration: InputDecoration(
-                        hintText: _isListening ? 'Listening...' : 'Ask FYBTT AI...',
+                        hintText: _isLoading
+                            ? 'Generating response...'
+                            : (_isListening ? 'Listening...' : 'Ask FYBTT AI...'),
                         hintStyle: TextStyle(
                           color: _isListening ? Colors.red.shade400 : Colors.grey.shade400,
                           fontSize: 14,
@@ -414,16 +563,22 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                       color: _isListening ? Colors.red : const Color(0xFF1E4C7A),
                       size: 24,
                     ),
-                    onPressed: _toggleListening,
+                    onPressed: _isLoading ? null : _toggleListening,
                     tooltip: 'Voice Input',
                   ),
                   const SizedBox(width: 2),
+                  // STOP / SEND Dynamic Button
                   CircleAvatar(
-                    backgroundColor: const Color(0xFF1E4C7A),
+                    backgroundColor: _isLoading ? Colors.red.shade600 : const Color(0xFF1E4C7A),
                     radius: 20,
                     child: IconButton(
-                      icon: const Icon(Icons.send_rounded, color: Colors.white, size: 18),
-                      onPressed: _sendMessage,
+                      icon: Icon(
+                        _isLoading ? Icons.stop_rounded : Icons.send_rounded,
+                        color: Colors.white,
+                        size: 18,
+                      ),
+                      onPressed: _isLoading ? _stopGenerating : _sendMessage,
+                      tooltip: _isLoading ? 'Stop' : 'Send',
                     ),
                   ),
                 ],
@@ -504,4 +659,4 @@ class _ThinkingIndicatorState extends State<_ThinkingIndicator>
       ),
     );
   }
-}
+}   
