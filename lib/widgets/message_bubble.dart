@@ -92,7 +92,7 @@ class _MessageBubbleState extends State<MessageBubble> {
     return '$hour:$minute $amPm';
   }
 
-  // 🔴 ১০ মিনিটের বেশি হয়েছে কিনা এবং মেসেজটি নিজের ও টেক্সট টাইপ কিনা চেক করার লজিক 🔴
+  // ১০ মিনিটের বেশি হয়েছে কিনা এবং মেসেজটি নিজের ও টেক্সট টাইপ কিনা চেক করার লজিক
   bool _canEditMessage() {
     if (!widget.isMe) return false;
     if (widget.message.type.toLowerCase() != 'text') return false;
@@ -106,7 +106,7 @@ class _MessageBubbleState extends State<MessageBubble> {
     return difference.inMinutes < 10;
   }
 
-  // 🔴 মেসেজ এডিট করার ডায়ালগ পপ-আপ 🔴
+  // মেসেজ এডিট করার ডায়ালগ পপ-আপ
   void _showEditDialog(BuildContext context) {
     final TextEditingController editController = TextEditingController(text: widget.message.content);
 
@@ -140,14 +140,16 @@ class _MessageBubbleState extends State<MessageBubble> {
                 if (newText.isNotEmpty && newText != widget.message.content) {
                   Navigator.pop(dialogContext);
                   try {
-                    // ChatService-এ মেসেজ আপডেট ফায়ারবেস ট্রানজেকশন
                     await FirebaseFirestore.instance
                         .collection('chats')
                         .doc(widget.chatRoomId)
                         .collection('messages')
                         .doc(widget.message.messageId)
-                        .update({'content': newText, 'isEdited': true});
-                    
+                        .update({
+                          'content': newText, 
+                          'isEdited': true,
+                        });
+
                     if (context.mounted) {
                       SuccessToast.show(context, "Message edited");
                     }
@@ -379,10 +381,12 @@ class _MessageBubbleState extends State<MessageBubble> {
               ListWhiteTiles(
                 leading: const Icon(Icons.copy_rounded, color: Colors.black87),
                 title: const Text('Copy Text'),
-                onTap: () {
-                  Clipboard.setData(ClipboardData(text: widget.message.content));
-                  Navigator.pop(context);
-                  SuccessToast.show(context, "Copied to Clipboard");
+                onTap: () async {
+                  await Clipboard.setData(ClipboardData(text: widget.message.content));
+                  if (context.mounted) {
+                    Navigator.pop(context);
+                    SuccessToast.show(context, "Copied to Clipboard");
+                  }
                 },
               ),
             if (!widget.message.isDeletedForEveryone)
@@ -395,7 +399,7 @@ class _MessageBubbleState extends State<MessageBubble> {
                 },
               ),
 
-            // 🔴 ১০ মিনিটের মধ্যে পাঠালে এখানে 'Edit' অপশনটি দেখাবে 🔴
+            // ১০ মিনিটের মধ্যে পাঠালে 'Edit' অপশনটি দেখাবে
             if (_canEditMessage())
               ListWhiteTiles(
                 leading: const Icon(Icons.edit_outlined, color: Colors.blue),
@@ -495,7 +499,7 @@ class _MessageBubbleState extends State<MessageBubble> {
                         const SizedBox(width: 4),
                         Flexible(
                           child: Text(
-                            "Replied to a message",
+                            widget.message.replyToText ?? "Replied to a message",
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(fontSize: 11, color: Colors.grey.shade700, fontWeight: FontWeight.w500),
                           ),
@@ -524,6 +528,12 @@ class _MessageBubbleState extends State<MessageBubble> {
                 mainAxisSize: MainAxisSize.min,
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
+                  if (widget.message.isEdited == true && !widget.message.isDeletedForEveryone) ...[
+                    Text(
+                      "edited ",
+                      style: TextStyle(fontSize: 10, color: Colors.grey.shade600, fontStyle: FontStyle.italic),
+                    ),
+                  ],
                   Text(
                     _formatTime(widget.message.timestamp),
                     style: TextStyle(fontSize: 10, color: Colors.grey.shade600),
