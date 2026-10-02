@@ -19,6 +19,10 @@ class GeminiService {
       model: 'gemini-3.8-flash',
       apiKey: _apiKey,
       systemInstruction: Content.system(AiKnowledge.systemInstruction),
+      generationConfig: GenerationConfig(
+        maxOutputTokens: 500,
+        temperature: 0.7,
+      ),
     );
     _chatSession = _model.startChat();
   }
