@@ -19,7 +19,7 @@ class ChatListScreen extends StatefulWidget {
 }
 
 class _ChatListScreenState extends State<ChatListScreen>
-    with WidgetsBindingObserver {
+    with WidgetsBindingObserver, AutomaticKeepAliveClientMixin {
   final ChatService _chatService = ChatService();
   final TextEditingController _searchController = TextEditingController();
   String _searchText = '';
@@ -28,6 +28,9 @@ class _ChatListScreenState extends State<ChatListScreen>
   final Set<String> _selectedChatDocIds = {};
 
   bool get _isSelectionMode => _selectedChatDocIds.isNotEmpty;
+
+  @override
+  bool get wantKeepAlive => true;
 
   @override
   void initState() {
@@ -114,8 +117,7 @@ class _ChatListScreenState extends State<ChatListScreen>
             ),
             onPressed: () async {
               Navigator.pop(ctx);
-              
-              // ফায়ারস্টোর থেকে সিলেক্ট করা চ্যাট মুছে ফেলার অপারেশন
+
               for (String docId in _selectedChatDocIds) {
                 try {
                   await FirebaseFirestore.instance
@@ -201,6 +203,7 @@ class _ChatListScreenState extends State<ChatListScreen>
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     return PopScope(
       canPop: !_isSelectionMode,
       onPopInvokedWithResult: (didPop, result) {
@@ -238,7 +241,6 @@ class _ChatListScreenState extends State<ChatListScreen>
 
                   final rawChatDocs = snapshot.data!.docs;
 
-                  // 🟢 ডুপ্লিকেট ইউজার ফিল্টার করার ফিল্টারিং লজিক (Deduplication)
                   final Map<String, DocumentSnapshot> uniqueChatsMap = {};
 
                   for (var doc in rawChatDocs) {
@@ -258,7 +260,6 @@ class _ChatListScreenState extends State<ChatListScreen>
                         if (!uniqueChatsMap.containsKey(otherUserId)) {
                           uniqueChatsMap[otherUserId] = doc;
                         } else {
-                          // একাধিক চ্যাট রুম থাকলে লেটেস্ট মেসেজের রুমটি রাখা হবে
                           final existingData = uniqueChatsMap[otherUserId]!.data() as Map<String, dynamic>;
                           final existingTime = existingData['lastMessageTime'] as Timestamp?;
                           final currentTime = data['lastMessageTime'] as Timestamp?;
@@ -273,7 +274,6 @@ class _ChatListScreenState extends State<ChatListScreen>
 
                   final chatDocs = uniqueChatsMap.values.toList();
 
-                  // সময় অনুযায়ী সর্ট করা
                   chatDocs.sort((a, b) {
                     final aData = a.data() as Map<String, dynamic>;
                     final bData = b.data() as Map<String, dynamic>;
@@ -304,7 +304,6 @@ class _ChatListScreenState extends State<ChatListScreen>
                       final bool isSelected =
                           _selectedChatDocIds.contains(doc.id);
 
-                      // 🟢 স্মার্ট আনরিড কাউন্ট লজিক (নিজের মেসেজে ব্যাজ দেখাবে না)
                       final String lastSenderId = (chatData['lastSenderId'] ?? chatData['senderId'] ?? '').toString();
                       int unreadCount = 0;
 
@@ -398,7 +397,6 @@ class _ChatListScreenState extends State<ChatListScreen>
                                   .toString();
                               isOnline = mapData['isOnline'] == true;
                             }
-
                             if (!_matchesSearch(chatData, finalName)) {
                               return const SizedBox.shrink();
                             }
