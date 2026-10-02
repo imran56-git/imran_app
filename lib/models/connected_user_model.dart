@@ -13,7 +13,7 @@ class ConnectedUserModel {
     required this.role,
   });
 
-  // 🟢 মিসিং গেটারসমূহ (Build Error সমাধান করার জন্য)
+  
   String? get profileImageUrl => photoUrl;
   String get subtitle => tuitionName;
 
