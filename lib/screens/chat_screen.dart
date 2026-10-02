@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:async';
 import 'dart:developer';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart'; // Clipboard এবং HapticFeedback-এর জন্য
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -52,7 +53,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver, Si
   String? _customBgImagePath;
   bool _isMarkingRead = false;
   bool _isInitializing = true;
+  
+  // ড্র্যাগ অ্যান্ড ড্রপ স্টেট
+  bool _isDraggingMessage = false;
   bool _isDragHoveringInput = false;
+  String? _hoveredTopAction; // 'copy', 'delete_me', 'delete_all'
+  MessageModel? _draggedMessage;
 
   late AnimationController _bounceController;
   late Animation<double> _bounceAnimation;
@@ -251,6 +257,134 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver, Si
     }
   }
 
+  // 🔹 ভাসমান টপ বার আইকন তৈরি উইজেট (Hover Scaling সহ)
+  Widget _buildTopActionIcon({
+    required String actionKey,
+    required IconData icon,
+    required Color color,
+    required Function(MessageModel) onAccept,
+  }) {
+    final bool isHovered = _hoveredTopAction == actionKey;
+
+    return DragTarget<MessageModel>(
+      onWillAcceptWithDetails: (details) {
+        HapticFeedback.selectionClick();
+        setState(() {
+          _hoveredTopAction = actionKey;
+        });
+        return true;
+      },
+      onLeave: (_) {
+        setState(() {
+          if (_hoveredTopAction == actionKey) _hoveredTopAction = null;
+        });
+      },
+      onAcceptWithDetails: (details) {
+        setState(() {
+          _hoveredTopAction = null;
+        });
+        onAccept(details.data);
+      },
+      builder: (context, candidateData, rejectedData) {
+        return AnimatedScale(
+          scale: isHovered ? 1.45 : 1.0, // মেসজ ওপরে আইকনের কাছে আনলে বড় হবে
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOutBack,
+          child: Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: isHovered ? color.withOpacity(0.25) : Colors.transparent,
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              icon,
+              color: isHovered ? color : Colors.white,
+              size: 22,
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  // 🔹 ড্র্যাগ করার সময় ওপরে আসা ফ্লোটিং একশন বার
+  Widget _buildTopActionToolbar() {
+    return Positioned(
+      top: 10,
+      left: 20,
+      right: 20,
+      child: Material(
+        color: Colors.transparent,
+        child: AnimatedOpacity(
+          duration: const Duration(milliseconds: 250),
+          opacity: _isDraggingMessage ? 1.0 : 0.0,
+          child: Container(
+            height: 52,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            decoration: BoxDecoration(
+              color: const Color(0xFF1E3A5F).withOpacity(0.92),
+              borderRadius: BorderRadius.circular(30),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.3),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                // ১. কপি
+                _buildTopActionIcon(
+                  actionKey: 'copy',
+                  icon: Icons.copy_rounded,
+                  color: Colors.white,
+                  onAccept: (msg) async {
+                    await Clipboard.setData(ClipboardData(text: msg.content));
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Copied to clipboard')),
+                      );
+                    }
+                  },
+                ),
+
+                // ২. ডিলিট ফর মি
+                _buildTopActionIcon(
+                  actionKey: 'delete_me',
+                  icon: Icons.delete_outline_rounded,
+                  color: Colors.orangeAccent,
+                  onAccept: (msg) async {
+                    try {
+                      await _chatService.deleteMessageForMe(_activeChatRoomId, msg.messageId, widget.currentUserId);
+                    } catch (e) {
+                      log("Delete for me error: $e");
+                    }
+                  },
+                ),
+
+                // ৩. ডিলিট ফর এভরিওয়ান
+                _buildTopActionIcon(
+                  actionKey: 'delete_all',
+                  icon: Icons.delete_forever_rounded,
+                  color: Colors.redAccent,
+                  onAccept: (msg) async {
+                    try {
+                      await _chatService.deleteMessageForEveryone(_activeChatRoomId, msg.messageId);
+                    } catch (e) {
+                      log("Delete for everyone error: $e");
+                    }
+                  },
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return PopScope(
@@ -397,73 +531,112 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver, Si
                   )
                 : null,
           ),
-          child: Column(
+          child: Stack(
             children: [
-              Expanded(
-                child: _isInitializing || _messageStream == null
-                    ? const Center(child: CircularProgressIndicator(color: Color(0xFF1E4C7A), strokeWidth: 3))
-                    : StreamBuilder<List<MessageModel>>(
-                        stream: _messageStream,
-                        builder: (context, snapshot) {
-                          if (snapshot.hasError) {
-                            return Center(
-                              child: Text(
-                                'Failed to load messages.',
-                                style: TextStyle(color: Colors.red.shade400, fontWeight: FontWeight.bold),
-                              ),
-                            );
-                          }
+              Column(
+                children: [
+                  Expanded(
+                    child: _isInitializing || _messageStream == null
+                        ? const Center(child: CircularProgressIndicator(color: Color(0xFF1E4C7A), strokeWidth: 3))
+                        : StreamBuilder<List<MessageModel>>(
+                            stream: _messageStream,
+                            builder: (context, snapshot) {
+                              if (snapshot.hasError) {
+                                return Center(
+                                  child: Text(
+                                    'Failed to load messages.',
+                                    style: TextStyle(color: Colors.red.shade400, fontWeight: FontWeight.bold),
+                                  ),
+                                );
+                              }
 
-                          if (snapshot.connectionState == ConnectionState.waiting) {
-                            return const Center(child: CircularProgressIndicator(color: Color(0xFF1E4C7A), strokeWidth: 3));
-                          }
+                              
+                              if (snapshot.connectionState == ConnectionState.waiting) {
+                                return const Center(child: CircularProgressIndicator(color: Color(0xFF1E4C7A), strokeWidth: 3));
+                              }
 
-                          final messages = snapshot.data ?? [];
+                              final messages = snapshot.data ?? [];
 
-                          if (messages.isEmpty) {
-                            return Center(
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-                                decoration: BoxDecoration(
-                                  color: Colors.black.withOpacity(0.05),
-                                  borderRadius: BorderRadius.circular(16),
-                                ),
-                                child: const Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(Icons.lock_outline_rounded, size: 14, color: Colors.black54),
-                                    SizedBox(width: 6),
-                                    Text(
-                                      'Messages are end-to-end encrypted',
-                                      style: TextStyle(color: Colors.black54, fontSize: 12, fontWeight: FontWeight.w500),
+                              if (messages.isEmpty) {
+                                return Center(
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                                    decoration: BoxDecoration(
+                                      color: Colors.black.withOpacity(0.05),
+                                      borderRadius: BorderRadius.circular(16),
                                     ),
-                                  ],
-                                ),
-                              ),
-                            );
-                          }
+                                    child: const Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(Icons.lock_outline_rounded, size: 14, color: Colors.black54),
+                                        SizedBox(width: 6),
+                                        Text(
+                                          'Messages are end-to-end encrypted',
+                                          style: TextStyle(color: Colors.black54, fontSize: 12, fontWeight: FontWeight.w500),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              }
 
-                          WidgetsBinding.instance.addPostFrameCallback((_) => _markMessagesAsReadSafe());
+                              WidgetsBinding.instance.addPostFrameCallback((_) => _markMessagesAsReadSafe());
 
-                          return ListView.builder(
-                            controller: _scrollController,
-                            reverse: true,
-                            physics: const BouncingScrollPhysics(),
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                            itemCount: messages.length,
-                            itemBuilder: (context, index) {
-                              final message = messages[index];
-                              final bool isMe = message.senderId == widget.currentUserId;
+                              return ListView.builder(
+                                controller: _scrollController,
+                                reverse: true,
+                                physics: const BouncingScrollPhysics(),
+                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                itemCount: messages.length,
+                                itemBuilder: (context, index) {
+                                  final message = messages[index];
+                                  final bool isMe = message.senderId == widget.currentUserId;
 
-                              // লং প্রেস ম্যাগনেটিক ড্র্যাগ ফিচার
-                              return LongPressDraggable<MessageModel>(
-                                data: message,
-                                feedback: Material(
-                                  color: Colors.transparent,
-                                  child: Opacity(
-                                    opacity: 0.85,
-                                    child: Transform.scale(
-                                      scale: 1.05,
+                                  // ০.৫ সেকেন্ড ড্রাইভেবল প্রেস
+                                  return LongPressDraggable<MessageModel>(
+                                    delay: const Duration(milliseconds: 500),
+                                    data: message,
+                                    onDragStarted: () {
+                                      HapticFeedback.mediumImpact();
+                                      setState(() {
+                                        _isDraggingMessage = true;
+                                        _draggedMessage = message;
+                                      });
+                                    },
+                                    onDragEnd: (_) {
+                                      setState(() {
+                                        _isDraggingMessage = false;
+                                        _draggedMessage = null;
+                                        _hoveredTopAction = null;
+                                        _isDragHoveringInput = false;
+                                      });
+                                    },
+                                    onDraggableCanceled: (_, __) {
+                                      setState(() {
+                                        _isDraggingMessage = false;
+                                        _draggedMessage = null;
+                                        _hoveredTopAction = null;
+                                        _isDragHoveringInput = false;
+                                      });
+                                    },
+                                    feedback: Material(
+                                      color: Colors.transparent,
+                                      child: Opacity(
+                                        opacity: 0.85,
+                                        child: Transform.scale(
+                                          scale: 1.05,
+                                          child: MessageBubble(
+                                            message: message,
+                                            isMe: isMe,
+                                            chatRoomId: _activeChatRoomId,
+                                            currentUserId: widget.currentUserId,
+                                            onReplyPressed: (_) {},
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                    childWhenDragging: Opacity(
+                                      opacity: 0.3,
                                       child: MessageBubble(
                                         message: message,
                                         isMe: isMe,
@@ -472,86 +645,85 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver, Si
                                         onReplyPressed: (_) {},
                                       ),
                                     ),
-                                  ),
-                                ),
-                                childWhenDragging: Opacity(
-                                  opacity: 0.3,
-                                  child: MessageBubble(
-                                    message: message,
-                                    isMe: isMe,
-                                    chatRoomId: _activeChatRoomId,
-                                    currentUserId: widget.currentUserId,
-                                    onReplyPressed: (_) {},
-                                  ),
-                                ),
-                                child: MessageBubble(
-                                  message: message,
-                                  isMe: isMe,
-                                  chatRoomId: _activeChatRoomId,
-                                  currentUserId: widget.currentUserId,
-                                  onReplyPressed: (repliedMessage) {
-                                    _triggerReply(repliedMessage);
-                                  },
-                                ),
+                                    child: MessageBubble(
+                                      message: message,
+                                      isMe: isMe,
+                                      chatRoomId: _activeChatRoomId,
+                                      currentUserId: widget.currentUserId,
+                                      onReplyPressed: (repliedMessage) {
+                                        _triggerReply(repliedMessage);
+                                      },
+                                    ),
+                                  );
+                                },
                               );
                             },
-                          );
-                        },
-                      ),
+                          ),
+                  ),
+
+                  // কিবোর্ড এরিয়া - Reply Drag Target
+                  DragTarget<MessageModel>(
+                    onWillAcceptWithDetails: (details) {
+                      HapticFeedback.selectionClick();
+                      setState(() => _isDragHoveringInput = true);
+                      return true;
+                    },
+                    onLeave: (_) {
+                      setState(() => _isDragHoveringInput = false);
+                    },
+                    onAcceptWithDetails: (details) {
+                      setState(() => _isDragHoveringInput = false);
+                      _triggerReply(details.data);
+                    },
+                    builder: (context, candidateData, rejectedData) {
+                      return AnimatedScale(
+                        scale: _isDragHoveringInput ? 1.03 : 1.0,
+                        duration: const Duration(milliseconds: 200),
+                        curve: Curves.elasticOut,
+                        child: ScaleTransition(
+                          scale: _bounceAnimation,
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 200),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              border: _isDragHoveringInput
+                                  ? Border.all(color: const Color(0xFF1E4C7A), width: 2)
+                                  : null,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: _isDragHoveringInput
+                                      ? const Color(0xFF1E4C7A).withOpacity(0.2)
+                                      : Colors.black.withOpacity(0.03),
+                                  blurRadius: _isDragHoveringInput ? 15 : 10,
+                                  offset: const Offset(0, -3),
+                                ),
+                              ],
+                            ),
+                            child: ChatInputBar(
+                              chatRoomId: _activeChatRoomId,
+                              senderId: widget.currentUserId,
+                              receiverId: widget.receiverId,
+                              replyToMessageId: _replyToMessageId,
+                              replyToText: _replyToText,
+                              onCancelReply: () {
+                                setState(() {
+                                  _replyToMessageId = null;
+                                  _replyToText = null;
+                                });
+                              },
+                              onTypingChanged: (isTyping) {
+                                _chatService.updateTypingStatus(_activeChatRoomId, widget.currentUserId, isTyping);
+                              },
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ],
               ),
 
-              DragTarget<MessageModel>(
-                onWillAcceptWithDetails: (details) {
-                  setState(() => _isDragHoveringInput = true);
-                  return true;
-                },
-                onLeave: (_) {
-                  setState(() => _isDragHoveringInput = false);
-                },
-                onAcceptWithDetails: (details) {
-                  setState(() => _isDragHoveringInput = false);
-                  _triggerReply(details.data);
-                },
-                builder: (context, candidateData, rejectedData) {
-                  return ScaleTransition(
-                    scale: _bounceAnimation,
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 200),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        border: _isDragHoveringInput
-                            ? Border.all(color: const Color(0xFF1E4C7A), width: 2)
-                            : null,
-                        boxShadow: [
-                          BoxShadow(
-                            color: _isDragHoveringInput
-                                ? const Color(0xFF1E4C7A).withOpacity(0.2)
-                                : Colors.black.withOpacity(0.03),
-                            blurRadius: _isDragHoveringInput ? 15 : 10,
-                            offset: const Offset(0, -3),
-                          ),
-                        ],
-                      ),
-                      child: ChatInputBar(
-                        chatRoomId: _activeChatRoomId,
-                        senderId: widget.currentUserId,
-                        receiverId: widget.receiverId,
-                        replyToMessageId: _replyToMessageId,
-                        replyToText: _replyToText,
-                        onCancelReply: () {
-                          setState(() {
-                            _replyToMessageId = null;
-                            _replyToText = null;
-                          });
-                        },
-                        onTypingChanged: (isTyping) {
-                          _chatService.updateTypingStatus(_activeChatRoomId, widget.currentUserId, isTyping);
-                        },
-                      ),
-                    ),
-                  );
-                },
-              ),
+              if (_isDraggingMessage) _buildTopActionToolbar(),
             ],
           ),
         ),
