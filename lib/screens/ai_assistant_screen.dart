@@ -23,6 +23,11 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
   bool _isLoading = false;
   bool _isSelectionMode = false;
 
+  // STEP 1: Text cleaner function to remove '**' and format text cleanly
+  String _cleanText(String text) {
+    return text.replaceAll('**', '').replaceAll('* ', '• ');
+  }
+
   void _sendMessage() async {
     final text = _controller.text.trim();
     if (text.isEmpty || _isLoading) return;
@@ -37,10 +42,12 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
 
     if (!mounted) return;
 
+    final cleanedResponse = _cleanText(response ?? "An unexpected error occurred.");
+
     setState(() {
       _isLoading = false;
       _messages.add(ChatMessage(
-        text: response ?? "An unexpected error occurred.",
+        text: cleanedResponse,
         isUser: false,
       ));
     });
@@ -117,7 +124,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF7F9FC),
+      backgroundColor: Colors.white,
       appBar: AppBar(
         backgroundColor: const Color(0xFF1E4C7A),
         foregroundColor: Colors.white,
@@ -178,17 +185,40 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(Icons.chat_bubble_outline_rounded, size: 64, color: Colors.grey.shade400),
-                        const SizedBox(height: 12),
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF1E4C7A).withOpacity(0.08),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.auto_awesome,
+                            size: 40,
+                            color: Color(0xFF1E4C7A),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
                         Text(
                           'Ask FYBTT AI anything',
-                          style: TextStyle(fontSize: 16, color: Colors.grey.shade600, fontWeight: FontWeight.w500),
+                          style: TextStyle(
+                            fontSize: 18,
+                            color: Colors.grey.shade700,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'Search teachers, courses or get instant study help',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: Colors.grey.shade500,
+                          ),
                         ),
                       ],
                     ),
                   )
                 : ListView.builder(
-                    padding: const EdgeInsets.all(16),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                     itemCount: _messages.length,
                     itemBuilder: (context, index) {
                       final message = _messages[index];
@@ -207,15 +237,21 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                         },
                         child: AnimatedContainer(
                           duration: const Duration(milliseconds: 150),
-                          margin: const EdgeInsets.symmetric(vertical: 4),
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          margin: const EdgeInsets.symmetric(vertical: 6),
+                          padding: const EdgeInsets.all(8),
                           decoration: BoxDecoration(
-                            color: isSelected ? Colors.blue.withOpacity(0.12) : Colors.transparent,
+                            color: isSelected
+                                ? const Color(0xFF1E4C7A).withOpacity(0.08)
+                                : Colors.transparent,
                             borderRadius: BorderRadius.circular(12),
-                            border: isSelected ? Border.all(color: const Color(0xFF1E4C7A), width: 1.5) : null,
+                            border: isSelected
+                                ? Border.all(color: const Color(0xFF1E4C7A), width: 1.5)
+                                : null,
                           ),
                           child: Row(
-                            mainAxisAlignment: message.isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
+                            mainAxisAlignment: message.isUser
+                                ? MainAxisAlignment.end
+                                : MainAxisAlignment.start,
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               if (_isSelectionMode) ...[
@@ -227,44 +263,62 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                                 const SizedBox(width: 4),
                               ],
                               if (!message.isUser) ...[
-                                const CircleAvatar(
-                                  backgroundColor: Color(0xFF1E4C7A),
-                                  radius: 16,
-                                  child: Icon(Icons.smart_toy_rounded, size: 18, color: Colors.white),
+                                Container(
+                                  padding: const EdgeInsets.all(6),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF1E4C7A).withOpacity(0.1),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: const Icon(
+                                    Icons.auto_awesome,
+                                    size: 18,
+                                    color: Color(0xFF1E4C7A),
+                                  ),
                                 ),
-                                const SizedBox(width: 8),
+                                const SizedBox(width: 12),
                               ],
                               Flexible(
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                                  decoration: BoxDecoration(
-                                    color: message.isUser ? const Color(0xFF1E4C7A) : Colors.white,
-                                    borderRadius: BorderRadius.circular(16),
-                                    boxShadow: [
-                                      if (!message.isUser)
-                                        BoxShadow(
-                                          color: Colors.black.withOpacity(0.04),
-                                          blurRadius: 8,
-                                          offset: const Offset(0, 2),
+                                child: message.isUser
+                                    ? Container(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 16, vertical: 12),
+                                        decoration: const BoxDecoration(
+                                          color: Color(0xFF1E4C7A),
+                                          borderRadius: BorderRadius.only(
+                                            topLeft: Radius.circular(18),
+                                            topRight: Radius.circular(18),
+                                            bottomLeft: Radius.circular(18),
+                                            bottomRight: Radius.circular(4),
+                                          ),
                                         ),
-                                    ],
-                                  ),
-                                  child: Text(
-                                    message.text,
-                                    style: TextStyle(
-                                      color: message.isUser ? Colors.white : Colors.black87,
-                                      fontSize: 14,
-                                      height: 1.4,
-                                    ),
-                                  ),
-                                ),
+                                        child: Text(
+                                          message.text,
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 15,
+                                            height: 1.4,
+                                          ),
+                                        ),
+                                      )
+                                    : Padding(
+                                        padding: const EdgeInsets.only(top: 2),
+                                        child: Text(
+                                          message.text,
+                                          style: const TextStyle(
+                                            color: Color(0xFF1E293B),
+                                            fontSize: 15,
+                                            height: 1.5,
+                                            fontWeight: FontWeight.w400,
+                                          ),
+                                        ),
+                                      ),
                               ),
                               if (message.isUser) ...[
                                 const SizedBox(width: 8),
                                 const CircleAvatar(
                                   backgroundColor: Color(0xFF34495E),
-                                  radius: 16,
-                                  child: Icon(Icons.person, size: 18, color: Colors.white),
+                                  radius: 14,
+                                  child: Icon(Icons.person, size: 16, color: Colors.white),
                                 ),
                               ],
                             ],
@@ -274,11 +328,8 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                     },
                   ),
           ),
-          if (_isLoading)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 8),
-              child: CircularProgressIndicator(),
-            ),
+          // STEP 3: Dynamic Gemini-style Thinking Indicator
+          if (_isLoading) const _ThinkingIndicator(),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: const BoxDecoration(
@@ -315,6 +366,77 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                     ),
                   ),
                 ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// STEP 3 Helper Widget: Dynamic Pulsing Thinking Indicator
+class _ThinkingIndicator extends StatefulWidget {
+  const _ThinkingIndicator();
+
+  @override
+  State<_ThinkingIndicator> createState() => _ThinkingIndicatorState();
+}
+
+class _ThinkingIndicatorState extends State<_ThinkingIndicator>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _animation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    )..repeat(reverse: true);
+    _animation = Tween<double>(begin: 0.3, end: 1.0).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+      child: Row(
+        children: [
+          FadeTransition(
+            opacity: _animation,
+            child: Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1E4C7A).withOpacity(0.12),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.auto_awesome,
+                size: 18,
+                color: Color(0xFF1E4C7A),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          FadeTransition(
+            opacity: _animation,
+            child: Text(
+              'Thinking...',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                color: Colors.grey.shade600,
+                fontStyle: FontStyle.italic,
               ),
             ),
           ),
