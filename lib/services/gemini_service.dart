@@ -22,19 +22,36 @@ class GeminiService {
   }
 
   Future<String?> sendChatMessage(String prompt) async {
-    try {
-      if (_apiKey.isEmpty) {
-        return "Error: GEMINI_API_KEY is empty! Check GitHub Secret setup.";
-      }
-
-      _chatSession ??= _model.startChat();
-
-      final response = await _chatSession!.sendMessage(Content.text(prompt));
-      return response.text;
-    } catch (e) {
-      debugPrint("Gemini AI Error: $e");
-      return "Error Details: $e";
+    if (_apiKey.isEmpty) {
+      return "GEMINI_API_KEY not found. Please check your secret key setup.";
     }
+
+    _chatSession ??= _model.startChat();
+
+    int maxRetries = 2;
+    for (int attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        final response = await _chatSession!.sendMessage(Content.text(prompt));
+        return response.text;
+      } on GenerativeAIException catch (e) {
+        debugPrint("Gemini Exception (Attempt ${attempt + 1}): $e");
+
+        if ((e.message.contains("503") || e.message.contains("UNAVAILABLE")) && attempt < maxRetries) {
+          await Future.delayed(Duration(seconds: attempt + 1));
+          continue;
+        }
+
+        if (e.message.contains("503") || e.message.contains("UNAVAILABLE")) {
+          return "Google AI server is currently experiencing high demand. Please try again in a few seconds.";
+        }
+
+        return "An issue occurred with the AI service. Please try again later.";
+      } catch (e) {
+        debugPrint("Gemini Error: $e");
+        return "Please check your internet connection and try again.";
+      }
+    }
+    return "Server is not responding. Please try again.";
   }
 
   void resetChat() {
