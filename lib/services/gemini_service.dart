@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';
 import '../constants/ai_knowledge.dart';
+import 'teacher_service.dart';
 
 class GeminiService {
   static const String _apiKey = String.fromEnvironment('GEMINI_API_KEY');
 
   late final GenerativeModel _model;
   ChatSession? _chatSession;
+  final TeacherService _teacherService = TeacherService();
 
   GeminiService() {
     _initModel();
@@ -52,6 +54,18 @@ class GeminiService {
       }
     }
     return "Server is not responding. Please try again.";
+  }
+
+  Future<List<Map<String, dynamic>>> fetchTeachersForAi({
+    String? subject,
+    String? location,
+    String? className,
+  }) async {
+    return await _teacherService.searchTeachers(
+      subject: subject,
+      location: location,
+      className: className,
+    );
   }
 
   void resetChat() {
