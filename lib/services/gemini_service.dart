@@ -30,10 +30,30 @@ class GeminiService {
 
     _chatSession ??= _model.startChat();
 
+    String finalPrompt = prompt;
+
+    final lowerPrompt = prompt.toLowerCase();
+    if (lowerPrompt.contains('teacher') ||
+        lowerPrompt.contains('tuition') ||
+        lowerPrompt.contains('find') ||
+        lowerPrompt.contains('need')) {
+      List<Map<String, dynamic>> realTeachers = await _teacherService.searchTeachers();
+      if (realTeachers.isNotEmpty) {
+        finalPrompt = '''
+User Question: $prompt
+
+Real Teacher Data from Database:
+$realTeachers
+
+Instruction: Present the relevant teachers from the above real database data to answer the user's request accurately. If no matching teacher is found in the provided data, clearly state that no teacher is currently available for this requirement.
+''';
+      }
+    }
+
     int maxRetries = 2;
     for (int attempt = 0; attempt <= maxRetries; attempt++) {
       try {
-        final response = await _chatSession!.sendMessage(Content.text(prompt));
+        final response = await _chatSession!.sendMessage(Content.text(finalPrompt));
         return response.text;
       } on GenerativeAIException catch (e) {
         debugPrint("Gemini Exception (Attempt ${attempt + 1}): $e");
