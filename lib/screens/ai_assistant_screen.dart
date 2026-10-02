@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:speech_to_text/speech_to_text.dart' as stt;
 import '../services/gemini_service.dart';
 
 class ChatMessage {
@@ -20,8 +21,18 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
   final GeminiService _geminiService = GeminiService();
   final List<ChatMessage> _messages = [];
   final Set<int> _selectedIndices = {};
+  
+  // Speech to text variables
+  late stt.SpeechToText _speechToText;
+  bool _isListening = false;
   bool _isLoading = false;
   bool _isSelectionMode = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _speechToText = stt.SpeechToText();
+  }
 
   // STEP 1: Text cleaner function to remove '**' and format text cleanly
   String _cleanText(String text) {
@@ -31,6 +42,10 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
   void _sendMessage() async {
     final text = _controller.text.trim();
     if (text.isEmpty || _isLoading) return;
+
+    if (_isListening) {
+      _stopListening();
+    }
 
     _controller.clear();
     setState(() {
@@ -51,6 +66,40 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
         isUser: false,
       ));
     });
+  }
+
+  // STEP 4: Voice Input Logic
+  void _toggleListening() async {
+    if (!_isListening) {
+      bool available = await _speechToText.initialize(
+        onStatus: (status) {
+          if (status == 'done' || status == 'notListening') {
+            setState(() => _isListening = false);
+          }
+        },
+        onError: (errorNotification) {
+          setState(() => _isListening = false);
+        },
+      );
+
+      if (available) {
+        setState(() => _isListening = true);
+        _speechToText.listen(
+          onResult: (val) {
+            setState(() {
+              _controller.text = val.recognizedWords;
+            });
+          },
+        );
+      }
+    } else {
+      _stopListening();
+    }
+  }
+
+  void _stopListening() {
+    _speechToText.stop();
+    setState(() => _isListening = false);
   }
 
   void _toggleSelection(int index) {
@@ -328,7 +377,6 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                     },
                   ),
           ),
-          // STEP 3: Dynamic Gemini-style Thinking Indicator
           if (_isLoading) const _ThinkingIndicator(),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -343,8 +391,11 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                     child: TextField(
                       controller: _controller,
                       decoration: InputDecoration(
-                        hintText: 'Ask FYBTT AI...',
-                        hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 14),
+                        hintText: _isListening ? 'Listening...' : 'Ask FYBTT AI...',
+                        hintStyle: TextStyle(
+                          color: _isListening ? Colors.red.shade400 : Colors.grey.shade400,
+                          fontSize: 14,
+                        ),
                         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                         filled: true,
                         fillColor: const Color(0xFFF1F5F9),
@@ -356,12 +407,22 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                       onSubmitted: (_) => _sendMessage(),
                     ),
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 6),
+                  IconButton(
+                    icon: Icon(
+                      _isListening ? Icons.mic_rounded : Icons.mic_none_rounded,
+                      color: _isListening ? Colors.red : const Color(0xFF1E4C7A),
+                      size: 24,
+                    ),
+                    onPressed: _toggleListening,
+                    tooltip: 'Voice Input',
+                  ),
+                  const SizedBox(width: 2),
                   CircleAvatar(
                     backgroundColor: const Color(0xFF1E4C7A),
-                    radius: 22,
+                    radius: 20,
                     child: IconButton(
-                      icon: const Icon(Icons.send_rounded, color: Colors.white, size: 20),
+                      icon: const Icon(Icons.send_rounded, color: Colors.white, size: 18),
                       onPressed: _sendMessage,
                     ),
                   ),
@@ -375,7 +436,6 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
   }
 }
 
-// STEP 3 Helper Widget: Dynamic Pulsing Thinking Indicator
 class _ThinkingIndicator extends StatefulWidget {
   const _ThinkingIndicator();
 
