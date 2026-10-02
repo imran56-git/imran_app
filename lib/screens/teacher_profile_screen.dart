@@ -35,7 +35,7 @@ class TeacherProfileScreen extends StatefulWidget {
   State<TeacherProfileScreen> createState() => _TeacherProfileScreenState();
 }
 
-class _TeacherProfileScreenState extends State<TeacherProfileScreen> with TickerProviderStateMixin {
+class _TeacherProfileScreenState extends State<TeacherProfileScreen> with TickerProviderStateMixin, AutomaticKeepAliveClientMixin {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseStorage _storage = FirebaseStorage.instance;
@@ -45,7 +45,6 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
   late AnimationController _glowController;
   late Animation<double> _glowAnimation;
 
-  // ৩-ডট পপআপ আইকন স্লাইড সিকোয়েন্স অ্যানিমেশন কন্ট্রোলার
   late AnimationController _menuMenuAnimController;
   bool _isMenuExpanded = false;
 
@@ -66,6 +65,9 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
   bool hasUnreadNotifications = false;
 
   bool get isOwnProfile => widget.currentUserId == (_auth.currentUser?.uid ?? "");
+
+  @override
+  bool get wantKeepAlive => true;
 
   @override
   void initState() {
@@ -183,7 +185,6 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
             });
             if (mounted) SuccessToast.show(context, 'Teaching areas synchronized!');
           } catch (e) {
-            // Error handling
           }
         }
       }
@@ -223,7 +224,6 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
     }
   }
 
-  // Apple/macOS Genie (Zoom with Origin) Route Generator
   Route _createGenieRoute(Widget page, Offset tapPosition) {
     return PageRouteBuilder(
       transitionDuration: const Duration(milliseconds: 380),
@@ -388,6 +388,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     double headerHeight = 170.0;
     double profileRadius = 56.0;
     bool canPopScreen = Navigator.canPop(context) && !isOwnProfile;
@@ -506,7 +507,6 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
   Widget _buildActionHeaderBar() {
     List<Widget> menuItems = [];
 
-    // ১. পেন্ডিং ফলো রিকোয়েস্ট বাটন
     if (isOwnProfile) {
       menuItems.add(
         StreamBuilder<QuerySnapshot>(
@@ -558,7 +558,6 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
       );
     }
 
-    // ২. নোটিফিকেশন বেল আইকন (ScreenPullTransition সহ)
     menuItems.add(
       GestureDetector(
         onTapDown: (details) {
@@ -602,7 +601,6 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
       ),
     );
 
-    // ৩. অন্যান্য অপশনসমূহ
     if (isOwnProfile) {
       menuItems.addAll([
         _buildGlassIconButton(
@@ -657,7 +655,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
           },
         ),
       ]);
-    } else {
+} else {
       menuItems.add(
         _buildGlassIconButton(
           icon: Icons.share_outlined,
@@ -671,7 +669,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
       );
     }
 
-return Row(
+    return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         if (_isMenuExpanded)
@@ -877,7 +875,7 @@ Widget _buildUidIdentityCard() {
             onTap: () {
               Clipboard.setData(ClipboardData(text: widget.currentUserId));
               SuccessToast.show(context, "Teacher UID Copied!");
-            },            
+            },
             borderRadius: BorderRadius.circular(8),
             child: Container(
               padding: const EdgeInsets.all(6),
@@ -989,7 +987,7 @@ Widget _buildUidIdentityCard() {
     );
   }
 
-  Widget _buildViewProfile() {
+Widget _buildViewProfile() {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       _buildMaterial3Card("Tuition / Institute Name", _instituteController.text, Icons.domain_outlined, Colors.indigo),
       _buildMaterial3Card("Bio", _bioController.text, Icons.description_outlined, const Color(0xFF3B82F6)),
@@ -1041,7 +1039,7 @@ Widget _buildUidIdentityCard() {
     );
   }               
 
-Widget _buildDashboardSection() {
+  Widget _buildDashboardSection() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1129,7 +1127,7 @@ Widget _buildDashboardSection() {
     );
   }
 
-  Widget _buildEditForm() {
+Widget _buildEditForm() {
     final query = _subjectSearchController.text.trim();
     final list = _subjects.where((s) => s.toLowerCase().contains(query.toLowerCase())).toList();
 
