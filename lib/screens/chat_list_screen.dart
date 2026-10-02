@@ -32,7 +32,7 @@ class _ChatListScreenState extends State<ChatListScreen>
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this); // 🟢 App Lifecycle Monitor
+    WidgetsBinding.instance.addObserver(this);
     _loadCurrentUserName();
     _searchController.addListener(() {
       if (mounted) {
@@ -112,9 +112,20 @@ class _ChatListScreenState extends State<ChatListScreen>
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(8)),
             ),
-            onPressed: () {
+            onPressed: () async {
               Navigator.pop(ctx);
               
+              // ফায়ারস্টোর থেকে সিলেক্ট করা চ্যাট মুছে ফেলার অপারেশন
+              for (String docId in _selectedChatDocIds) {
+                try {
+                  await FirebaseFirestore.instance
+                      .collection('chats')
+                      .doc(docId)
+                      .delete();
+                } catch (e) {
+                  debugPrint("Error deleting chat doc $docId: $e");
+                }
+              }
               _clearSelection();
             },
             child: const Text('Delete', style: TextStyle(color: Colors.white)),
@@ -202,7 +213,7 @@ class _ChatListScreenState extends State<ChatListScreen>
         body: Column(
           children: [
             _buildTopHeader(),
-           
+
             Expanded(
               child: StreamBuilder<QuerySnapshot>(
                 stream: _chatService.getUserChatsStream(widget.currentUserId),
@@ -225,8 +236,44 @@ class _ChatListScreenState extends State<ChatListScreen>
                     return _buildEmptyState();
                   }
 
-                  final chatDocs = snapshot.data!.docs;
+                  final rawChatDocs = snapshot.data!.docs;
 
+                  // 🟢 ডুপ্লিকেট ইউজার ফিল্টার করার ফিল্টারিং লজিক (Deduplication)
+                  final Map<String, DocumentSnapshot> uniqueChatsMap = {};
+
+                  for (var doc in rawChatDocs) {
+                    final data = doc.data() as Map<String, dynamic>;
+                    final bool isGroup = data['isGroup'] == true;
+
+                    if (isGroup) {
+                      uniqueChatsMap[doc.id] = doc;
+                    } else {
+                      final List<dynamic> participants = data['participants'] ?? [];
+                      final List<String> participantsList = List<String>.from(participants);
+                      participantsList.remove(widget.currentUserId);
+
+                      if (participantsList.isNotEmpty) {
+                        final String otherUserId = participantsList.first;
+
+                        if (!uniqueChatsMap.containsKey(otherUserId)) {
+                          uniqueChatsMap[otherUserId] = doc;
+                        } else {
+                          // একাধিক চ্যাট রুম থাকলে লেটেস্ট মেসেজের রুমটি রাখা হবে
+                          final existingData = uniqueChatsMap[otherUserId]!.data() as Map<String, dynamic>;
+                          final existingTime = existingData['lastMessageTime'] as Timestamp?;
+                          final currentTime = data['lastMessageTime'] as Timestamp?;
+
+                          if (currentTime != null && (existingTime == null || currentTime.compareTo(existingTime) > 0)) {
+                            uniqueChatsMap[otherUserId] = doc;
+                          }
+                        }
+                      }
+                    }
+                  }
+
+                  final chatDocs = uniqueChatsMap.values.toList();
+
+                  // সময় অনুযায়ী সর্ট করা
                   chatDocs.sort((a, b) {
                     final aData = a.data() as Map<String, dynamic>;
                     final bData = b.data() as Map<String, dynamic>;
@@ -237,6 +284,10 @@ class _ChatListScreenState extends State<ChatListScreen>
                     if (bTime == null) return -1;
                     return bTime.compareTo(aTime);
                   });
+
+                  if (chatDocs.isEmpty) {
+                    return _buildEmptyState();
+                  }
 
                   return ListView.builder(
                     padding: const EdgeInsets.symmetric(vertical: 10),
@@ -253,14 +304,16 @@ class _ChatListScreenState extends State<ChatListScreen>
                       final bool isSelected =
                           _selectedChatDocIds.contains(doc.id);
 
+                      // 🟢 স্মার্ট আনরিড কাউন্ট লজিক (নিজের মেসেজে ব্যাজ দেখাবে না)
+                      final String lastSenderId = (chatData['lastSenderId'] ?? chatData['senderId'] ?? '').toString();
                       int unreadCount = 0;
-                      if (chatData.containsKey(
-                          'unreadCount_${widget.currentUserId}')) {
-                        unreadCount =
-                            chatData['unreadCount_${widget.currentUserId}'] ??
-                                0;
-                      } else {
-                        unreadCount = chatData['unreadCount'] ?? 0;
+
+                      if (lastSenderId != widget.currentUserId) {
+                        if (chatData.containsKey('unreadCount_${widget.currentUserId}')) {
+                          unreadCount = chatData['unreadCount_${widget.currentUserId}'] ?? 0;
+                        } else {
+                          unreadCount = chatData['unreadCount'] ?? 0;
+                        }
                       }
 
                       if (isGroup) {
@@ -432,16 +485,6 @@ class _ChatListScreenState extends State<ChatListScreen>
                       if (value == 'clear') _clearSelection();
                     },
                     itemBuilder: (context) => [
-                      const PopupMenuItem(
-                        value: 'pin',
-                        child: Row(
-                          children: [
-                            Icon(Icons.push_pin_outlined, color: Colors.black87),
-                            SizedBox(width: 8),
-                            Text('Pin Chats'),
-                          ],
-                        ),
-                      ),
                       const PopupMenuItem(
                         value: 'clear',
                         child: Row(
