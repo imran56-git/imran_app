@@ -5,7 +5,7 @@ import 'search_teacher_screen.dart';
 import 'student_profile_screen.dart';
 import 'student_teachers_screen.dart';
 import 'notification_screen.dart';
-import 'ai_assistant_screen.dart'; 
+import 'ai_assistant_screen.dart';
 
 class StudentHomeScreen extends StatefulWidget {
   final String currentUserId;
@@ -26,15 +26,15 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
   @override
   void initState() {
     super.initState();
-    _screens = [  
+    _screens = [
       ChatListScreen(
         currentUserId: widget.currentUserId,
         isTeacher: false,
-      ),  
+      ),
       const StudentTeachersScreen(),
-      const TeacherSearchScreen(),  
-      const AiAssistantScreen(), 
-      StudentProfileScreen(currentUserId: widget.currentUserId),  
+      const TeacherSearchScreen(),
+      const AiAssistantScreen(),
+      StudentProfileScreen(currentUserId: widget.currentUserId),
     ];
   }
 
@@ -83,8 +83,8 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
                   const Text(
                     'Filter Teachers',
                     style: TextStyle(
-                      fontSize: 20, 
-                      fontWeight: FontWeight.bold, 
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
                       color: Color(0xFF1A1C1E),
                     ),
                   ),
@@ -99,7 +99,7 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
                 child: Padding(
                   padding: EdgeInsets.symmetric(vertical: 30),
                   child: Text(
-                    'Advanced filters will appear here', 
+                    'Advanced filters will appear here',
                     style: TextStyle(color: Colors.grey, fontSize: 15, fontWeight: FontWeight.w500),
                   ),
                 ),
@@ -146,18 +146,17 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
   @override
   Widget build(BuildContext context) {
     final bool showFab = _selectedIndex == 0 || _selectedIndex == 2;
-    // AI Assistant (index 3) এবং Profile (index 4) স্ক্রিনের নিজস্ব অ্যাপবার থাকায় মূল অ্যাপবার হাইড করা হলো
-    final bool showAppBar = _selectedIndex == 0 || _selectedIndex == 1 || _selectedIndex == 2; 
+    final bool showAppBar = _selectedIndex == 0 || _selectedIndex == 1 || _selectedIndex == 2;
 
-    return Scaffold(  
-      backgroundColor: const Color(0xFFF7F9FC),  
-      appBar: showAppBar  
-          ? AppBar(  
-              backgroundColor: Colors.white,  
-              elevation: 0,  
-              scrolledUnderElevation: 0,  
-              centerTitle: false,  
-              titleSpacing: 20,  
+    return Scaffold(
+      backgroundColor: const Color(0xFFF7F9FC),
+      appBar: showAppBar
+          ? AppBar(
+              backgroundColor: Colors.white,
+              elevation: 0,
+              scrolledUnderElevation: 0,
+              centerTitle: false,
+              titleSpacing: 20,
               title: Row(
                 children: [
                   ClipRRect(
@@ -167,7 +166,7 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
                       width: 32,
                       height: 32,
                       fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) => 
+                      errorBuilder: (context, error, stackTrace) =>
                           const Icon(Icons.school_rounded, color: Color(0xFF1E4C7A), size: 30),
                     ),
                   ),
@@ -175,131 +174,128 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
                   const Text(
                     'FYBTT',
                     style: TextStyle(
-                      color: Color(0xFF1E4C7A),  
-                      fontWeight: FontWeight.w900,  
+                      color: Color(0xFF1E4C7A),
+                      fontWeight: FontWeight.w900,
                       fontSize: 20,
                       letterSpacing: 0.5,
                     ),
                   ),
                 ],
-              ),  
-              actions: _buildAppBarActions(),  
-            )  
-          : null,  
-
-      body: IndexedStack(  
-        index: _selectedIndex,  
-        children: _screens,  
-      ),  
-
-      floatingActionButton: showFab  
-          ? FloatingActionButton(  
-              backgroundColor: const Color(0xFF1E4C7A),  
-              elevation: 4,  
+              ),
+              actions: _buildAppBarActions(),
+            )
+          : null,
+      body: IndexedStack(
+        index: _selectedIndex,
+        children: _screens,
+      ),
+      floatingActionButton: showFab
+          ? FloatingActionButton(
+              backgroundColor: const Color(0xFF1E4C7A),
+              elevation: 4,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              onPressed: _handleFabPressed,  
+              onPressed: _handleFabPressed,
               child: AnimatedSwitcher(
                 duration: const Duration(milliseconds: 250),
                 transitionBuilder: (child, animation) => ScaleTransition(scale: animation, child: child),
-                child: Icon(  
-                  _selectedIndex == 0 ? Icons.chat_rounded : Icons.filter_alt_rounded,  
+                child: Icon(
+                  _selectedIndex == 0 ? Icons.chat_rounded : Icons.filter_alt_rounded,
                   key: ValueKey<int>(_selectedIndex),
-                  color: Colors.white,  
+                  color: Colors.white,
                 ),
-              ),  
-            )  
-          : null,  
-
-      bottomNavigationBar: Container(  
-        decoration: BoxDecoration(  
-          color: Colors.white,  
-          boxShadow: [  
-            BoxShadow(  
-              color: Colors.black.withOpacity(0.04),  
-              blurRadius: 20,  
-              offset: const Offset(0, -4),  
-            ),  
-          ],  
-        ),  
-        child: SafeArea(  
-          top: false,  
-          child: BottomNavigationBar(  
-            currentIndex: _selectedIndex,  
-            onTap: _onTabTapped,  
-            backgroundColor: Colors.white,  
-            elevation: 0,  
-            type: BottomNavigationBarType.fixed,  
-            selectedItemColor: const Color(0xFF1E4C7A),  
-            unselectedItemColor: Colors.grey.shade400,  
-            selectedLabelStyle: const TextStyle(  
-              fontWeight: FontWeight.bold,  
-              fontSize: 11,  
+              ),
+            )
+          : null,
+      bottomNavigationBar: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.04),
+              blurRadius: 20,
+              offset: const Offset(0, -4),
+            ),
+          ],
+        ),
+        child: SafeArea(
+          top: false,
+          child: BottomNavigationBar(
+            currentIndex: _selectedIndex,
+            onTap: _onTabTapped,
+            backgroundColor: Colors.white,
+            elevation: 0,
+            type: BottomNavigationBarType.fixed,
+            selectedItemColor: const Color(0xFF1E4C7A),
+            unselectedItemColor: Colors.grey.shade400,
+            selectedLabelStyle: const TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 11,
               letterSpacing: 0.3,
-            ),  
-            unselectedLabelStyle: const TextStyle(  
-              fontWeight: FontWeight.w600,  
-              fontSize: 11,  
-            ),  
-            items: const [  
-              BottomNavigationBarItem(  
+            ),
+            unselectedLabelStyle: const TextStyle(
+              fontWeight: FontWeight.w600,
+              fontSize: 11,
+            ),
+            items: const [
+              BottomNavigationBarItem(
                 icon: Padding(
                   padding: EdgeInsets.only(bottom: 4),
                   child: Icon(Icons.chat_bubble_outline_rounded, size: 22),
-                ),  
+                ),
                 activeIcon: Padding(
                   padding: EdgeInsets.only(bottom: 4),
                   child: Icon(Icons.chat_bubble_rounded, size: 22),
-                ),  
-                label: 'Messages',  
-              ),  
-              BottomNavigationBarItem(  
+                ),
+                label: 'Messages',
+              ),
+              BottomNavigationBarItem(
                 icon: Padding(
                   padding: EdgeInsets.only(bottom: 4),
                   child: Icon(Icons.school_outlined, size: 24),
-                ),  
+                ),
                 activeIcon: Padding(
                   padding: EdgeInsets.only(bottom: 4),
                   child: Icon(Icons.school_rounded, size: 24),
-                ),  
-                label: 'Teachers',  
-              ),  
-              BottomNavigationBarItem(  
+                ),
+                label: 'Teachers',
+              ),
+              BottomNavigationBarItem(
                 icon: Padding(
                   padding: EdgeInsets.only(bottom: 4),
                   child: Icon(Icons.search_rounded, size: 24),
-                ),  
+                ),
                 activeIcon: Padding(
                   padding: EdgeInsets.only(bottom: 4),
                   child: Icon(Icons.manage_search_rounded, size: 24),
-                ),  
-                label: 'Search',  
-              ),  
-              BottomNavigationBarItem(  
+                ),
+                label: 'Search',
+              ),
+              BottomNavigationBarItem(
                 icon: Padding(
                   padding: EdgeInsets.only(bottom: 4),
                   child: Icon(Icons.auto_awesome_outlined, size: 22),
-                ),  
+                ),
                 activeIcon: Padding(
                   padding: EdgeInsets.only(bottom: 4),
                   child: Icon(Icons.auto_awesome_rounded, size: 22),
-                ),  
-                label: 'AI Assistant',  
-              ),  
-              BottomNavigationBarItem(  
+                ),
+                label: 'AI Assistant',
+              ),
+              BottomNavigationBarItem(
                 icon: Padding(
                   padding: EdgeInsets.only(bottom: 4),
                   child: Icon(Icons.person_outline_rounded, size: 24),
-                ),  
+                ),
                 activeIcon: Padding(
                   padding: EdgeInsets.only(bottom: 4),
                   child: Icon(Icons.person_rounded, size: 24),
-                ),  
-                label: 'Profile',  
+                ),
+                label: 'Profile',
               ),
-            ],  
-          ),  
-        ),  
-      ),  
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
