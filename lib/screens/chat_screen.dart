@@ -39,7 +39,7 @@ class ChatScreen extends StatefulWidget {
   State<ChatScreen> createState() => _ChatScreenState();
 }
 
-class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
+class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver, SingleTickerProviderStateMixin {
   final ChatService _chatService = ChatService();
   final ChatMenuService _chatMenuService = ChatMenuService();
   final ScrollController _scrollController = ScrollController();
@@ -52,13 +52,26 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   String? _customBgImagePath;
   bool _isMarkingRead = false;
   bool _isInitializing = true;
+  bool _isDragHoveringInput = false;
+
+  late AnimationController _bounceController;
+  late Animation<double> _bounceAnimation;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    // প্রাথমিক চ্যাটরুম আইডি সেট
     _activeChatRoomId = widget.chatRoomId;
+
+    // বাউন্স অ্যানিমেশন কন্ট্রোলার সেটআপ
+    _bounceController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 400),
+    );
+    _bounceAnimation = Tween<double>(begin: 1.0, end: 1.08).animate(
+      CurvedAnimation(parent: _bounceController, curve: Curves.elasticOut),
+    );
+
     _setupChatRoom();
     _loadCustomTheme();
   }
@@ -66,6 +79,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _bounceController.dispose();
     _chatService.updateTypingStatus(_activeChatRoomId, widget.currentUserId, false);
     _markMessagesAsReadSafe();
     _scrollController.dispose();
@@ -86,7 +100,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       String teacherId = widget.isTeacher ? widget.currentUserId : widget.receiverId;
       String studentId = widget.isTeacher ? widget.receiverId : widget.currentUserId;
 
-      // ফায়ারবেসে চ্যাটরুম তৈরি নিশ্চিত করা
       await _chatService.createOrInitializeChat(
         teacherId: teacherId,
         studentId: studentId,
@@ -154,6 +167,14 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         );
       }
     }
+  }
+
+  void _triggerReply(MessageModel message) {
+    _bounceController.forward(from: 0.0).then((_) => _bounceController.reverse());
+    setState(() {
+      _replyToMessageId = message.messageId;
+      _replyToText = message.type == 'text' ? message.content : 'Attachment';
+    });
   }
 
   void _handleMenuAction(ChatMenuAction action) {
@@ -434,52 +455,102 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                               final message = messages[index];
                               final bool isMe = message.senderId == widget.currentUserId;
 
-                              return MessageBubble(
-                                message: message,
-                                isMe: isMe,
-                                chatRoomId: _activeChatRoomId,
-                                currentUserId: widget.currentUserId,
-                                onReplyPressed: (repliedMessage) {
-                                  setState(() {
-                                    _replyToMessageId = repliedMessage.messageId;
-                                    _replyToText = repliedMessage.type == 'text'
-                                        ? repliedMessage.content
-                                        : 'Attachment';
-                                  });
-                                },
+                              // লং প্রেস ম্যাগনেটিক ড্র্যাগ ফিচার
+                              return LongPressDraggable<MessageModel>(
+                                data: message,
+                                feedback: Material(
+                                  color: Colors.transparent,
+                                  child: Opacity(
+                                    opacity: 0.85,
+                                    child: Transform.scale(
+                                      scale: 1.05,
+                                      child: MessageBubble(
+                                        message: message,
+                                        isMe: isMe,
+                                        chatRoomId: _activeChatRoomId,
+                                        currentUserId: widget.currentUserId,
+                                        onReplyPressed: (_) {},
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                childWhenDragging: Opacity(
+                                  opacity: 0.3,
+                                  child: MessageBubble(
+                                    message: message,
+                                    isMe: isMe,
+                                    chatRoomId: _activeChatRoomId,
+                                    currentUserId: widget.currentUserId,
+                                    onReplyPressed: (_) {},
+                                  ),
+                                ),
+                                child: MessageBubble(
+                                  message: message,
+                                  isMe: isMe,
+                                  chatRoomId: _activeChatRoomId,
+                                  currentUserId: widget.currentUserId,
+                                  onReplyPressed: (repliedMessage) {
+                                    _triggerReply(repliedMessage);
+                                  },
+                                ),
                               );
                             },
                           );
                         },
                       ),
               ),
-              Container(
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.03),
-                      blurRadius: 10,
-                      offset: const Offset(0, -3),
+
+              DragTarget<MessageModel>(
+                onWillAcceptWithDetails: (details) {
+                  setState(() => _isDragHoveringInput = true);
+                  return true;
+                },
+                onLeave: (_) {
+                  setState(() => _isDragHoveringInput = false);
+                },
+                onAcceptWithDetails: (details) {
+                  setState(() => _isDragHoveringInput = false);
+                  _triggerReply(details.data);
+                },
+                builder: (context, candidateData, rejectedData) {
+                  return ScaleTransition(
+                    scale: _bounceAnimation,
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        border: _isDragHoveringInput
+                            ? Border.all(color: const Color(0xFF1E4C7A), width: 2)
+                            : null,
+                        boxShadow: [
+                          BoxShadow(
+                            color: _isDragHoveringInput
+                                ? const Color(0xFF1E4C7A).withOpacity(0.2)
+                                : Colors.black.withOpacity(0.03),
+                            blurRadius: _isDragHoveringInput ? 15 : 10,
+                            offset: const Offset(0, -3),
+                          ),
+                        ],
+                      ),
+                      child: ChatInputBar(
+                        chatRoomId: _activeChatRoomId,
+                        senderId: widget.currentUserId,
+                        receiverId: widget.receiverId,
+                        replyToMessageId: _replyToMessageId,
+                        replyToText: _replyToText,
+                        onCancelReply: () {
+                          setState(() {
+                            _replyToMessageId = null;
+                            _replyToText = null;
+                          });
+                        },
+                        onTypingChanged: (isTyping) {
+                          _chatService.updateTypingStatus(_activeChatRoomId, widget.currentUserId, isTyping);
+                        },
+                      ),
                     ),
-                  ],
-                ),
-                child: ChatInputBar(
-                  chatRoomId: _activeChatRoomId,
-                  senderId: widget.currentUserId,
-                  receiverId: widget.receiverId,
-                  replyToMessageId: _replyToMessageId,
-                  replyToText: _replyToText,
-                  onCancelReply: () {
-                    setState(() {
-                      _replyToMessageId = null;
-                      _replyToText = null;
-                    });
-                  },
-                  onTypingChanged: (isTyping) {
-                    _chatService.updateTypingStatus(_activeChatRoomId, widget.currentUserId, isTyping);
-                  },
-                ),
+                  );
+                },
               ),
             ],
           ),
