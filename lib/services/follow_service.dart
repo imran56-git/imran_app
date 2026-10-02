@@ -5,7 +5,7 @@ import '../models/follow_model.dart';
 class FollowService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  // Send or Resend Follow Request (Student to Teacher)
+  // 🟢 ১. স্টুডেন্ট টিচারকে ফলো রিকোয়েস্ট পাঠাবে (Pending)
   Future<void> sendFollowRequest({
     required String teacherId,
     required String studentId,
@@ -14,6 +14,8 @@ class FollowService {
     required String teacherPhoto,
     required String studentPhoto,
   }) async {
+    if (teacherId.isEmpty || studentId.isEmpty) return;
+
     try {
       final String docId = '${teacherId}_$studentId';
       final docRef = _firestore.collection('follow_requests').doc(docId);
@@ -26,49 +28,46 @@ class FollowService {
         studentName: studentName,
         teacherPhoto: teacherPhoto,
         studentPhoto: studentPhoto,
-        status: 'pending',
+        status: 'pending', // রিকোয়েস্ট পাঠালে পেন্ডিং অবস্থায় Followers ট্যাবে থাকবে
         requestedAt: Timestamp.now(),
       );
 
-      // set with merge handles both creation and update safely
       await docRef.set(followModel.toMap(), SetOptions(merge: true));
     } catch (e) {
-      log('Error in sendFollowRequest: $e');
+      log('🔴 Error in sendFollowRequest: $e');
       rethrow;
     }
   }
 
-  // Cancel Follow Request (Student side)
+  // 🟢 ২. ফলো রিকোয়েস্ট ক্যানসেল করা (Student side)
   Future<void> cancelRequest(String teacherId, String studentId) async {
+    if (teacherId.isEmpty || studentId.isEmpty) return;
+
     try {
       final String docId = '${teacherId}_$studentId';
-      final docRef = _firestore.collection('follow_requests').doc(docId);
-
-      // Using set with merge avoids crash if doc doesn't exist
-      await docRef.set({
-        'status': 'cancelled',
-        'rejectedAt': Timestamp.now(),
-      }, SetOptions(merge: true));
+      await _firestore.collection('follow_requests').doc(docId).delete();
     } catch (e) {
-      log('Error in cancelRequest: $e');
+      log('🔴 Error in cancelRequest: $e');
       rethrow;
     }
   }
 
-  // Accept Follow Request (Teacher side)
+  // 🟢 ৩. ফলো রিকোয়েস্ট একসেপ্ট করা (Teacher side -> Accepted)
   Future<void> acceptRequest(String teacherId, String studentId) async {
+    if (teacherId.isEmpty || studentId.isEmpty) return;
+
     try {
       final String docId = '${teacherId}_$studentId';
       final batch = _firestore.batch();
 
-      // 1. Update follow request status
+      // ১. ফলো রিকোয়েস্টের স্ট্যাটাস 'accepted' এ পরিবর্তন (এটি Students ট্যাবে যাবে)
       final requestRef = _firestore.collection('follow_requests').doc(docId);
       batch.set(requestRef, {
         'status': 'accepted',
         'acceptedAt': Timestamp.now(),
       }, SetOptions(merge: true));
 
-      // 2. Increment teacher's count
+      // ২. টিচারের স্টুডেন্ট কাউন্ট বাড়াবে
       final teacherRef = _firestore.collection('teachers').doc(teacherId);
       batch.set(teacherRef, {
         'followersCount': FieldValue.increment(1),
@@ -77,13 +76,15 @@ class FollowService {
 
       await batch.commit();
     } catch (e) {
-      log('Error in acceptRequest: $e');
+      log('🔴 Error in acceptRequest: $e');
       rethrow;
     }
   }
 
-  // Reject Follow Request (Teacher side)
+  // 🟢 ৪. ফলো রিকোয়েস্ট রিজেক্ট করা (Teacher side)
   Future<void> rejectRequest(String teacherId, String studentId) async {
+    if (teacherId.isEmpty || studentId.isEmpty) return;
+
     try {
       final String docId = '${teacherId}_$studentId';
       final docRef = _firestore.collection('follow_requests').doc(docId);
@@ -93,13 +94,15 @@ class FollowService {
         'rejectedAt': Timestamp.now(),
       }, SetOptions(merge: true));
     } catch (e) {
-      log('Error in rejectRequest: $e');
+      log('🔴 Error in rejectRequest: $e');
       rethrow;
     }
   }
 
-  // Unfollow Teacher (Student side)
+  // 🟢 ৫. আনফলো করা (Student side)
   Future<void> unfollowTeacher(String teacherId, String studentId) async {
+    if (teacherId.isEmpty || studentId.isEmpty) return;
+
     try {
       final String docId = '${teacherId}_$studentId';
       final requestRef = _firestore.collection('follow_requests').doc(docId);
@@ -112,12 +115,10 @@ class FollowService {
 
       final batch = _firestore.batch();
 
-      // 1. Delete follow request doc if exists
       if (docSnap.exists) {
         batch.delete(requestRef);
       }
 
-      // 2. Decrement teacher's count if it was accepted previously
       if (wasAccepted) {
         final teacherRef = _firestore.collection('teachers').doc(teacherId);
         batch.set(teacherRef, {
@@ -128,12 +129,12 @@ class FollowService {
 
       await batch.commit();
     } catch (e) {
-      log('Error in unfollowTeacher: $e');
+      log('🔴 Error in unfollowTeacher: $e');
       rethrow;
     }
   }
 
-  // Stream Follow Status between specific student and teacher
+  // 🟢 ৬. ফলো স্ট্যাটাস স্ট্রিম
   Stream<String> streamFollowStatus(String teacherId, String studentId) {
     if (teacherId.isEmpty || studentId.isEmpty) {
       return Stream.value('none');
@@ -148,10 +149,13 @@ class FollowService {
         return 'none';
       }
       return snapshot.data()!['status'] ?? 'none';
+    }).handleError((error) {
+      log('🔴 Error streaming follow status: $error');
+      return 'none';
     });
   }
 
-  // Realtime Followers Count Stream for Teacher Profile
+  // 🟢 ৭. রিয়েলটাইম ফলোয়ার্স সংখ্যা স্ট্রিম
   Stream<int> streamFollowersCount(String teacherId) {
     if (teacherId.isEmpty) return Stream.value(0);
     return _firestore
@@ -159,43 +163,78 @@ class FollowService {
         .where('teacherId', isEqualTo: teacherId)
         .where('status', isEqualTo: 'accepted')
         .snapshots()
-        .map((snapshot) => snapshot.docs.length);
+        .map((snapshot) => snapshot.docs.length)
+        .handleError((error) {
+      log('🔴 Error streaming followers count: $error');
+      return 0;
+    });
   }
 
-  // Check if student is accepted by teacher
+  // 🟢 ৮. স্টুডেন্ট একসেপ্টেড কিনা চেক করা
   Future<bool> isAcceptedStudent(String teacherId, String studentId) async {
+    if (teacherId.isEmpty || studentId.isEmpty) return false;
     try {
       final String docId = '${teacherId}_$studentId';
       final doc = await _firestore.collection('follow_requests').doc(docId).get();
       if (!doc.exists) return false;
       return doc.data()?['status'] == 'accepted';
     } catch (e) {
-      log('Error in isAcceptedStudent: $e');
+      log('🔴 Error in isAcceptedStudent: $e');
       return false;
     }
   }
 
-  // Get Pending Requests for a Teacher
+  // 🟢 ৯. টিচারের পেন্ডিং ফলো রিকোয়েস্ট (Followers Tab-এর জন্য)
   Stream<List<FollowModel>> getPendingRequests(String teacherId) {
+    if (teacherId.isEmpty) return Stream.value([]);
+
     return _firestore
         .collection('follow_requests')
         .where('teacherId', isEqualTo: teacherId)
         .where('status', isEqualTo: 'pending')
         .snapshots()
         .map((snapshot) {
-      return snapshot.docs.map((doc) => FollowModel.fromMap(doc.data())).toList();
+      final List<FollowModel> list = [];
+      for (var doc in snapshot.docs) {
+        try {
+          final data = doc.data();
+          data['id'] = doc.id; // Safe ID binding
+          list.add(FollowModel.fromMap(data));
+        } catch (e) {
+          log('🔴 Parsing Error in getPendingRequests for doc ${doc.id}: $e');
+        }
+      }
+      return list;
+    }).handleError((error) {
+      log('🔴 Stream Error in getPendingRequests: $error');
+      return <FollowModel>[];
     });
   }
 
-  // Get Accepted Students for a Teacher
+  // 🟢 ১০. টিচারের একসেপ্ট করা স্টুডেন্টস (Students Tab-এর জন্য)
   Stream<List<FollowModel>> getAcceptedStudents(String teacherId) {
+    if (teacherId.isEmpty) return Stream.value([]);
+
     return _firestore
         .collection('follow_requests')
         .where('teacherId', isEqualTo: teacherId)
         .where('status', isEqualTo: 'accepted')
         .snapshots()
         .map((snapshot) {
-      return snapshot.docs.map((doc) => FollowModel.fromMap(doc.data())).toList();
+      final List<FollowModel> list = [];
+      for (var doc in snapshot.docs) {
+        try {
+          final data = doc.data();
+          data['id'] = doc.id; // Safe ID binding
+          list.add(FollowModel.fromMap(data));
+        } catch (e) {
+          log('🔴 Parsing Error in getAcceptedStudents for doc ${doc.id}: $e');
+        }
+      }
+      return list;
+    }).handleError((error) {
+      log('🔴 Stream Error in getAcceptedStudents: $error');
+      return <FollowModel>[];
     });
   }
 }
