@@ -1,9 +1,9 @@
-import 'dart:ui';
+import 'dart0:ui';
 import 'package:flutter/material.dart';
 import 'chat_list_screen.dart'; 
 import 'teacher_profile_screen.dart'; 
 import 'teacher_students_screen.dart';
-import 'ai_assistant_screen.dart'; // AI Assistant স্ক্রিন ইমপোর্ট করা হলো
+import 'ai_assistant_screen.dart';
 
 class TeacherHomeScreen extends StatefulWidget {
   final String currentUserId; 
@@ -17,62 +17,33 @@ class TeacherHomeScreen extends StatefulWidget {
   State<TeacherHomeScreen> createState() => _TeacherHomeScreenState();
 }
 
-class _TeacherHomeScreenState extends State<TeacherHomeScreen> with SingleTickerProviderStateMixin {
+class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
   int _selectedIndex = 0;
-  int _previousIndex = 0;
-
-  late AnimationController _animController;
-  late Animation<double> _animation;
   late final List<Widget> _screens;
 
   @override
   void initState() {
     super.initState();
-
-    // ৪টি স্ক্রিন মেমরিতে লোড করা হচ্ছে (AI Assistant সহ)
     _screens = [
       ChatListScreen(
         currentUserId: widget.currentUserId,
         isTeacher: true,
       ),
       const TeacherStudentsScreen(),
-      const AiAssistantScreen(), // ৩ নম্বর ট্যাবে এআই যুক্ত হলো
+      const AiAssistantScreen(),
       TeacherProfileScreen(currentUserId: widget.currentUserId), 
     ];
-
-    _animController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 350),
-    );
-
-    _animation = CurvedAnimation(
-      parent: _animController,
-      curve: Curves.easeInOutCubic,
-    );
-
-    _animController.value = 1.0;
-  }
-
-  @override
-  void dispose() {
-    _animController.dispose();
-    super.dispose();
   }
 
   void _onTabTapped(int index) {
     if (_selectedIndex == index) return;
-
     setState(() {
-      _previousIndex = _selectedIndex;
       _selectedIndex = index;
     });
-
-    _animController.forward(from: 0.0);
   }
 
   @override
   Widget build(BuildContext context) {
-    // AI Assistant (index 2) এবং Profile (index 3)-এর নিজস্ব অ্যাপ বার থাকায় মেইন অ্যাপ বার হাইড রাখা হচ্ছে
     final bool showAppBar = _selectedIndex == 0 || _selectedIndex == 1;
 
     return Scaffold(
@@ -124,31 +95,9 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> with SingleTicker
             )
           : null,
 
-      body: AnimatedBuilder(
-        animation: _animation,
-        builder: (context, child) {
-          double progress = _animation.value;
-          return Stack(
-            children: [
-              if (progress < 1.0)
-                Opacity(
-                  opacity: (1.0 - progress).clamp(0.0, 1.0),
-                  child: Transform.scale(
-                    scale: 1.0 - (progress * 0.05),
-                    child: _screens[_previousIndex],
-                  ),
-                ),
-
-              Opacity(
-                opacity: progress.clamp(0.0, 1.0),
-                child: Transform.translate(
-                  offset: Offset(0, (1.0 - progress) * 20),
-                  child: _screens[_selectedIndex],
-                ),
-              ),
-            ],
-          );
-        },
+      body: IndexedStack(
+        index: _selectedIndex,
+        children: _screens,
       ),
 
       floatingActionButton: _selectedIndex == 0 
