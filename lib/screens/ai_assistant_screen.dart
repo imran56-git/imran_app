@@ -4,13 +4,8 @@ import '../services/gemini_service.dart';
 class ChatMessage {
   final String text;
   final bool isUser;
-  final DateTime timestamp;
 
-  ChatMessage({
-    required this.text,
-    required this.isUser,
-    required this.timestamp,
-  });
+  ChatMessage({required this.text, required this.isUser});
 }
 
 class AiAssistantScreen extends StatefulWidget {
@@ -21,337 +16,309 @@ class AiAssistantScreen extends StatefulWidget {
 }
 
 class _AiAssistantScreenState extends State<AiAssistantScreen> {
-  final TextEditingController _messageController = TextEditingController();
-  final ScrollController _scrollController = ScrollController();
+  final TextEditingController _controller = TextEditingController();
   final GeminiService _geminiService = GeminiService();
-
   final List<ChatMessage> _messages = [];
+  final Set<int> _selectedIndices = {};
   bool _isLoading = false;
+  bool _isSelectionMode = false;
 
-  final List<String> _suggestedPrompts = [
-    "Who is the founder of FYBTT?",
-    "Find a Physics teacher near me",
-    "How to use FYBTT app?",
-  ];
-
-  void _sendMessage([String? customText]) async {
-    final text = customText ?? _messageController.text.trim();
+  void _sendMessage() async {
+    final text = _controller.text.trim();
     if (text.isEmpty || _isLoading) return;
 
-    _messageController.clear();
-
+    _controller.clear();
     setState(() {
-      _messages.add(ChatMessage(
-        text: text,
-        isUser: true,
-        timestamp: DateTime.now(),
-      ));
+      _messages.add(ChatMessage(text: text, isUser: true));
       _isLoading = true;
     });
 
-    _scrollToBottom();
+    final response = await _geminiService.sendChatMessage(text);
 
-    try {
-      final response = await _geminiService.sendChatMessage(text);
+    if (!mounted) return;
 
-      if (!mounted) return;
-
-      setState(() {
-        _messages.add(ChatMessage(
-          text: response ?? "Sorry, I couldn't process that. Please try again.",
-          isUser: false,
-          timestamp: DateTime.now(),
-        ));
-        _isLoading = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _messages.add(ChatMessage(
-          text: "Connection error. Please check your network and try again.",
-          isUser: false,
-          timestamp: DateTime.now(),
-        ));
-        _isLoading = false;
-      });
-    }
-
-    _scrollToBottom();
+    setState(() {
+      _isLoading = false;
+      _messages.add(ChatMessage(
+        text: response ?? "An unexpected error occurred.",
+        isUser: false,
+      ));
+    });
   }
 
-  void _scrollToBottom() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollController.hasClients) {
-        _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOut,
-        );
+  void _toggleSelection(int index) {
+    setState(() {
+      if (_selectedIndices.contains(index)) {
+        _selectedIndices.remove(index);
+        if (_selectedIndices.isEmpty) {
+          _isSelectionMode = false;
+        }
+      } else {
+        _selectedIndices.add(index);
       }
     });
   }
 
-  @override
-  void dispose() {
-    _messageController.dispose();
-    _scrollController.dispose();
-    super.dispose();
+  void _enterSelectionMode(int index) {
+    setState(() {
+      _isSelectionMode = true;
+      _selectedIndices.add(index);
+    });
+  }
+
+  void _clearSelection() {
+    setState(() {
+      _isSelectionMode = false;
+      _selectedIndices.clear();
+    });
+  }
+
+  void _deleteSelectedMessages() {
+    setState(() {
+      final sortedIndices = _selectedIndices.toList()..sort((a, b) => b.compareTo(a));
+      for (int index in sortedIndices) {
+        if (index < _messages.length) {
+          _messages.removeAt(index);
+        }
+      }
+      _selectedIndices.clear();
+      _isSelectionMode = false;
+    });
+  }
+
+  void _clearAllMessages() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text("Clear Conversation"),
+        content: const Text("Are you sure you want to delete all messages?"),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("Cancel"),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              setState(() {
+                _messages.clear();
+                _selectedIndices.clear();
+                _isSelectionMode = false;
+              });
+              _geminiService.resetChat();
+            },
+            child: const Text("Clear All", style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF1F5F9),
+      backgroundColor: const Color(0xFFF7F9FC),
       appBar: AppBar(
-        title: const Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.auto_awesome_rounded, color: Colors.amberAccent, size: 22),
-            SizedBox(width: 8),
-            Text(
-              'FYBTT AI Assistant',
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 18,
-                color: Colors.white,
-              ),
-            ),
-          ],
-        ),
         backgroundColor: const Color(0xFF1E4C7A),
-        elevation: 2,
-        centerTitle: true,
+        foregroundColor: Colors.white,
+        elevation: 0,
+        title: _isSelectionMode
+            ? Text('${_selectedIndices.length} Selected')
+            : const Row(
+                children: [
+                  Icon(Icons.auto_awesome, size: 20, color: Colors.amber),
+                  SizedBox(width: 8),
+                  Text(
+                    'FYBTT AI Assistant',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                  ),
+                ],
+              ),
+        actions: _isSelectionMode
+            ? [
+                IconButton(
+                  icon: const Icon(Icons.delete_outline_rounded),
+                  onPressed: _deleteSelectedMessages,
+                  tooltip: 'Delete Selected',
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close_rounded),
+                  onPressed: _clearSelection,
+                  tooltip: 'Cancel',
+                ),
+              ]
+            : [
+                PopupMenuButton<String>(
+                  icon: const Icon(Icons.more_vert_rounded, color: Colors.white),
+                  onSelected: (value) {
+                    if (value == 'clear') {
+                      _clearAllMessages();
+                    }
+                  },
+                  itemBuilder: (context) => [
+                    const PopupMenuItem(
+                      value: 'clear',
+                      child: Row(
+                        children: [
+                          Icon(Icons.delete_sweep_rounded, color: Colors.red, size: 20),
+                          SizedBox(width: 8),
+                          Text('Clear All Chat', style: TextStyle(color: Colors.red)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ],
       ),
       body: Column(
         children: [
           Expanded(
             child: _messages.isEmpty
-                ? _buildEmptyState()
+                ? Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.chat_bubble_outline_rounded, size: 64, color: Colors.grey.shade400),
+                        const SizedBox(height: 12),
+                        Text(
+                          'Ask FYBTT AI anything',
+                          style: TextStyle(fontSize: 16, color: Colors.grey.shade600, fontWeight: FontWeight.w500),
+                        ),
+                      ],
+                    ),
+                  )
                 : ListView.builder(
-                    controller: _scrollController,
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+                    padding: const EdgeInsets.all(16),
                     itemCount: _messages.length,
                     itemBuilder: (context, index) {
-                      return _buildMessageBubble(_messages[index]);
+                      final message = _messages[index];
+                      final isSelected = _selectedIndices.contains(index);
+
+                      return GestureDetector(
+                        onLongPress: () {
+                          if (!_isSelectionMode) {
+                            _enterSelectionMode(index);
+                          }
+                        },
+                        onTap: () {
+                          if (_isSelectionMode) {
+                            _toggleSelection(index);
+                          }
+                        },
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 150),
+                          margin: const EdgeInsets.symmetric(vertical: 4),
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: isSelected ? Colors.blue.withOpacity(0.12) : Colors.transparent,
+                            borderRadius: BorderRadius.circular(12),
+                            border: isSelected ? Border.all(color: const Color(0xFF1E4C7A), width: 1.5) : null,
+                          ),
+                          child: Row(
+                            mainAxisAlignment: message.isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              if (_isSelectionMode) ...[
+                                Checkbox(
+                                  value: isSelected,
+                                  onChanged: (_) => _toggleSelection(index),
+                                  activeColor: const Color(0xFF1E4C7A),
+                                ),
+                                const SizedBox(width: 4),
+                              ],
+                              if (!message.isUser) ...[
+                                const CircleAvatar(
+                                  backgroundColor: Color(0xFF1E4C7A),
+                                  radius: 16,
+                                  child: Icon(Icons.smart_toy_rounded, size: 18, color: Colors.white),
+                                ),
+                                const SizedBox(width: 8),
+                              ],
+                              Flexible(
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                                  decoration: BoxDecoration(
+                                    color: message.isUser ? const Color(0xFF1E4C7A) : Colors.white,
+                                    borderRadius: BorderRadius.circular(16),
+                                    boxShadow: [
+                                      if (!message.isUser)
+                                        BoxShadow(
+                                          color: Colors.black.withOpacity(0.04),
+                                          blurRadius: 8,
+                                          offset: const Offset(0, 2),
+                                        ),
+                                    ],
+                                  ),
+                                  child: Text(
+                                    message.text,
+                                    style: TextStyle(
+                                      color: message.isUser ? Colors.white : Colors.black87,
+                                      fontSize: 14,
+                                      height: 1.4,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              if (message.isUser) ...[
+                                const SizedBox(width: 8),
+                                const CircleAvatar(
+                                  backgroundColor: Color(0xFF34495E),
+                                  radius: 16,
+                                  child: Icon(Icons.person, size: 18, color: Colors.white),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      );
                     },
                   ),
           ),
           if (_isLoading)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 8),
+              child: CircularProgressIndicator(),
+            ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              border: Border(top: BorderSide(color: Color(0xFFE2E8F0))),
+            ),
+            child: SafeArea(
               child: Row(
                 children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: const BoxDecoration(
-                      color: Color(0xFF1E4C7A),
-                      shape: BoxShape.circle,
-                    ),
-                    child: const SizedBox(
-                      width: 14,
-                      height: 14,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
+                  Expanded(
+                    child: TextField(
+                      controller: _controller,
+                      decoration: InputDecoration(
+                        hintText: 'Ask FYBTT AI...',
+                        hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 14),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        filled: true,
+                        fillColor: const Color(0xFFF1F5F9),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(24),
+                          borderSide: BorderSide.none,
+                        ),
                       ),
+                      onSubmitted: (_) => _sendMessage(),
                     ),
                   ),
-                  const SizedBox(width: 10),
-                  Text(
-                    "FYBTT AI is thinking...",
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: Colors.grey.shade600,
-                      fontStyle: FontStyle.italic,
+                  const SizedBox(width: 8),
+                  CircleAvatar(
+                    backgroundColor: const Color(0xFF1E4C7A),
+                    radius: 22,
+                    child: IconButton(
+                      icon: const Icon(Icons.send_rounded, color: Colors.white, size: 20),
+                      onPressed: _sendMessage,
                     ),
                   ),
                 ],
               ),
             ),
-          _buildInputSection(),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildEmptyState() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(24.0),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const SizedBox(height: 30),
-          Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: const Color(0xFF1E4C7A).withOpacity(0.08),
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(
-              Icons.smart_toy_rounded,
-              size: 56,
-              color: Color(0xFF1E4C7A),
-            ),
-          ),
-          const SizedBox(height: 16),
-          const Text(
-            'Welcome to FYBTT AI!',
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              color: Color(0xFF1E4C7A),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Ask me anything about finding teachers, subject help, or FYBTT features.',
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 14, color: Colors.grey.shade600, height: 1.4),
-          ),
-          const SizedBox(height: 30),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Text(
-              "Suggested Questions:",
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: Colors.grey.shade700,
-              ),
-            ),
-          ),
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: _suggestedPrompts.map((prompt) {
-              return ActionChip(
-                avatar: const Icon(Icons.lightbulb_outline, size: 16, color: Color(0xFF1E4C7A)),
-                label: Text(prompt, style: const TextStyle(fontSize: 12, color: Color(0xFF1E4C7A))),
-                backgroundColor: Colors.white,
-                side: BorderSide(color: const Color(0xFF1E4C7A).withOpacity(0.2)),
-                elevation: 1,
-                onPressed: () => _sendMessage(prompt),
-              );
-            }).toList(),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildMessageBubble(ChatMessage message) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12.0),
-      child: Row(
-        mainAxisAlignment:
-            message.isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (!message.isUser) ...[
-            CircleAvatar(
-              radius: 16,
-              backgroundColor: const Color(0xFF1E4C7A),
-              child: const Icon(Icons.smart_toy, size: 18, color: Colors.white),
-            ),
-            const SizedBox(width: 8),
-          ],
-          Flexible(
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              decoration: BoxDecoration(
-                color: message.isUser ? const Color(0xFF1E4C7A) : Colors.white,
-                borderRadius: BorderRadius.only(
-                  topLeft: const Radius.circular(16),
-                  topRight: const Radius.circular(16),
-                  bottomLeft: Radius.circular(message.isUser ? 16 : 4),
-                  bottomRight: Radius.circular(message.isUser ? 4 : 16),
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.04),
-                    blurRadius: 4,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: Text(
-                message.text,
-                style: TextStyle(
-                  fontSize: 14,
-                  height: 1.4,
-                  color: message.isUser ? Colors.white : Colors.black87,
-                ),
-              ),
-            ),
-          ),
-          if (message.isUser) ...[
-            const SizedBox(width: 8),
-            const CircleAvatar(
-              radius: 16,
-              backgroundColor: Color(0xFF64748B),
-              child: Icon(Icons.person, size: 18, color: Colors.white),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildInputSection() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, -3),
-          ),
-        ],
-      ),
-      child: SafeArea(
-        child: Row(
-          children: [
-            Expanded(
-              child: TextField(
-                controller: _messageController,
-                textCapitalization: TextCapitalization.sentences,
-                decoration: InputDecoration(
-                  hintText: "Ask FYBTT AI...",
-                  hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 14),
-                  filled: true,
-                  fillColor: const Color(0xFFF8FAFC),
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(24),
-                    borderSide: BorderSide.none,
-                  ),
-                ),
-                onSubmitted: (_) => _sendMessage(),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Material(
-              color: const Color(0xFF1E4C7A),
-              borderRadius: BorderRadius.circular(24),
-              child: InkWell(
-                borderRadius: BorderRadius.circular(24),
-                onTap: () => _sendMessage(),
-                child: const Padding(
-                  padding: EdgeInsets.all(12.0),
-                  child: Icon(
-                    Icons.send_rounded,
-                    color: Colors.white,
-                    size: 20,
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }
