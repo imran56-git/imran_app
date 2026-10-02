@@ -42,7 +42,7 @@ class ChatService {
     });
   }
 
-  // 🟢 FIX 1: অনলাইন স্ট্যাটাস সিঙ্ক (Set with Merge ব্যবহার নিশ্চিত করা হয়েছে)
+  // 🟢 অনলাইন স্ট্যাটাস সিঙ্ক
   Future<void> updateOnlineStatus(String userId, bool isOnline, bool isTeacher) async {
     try {
       final String collectionPath = isTeacher ? 'teachers' : 'students';
@@ -52,10 +52,7 @@ class ChatService {
         'lastSeen': FieldValue.serverTimestamp(),
       };
 
-      // ১. মূল কালেকশন সেটিং (ডকুমেন্ট না থাকলেও সেফলি ক্রিয়েট বা মার্চ হবে)
       await _firestore.collection(collectionPath).doc(userId).set(statusData, SetOptions(merge: true));
-
-      // ২. সাধারণ 'users' কালেকশনেও রিয়েলটাইম সিঙ্ক
       await _firestore.collection('users').doc(userId).set(statusData, SetOptions(merge: true));
     } catch (e) {
       _handleError('updateOnlineStatus', e);
@@ -73,7 +70,7 @@ class ChatService {
     }
   }
 
-  // 🟢 FIX 2: রিয়েলটাইম ফলব্যাক স্ট্রিম (যে কালেকশনেই থাকুক নিখুঁত স্ট্যাটাস ফেচ করবে)
+  // 🟢 রিয়েলটাইম ফলব্যাক স্ট্রিম
   Stream<Map<String, dynamic>> getUserStatusStream(String userId, bool isTeacher) {
     final String primaryCollection = isTeacher ? 'teachers' : 'students';
 
@@ -89,7 +86,6 @@ class ChatService {
         };
       }
 
-      // প্রাইমারি কালেকশনে না পাওয়া গেলে 'users' থেকে লাইভ ফেচ করবে
       final userDoc = await _firestore.collection('users').doc(userId).get();
       if (userDoc.exists && userDoc.data() != null) {
         final data = userDoc.data()!;
@@ -102,7 +98,6 @@ class ChatService {
         };
       }
 
-      // সেকেন্ডারি কালেকশন চেক
       final String altCollection = isTeacher ? 'students' : 'teachers';
       final altDoc = await _firestore.collection(altCollection).doc(userId).get();
       if (altDoc.exists && altDoc.data() != null) {
@@ -221,13 +216,15 @@ class ChatService {
 
       final chatDoc = await chatRef.get();
       int currentUnread = 0;
-      String currentUnreadFor = '';
 
       if (chatDoc.exists) {
         final data = chatDoc.data();
-        currentUnreadFor = data?['unreadFor'] ?? '';
-        if (currentUnreadFor == receiverId) {
-          currentUnread = (data?['unreadCount'] ?? 0) as int;
+        if (data != null) {
+          if (data.containsKey('unreadCount_$receiverId')) {
+            currentUnread = (data['unreadCount_$receiverId'] ?? 0) as int;
+          } else if (data['unreadFor'] == receiverId) {
+            currentUnread = (data['unreadCount'] ?? 0) as int;
+          }
         }
       }
 
@@ -239,6 +236,7 @@ class ChatService {
         'lastSenderId': senderId,
         'unreadCount': currentUnread + 1,
         'unreadFor': receiverId,
+        'unreadCount_$receiverId': currentUnread + 1, // 🟢 Per-user count sync
         'participants': [senderId, receiverId],
       }, SetOptions(merge: true));
 
@@ -267,13 +265,11 @@ class ChatService {
 
       final chatDoc = await _firestore.collection('chats').doc(chatId).get();
       if (chatDoc.exists) {
-        final unreadFor = chatDoc.data()?['unreadFor'];
-        if (unreadFor == currentUserId) {
-          batch.set(_firestore.collection('chats').doc(chatId), {
-            'unreadCount': 0,
-            'unreadFor': '',
-          }, SetOptions(merge: true));
-        }
+        batch.set(_firestore.collection('chats').doc(chatId), {
+          'unreadCount': 0,
+          'unreadFor': '',
+          'unreadCount_$currentUserId': 0, // 🟢 Reset per-user unread count
+        }, SetOptions(merge: true));
       }
 
       await batch.commit();
