@@ -12,44 +12,123 @@ class StudentTeachersScreen extends StatefulWidget {
   State<StudentTeachersScreen> createState() => _StudentTeachersScreenState();
 }
 
-class _StudentTeachersScreenState extends State<StudentTeachersScreen> with AutomaticKeepAliveClientMixin {
+class _StudentTeachersScreenState extends State<StudentTeachersScreen> with SingleTickerProviderStateMixin {
+  late TabController _tabController;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
-  bool _isLoading = true;
-  String? _errorMessage;
-  List<ConnectedUserModel> _teachers = [];
+  bool _isFollowingLoading = true;
+  bool _isTeachersLoading = true;
+  String? _followingError;
+  String? _teachersError;
 
-  @override
-  bool get wantKeepAlive => true; // ট্যাব পরিবর্তন করলেও স্টেট ধরে রাখবে
+  List<ConnectedUserModel> _followingRequests = [];
+  List<ConnectedUserModel> _myTeachers = [];
 
   @override
   void initState() {
     super.initState();
-    _fetchTeachers();
+    _tabController = TabController(length: 2, vsync: this);
+    _fetchAllData();
   }
 
-  Future<void> _fetchTeachers() async {
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _fetchAllData() async {
+    await Future.wait([
+      _fetchFollowingRequests(),
+      _fetchMyTeachers(),
+    ]);
+  }
+
+  // 🟢 ১. পেন্ডিং ফলোয়িং রিকুয়েস্ট ফেচিং (Following Tab)
+  Future<void> _fetchFollowingRequests() async {
     if (!mounted) return;
 
     setState(() {
-      _isLoading = _teachers.isEmpty; // ডাটা ক্যাশ করা থাকলে বারবার স্পিনার দেখাবে না
-      _errorMessage = null;
+      _isFollowingLoading = _followingRequests.isEmpty;
+      _followingError = null;
     });
 
     try {
       final String? currentUserId = _auth.currentUser?.uid;
       if (currentUserId == null) {
-        if (mounted) {
-          setState(() {
-            _errorMessage = "Authentication error. Please log in again.";
-            _isLoading = false;
-          });
-        }
+        if (mounted) setState(() => _isFollowingLoading = false);
         return;
       }
 
-      // follow_requests এবং follow_req উভয় কালেকশন থেকেই চেক করা
+      final collections = ['follow_requests', 'follow_req'];
+      final Set<String> pendingTeacherIds = {};
+
+      for (String col in collections) {
+        final snap = await _firestore
+            .collection(col)
+            .where('senderId', isEqualTo: currentUserId)
+            .where('status', isEqualTo: 'pending')
+            .get();
+
+        for (var doc in snap.docs) {
+          final data = doc.data();
+          if (data.containsKey('receiverId')) {
+            pendingTeacherIds.add(data['receiverId'].toString());
+          }
+        }
+      }
+
+      final loadedTeachers = await Future.wait(
+        pendingTeacherIds.map((tId) async {
+          DocumentSnapshot tDoc = await _firestore.collection('teachers').doc(tId).get();
+          if (!tDoc.exists) {
+            tDoc = await _firestore.collection('users').doc(tId).get();
+          }
+
+          if (tDoc.exists && tDoc.data() != null) {
+            return ConnectedUserModel.fromFirestore(
+              tDoc.data() as Map<String, dynamic>,
+              tId,
+              'teacher',
+            );
+          }
+          return null;
+        }),
+      );
+
+      if (mounted) {
+        setState(() {
+          _followingRequests = loadedTeachers.whereType<ConnectedUserModel>().toList();
+          _isFollowingLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _followingError = "Unable to load pending requests.";
+          _isFollowingLoading = false;
+        });
+      }
+    }
+  }
+
+  // 🟢 ২. অ্যাকসেপ্টেড টিচার্স ফেচিং (My Teachers Tab)
+  Future<void> _fetchMyTeachers() async {
+    if (!mounted) return;
+
+    setState(() {
+      _isTeachersLoading = _myTeachers.isEmpty;
+      _teachersError = null;
+    });
+
+    try {
+      final String? currentUserId = _auth.currentUser?.uid;
+      if (currentUserId == null) {
+        if (mounted) setState(() => _isTeachersLoading = false);
+        return;
+      }
+
       final collections = ['follow_requests', 'follow_req'];
       final Set<String> teacherIdsSet = {};
 
@@ -81,11 +160,8 @@ class _StudentTeachersScreenState extends State<StudentTeachersScreen> with Auto
         }
       }
 
-      final List<String> teacherIds = teacherIdsSet.toList();
-
-      // Future.wait দিয়ে প্যারালাল ডাটা ফেচিং
       final loadedTeachers = await Future.wait(
-        teacherIds.map((tId) async {
+        teacherIdsSet.map((tId) async {
           DocumentSnapshot tDoc = await _firestore.collection('teachers').doc(tId).get();
           if (!tDoc.exists) {
             tDoc = await _firestore.collection('users').doc(tId).get();
@@ -104,20 +180,60 @@ class _StudentTeachersScreenState extends State<StudentTeachersScreen> with Auto
 
       if (mounted) {
         setState(() {
-          _teachers = loadedTeachers.whereType<ConnectedUserModel>().toList();
-          _isLoading = false;
+          _myTeachers = loadedTeachers.whereType<ConnectedUserModel>().toList();
+          _isTeachersLoading = false;
         });
       }
     } catch (e) {
       if (mounted) {
         setState(() {
-          _errorMessage = "Unable to load teachers.";
-          _isLoading = false;
+          _teachersError = "Unable to load teachers.";
+          _isTeachersLoading = false;
         });
       }
     }
   }
 
+  // 🟢 পেন্ডিং ফলো রিকুয়েস্ট ক্যানসেল করার লজিক
+  Future<void> _cancelFollowRequest(ConnectedUserModel teacher) async {
+    try {
+      final String? currentUserId = _auth.currentUser?.uid;
+      if (currentUserId == null) return;
+
+      final collections = ['follow_requests', 'follow_req'];
+
+      for (String col in collections) {
+        final snap = await _firestore
+            .collection(col)
+            .where('senderId', isEqualTo: currentUserId)
+            .where('receiverId', isEqualTo: teacher.uid)
+            .where('status', isEqualTo: 'pending')
+            .get();
+
+        for (var doc in snap.docs) {
+          await doc.reference.delete();
+        }
+      }
+
+      if (mounted) {
+        setState(() {
+          _followingRequests.removeWhere((t) => t.uid == teacher.uid);
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Cancelled follow request to ${teacher.name}")),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Action failed. Please try again.")),
+        );
+      }
+    }
+  }
+
+  // 🟢 অনফলো লজিক (My Teachers থেকে রিমুভ)
   Future<void> _unfollowTeacher(ConnectedUserModel teacher) async {
     try {
       final String? currentUserId = _auth.currentUser?.uid;
@@ -126,11 +242,6 @@ class _StudentTeachersScreenState extends State<StudentTeachersScreen> with Auto
       final collections = ['follow_requests', 'follow_req'];
 
       for (String col in collections) {
-        final docRef1 = _firestore.collection(col).doc('${currentUserId}_${teacher.uid}');
-        final docRef2 = _firestore.collection(col).doc('${teacher.uid}_$currentUserId');
-        await docRef1.delete();
-        await docRef2.delete();
-
         final snap1 = await _firestore
             .collection(col)
             .where('senderId', isEqualTo: currentUserId)
@@ -152,7 +263,7 @@ class _StudentTeachersScreenState extends State<StudentTeachersScreen> with Auto
 
       if (mounted) {
         setState(() {
-          _teachers.removeWhere((t) => t.uid == teacher.uid);
+          _myTeachers.removeWhere((t) => t.uid == teacher.uid);
         });
 
         ScaffoldMessenger.of(context).showSnackBar(
@@ -173,13 +284,7 @@ class _StudentTeachersScreenState extends State<StudentTeachersScreen> with Auto
       context,
       '/chat',
       arguments: {'peerId': teacher.uid, 'peerName': teacher.name},
-    ).catchError((_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Unable to open chat. Please try again.")),
-        );
-      }
-    });
+    );
   }
 
   void _openProfile(ConnectedUserModel teacher) {
@@ -235,63 +340,263 @@ class _StudentTeachersScreenState extends State<StudentTeachersScreen> with Auto
 
   @override
   Widget build(BuildContext context) {
-    super.build(context); // AutomaticKeepAliveClientMixin-এর জন্য আবশ্যক
-
     return Scaffold(
       appBar: AppBar(
-        title: const Text("Teachers", style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text("Teacher Connections", style: TextStyle(fontWeight: FontWeight.bold)),
         elevation: 0.5,
-      ),
-      body: RefreshIndicator(
-        onRefresh: _fetchTeachers,
-        child: _isLoading
-            ? _buildSkeletonLoader()
-            : _errorMessage != null
-                ? Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(_errorMessage!, style: const TextStyle(color: Colors.grey, fontSize: 16)),
-                        const SizedBox(height: 12),
-                        ElevatedButton(
-                          onPressed: _fetchTeachers,
-                          child: const Text("Retry"),
-                        )
-                      ],
-                    ),
-                  )
-                : _teachers.isEmpty
-                    ? Center(
-                        child: ListView(
-                          shrinkWrap: true,
-                          children: const [
-                            Center(
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(Icons.people_outline, size: 64, color: Colors.grey),
-                                  SizedBox(height: 12),
-                                  Text("No teachers yet", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                                  SizedBox(height: 6),
-                                  Text("Connect with teachers to see them here.", style: TextStyle(color: Colors.grey)),
-                                ],
-                              ),
-                            )
-                          ],
-                        ),
-                      )
-                    : ListView.builder(
-                        itemCount: _teachers.length,
-                        itemBuilder: (context, index) {
-                          final teacher = _teachers[index];
-                          return ConnectedUserTile(
-                            user: teacher,
-                            onTap: () => _openProfile(teacher),
-                            onMoreTap: () => _showActionMenu(teacher),
-                          );
-                        },
+        bottom: TabBar(
+          controller: _tabController,
+          indicatorColor: Theme.of(context).primaryColor,
+          labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+          tabs: [
+            Tab(
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Text("Following"),
+                  if (_followingRequests.isNotEmpty) ...[
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.shade100,
+                        borderRadius: BorderRadius.circular(10),
                       ),
+                      child: Text(
+                        '${_followingRequests.length}',
+                        style: TextStyle(color: Colors.orange.shade900, fontSize: 11, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ]
+                ],
+              ),
+            ),
+            Tab(
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Text("My Teachers"),
+                  if (_myTeachers.isNotEmpty) ...[
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade300,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        '${_myTeachers.length}',
+                        style: const TextStyle(color: Colors.black87, fontSize: 11, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ]
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
+      body: TabBarView(
+        controller: _tabController,
+        children: [
+          // 🟢 TAB ১: Following Tab (Pending Sent Requests)
+          _FollowingTabView(
+            isLoading: _isFollowingLoading,
+            errorMessage: _followingError,
+            requests: _followingRequests,
+            onRefresh: _fetchFollowingRequests,
+            onCancel: _cancelFollowRequest,
+            onTapProfile: _openProfile,
+            skeletonBuilder: _buildSkeletonLoader,
+          ),
+
+          // 🟢 TAB ২: My Teachers Tab (Accepted Connections)
+          _MyTeachersTabView(
+            isLoading: _isTeachersLoading,
+            errorMessage: _teachersError,
+            teachers: _myTeachers,
+            onRefresh: _fetchMyTeachers,
+            onTapProfile: _openProfile,
+            onMoreTap: _showActionMenu,
+            skeletonBuilder: _buildSkeletonLoader,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 🟢 Sub-Widget: Following Tab View
+// ---------------------------------------------------------------------------
+class _FollowingTabView extends StatelessWidget {
+  final bool isLoading;
+  final String? errorMessage;
+  final List<ConnectedUserModel> requests;
+  final Future<void> Function() onRefresh;
+  final Function(ConnectedUserModel) onCancel;
+  final Function(ConnectedUserModel) onTapProfile;
+  final Widget Function() skeletonBuilder;
+
+  const _FollowingTabView({
+    Key? key,
+    required this.isLoading,
+    required this.errorMessage,
+    required this.requests,
+    required this.onRefresh,
+    required this.onCancel,
+    required this.onTapProfile,
+    required this.skeletonBuilder,
+  }) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return RefreshIndicator(
+      onRefresh: onRefresh,
+      child: isLoading
+          ? skeletonBuilder()
+          : errorMessage != null
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(errorMessage!, style: const TextStyle(color: Colors.grey, fontSize: 16)),
+                      const SizedBox(height: 12),
+                      ElevatedButton(onPressed: onRefresh, child: const Text("Retry")),
+                    ],
+                  ),
+                )
+              : requests.isEmpty
+                  ? Center(
+                      child: ListView(
+                        shrinkWrap: true,
+                        children: const [
+                          Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.person_search_outlined, size: 64, color: Colors.grey),
+                                SizedBox(height: 12),
+                                Text("No pending requests", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                                SizedBox(height: 6),
+                                Text("Teachers you requested to follow will show here.", style: TextStyle(color: Colors.grey)),
+                              ],
+                            ),
+                          )
+                        ],
+                      ),
+                    )
+                  : ListView.builder(
+                      itemCount: requests.length,
+                      itemBuilder: (context, index) {
+                        final teacher = requests[index];
+                        return Container(
+                          margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: ListTile(
+                            onTap: () => onTapProfile(teacher),
+                            leading: CircleAvatar(
+                              radius: 24,
+                              backgroundImage: teacher.profileImageUrl != null && teacher.profileImageUrl!.isNotEmpty
+                                  ? NetworkImage(teacher.profileImageUrl!)
+                                  : null,
+                              child: teacher.profileImageUrl == null || teacher.profileImageUrl!.isEmpty
+                                  ? const Icon(Icons.person)
+                                  : null,
+                            ),
+                            title: Text(teacher.name, style: const TextStyle(fontWeight: FontWeight.bold)),
+                            subtitle: Text(teacher.subtitle ?? "Request pending approval", style: const TextStyle(fontSize: 12)),
+                            trailing: OutlinedButton(
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: Colors.redAccent,
+                                side: const BorderSide(color: Colors.redAccent),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                              ),
+                              onPressed: () => onCancel(teacher),
+                              child: const Text("Cancel", style: TextStyle(fontSize: 12)),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 🟢 Sub-Widget: My Teachers Tab View
+// ---------------------------------------------------------------------------
+class _MyTeachersTabView extends StatelessWidget {
+  final bool isLoading;
+  final String? errorMessage;
+  final List<ConnectedUserModel> teachers;
+  final Future<void> Function() onRefresh;
+  final Function(ConnectedUserModel) onTapProfile;
+  final Function(ConnectedUserModel) onMoreTap;
+  final Widget Function() skeletonBuilder;
+
+  const _MyTeachersTabView({
+    Key? key,
+    required this.isLoading,
+    required this.errorMessage,
+    required this.teachers,
+    required this.onRefresh,
+    required this.onTapProfile,
+    required this.onMoreTap,
+    required this.skeletonBuilder,
+  }) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return RefreshIndicator(
+      onRefresh: onRefresh,
+      child: isLoading
+          ? skeletonBuilder()
+          : errorMessage != null
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(errorMessage!, style: const TextStyle(color: Colors.grey, fontSize: 16)),
+                      const SizedBox(height: 12),
+                      ElevatedButton(onPressed: onRefresh, child: const Text("Retry")),
+                    ],
+                  ),
+                )
+              : teachers.isEmpty
+                  ? Center(
+                      child: ListView(
+                        shrinkWrap: true,
+                        children: const [
+                          Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.school_outlined, size: 64, color: Colors.grey),
+                                SizedBox(height: 12),
+                                Text("No teachers yet", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                                SizedBox(height: 6),
+                                Text("Connect with teachers to see them here.", style: TextStyle(color: Colors.grey)),
+                              ],
+                            ),
+                          )
+                        ],
+                      ),
+                    )
+                  : ListView.builder(
+                      itemCount: teachers.length,
+                      itemBuilder: (context, index) {
+                        final teacher = teachers[index];
+                        return ConnectedUserTile(
+                          user: teacher,
+                          onTap: () => onTapProfile(teacher),
+                          onMoreTap: () => onMoreTap(teacher),
+                        );
+                      },
+                    ),
     );
   }
 }
