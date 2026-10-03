@@ -13,6 +13,7 @@ class MessageModel {
   final List<String> starredBy;
   final Map<String, String> reactions;
   final String? replyToMessageId;
+  final String? replyText;
   final bool isEdited;
   final DateTime? editTimestamp;
   final Map<String, dynamic>? mediaMetaData;
@@ -30,6 +31,7 @@ class MessageModel {
     required this.starredBy,
     required this.reactions,
     this.replyToMessageId,
+    this.replyText,
     this.isEdited = false,
     this.editTimestamp,
     this.mediaMetaData,
@@ -49,32 +51,25 @@ class MessageModel {
       senderId: map['senderId']?.toString() ?? '',
       receiverId: map['receiverId']?.toString() ?? '',
       content: map['content']?.toString() ?? map['message']?.toString() ?? '', 
-
       timestamp: parseDateTime(map['timestamp']),
-
       type: map['type']?.toString() ?? 'text',
       status: map['status']?.toString() ?? 'sent',
       isDeletedForEveryone: map['isDeletedForEveryone'] as bool? ?? false,
-
       deletedForUsers: (map['deletedForUsers'] as List<dynamic>?)
               ?.map((e) => e.toString())
               .toList() ?? 
           const [],
-
       starredBy: (map['starredBy'] as List<dynamic>?)
               ?.map((e) => e.toString())
               .toList() ?? 
           const [],
-
       reactions: (map['reactions'] as Map<dynamic, dynamic>?)
               ?.map((key, value) => MapEntry(key.toString(), value.toString())) ?? 
           const {},
-
       replyToMessageId: map['replyToMessageId']?.toString(),
+      replyText: map['replyText']?.toString() ?? map['replyToText']?.toString(),
       isEdited: map['isEdited'] as bool? ?? false,
-
       editTimestamp: parseDateTime(map['editTimestamp']),
-
       mediaMetaData: map['mediaMetaData'] != null
           ? Map<String, dynamic>.from(map['mediaMetaData'] as Map<dynamic, dynamic>)
           : null,
@@ -97,6 +92,7 @@ class MessageModel {
       'starredBy': starredBy,
       'reactions': reactions,
       'replyToMessageId': replyToMessageId,
+      'replyText': replyText,
       'isEdited': isEdited,
       'editTimestamp': editTimestamp != null
           ? Timestamp.fromDate(editTimestamp!)
@@ -118,6 +114,7 @@ class MessageModel {
     List<String>? starredBy,
     Map<String, String>? reactions,
     String? replyToMessageId,
+    String? replyText,
     bool? isEdited,
     DateTime? editTimestamp,
     Map<String, dynamic>? mediaMetaData,
@@ -135,6 +132,7 @@ class MessageModel {
       starredBy: starredBy ?? this.starredBy,
       reactions: reactions ?? this.reactions,
       replyToMessageId: replyToMessageId ?? this.replyToMessageId,
+      replyText: replyText ?? this.replyText,
       isEdited: isEdited ?? this.isEdited,
       editTimestamp: editTimestamp ?? this.editTimestamp,
       mediaMetaData: mediaMetaData ?? this.mediaMetaData,
