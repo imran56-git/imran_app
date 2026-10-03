@@ -1,30 +1,18 @@
-import 'package:flutter/material.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';
 import '../constants/ai_knowledge.dart';
-import 'teacher_service.dart';
 
 class GeminiService {
-  // 🔴 ১. যদি আপনি String.fromEnvironment ব্যবহার করেন এবং রান টাইমে পাস না করেন, তবে এটি খালি থাকবে
-  // পরীক্ষা করার জন্য প্রয়োজন হলে 'AIzaSy...' সরাসরি এই ভ্যারিয়েবলে বসিয়ে দেখতে পারেন।
   static const String _apiKey = String.fromEnvironment('GEMINI_API_KEY');
 
-  late final GenerativeModel _model;
+  GenerativeModel? _model;
   ChatSession? _chatSession;
-  final TeacherService _teacherService = TeacherService();
 
   GeminiService() {
     _initModel();
   }
 
   void _initModel() {
-    debugPrint("--------------------------------------------------");
-    debugPrint("⚙️ [GeminiService] Initializing Model...");
-    debugPrint("🔑 Key Length: ${_apiKey.length} characters");
-
-    if (_apiKey.isEmpty) {
-      debugPrint("❌ ERROR: API Key is EMPTY! String.fromEnvironment failed or key not set.");
-      return;
-    }
+    if (_apiKey.isEmpty) return;
 
     try {
       _model = GenerativeModel(
@@ -32,109 +20,79 @@ class GeminiService {
         apiKey: _apiKey,
         systemInstruction: Content.system(AiKnowledge.systemInstruction),
         generationConfig: GenerationConfig(
-          maxOutputTokens: 500,
+          maxOutputTokens: 1000,
           temperature: 0.7,
         ),
       );
-      _chatSession = _model.startChat();
-      debugPrint("✅ [GeminiService] Model & Chat Session initialized successfully.");
-    } catch (e, stackTrace) {
-      debugPrint("❌ [GeminiService Init Exception]: $e");
-      debugPrint("📌 StackTrace:\n$stackTrace");
+      _chatSession = _model!.startChat();
+    } catch (_) {}
+  }
+
+  String _detectLanguage(String text) {
+    if (RegExp(r'[\u0980-\u09FF]').hasMatch(text)) {
+      return 'bn';
+    } else if (RegExp(r'[\u0900-\u097F]').hasMatch(text)) {
+      return 'hi';
     }
-    debugPrint("--------------------------------------------------");
+    return 'en';
+  }
+
+  String _getErrorMessage(String type, String lang) {
+    switch (type) {
+      case 'missing_key':
+        if (lang == 'bn') {
+          return 'API কী পাওয়া যায়নি। অনুগ্রহ করে আপনার Gemini API Key সেট করুন।';
+        } else if (lang == 'hi') {
+          return 'API कुंजी नहीं मिली। कृपया अपनी Gemini API Key सेट करें।';
+        }
+        return 'API key is missing. Please configure your Gemini API Key.';
+
+      case 'api_error':
+        if (lang == 'bn') {
+          return 'সার্ভারের সাথে সংযোগে সমস্যা হয়েছে বা API কী অবৈধ। অনুগ্রহ করে কিছুক্ষণ পর আবার চেষ্টা করুন।';
+        } else if (lang == 'hi') {
+          return 'सर्वर से कनेक्ट करने में समस्या हुई या API कुंजी अमान्य है। कृपया कुछ समय बाद पुनः प्रयास करें।';
+        }
+        return 'Failed to connect to the AI service or invalid API key. Please try again later.';
+
+      case 'network_error':
+      default:
+        if (lang == 'bn') {
+          return 'ইন্টারনেট সংযোগে সমস্যা হয়েছে। আপনার নেটওয়ার্ক চেক করে আবার চেষ্টা করুন।';
+        } else if (lang == 'hi') {
+          return 'इंटरनेट कनेक्शन में समस्या है। कृपया अपना नेटवर्क जांचें और पुनः प्रयास करें।';
+        }
+        return 'Network connection error. Please check your internet connection and try again.';
+    }
   }
 
   Future<String?> sendChatMessage(String prompt) async {
-    debugPrint("\n==================================================");
-    debugPrint("📩 [Gemini Request Sent]");
-    debugPrint("💬 Prompt: $prompt");
+    final lang = _detectLanguage(prompt);
 
-    // ১. API Key চেক
     if (_apiKey.isEmpty) {
-      const errorStr = "🔴 [ORIGIN ERROR: API KEY MISSING]\n\n"
-          "কারণ: GEMINI_API_KEY খালি।\n"
-          "সমাধান: lib/services/gemini_service.dart ফাইলে _apiKey-এর জায়গায় সরাসরি আপনার Gemini API Key বসান।";
-      debugPrint("❌ $errorStr");
-      return errorStr;
+      return _getErrorMessage('missing_key', lang);
     }
 
-    _chatSession ??= _model.startChat();
-
-    String finalPrompt = prompt;
-    final lowerPrompt = prompt.toLowerCase();
-
-    // ২. টিচার সার্ভিস ব্যাকএন্ড চেক
-    if (lowerPrompt.contains('teacher') ||
-        lowerPrompt.contains('tuition') ||
-        lowerPrompt.contains('find') ||
-        lowerPrompt.contains('need') ||
-        lowerPrompt.contains('শিক্ষক') ||
-        lowerPrompt.contains('টিচার') ||
-        lowerPrompt.contains('টিউশন') ||
-        lowerPrompt.contains('शिक्षक') ||
-        lowerPrompt.contains('टीचर') ||
-        lowerPrompt.contains('ट्यूशन') ||
-        lowerPrompt.contains('चाहिए')) {
-      try {
-        debugPrint("🔍 Searching database for teachers...");
-        List<Map<String, dynamic>> realTeachers = await _teacherService.searchTeachers();
-        debugPrint("📊 Teachers found in DB: ${realTeachers.length}");
-        
-        if (realTeachers.isNotEmpty) {
-          finalPrompt = '''
-User Question: $prompt
-
-Real Teacher Data from Database:
-$realTeachers
-
-Instruction: Present the relevant teachers from the above real database data to answer the user's request accurately. Respond in the exact language used by the user. If no matching teacher is found in the provided data, clearly state that no teacher is currently available for this requirement.
-''';
-        }
-      } catch (teacherErr) {
-        debugPrint("⚠️ [TeacherService Error]: $teacherErr");
+    if (_model == null || _chatSession == null) {
+      _initModel();
+      if (_model == null) {
+        return _getErrorMessage('api_error', lang);
       }
     }
 
-    // ৩. Gemini API রিকোয়েস্ট ট্রাই-ক্যাচ (অরিজিনাল এরর বের করার অংশ)
     try {
-      debugPrint("🚀 Calling Gemini API (gemini-1.5-flash)...");
-      final response = await _chatSession!.sendMessage(Content.text(finalPrompt));
-      debugPrint("✅ [Gemini Response Received Successfully]");
-      debugPrint("==================================================\n");
+      final response = await _chatSession!.sendMessage(Content.text(prompt));
       return response.text;
-
-    } on GenerativeAIException catch (e, stackTrace) {
-      // 🔴 Gemini SDK নির্দিষ্ট এরর (যেমন: 400 Bad Request, Invalid API Key, Quota Exceeded)
-      debugPrint("❌ [ORIGIN: GenerativeAIException Triggered]");
-      debugPrint("📝 Message: ${e.message}");
-      debugPrint("📌 Full Trace:\n$stackTrace");
-      debugPrint("==================================================\n");
-
-      return "🔴 [ORIGIN ERROR: Gemini API Exception]\n\n"
-          "এরর কোড / ডিটেইলস:\n${e.message}\n\n"
-          "💡 সম্ভাব্য কারণ:\n"
-          "১. API Key টি অবৈধ বা মেয়াদোত্তীর্ণ।\n"
-          "২. Google AI Studio-র কোটা শেষ।\n"
-          "৩. gemini-1.5-flash মডেল সাপোর্ট করছে না।";
-
-    } catch (e, stackTrace) {
-      // 🔴 ইন্টারনেট সমস্যা বা অন্য কোনো জেনেরিক এরর
-      debugPrint("❌ [ORIGIN: General Network/System Error]");
-      debugPrint("📝 Exception Type: ${e.runtimeType}");
-      debugPrint("📝 Details: $e");
-      debugPrint("📌 Full Trace:\n$stackTrace");
-      debugPrint("==================================================\n");
-
-      return "🔴 [ORIGIN ERROR: ${e.runtimeType}]\n\n"
-          "ডিটেইলস:\n$e\n\n"
-          "💡 (ইন্টারনেট কানেকশন, সকেট সংযোগ বা অন্য কোনো ক্র্যাশ হতে পারে)";
+    } on GenerativeAIException {
+      return _getErrorMessage('api_error', lang);
+    } catch (_) {
+      return _getErrorMessage('network_error', lang);
     }
   }
 
   void resetChat() {
-    if (_apiKey.isNotEmpty) {
-      _chatSession = _model.startChat();
+    if (_model != null) {
+      _chatSession = _model!.startChat();
     }
   }
 }
