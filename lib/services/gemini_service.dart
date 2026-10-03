@@ -28,7 +28,7 @@ class GeminiService {
 
     try {
       _model = GenerativeModel(
-        model: 'gemini-1.5-flash',
+        model: 'gemini-3.8-flash',
         apiKey: _apiKey,
         systemInstruction: Content.system(AiKnowledge.systemInstruction),
         generationConfig: GenerationConfig(
