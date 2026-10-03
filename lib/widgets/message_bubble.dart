@@ -92,7 +92,6 @@ class _MessageBubbleState extends State<MessageBubble> {
     return '$hour:$minute $amPm';
   }
 
-  // ১০ মিনিটের বেশি হয়েছে কিনা এবং মেসেজটি নিজের ও টেক্সট টাইপ কিনা চেক করার লজিক
   bool _canEditMessage() {
     if (!widget.isMe) return false;
     if (widget.message.type.toLowerCase() != 'text') return false;
@@ -106,7 +105,6 @@ class _MessageBubbleState extends State<MessageBubble> {
     return difference.inMinutes < 10;
   }
 
-  // মেসেজ এডিট করার ডায়ালগ পপ-আপ
   void _showEditDialog(BuildContext context) {
     final TextEditingController editController = TextEditingController(text: widget.message.content);
 
@@ -399,7 +397,6 @@ class _MessageBubbleState extends State<MessageBubble> {
                 },
               ),
 
-            // ১০ মিনিটের মধ্যে পাঠালে 'Edit' অপশনটি দেখাবে
             if (_canEditMessage())
               ListWhiteTiles(
                 leading: const Icon(Icons.edit_outlined, color: Colors.blue),
@@ -499,7 +496,7 @@ class _MessageBubbleState extends State<MessageBubble> {
                         const SizedBox(width: 4),
                         Flexible(
                           child: Text(
-                            widget.message.replyToText ?? "Replied to a message",
+                            widget.message.replyText ?? "Replied to a message",
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(fontSize: 11, color: Colors.grey.shade700, fontWeight: FontWeight.w500),
                           ),
