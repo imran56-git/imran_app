@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import '../services/gemini_service.dart';
@@ -7,11 +8,13 @@ import '../services/gemini_service.dart';
 class ChatMessage {
   final String text;
   final bool isUser;
-  bool? isLiked; // true = liked, false = disliked, null = no reaction
+  final DateTime timestamp;
+  bool? isLiked;
 
   ChatMessage({
     required this.text,
     required this.isUser,
+    required this.timestamp,
     this.isLiked,
   });
 }
@@ -25,18 +28,25 @@ class AiAssistantScreen extends StatefulWidget {
 
 class _AiAssistantScreenState extends State<AiAssistantScreen> {
   final TextEditingController _controller = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
   final GeminiService _geminiService = GeminiService();
   final List<ChatMessage> _messages = [];
   final Set<int> _selectedIndices = {};
 
-  // Speech-to-Text & Text-to-Speech Variables
   late stt.SpeechToText _speechToText;
   late FlutterTts _flutterTts;
-  
+
   bool _isListening = false;
   bool _isLoading = false;
   bool _isSelectionMode = false;
   int? _currentlySpeakingIndex;
+
+  // থিম কালার প্যালেট
+  static const Color primaryNavy = Color(0xFF1E3A8A);
+  static const Color accentBlue = Color(0xFF2563EB);
+  static const Color userBubbleColor = Color(0xFF1D4ED8);
+  static const Color aiBubbleColor = Color(0xFFF8FAFC);
+  static const Color scaffoldBg = Color(0xFFF1F5F9);
 
   @override
   void initState() {
@@ -48,14 +58,10 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
   void _initTts() {
     _flutterTts = FlutterTts();
     _flutterTts.setCompletionHandler(() {
-      setState(() {
-        _currentlySpeakingIndex = null;
-      });
+      setState(() => _currentlySpeakingIndex = null);
     });
-    _flutterTts.setErrorHandler((msg) {
-      setState(() {
-        _currentlySpeakingIndex = null;
-      });
+    _flutterTts.setErrorHandler((_) {
+      setState(() => _currentlySpeakingIndex = null);
     });
   }
 
@@ -63,52 +69,58 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
   void dispose() {
     _flutterTts.stop();
     _controller.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
-  // STEP 1: Text cleaner function
-  String _cleanText(String text) {
-    return text.replaceAll('**', '').replaceAll('* ', '• ');
+  void _scrollToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      }
+    });
   }
 
-  // AI Response Request & Stop Logic
   void _sendMessage() async {
     final text = _controller.text.trim();
     if (text.isEmpty || _isLoading) return;
 
-    if (_isListening) {
-      _stopListening();
-    }
+    if (_isListening) _stopListening();
 
     _controller.clear();
     setState(() {
-      _messages.add(ChatMessage(text: text, isUser: true));
+      _messages.add(ChatMessage(
+        text: text,
+        isUser: true,
+        timestamp: DateTime.now(),
+      ));
       _isLoading = true;
     });
+    _scrollToBottom();
 
     final response = await _geminiService.sendChatMessage(text);
 
-    if (!mounted || !_isLoading) return; // _isLoading false মানে ইউজার স্টপ বাটনে চাপ দিয়েছেন
-
-    final cleanedResponse = _cleanText(response ?? "An unexpected error occurred.");
+    if (!mounted || !_isLoading) return;
 
     setState(() {
       _isLoading = false;
       _messages.add(ChatMessage(
-        text: cleanedResponse,
+        text: response ?? "দুঃখিত, কোনো উত্তর পাওয়া যায়নি। আবার চেষ্টা করুন।",
         isUser: false,
+        timestamp: DateTime.now(),
       ));
     });
+    _scrollToBottom();
   }
 
-  // Stop Generating Response Logic
   void _stopGenerating() {
-    setState(() {
-      _isLoading = false;
-    });
+    setState(() => _isLoading = false);
   }
 
-  // STEP 4: Voice Input Logic (STT)
   void _toggleListening() async {
     if (!_isListening) {
       bool available = await _speechToText.initialize(
@@ -117,9 +129,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
             setState(() => _isListening = false);
           }
         },
-        onError: (_) {
-          setState(() => _isListening = false);
-        },
+        onError: (_) => setState(() => _isListening = false),
       );
 
       if (available) {
@@ -142,51 +152,44 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
     setState(() => _isListening = false);
   }
 
-  // STEP 5: Voice Output Logic (TTS)
   Future<void> _toggleSpeak(int index, String text) async {
     if (_currentlySpeakingIndex == index) {
       await _flutterTts.stop();
-      setState(() {
-        _currentlySpeakingIndex = null;
-      });
+      setState(() => _currentlySpeakingIndex = null);
     } else {
       await _flutterTts.stop();
-      setState(() {
-        _currentlySpeakingIndex = index;
-      });
+      setState(() => _currentlySpeakingIndex = index);
       await _flutterTts.speak(text);
     }
   }
 
-  // STEP 6: Copy Text Logic
   void _copyToClipboard(String text) {
     Clipboard.setData(ClipboardData(text: text));
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text("Copied to clipboard"),
-        duration: Duration(seconds: 2),
+      SnackBar(
+        content: const Row(
+          children: [
+            Icon(Icons.check_circle, color: Colors.white, size: 18),
+            SizedBox(width: 8),
+            Text("টেক্সট কপি করা হয়েছে"),
+          ],
+        ),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        backgroundColor: const Color(0xFF1E293B),
+        duration: const Duration(seconds: 2),
       ),
     );
   }
 
-  // Selection & Message Delete Management
   void _toggleSelection(int index) {
     setState(() {
       if (_selectedIndices.contains(index)) {
         _selectedIndices.remove(index);
-        if (_selectedIndices.isEmpty) {
-          _isSelectionMode = false;
-        }
+        if (_selectedIndices.isEmpty) _isSelectionMode = false;
       } else {
         _selectedIndices.add(index);
       }
-    });
-  }
-
-  void _enterSelectionMode(int index) {
-    setState(() {
-      _isSelectionMode = true;
-      _selectedIndices.add(index);
     });
   }
 
@@ -199,11 +202,9 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
 
   void _deleteSelectedMessages() {
     setState(() {
-      final sortedIndices = _selectedIndices.toList()..sort((a, b) => b.compareTo(a));
-      for (int index in sortedIndices) {
-        if (index < _messages.length) {
-          _messages.removeAt(index);
-        }
+      final sorted = _selectedIndices.toList()..sort((a, b) => b.compareTo(a));
+      for (int i in sorted) {
+        if (i < _messages.length) _messages.removeAt(i);
       }
       _selectedIndices.clear();
       _isSelectionMode = false;
@@ -214,14 +215,20 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text("Clear Conversation"),
-        content: const Text("Are you sure you want to delete all messages?"),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text("সব মেসেজ মুছবেন?", style: TextStyle(fontWeight: FontWeight.bold)),
+        content: const Text("এই কথোপকথনের সমস্ত মেসেজ স্থায়ীভাবে মুছে ফেলা হবে।"),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text("Cancel"),
+            child: const Text("বাতিল", style: TextStyle(color: Colors.grey)),
           ),
-          TextButton(
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red.shade600,
+              elevation: 0,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
             onPressed: () {
               Navigator.pop(context);
               _flutterTts.stop();
@@ -233,7 +240,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
               });
               _geminiService.resetChat();
             },
-            child: const Text("Clear All", style: TextStyle(color: Colors.red)),
+            child: const Text("মুছে ফেলুন", style: TextStyle(color: Colors.white)),
           ),
         ],
       ),
@@ -243,56 +250,65 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: scaffoldBg,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF1E4C7A),
-        foregroundColor: Colors.white,
-        elevation: 0,
+        backgroundColor: Colors.white,
+        elevation: 0.5,
         title: _isSelectionMode
-            ? Text('${_selectedIndices.length} Selected')
-            : const Row(
+            ? Text('${_selectedIndices.length} সিলেক্ট করা হয়েছে',
+                style: const TextStyle(color: primaryNavy, fontWeight: FontWeight.bold, fontSize: 17))
+            : Row(
                 children: [
-                  Icon(Icons.auto_awesome, size: 20, color: Colors.amber),
-                  SizedBox(width: 8),
-                  Text(
-                    'FYBTT AI Assistant',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                  Container(
+                    padding: const EdgeInsets.all(7),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF2563EB), Color(0xFF1E3A8A)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(Icons.auto_awesome, size: 18, color: Colors.white),
+                  ),
+                  const SizedBox(width: 10),
+                  const Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'FYBTT AI Assistant',
+                        style: TextStyle(
+                          color: Color(0xFF0F172A),
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                      ),
+                      Text(
+                        'অনলাইন সহায়তা',
+                        style: TextStyle(color: Colors.green, fontSize: 11, fontWeight: FontWeight.w500),
+                      ),
+                    ],
                   ),
                 ],
               ),
         actions: _isSelectionMode
             ? [
                 IconButton(
-                  icon: const Icon(Icons.delete_outline_rounded),
+                  icon: const Icon(Icons.delete_outline_rounded, color: Colors.red),
                   onPressed: _deleteSelectedMessages,
-                  tooltip: 'Delete Selected',
+                  tooltip: 'Delete',
                 ),
                 IconButton(
-                  icon: const Icon(Icons.close_rounded),
+                  icon: const Icon(Icons.close_rounded, color: Colors.black87),
                   onPressed: _clearSelection,
                   tooltip: 'Cancel',
                 ),
               ]
             : [
-                PopupMenuButton<String>(
-                  icon: const Icon(Icons.more_vert_rounded, color: Colors.white),
-                  onSelected: (value) {
-                    if (value == 'clear') {
-                      _clearAllMessages();
-                    }
-                  },
-                  itemBuilder: (context) => [
-                    const PopupMenuItem(
-                      value: 'clear',
-                      child: Row(
-                        children: [
-                          Icon(Icons.delete_sweep_rounded, color: Colors.red, size: 20),
-                          SizedBox(width: 8),
-                          Text('Clear All Chat', style: TextStyle(color: Colors.red)),
-                        ],
-                      ),
-                    ),
-                  ],
+                IconButton(
+                  icon: const Icon(Icons.delete_sweep_outlined, color: Color(0xFF64748B)),
+                  onPressed: _messages.isNotEmpty ? _clearAllMessages : null,
+                  tooltip: 'Clear Chat',
                 ),
               ],
       ),
@@ -300,44 +316,10 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
         children: [
           Expanded(
             child: _messages.isEmpty
-                ? Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF1E4C7A).withOpacity(0.08),
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(
-                            Icons.auto_awesome,
-                            size: 40,
-                            color: Color(0xFF1E4C7A),
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          'Ask FYBTT AI anything',
-                          style: TextStyle(
-                            fontSize: 18,
-                            color: Colors.grey.shade700,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          'Search teachers, courses or get instant study help',
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: Colors.grey.shade500,
-                          ),
-                        ),
-                      ],
-                    ),
-                  )
+                ? _buildEmptyState()
                 : ListView.builder(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    controller: _scrollController,
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
                     itemCount: _messages.length,
                     itemBuilder: (context, index) {
                       final message = _messages[index];
@@ -346,175 +328,114 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
 
                       return GestureDetector(
                         onLongPress: () {
-                          if (!_isSelectionMode) {
-                            _enterSelectionMode(index);
-                          }
+                          if (!_isSelectionMode) setState(() => _isSelectionMode = true);
+                          _toggleSelection(index);
                         },
                         onTap: () {
-                          if (_isSelectionMode) {
-                            _toggleSelection(index);
-                          }
+                          if (_isSelectionMode) _toggleSelection(index);
                         },
                         child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 150),
+                          duration: const Duration(milliseconds: 180),
                           margin: const EdgeInsets.symmetric(vertical: 6),
-                          padding: const EdgeInsets.all(8),
+                          padding: const EdgeInsets.all(4),
                           decoration: BoxDecoration(
-                            color: isSelected
-                                ? const Color(0xFF1E4C7A).withOpacity(0.08)
-                                : Colors.transparent,
-                            borderRadius: BorderRadius.circular(12),
-                            border: isSelected
-                                ? Border.all(color: const Color(0xFF1E4C7A), width: 1.5)
-                                : null,
+                            color: isSelected ? accentBlue.withOpacity(0.08) : Colors.transparent,
+                            borderRadius: BorderRadius.circular(16),
+                            border: isSelected ? Border.all(color: accentBlue, width: 1.5) : null,
                           ),
                           child: Row(
-                            mainAxisAlignment: message.isUser
-                                ? MainAxisAlignment.end
-                                : MainAxisAlignment.start,
+                            mainAxisAlignment: message.isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               if (_isSelectionMode) ...[
                                 Checkbox(
                                   value: isSelected,
                                   onChanged: (_) => _toggleSelection(index),
-                                  activeColor: const Color(0xFF1E4C7A),
+                                  activeColor: accentBlue,
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
                                 ),
-                                const SizedBox(width: 4),
                               ],
                               if (!message.isUser) ...[
-                                Container(
-                                  padding: const EdgeInsets.all(6),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFF1E4C7A).withOpacity(0.1),
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: const Icon(
-                                    Icons.auto_awesome,
-                                    size: 18,
-                                    color: Color(0xFF1E4C7A),
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
+                                _buildAvatar(isAi: true),
+                                const SizedBox(width: 8),
                               ],
                               Flexible(
-                                child: message.isUser
-                                    ? Container(
-                                        padding: const EdgeInsets.symmetric(
-                                            horizontal: 16, vertical: 12),
-                                        decoration: const BoxDecoration(
-                                          color: Color(0xFF1E4C7A),
-                                          borderRadius: BorderRadius.only(
-                                            topLeft: Radius.circular(18),
-                                            topRight: Radius.circular(18),
-                                            bottomLeft: Radius.circular(18),
-                                            bottomRight: Radius.circular(4),
-                                          ),
+                                child: Column(
+                                  crossAxisAlignment:
+                                      message.isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+                                  children: [
+                                    Container(
+                                      constraints: BoxConstraints(
+                                        maxWidth: MediaQuery.of(context).size.width * 0.76,
+                                      ),
+                                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                      decoration: BoxDecoration(
+                                        color: message.isUser ? userBubbleColor : Colors.white,
+                                        borderRadius: BorderRadius.only(
+                                          topLeft: const Radius.circular(18),
+                                          topRight: const Radius.circular(18),
+                                          bottomLeft: Radius.circular(message.isUser ? 18 : 4),
+                                          bottomRight: Radius.circular(message.isUser ? 4 : 18),
                                         ),
-                                        child: Text(
-                                          message.text,
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 15,
-                                            height: 1.4,
-                                          ),
-                                        ),
-                                      )
-                                    : Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Padding(
-                                            padding: const EdgeInsets.only(top: 2),
-                                            child: Text(
-                                              message.text,
-                                              style: const TextStyle(
-                                                color: Color(0xFF1E293B),
-                                                fontSize: 15,
-                                                height: 1.5,
-                                                fontWeight: FontWeight.w400,
-                                              ),
-                                            ),
-                                          ),
-                                          const SizedBox(height: 8),
-                                          // STEP 5 & STEP 6: Interaction Bar (TTS, Copy, Like, Dislike)
-                                          Row(
-                                            children: [
-                                              IconButton(
-                                                constraints: const BoxConstraints(),
-                                                padding: const EdgeInsets.only(right: 12),
-                                                icon: Icon(
-                                                  isSpeaking
-                                                      ? Icons.volume_up_rounded
-                                                      : Icons.volume_mute_rounded,
-                                                  size: 18,
-                                                  color: isSpeaking
-                                                      ? const Color(0xFF1E4C7A)
-                                                      : Colors.grey.shade500,
-                                                ),
-                                                onPressed: () => _toggleSpeak(index, message.text),
-                                                tooltip: isSpeaking ? 'Stop Audio' : 'Listen',
-                                              ),
-                                              IconButton(
-                                                constraints: const BoxConstraints(),
-                                                padding: const EdgeInsets.only(right: 12),
-                                                icon: Icon(
-                                                  Icons.copy_rounded,
-                                                  size: 16,
-                                                  color: Colors.grey.shade500,
-                                                ),
-                                                onPressed: () => _copyToClipboard(message.text),
-                                                tooltip: 'Copy',
-                                              ),
-                                              IconButton(
-                                                constraints: const BoxConstraints(),
-                                                padding: const EdgeInsets.only(right: 12),
-                                                icon: Icon(
-                                                  message.isLiked == true
-                                                      ? Icons.thumb_up_rounded
-                                                      : Icons.thumb_up_outlined,
-                                                  size: 16,
-                                                  color: message.isLiked == true
-                                                      ? const Color(0xFF1E4C7A)
-                                                      : Colors.grey.shade500,
-                                                ),
-                                                onPressed: () {
-                                                  setState(() {
-                                                    message.isLiked = message.isLiked == true ? null : true;
-                                                  });
-                                                },
-                                                tooltip: 'Like',
-                                              ),
-                                              IconButton(
-                                                constraints: const BoxConstraints(),
-                                                padding: const EdgeInsets.only(right: 12),
-                                                icon: Icon(
-                                                  message.isLiked == false
-                                                      ? Icons.thumb_down_rounded
-                                                      : Icons.thumb_down_outlined,
-                                                  size: 16,
-       color: message.isLiked == false
-                                                      ? Colors.red.shade400
-                                                      : Colors.grey.shade500,
-                                                ),
-                                                onPressed: () {
-                                                  setState(() {
-                                                    message.isLiked = message.isLiked == false ? null : false;
-                                                  });
-                                                },
-                                                tooltip: 'Dislike',
-                                              ),
-                                            ],
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: Colors.black.withOpacity(0.04),
+                                            blurRadius: 6,
+                                            offset: const Offset(0, 2),
                                           ),
                                         ],
+                                        border: message.isUser
+                                            ? null
+                                            : Border.all(color: const Color(0xFFE2E8F0), width: 1),
                                       ),
+                                      child: message.isUser
+                                          ? Text(
+                                              message.text,
+                                              style: const TextStyle(
+                                                color: Colors.white,
+                                                fontSize: 15,
+                                                height: 1.4,
+                                              ),
+                                            )
+                                          : MarkdownBody(
+                                              data: message.text,
+                                              selectable: true,
+                                              styleSheet: MarkdownStyleSheet(
+                                                p: const TextStyle(
+                                                  color: Color(0xFF1E293B),
+                                                  fontSize: 14.5,
+                                                  height: 1.5,
+                                                ),
+                                                h1: const TextStyle(color: primaryNavy, fontWeight: FontWeight.bold, fontSize: 18),
+                                                h2: const TextStyle(color: primaryNavy, fontWeight: FontWeight.bold, fontSize: 16),
+                                                h3: const TextStyle(color: primaryNavy, fontWeight: FontWeight.w600, fontSize: 15),
+                                                code: TextStyle(
+                                                  backgroundColor: Colors.grey.shade100,
+                                                  color: Colors.pink.shade700,
+                                                  fontSize: 13,
+                                                ),
+                                                codeblockDecoration: BoxDecoration(
+                                                  color: const Color(0xFF0F172A),
+                                                  borderRadius: BorderRadius.circular(8),
+                                                ),
+                                                blockquoteDecoration: BoxDecoration(
+                                                  border: const Border(left: BorderSide(color: accentBlue, width: 3)),
+                                                  color: const Color(0xFFF8FAFC),
+                                                  borderRadius: BorderRadius.circular(4),
+                                                ),
+                                              ),
+                                            ),
+                                    ),
+                                    if (!message.isUser) ...[
+                                      const SizedBox(height: 6),
+                                      _buildInteractionBar(index, message, isSpeaking),
+                                    ],
+                                  ],
+                                ),
                               ),
                               if (message.isUser) ...[
                                 const SizedBox(width: 8),
-                                const CircleAvatar(
-                                  backgroundColor: Color(0xFF34495E),
-                                  radius: 14,
-                                  child: Icon(Icons.person, size: 16, color: Colors.white),
-                                ),
+                                _buildAvatar(isAi: false),
                               ],
                             ],
                           ),
@@ -523,140 +444,292 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                     },
                   ),
           ),
-          if (_isLoading) const _ThinkingIndicator(),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              border: Border(top: BorderSide(color: Color(0xFFE2E8F0))),
-            ),
-            child: SafeArea(
-              child: Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _controller,
-                      enabled: !_isLoading, // এআই উত্তর তৈরি করার সময় ইনপুট ডিসেবল থাকবে
-                      decoration: InputDecoration(
-                        hintText: _isLoading
-                            ? 'Generating response...'
-                            : (_isListening ? 'Listening...' : 'Ask FYBTT AI...'),
-                        hintStyle: TextStyle(
-                          color: _isListening ? Colors.red.shade400 : Colors.grey.shade400,
-                          fontSize: 14,
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                        filled: true,
-                        fillColor: const Color(0xFFF1F5F9),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(24),
-                          borderSide: BorderSide.none,
-                        ),
-                      ),
-                      onSubmitted: (_) => _sendMessage(),
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  IconButton(
-                    icon: Icon(
-                      _isListening ? Icons.mic_rounded : Icons.mic_none_rounded,
-                      color: _isListening ? Colors.red : const Color(0xFF1E4C7A),
-                      size: 24,
-                    ),
-                    onPressed: _isLoading ? null : _toggleListening,
-                    tooltip: 'Voice Input',
-                  ),
-                  const SizedBox(width: 2),
-                  // STOP / SEND Dynamic Button
-                  CircleAvatar(
-                    backgroundColor: _isLoading ? Colors.red.shade600 : const Color(0xFF1E4C7A),
-                    radius: 20,
-                    child: IconButton(
-                      icon: Icon(
-                        _isLoading ? Icons.stop_rounded : Icons.send_rounded,
-                        color: Colors.white,
-                        size: 18,
-                      ),
-                      onPressed: _isLoading ? _stopGenerating : _sendMessage,
-                      tooltip: _isLoading ? 'Stop' : 'Send',
-                    ),
-                  ),
-                ],
+          if (_isLoading) const _ModernThinkingIndicator(),
+          _buildInputBar(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAvatar({required bool isAi}) {
+    return Container(
+      width: 32,
+      height: 32,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: isAi
+            ? const LinearGradient(
+                colors: [Color(0xFF3B82F6), Color(0xFF1E40AF)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              )
+            : const LinearGradient(
+                colors: [Color(0xFF64748B), Color(0xFF334155)],
               ),
-            ),
+        boxShadow: [
+          BoxShadow(
+            color: (isAi ? accentBlue : Colors.black).withOpacity(0.15),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Icon(
+        isAi ? Icons.auto_awesome : Icons.person,
+        size: 16,
+        color: Colors.white,
+      ),
+    );
+  }
+
+  Widget _buildInteractionBar(int index, ChatMessage message, bool isSpeaking) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 4),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _buildActionButton(
+            icon: isSpeaking ? Icons.volume_up_rounded : Icons.volume_mute_rounded,
+            color: isSpeaking ? accentBlue : const Color(0xFF94A3B8),
+            onTap: () => _toggleSpeak(index, message.text),
+          ),
+          const SizedBox(width: 14),
+          _buildActionButton(
+            icon: Icons.copy_rounded,
+            color: const Color(0xFF94A3B8),
+            onTap: () => _copyToClipboard(message.text),
+          ),
+          const SizedBox(width: 14),
+          _buildActionButton(
+            icon: message.isLiked == true ? Icons.thumb_up_rounded : Icons.thumb_up_outlined,
+            color: message.isLiked == true ? accentBlue : const Color(0xFF94A3B8),
+            onTap: () {
+              setState(() => message.isLiked = message.isLiked == true ? null : true);
+            },
+          ),
+          const SizedBox(width: 14),
+          _buildActionButton(
+            icon: message.isLiked == false ? Icons.thumb_down_rounded : Icons.thumb_down_outlined,
+            color: message.isLiked == false ? Colors.red.shade400 : const Color(0xFF94A3B8),
+            onTap: () {
+              setState(() => message.isLiked = message.isLiked == false ? null : false);
+            },
           ),
         ],
       ),
     );
   }
+
+  Widget _buildEmptyState() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 28),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(22),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: primaryNavy.withOpacity(0.08),
+                    blurRadius: 18,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: const Icon(Icons.auto_awesome, size: 44, color: accentBlue),
+            ),
+            const SizedBox(height: 20),
+            const Text(
+              'FYBTT AI Assistant-কে জিজ্ঞাসা করুন',
+              style: TextStyle(fontSize: 18, color: Color(0xFF0F172A), fontWeight: FontWeight.bold),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'সেরা শিক্ষক খোঁজা, বিষয়ভিত্তিক প্রশ্ন বা পড়াশোনার যেকোনো সাহায্য পেয়ে যান নিমেষেই।',
+              style: TextStyle(fontSize: 13, color: Colors.grey.shade600, height: 1.4),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInputBar() {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 8, 14, 12),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        boxShadow: [
+          BoxShadow(
+            color: Color(0x08000000),
+            blurRadius: 10,
+            offset: Offset(0, -3),
+          ),
+        ],
+      ),
+      child: SafeArea(
+        child: Row(
+          children: [
+            Expanded(
+              child: Container(
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                ),
+                child: Row(
+                  children: [
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: TextField(
+                        controller: _controller,
+                        enabled: !_isLoading,
+                        maxLines: null,
+                        keyboardType: TextInputType.multiline,
+                        decoration: InputDecoration(
+                          hintText: _isLoading
+                              ? 'উত্তর তৈরি হচ্ছে...'
+                              : (_isListening ? 'শুনছি...' : 'আপনার প্রশ্নটি লিখুন...'),
+                          hintStyle: TextStyle(
+                            color: _isListening ? Colors.red : const Color(0xFF94A3B8),
+                            fontSize: 14,
+                          ),
+                          border: InputBorder.none,
+                          isDense: true,
+                          contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                        onSubmitted: (_) => _sendMessage(),
+                      ),
+                    ),
+                    IconButton(
+                      icon: Icon(
+                        _isListening ? Icons.mic : Icons.mic_none_rounded,
+                        color: _isListening ? Colors.red : const Color(0xFF64748B),
+                        size: 22,
+                      ),
+                      onPressed: _isLoading ? null : _toggleListening,
+                      splashRadius: 20,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: _isLoading
+                      ? [Colors.red.shade400, Colors.red.shade700]
+                      : [accentBlue, primaryNavy],
+                ),
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: (_isLoading ? Colors.red : accentBlue).withOpacity(0.3),
+                    blurRadius: 8,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
+              ),
+              child: IconButton(
+                icon: Icon(
+                  _isLoading ? Icons.stop_rounded : Icons.send_rounded,
+                  color: Colors.white,
+                  size: 18,
+                ),
+                onPressed: _isLoading ? _stopGenerating : _sendMessage,
+                splashRadius: 22,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
-class _ThinkingIndicator extends StatefulWidget {
-  const _ThinkingIndicator();
+class _ModernThinkingIndicator extends StatefulWidget {
+  const _ModernThinkingIndicator();
 
   @override
-  State<_ThinkingIndicator> createState() => _ThinkingIndicatorState();
+  State<_ModernThinkingIndicator> createState() => _ModernThinkingIndicatorState();
 }
 
-class _ThinkingIndicatorState extends State<_ThinkingIndicator>
+class _ModernThinkingIndicatorState extends State<_ModernThinkingIndicator>
     with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-  late Animation<double> _animation;
+  late AnimationController _animController;
 
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(
+    _animController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 900),
-    )..repeat(reverse: true);
-    _animation = Tween<double>(begin: 0.3, end: 1.0).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
-    );
+      duration: const Duration(milliseconds: 1000),
+    )..repeat();
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _animController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
       child: Row(
         children: [
-          FadeTransition(
-            opacity: _animation,
-            child: Container(
-              padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(
-                color: const Color(0xFF1E4C7A).withOpacity(0.12),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.auto_awesome,
-                size: 18,
-                color: Color(0xFF1E4C7A),
-              ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.03),
+                  blurRadius: 6,
+                  offset: const Offset(0, 2),
+                ),
+              ],
             ),
-          ),
-          const SizedBox(width: 12),
-          FadeTransition(
-            opacity: _animation,
-            child: Text(
-              'Thinking...',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-                color: Colors.grey.shade600,
-                fontStyle: FontStyle.italic,
-              ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.auto_awesome, size: 16, color: Color(0xFF2563EB)),
+                const SizedBox(width: 8),
+                const Text(
+                  'ভাবছে',
+                  style: TextStyle(fontSize: 13, color: Color(0xFF64748B), fontWeight: FontWeight.w500),
+                ),
+                const SizedBox(width: 6),
+                AnimatedBuilder(
+                  animation: _animController,
+                  builder: (context, child) {
+                    int dots = (_animController.value * 3).floor() + 1;
+                    return Text(
+                      '.' * dots,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        color: Color(0xFF2563EB),
+                        fontWeight: FontWeight.bold,
+                      ),
+                    );
+                  },
+                ),
+              ],
             ),
           ),
         ],
       ),
     );
   }
-}   
+}
