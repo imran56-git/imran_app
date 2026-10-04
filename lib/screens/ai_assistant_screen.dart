@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
@@ -41,7 +42,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
   bool _isSelectionMode = false;
   int? _currentlySpeakingIndex;
 
-  // থিম কালার প্যালেট
+  // Theme color palette
   static const Color primaryNavy = Color(0xFF1E3A8A);
   static const Color accentBlue = Color(0xFF2563EB);
   static const Color userBubbleColor = Color(0xFF1D4ED8);
@@ -58,10 +59,10 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
   void _initTts() {
     _flutterTts = FlutterTts();
     _flutterTts.setCompletionHandler(() {
-      setState(() => _currentlySpeakingIndex = null);
+      if (mounted) setState(() => _currentlySpeakingIndex = null);
     });
     _flutterTts.setErrorHandler((_) {
-      setState(() => _currentlySpeakingIndex = null);
+      if (mounted) setState(() => _currentlySpeakingIndex = null);
     });
   }
 
@@ -109,7 +110,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
     setState(() {
       _isLoading = false;
       _messages.add(ChatMessage(
-        text: response ?? "দুঃখিত, কোনো উত্তর পাওয়া যায়নি। আবার চেষ্টা করুন।",
+        text: response ?? "⚠️ FYBTT Assistant could not generate a response. Please try again.",
         isUser: false,
         timestamp: DateTime.now(),
       ));
@@ -126,10 +127,12 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
       bool available = await _speechToText.initialize(
         onStatus: (status) {
           if (status == 'done' || status == 'notListening') {
-            setState(() => _isListening = false);
+            if (mounted) setState(() => _isListening = false);
           }
         },
-        onError: (_) => setState(() => _isListening = false),
+        onError: (_) {
+          if (mounted) setState(() => _isListening = false);
+        },
       );
 
       if (available) {
@@ -171,7 +174,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
           children: [
             Icon(Icons.check_circle, color: Colors.white, size: 18),
             SizedBox(width: 8),
-            Text("টেক্সট কপি করা হয়েছে"),
+            Text("Text copied to clipboard"),
           ],
         ),
         behavior: SnackBarBehavior.floating,
@@ -216,12 +219,12 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
       context: context,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text("সব মেসেজ মুছবেন?", style: TextStyle(fontWeight: FontWeight.bold)),
-        content: const Text("এই কথোপকথনের সমস্ত মেসেজ স্থায়ীভাবে মুছে ফেলা হবে।"),
+        title: const Text("Delete all messages?", style: TextStyle(fontWeight: FontWeight.bold)),
+        content: const Text("All messages in this conversation will be permanently deleted."),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text("বাতিল", style: TextStyle(color: Colors.grey)),
+            child: const Text("Cancel", style: TextStyle(color: Colors.grey)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
@@ -240,9 +243,227 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
               });
               _geminiService.resetChat();
             },
-            child: const Text("মুছে ফেলুন", style: TextStyle(color: Colors.white)),
+            child: const Text("Delete", style: TextStyle(color: Colors.white)),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildActionButton({
+    required IconData icon,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(6),
+      child: Padding(
+        padding: const EdgeInsets.all(4),
+        child: Icon(icon, size: 18, color: color),
+      ),
+    );
+  }
+
+  Widget _buildInteractionBar(int index, ChatMessage message, bool isSpeaking) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 4),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _buildActionButton(
+            icon: isSpeaking ? Icons.volume_up_rounded : Icons.volume_mute_rounded,
+            color: isSpeaking ? accentBlue : const Color(0xFF94A3B8),
+            onTap: () => _toggleSpeak(index, message.text),
+          ),
+          const SizedBox(width: 14),
+          _buildActionButton(
+            icon: Icons.copy_rounded,
+            color: const Color(0xFF94A3B8),
+            onTap: () => _copyToClipboard(message.text),
+          ),
+          const SizedBox(width: 14),
+          _buildActionButton(
+            icon: message.isLiked == true ? Icons.thumb_up_rounded : Icons.thumb_up_outlined,
+            color: message.isLiked == true ? accentBlue : const Color(0xFF94A3B8),
+            onTap: () {
+              setState(() => message.isLiked = message.isLiked == true ? null : true);
+            },
+          ),
+          const SizedBox(width: 14),
+          _buildActionButton(
+            icon: message.isLiked == false ? Icons.thumb_down_rounded : Icons.thumb_down_outlined,
+            color: message.isLiked == false ? Colors.red.shade400 : const Color(0xFF94A3B8),
+            onTap: () {
+              setState(() => message.isLiked = message.isLiked == false ? null : false);
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAvatar({required bool isAi}) {
+    return Container(
+      width: 32,
+      height: 32,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: isAi
+            ? const LinearGradient(
+                colors: [Color(0xFF3B82F6), Color(0xFF1E40AF)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              )
+            : const LinearGradient(
+                colors: [Color(0xFF64748B), Color(0xFF334155)],
+              ),
+        boxShadow: [
+          BoxShadow(
+            color: (isAi ? accentBlue : Colors.black).withOpacity(0.15),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Icon(
+        isAi ? Icons.auto_awesome : Icons.person,
+        size: 16,
+        color: Colors.white,
+      ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 28),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(22),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: primaryNavy.withOpacity(0.08),
+                    blurRadius: 18,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: const Icon(Icons.auto_awesome, size: 44, color: accentBlue),
+            ),
+            const SizedBox(height: 20),
+            const Text(
+              'Ask FYBTT AI Assistant',
+              style: TextStyle(fontSize: 18, color: Color(0xFF0F172A), fontWeight: FontWeight.bold),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Find qualified teachers, ask academic questions, or get immediate study guidance.',
+              style: TextStyle(fontSize: 13, color: Colors.grey.shade600, height: 1.4),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInputBar() {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 8, 14, 12),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        boxShadow: [
+          BoxShadow(
+            color: Color(0x08000000),
+            blurRadius: 10,
+            offset: Offset(0, -3),
+          ),
+        ],
+      ),
+      child: SafeArea(
+        child: Row(
+          children: [
+            Expanded(
+              child: Container(
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                ),
+                child: Row(
+                  children: [
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: TextField(
+                        controller: _controller,
+                        enabled: !_isLoading,
+                        maxLines: null,
+                        keyboardType: TextInputType.multiline,
+                        decoration: InputDecoration(
+                          hintText: _isLoading
+                              ? 'Generating response...'
+                              : (_isListening ? 'Listening...' : 'Type your question...'),
+                          hintStyle: TextStyle(
+                            color: _isListening ? Colors.red : const Color(0xFF94A3B8),
+                            fontSize: 14,
+                          ),
+                          border: InputBorder.none,
+                          isDense: true,
+                          contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                        onSubmitted: (_) => _sendMessage(),
+                      ),
+                    ),
+                    IconButton(
+                      icon: Icon(
+                        _isListening ? Icons.mic : Icons.mic_none_rounded,
+                        color: _isListening ? Colors.red : const Color(0xFF64748B),
+                        size: 22,
+                      ),
+                      onPressed: _isLoading ? null : _toggleListening,
+                      splashRadius: 20,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: _isLoading
+                      ? [Colors.red.shade400, Colors.red.shade700]
+                      : [accentBlue, primaryNavy],
+                ),
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: (_isLoading ? Colors.red : accentBlue).withOpacity(0.3),
+                    blurRadius: 8,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
+              ),
+              child: IconButton(
+                icon: Icon(
+                  _isLoading ? Icons.stop_rounded : Icons.send_rounded,
+                  color: Colors.white,
+                  size: 18,
+                ),
+                onPressed: _isLoading ? _stopGenerating : _sendMessage,
+                splashRadius: 22,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -255,7 +476,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
         backgroundColor: Colors.white,
         elevation: 0.5,
         title: _isSelectionMode
-            ? Text('${_selectedIndices.length} সিলেক্ট করা হয়েছে',
+            ? Text('${_selectedIndices.length} selected',
                 style: const TextStyle(color: primaryNavy, fontWeight: FontWeight.bold, fontSize: 17))
             : Row(
                 children: [
@@ -284,7 +505,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                         ),
                       ),
                       Text(
-                        'অনলাইন সহায়তা',
+                        'Online Support',
                         style: TextStyle(color: Colors.green, fontSize: 11, fontWeight: FontWeight.w500),
                       ),
                     ],
@@ -450,211 +671,9 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
       ),
     );
   }
-
-  Widget _buildAvatar({required bool isAi}) {
-    return Container(
-      width: 32,
-      height: 32,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        gradient: isAi
-            ? const LinearGradient(
-                colors: [Color(0xFF3B82F6), Color(0xFF1E40AF)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              )
-            : const LinearGradient(
-                colors: [Color(0xFF64748B), Color(0xFF334155)],
-              ),
-        boxShadow: [
-          BoxShadow(
-            color: (isAi ? accentBlue : Colors.black).withOpacity(0.15),
-            blurRadius: 4,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Icon(
-        isAi ? Icons.auto_awesome : Icons.person,
-        size: 16,
-        color: Colors.white,
-      ),
-    );
-  }
-
-  Widget _buildInteractionBar(int index, ChatMessage message, bool isSpeaking) {
-    return Padding(
-      padding: const EdgeInsets.only(left: 4),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _buildActionButton(
-            icon: isSpeaking ? Icons.volume_up_rounded : Icons.volume_mute_rounded,
-            color: isSpeaking ? accentBlue : const Color(0xFF94A3B8),
-            onTap: () => _toggleSpeak(index, message.text),
-          ),
-          const SizedBox(width: 14),
-          _buildActionButton(
-            icon: Icons.copy_rounded,
-            color: const Color(0xFF94A3B8),
-            onTap: () => _copyToClipboard(message.text),
-          ),
-          const SizedBox(width: 14),
-          _buildActionButton(
-            icon: message.isLiked == true ? Icons.thumb_up_rounded : Icons.thumb_up_outlined,
-            color: message.isLiked == true ? accentBlue : const Color(0xFF94A3B8),
-            onTap: () {
-              setState(() => message.isLiked = message.isLiked == true ? null : true);
-            },
-          ),
-          const SizedBox(width: 14),
-          _buildActionButton(
-            icon: message.isLiked == false ? Icons.thumb_down_rounded : Icons.thumb_down_outlined,
-            color: message.isLiked == false ? Colors.red.shade400 : const Color(0xFF94A3B8),
-            onTap: () {
-              setState(() => message.isLiked = message.isLiked == false ? null : false);
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildEmptyState() {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 28),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(22),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                    color: primaryNavy.withOpacity(0.08),
-                    blurRadius: 18,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: const Icon(Icons.auto_awesome, size: 44, color: accentBlue),
-            ),
-            const SizedBox(height: 20),
-            const Text(
-              'FYBTT AI Assistant-কে জিজ্ঞাসা করুন',
-              style: TextStyle(fontSize: 18, color: Color(0xFF0F172A), fontWeight: FontWeight.bold),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'সেরা শিক্ষক খোঁজা, বিষয়ভিত্তিক প্রশ্ন বা পড়াশোনার যেকোনো সাহায্য পেয়ে যান নিমেষেই।',
-              style: TextStyle(fontSize: 13, color: Colors.grey.shade600, height: 1.4),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildInputBar() {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(14, 8, 14, 12),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-        boxShadow: [
-          BoxShadow(
-            color: Color(0x08000000),
-            blurRadius: 10,
-            offset: Offset(0, -3),
-          ),
-        ],
-      ),
-      child: SafeArea(
-        child: Row(
-          children: [
-            Expanded(
-              child: Container(
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF8FAFC),
-                  borderRadius: BorderRadius.circular(24),
-                  border: Border.all(color: const Color(0xFFE2E8F0)),
-                ),
-                child: Row(
-                  children: [
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: TextField(
-                        controller: _controller,
-                        enabled: !_isLoading,
-                        maxLines: null,
-                        keyboardType: TextInputType.multiline,
-                        decoration: InputDecoration(
-                          hintText: _isLoading
-                              ? 'উত্তর তৈরি হচ্ছে...'
-                              : (_isListening ? 'শুনছি...' : 'আপনার প্রশ্নটি লিখুন...'),
-                          hintStyle: TextStyle(
-                            color: _isListening ? Colors.red : const Color(0xFF94A3B8),
-                            fontSize: 14,
-                          ),
-                          border: InputBorder.none,
-                          isDense: true,
-                          contentPadding: const EdgeInsets.symmetric(vertical: 12),
-                        ),
-                        onSubmitted: (_) => _sendMessage(),
-                      ),
-                    ),
-                    IconButton(
-                      icon: Icon(
-                        _isListening ? Icons.mic : Icons.mic_none_rounded,
-                        color: _isListening ? Colors.red : const Color(0xFF64748B),
-                        size: 22,
-                      ),
-                      onPressed: _isLoading ? null : _toggleListening,
-                      splashRadius: 20,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: _isLoading
-                      ? [Colors.red.shade400, Colors.red.shade700]
-                      : [accentBlue, primaryNavy],
-                ),
-                shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                    color: (_isLoading ? Colors.red : accentBlue).withOpacity(0.3),
-                    blurRadius: 8,
-                    offset: const Offset(0, 3),
-                  ),
-                ],
-              ),
-              child: IconButton(
-                icon: Icon(
-                  _isLoading ? Icons.stop_rounded : Icons.send_rounded,
-                  color: Colors.white,
-                  size: 18,
-                ),
-                onPressed: _isLoading ? _stopGenerating : _sendMessage,
-                splashRadius: 22,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 }
 
+/// Dynamic thinking indicator displaying clear live stages in English
 class _ModernThinkingIndicator extends StatefulWidget {
   const _ModernThinkingIndicator();
 
@@ -665,18 +684,35 @@ class _ModernThinkingIndicator extends StatefulWidget {
 class _ModernThinkingIndicatorState extends State<_ModernThinkingIndicator>
     with SingleTickerProviderStateMixin {
   late AnimationController _animController;
+  int _currentStepIndex = 0;
+  Timer? _stepTimer;
+
+  final List<String> _thinkingSteps = [
+    "Analyzing your query...",
+    "Retrieving FYBTT data...",
+    "Formulating response...",
+  ];
 
   @override
   void initState() {
     super.initState();
     _animController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1000),
-    )..repeat();
+      duration: const Duration(milliseconds: 1200),
+    )..repeat(reverse: true);
+
+    _stepTimer = Timer.periodic(const Duration(milliseconds: 1500), (timer) {
+      if (mounted) {
+        setState(() {
+          _currentStepIndex = (_currentStepIndex + 1) % _thinkingSteps.length;
+        });
+      }
+    });
   }
 
   @override
   void dispose() {
+    _stepTimer?.cancel();
     _animController.dispose();
     super.dispose();
   }
@@ -686,6 +722,7 @@ class _ModernThinkingIndicatorState extends State<_ModernThinkingIndicator>
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
       child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -695,8 +732,8 @@ class _ModernThinkingIndicatorState extends State<_ModernThinkingIndicator>
               border: Border.all(color: const Color(0xFFE2E8F0)),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.03),
-                  blurRadius: 6,
+                  color: Colors.black.withOpacity(0.04),
+                  blurRadius: 8,
                   offset: const Offset(0, 2),
                 ),
               ],
@@ -704,26 +741,29 @@ class _ModernThinkingIndicatorState extends State<_ModernThinkingIndicator>
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.auto_awesome, size: 16, color: Color(0xFF2563EB)),
-                const SizedBox(width: 8),
-                const Text(
-                  'ভাবছে',
-                  style: TextStyle(fontSize: 13, color: Color(0xFF64748B), fontWeight: FontWeight.w500),
+                FadeTransition(
+                  opacity: _animController,
+                  child: const Icon(
+                    Icons.auto_awesome,
+                    size: 16,
+                    color: Color(0xFF2563EB),
+                  ),
                 ),
-                const SizedBox(width: 6),
-                AnimatedBuilder(
-                  animation: _animController,
-                  builder: (context, child) {
-                    int dots = (_animController.value * 3).floor() + 1;
-                    return Text(
-                      '.' * dots,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        color: Color(0xFF2563EB),
-                        fontWeight: FontWeight.bold,
-                      ),
-                    );
+                const SizedBox(width: 8),
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 300),
+                  transitionBuilder: (child, animation) {
+                    return FadeTransition(opacity: animation, child: child);
                   },
+                  child: Text(
+                    _thinkingSteps[_currentStepIndex],
+                    key: ValueKey<int>(_currentStepIndex),
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: Color(0xFF475569),
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
                 ),
               ],
             ),
