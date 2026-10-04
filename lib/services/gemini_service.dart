@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:google_generative_ai/google_generative_ai.dart';
 import '../constants/ai_knowledge.dart';
 
@@ -18,10 +19,16 @@ class GeminiService {
       _model = GenerativeModel(
         model: 'gemini-3.8-flash',
         apiKey: _apiKey,
-        systemInstruction: Content.system(AiKnowledge.systemInstruction),
+        systemInstruction: Content.system(
+          '${AiKnowledge.systemInstruction}\n'
+          'Behavior Guidelines:\n'
+          '1. You are the official assistant for FYBTT (Find Your Best Teacher Today).\n'
+          '2. If the user asks educational, study-related, science, or general academic questions (e.g. Newton\'s laws, Math, English), answer them concisely, accurately, and helpfully as an FYBTT study assistant.\n'
+          '3. Keep responses fast, polite, and direct without unnecessary delay.',
+        ),
         generationConfig: GenerationConfig(
-          maxOutputTokens: 1000,
-          temperature: 0.7,
+          maxOutputTokens: 800,
+          temperature: 0.5,
         ),
       );
       _chatSession = _model!.startChat();
@@ -41,28 +48,36 @@ class GeminiService {
     switch (type) {
       case 'missing_key':
         if (lang == 'bn') {
-          return 'API কী পাওয়া যায়নি। অনুগ্রহ করে আপনার Gemini API Key সেট করুন।';
+          return '⚠️ FYBTT অ্যাসিস্ট্যান্ট কনফিগারেশনে সমস্যা হয়েছে। অনুগ্রহ করে সেটিংস চেক করুন।';
         } else if (lang == 'hi') {
-          return 'API कुंजी नहीं मिली। कृपया अपनी Gemini API Key सेट करें।';
+          return '⚠️ FYBTT सहायक कॉन्फ़िगरेशन में समस्या है। कृपया सेटिंग्स जांचें।';
         }
-        return 'API key is missing. Please configure your Gemini API Key.';
+        return '⚠️ FYBTT Assistant configuration error. Please check your setup.';
+
+      case 'busy_error':
+        if (lang == 'bn') {
+          return '✨ FYBTT সহকারী এই মুহূর্তে প্রচুর রিকোয়েস্ট প্রসেস করছে। অনুগ্রহ করে কয়েক সেকেন্ড পর আবার চেষ্টা করুন।';
+        } else if (lang == 'hi') {
+          return '✨ FYBTT सहायक इस समय अत्यधिक व्यस्त है। कृपया कुछ सेकंड बाद पुनः प्रयास करें।';
+        }
+        return '✨ FYBTT Assistant is handling high traffic right now. Please try again in a few seconds.';
 
       case 'api_error':
         if (lang == 'bn') {
-          return 'সার্ভারের সাথে সংযোগে সমস্যা হয়েছে বা API কী অবৈধ। অনুগ্রহ করে কিছুক্ষণ পর আবার চেষ্টা করুন।';
+          return '⚠️ FYBTT সহকারী উত্তরটি প্রস্তুত করতে পারেনি। অনুগ্রহ করে আবার প্রশ্নটি করুন।';
         } else if (lang == 'hi') {
-          return 'सर्वर से कनेक्ट करने में समस्या हुई या API कुंजी अमान्य है। कृपया कुछ समय बाद पुनः प्रयास करें।';
+          return '⚠️ FYBTT सहायक उत्तर तैयार नहीं कर सका। कृपया पुनः प्रयास करें।';
         }
-        return 'Failed to connect to the AI service or invalid API key. Please try again later.';
+        return '⚠️ FYBTT Assistant could not generate a response. Please try again.';
 
       case 'network_error':
       default:
         if (lang == 'bn') {
-          return 'ইন্টারনেট সংযোগে সমস্যা হয়েছে। আপনার নেটওয়ার্ক চেক করে আবার চেষ্টা করুন।';
+          return '📡 FYBTT সার্ভারের সাথে সংযোগ বিচ্ছিন্ন হয়েছে। অনুগ্রহ করে আপনার ইন্টারনেট সংযোগটি চেক করুন।';
         } else if (lang == 'hi') {
-          return 'इंटरनेट कनेक्शन में समस्या है। कृपया अपना नेटवर्क जांचें और पुनः प्रयास करें।';
+          return '📡 FYBTT सर्वर से कनेक्शन कट गया है। कृपया अपना इंटरनेट जांचें।';
         }
-        return 'Network connection error. Please check your internet connection and try again.';
+        return '📡 Unable to connect to FYBTT servers. Please check your internet connection.';
     }
   }
 
@@ -80,14 +95,43 @@ class GeminiService {
       }
     }
 
-    try {
-      final response = await _chatSession!.sendMessage(Content.text(prompt));
-      return response.text;
-    } on GenerativeAIException {
-      return _getErrorMessage('api_error', lang);
-    } catch (_) {
-      return _getErrorMessage('network_error', lang);
+    int retryCount = 0;
+    const int maxRetries = 2;
+
+    while (retryCount <= maxRetries) {
+      try {
+        final response = await _chatSession!
+            .sendMessage(Content.text(prompt))
+            .timeout(const Duration(seconds: 15));
+
+        if (response.text != null && response.text!.isNotEmpty) {
+          return response.text;
+        } else {
+          return _getErrorMessage('api_error', lang);
+        }
+      } on GenerativeAIException catch (e) {
+        if (e.message.contains('503') || e.message.contains('demand')) {
+          retryCount++;
+          if (retryCount <= maxRetries) {
+            await Future.delayed(Duration(milliseconds: 1000 * retryCount));
+            continue;
+          }
+          return _getErrorMessage('busy_error', lang);
+        }
+        return _getErrorMessage('api_error', lang);
+      } on TimeoutException {
+        retryCount++;
+        if (retryCount <= maxRetries) {
+          await Future.delayed(const Duration(milliseconds: 800));
+          continue;
+        }
+        return _getErrorMessage('busy_error', lang);
+      } catch (_) {
+        return _getErrorMessage('network_error', lang);
+      }
     }
+
+    return _getErrorMessage('busy_error', lang);
   }
 
   void resetChat() {
