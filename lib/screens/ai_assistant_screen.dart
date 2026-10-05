@@ -2,12 +2,13 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
-import 'package:flutter_tts/flutter_tts.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
-import '../services/gemini_service.dart';
+import '../services/ai_coordinator_service.dart';
+import '../services/tts_voice_service.dart';
+import '../utils/ai_cooldown_manager.dart';
 
 class ChatMessage {
-  final String text;
+  String text;
   final bool isUser;
   final DateTime timestamp;
   bool? isLiked;
@@ -30,19 +31,20 @@ class AiAssistantScreen extends StatefulWidget {
 class _AiAssistantScreenState extends State<AiAssistantScreen> {
   final TextEditingController _controller = TextEditingController();
   final ScrollController _scrollController = ScrollController();
-  final GeminiService _geminiService = GeminiService();
+  final AiCoordinatorService _coordinatorService = AiCoordinatorService();
+  final TtsVoiceService _ttsVoiceService = TtsVoiceService();
+  final AiCooldownManager _cooldownManager = AiCooldownManager();
   final List<ChatMessage> _messages = [];
   final Set<int> _selectedIndices = {};
 
   late stt.SpeechToText _speechToText;
-  late FlutterTts _flutterTts;
+  StreamSubscription<String>? _streamSubscription;
 
   bool _isListening = false;
   bool _isLoading = false;
   bool _isSelectionMode = false;
   int? _currentlySpeakingIndex;
 
-  // Theme color palette
   static const Color primaryNavy = Color(0xFF1E3A8A);
   static const Color accentBlue = Color(0xFF2563EB);
   static const Color userBubbleColor = Color(0xFF1D4ED8);
@@ -53,22 +55,30 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
   void initState() {
     super.initState();
     _speechToText = stt.SpeechToText();
-    _initTts();
+    _initServices();
   }
 
-  void _initTts() {
-    _flutterTts = FlutterTts();
-    _flutterTts.setCompletionHandler(() {
+  void _initServices() {
+    _ttsVoiceService.initTts();
+    _ttsVoiceService.onComplete = () {
       if (mounted) setState(() => _currentlySpeakingIndex = null);
-    });
-    _flutterTts.setErrorHandler((_) {
+    };
+    _ttsVoiceService.onError = () {
       if (mounted) setState(() => _currentlySpeakingIndex = null);
-    });
+    };
+    _cooldownManager.init();
+    _cooldownManager.addListener(_onCooldownTick);
+  }
+
+  void _onCooldownTick() {
+    if (mounted) setState(() {});
   }
 
   @override
   void dispose() {
-    _flutterTts.stop();
+    _streamSubscription?.cancel();
+    _cooldownManager.removeListener(_onCooldownTick);
+    _ttsVoiceService.stop();
     _controller.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -88,7 +98,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
 
   void _sendMessage() async {
     final text = _controller.text.trim();
-    if (text.isEmpty || _isLoading) return;
+    if (text.isEmpty || _isLoading || _cooldownManager.isInCooldown) return;
 
     if (_isListening) _stopListening();
 
@@ -103,22 +113,61 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
     });
     _scrollToBottom();
 
-    final response = await _geminiService.sendChatMessage(text);
-
-    if (!mounted || !_isLoading) return;
+    final aiMessage = ChatMessage(
+      text: '',
+      isUser: false,
+      timestamp: DateTime.now(),
+    );
 
     setState(() {
-      _isLoading = false;
-      _messages.add(ChatMessage(
-        text: response ?? "⚠️ FYBTT Assistant could not generate a response. Please try again.",
-        isUser: false,
-        timestamp: DateTime.now(),
-      ));
+      _messages.add(aiMessage);
     });
-    _scrollToBottom();
+
+    try {
+      final stream = _coordinatorService.sendMessageStream(text);
+      _streamSubscription = stream.listen(
+        (chunk) {
+          if (mounted) {
+            setState(() {
+              aiMessage.text += chunk;
+            });
+            _scrollToBottom();
+          }
+        },
+        onError: (_) {
+          if (mounted) {
+            setState(() {
+              if (aiMessage.text.isEmpty) {
+                aiMessage.text = '⚠️ Connection error. Please try again.';
+              }
+              _isLoading = false;
+            });
+          }
+        },
+        onDone: () {
+          if (mounted) {
+            setState(() {
+              if (aiMessage.text.isEmpty) {
+                aiMessage.text = '⚠️ No response received.';
+              }
+              _isLoading = false;
+            });
+          }
+        },
+      );
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          aiMessage.text = '⚠️ Error occurred. Please try again.';
+          _isLoading = false;
+        });
+      }
+    }
   }
 
   void _stopGenerating() {
+    _streamSubscription?.cancel();
+    _streamSubscription = null;
     setState(() => _isLoading = false);
   }
 
@@ -157,12 +206,12 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
 
   Future<void> _toggleSpeak(int index, String text) async {
     if (_currentlySpeakingIndex == index) {
-      await _flutterTts.stop();
+      await _ttsVoiceService.stop();
       setState(() => _currentlySpeakingIndex = null);
     } else {
-      await _flutterTts.stop();
+      await _ttsVoiceService.stop();
       setState(() => _currentlySpeakingIndex = index);
-      await _flutterTts.speak(text);
+      await _ttsVoiceService.speak(text);
     }
   }
 
@@ -234,14 +283,13 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
             ),
             onPressed: () {
               Navigator.pop(context);
-              _flutterTts.stop();
+              _ttsVoiceService.stop();
               setState(() {
                 _messages.clear();
                 _selectedIndices.clear();
                 _isSelectionMode = false;
                 _currentlySpeakingIndex = null;
               });
-              _geminiService.resetChat();
             },
             child: const Text("Delete", style: TextStyle(color: Colors.white)),
           ),
@@ -374,7 +422,50 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
     );
   }
 
+  Widget _buildCooldownBanner() {
+    if (!_cooldownManager.isInCooldown) return const SizedBox.shrink();
+
+    final isDaily = _cooldownManager.isDailyQuota;
+    final timeStr = _cooldownManager.formattedRemainingTime;
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: isDaily ? const Color(0xFFFEF2F2) : const Color(0xFFFFFBEB),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isDaily ? const Color(0xFFFCA5A5) : const Color(0xFFFCD34D),
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            isDaily ? Icons.hourglass_bottom_rounded : Icons.timer_outlined,
+            color: isDaily ? Colors.red.shade700 : Colors.amber.shade800,
+            size: 20,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              isDaily
+                  ? 'Daily free quota reached. Time remaining: $timeStr'
+                  : 'Traffic limit active. Please wait: $timeStr',
+              style: TextStyle(
+                color: isDaily ? Colors.red.shade900 : Colors.amber.shade900,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildInputBar() {
+    final bool isBlocked = _isLoading || _cooldownManager.isInCooldown;
+
     return Container(
       padding: const EdgeInsets.fromLTRB(14, 8, 14, 12),
       decoration: const BoxDecoration(
@@ -404,13 +495,15 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                     Expanded(
                       child: TextField(
                         controller: _controller,
-                        enabled: !_isLoading,
+                        enabled: !isBlocked,
                         maxLines: null,
                         keyboardType: TextInputType.multiline,
                         decoration: InputDecoration(
-                          hintText: _isLoading
-                              ? 'Generating response...'
-                              : (_isListening ? 'Listening...' : 'Type your question...'),
+                          hintText: _cooldownManager.isInCooldown
+                              ? 'Cooldown active (${_cooldownManager.formattedRemainingTime})...'
+                              : (_isLoading
+                                  ? 'Generating response...'
+                                  : (_isListening ? 'Listening...' : 'Type your question...')),
                           hintStyle: TextStyle(
                             color: _isListening ? Colors.red : const Color(0xFF94A3B8),
                             fontSize: 14,
@@ -428,7 +521,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                         color: _isListening ? Colors.red : const Color(0xFF64748B),
                         size: 22,
                       ),
-                      onPressed: _isLoading ? null : _toggleListening,
+                      onPressed: isBlocked ? null : _toggleListening,
                       splashRadius: 20,
                     ),
                   ],
@@ -441,7 +534,9 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                 gradient: LinearGradient(
                   colors: _isLoading
                       ? [Colors.red.shade400, Colors.red.shade700]
-                      : [accentBlue, primaryNavy],
+                      : (isBlocked
+                          ? [Colors.grey.shade400, Colors.grey.shade500]
+                          : [accentBlue, primaryNavy]),
                 ),
                 shape: BoxShape.circle,
                 boxShadow: [
@@ -458,7 +553,9 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                   color: Colors.white,
                   size: 18,
                 ),
-                onPressed: _isLoading ? _stopGenerating : _sendMessage,
+                onPressed: _isLoading
+                    ? _stopGenerating
+                    : (_cooldownManager.isInCooldown ? null : _sendMessage),
                 splashRadius: 22,
               ),
             ),
@@ -535,6 +632,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
       ),
       body: Column(
         children: [
+          _buildCooldownBanner(),
           Expanded(
             child: _messages.isEmpty
                 ? _buildEmptyState()
@@ -673,7 +771,6 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
   }
 }
 
-/// Dynamic thinking indicator displaying clear live stages in English
 class _ModernThinkingIndicator extends StatefulWidget {
   const _ModernThinkingIndicator();
 
