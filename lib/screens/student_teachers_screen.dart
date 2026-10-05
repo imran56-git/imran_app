@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -12,10 +13,13 @@ class StudentTeachersScreen extends StatefulWidget {
   State<StudentTeachersScreen> createState() => _StudentTeachersScreenState();
 }
 
-class _StudentTeachersScreenState extends State<StudentTeachersScreen> with SingleTickerProviderStateMixin {
+class _StudentTeachersScreenState extends State<StudentTeachersScreen>
+    with SingleTickerProviderStateMixin {
   late TabController _tabController;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
+
+  StreamSubscription? _requestsSubscription;
 
   bool _isFollowingLoading = true;
   bool _isTeachersLoading = true;
@@ -29,172 +33,200 @@ class _StudentTeachersScreenState extends State<StudentTeachersScreen> with Sing
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
-    _fetchAllData();
+    _listenToConnections();
   }
 
   @override
   void dispose() {
+    _requestsSubscription?.cancel();
     _tabController.dispose();
     super.dispose();
   }
 
-  Future<void> _fetchAllData() async {
-    await Future.wait([
-      _fetchFollowingRequests(),
-      _fetchMyTeachers(),
-    ]);
+  void _listenToConnections() {
+    final String? currentUserId = _auth.currentUser?.uid;
+    if (currentUserId == null) {
+      if (mounted) {
+        setState(() {
+          _isFollowingLoading = false;
+          _isTeachersLoading = false;
+          _followingError = "User not logged in";
+          _teachersError = "User not logged in";
+        });
+      }
+      return;
+    }
+
+    _requestsSubscription?.cancel();
+    _requestsSubscription = _firestore
+        .collection('follow_requests')
+        .where('senderId', isEqualTo: currentUserId)
+        .snapshots()
+        .listen(
+      (snapshot) {
+        _processSnapshotData(snapshot, currentUserId);
+      },
+      onError: (error) {
+        debugPrint("Error listening to follow_requests: $error");
+        _fallbackFetchAll(currentUserId);
+      },
+    );
   }
 
-  // 🟢 ১. পেন্ডিং ফলোয়িং রিকুয়েস্ট ফেচিং (Following Tab)
-  Future<void> _fetchFollowingRequests() async {
-    if (!mounted) return;
+  Future<void> _processSnapshotData(
+      QuerySnapshot snapshot, String currentUserId) async {
+    final Set<String> pendingIds = {};
+    final Set<String> acceptedIds = {};
 
-    setState(() {
-      _isFollowingLoading = _followingRequests.isEmpty;
-      _followingError = null;
-    });
+    for (var doc in snapshot.docs) {
+      final data = doc.data() as Map<String, dynamic>?;
+      if (data == null) continue;
+
+      final status = data['status']?.toString().toLowerCase();
+      final receiverId = data['receiverId']?.toString();
+
+      if (receiverId != null && receiverId.isNotEmpty) {
+        if (status == 'pending') {
+          pendingIds.add(receiverId);
+        } else if (status == 'accepted') {
+          acceptedIds.add(receiverId);
+        }
+      }
+    }
 
     try {
-      final String? currentUserId = _auth.currentUser?.uid;
-      if (currentUserId == null) {
-        if (mounted) setState(() => _isFollowingLoading = false);
-        return;
+      final incomingAccepted = await _firestore
+          .collection('follow_requests')
+          .where('receiverId', isEqualTo: currentUserId)
+          .where('status', isEqualTo: 'accepted')
+          .get();
+
+      for (var doc in incomingAccepted.docs) {
+        final data = doc.data();
+        if (data.containsKey('senderId')) {
+          acceptedIds.add(data['senderId'].toString());
+        }
       }
+    } catch (e) {
+      debugPrint("Error fetching incoming accepted: $e");
+    }
 
-      final collections = ['follow_requests', 'follow_req'];
-      final Set<String> pendingTeacherIds = {};
+    final loadedPending = await _loadTeacherProfiles(pendingIds);
+    final loadedAccepted = await _loadTeacherProfiles(acceptedIds);
 
-      for (String col in collections) {
-        final snap = await _firestore
+    if (mounted) {
+      setState(() {
+        _followingRequests = loadedPending;
+        _myTeachers = loadedAccepted;
+        _isFollowingLoading = false;
+        _isTeachersLoading = false;
+        _followingError = null;
+        _teachersError = null;
+      });
+    }
+  }
+
+  Future<void> _fallbackFetchAll(String currentUserId) async {
+    final collections = ['follow_requests', 'follow_req'];
+    final Set<String> pendingIds = {};
+    final Set<String> acceptedIds = {};
+
+    for (String col in collections) {
+      try {
+        final pendingSnap = await _firestore
             .collection(col)
             .where('senderId', isEqualTo: currentUserId)
             .where('status', isEqualTo: 'pending')
             .get();
 
-        for (var doc in snap.docs) {
+        for (var doc in pendingSnap.docs) {
           final data = doc.data();
           if (data.containsKey('receiverId')) {
-            pendingTeacherIds.add(data['receiverId'].toString());
+            pendingIds.add(data['receiverId'].toString());
           }
         }
-      }
 
-      final loadedTeachers = await Future.wait(
-        pendingTeacherIds.map((tId) async {
-          DocumentSnapshot tDoc = await _firestore.collection('teachers').doc(tId).get();
-          if (!tDoc.exists) {
-            tDoc = await _firestore.collection('users').doc(tId).get();
-          }
-
-          if (tDoc.exists && tDoc.data() != null) {
-            return ConnectedUserModel.fromFirestore(
-              tDoc.data() as Map<String, dynamic>,
-              tId,
-              'teacher',
-            );
-          }
-          return null;
-        }),
-      );
-
-      if (mounted) {
-        setState(() {
-          _followingRequests = loadedTeachers.whereType<ConnectedUserModel>().toList();
-          _isFollowingLoading = false;
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _followingError = "Unable to load pending requests.";
-          _isFollowingLoading = false;
-        });
-      }
-    }
-  }
-
-  // 🟢 ২. অ্যাকসেপ্টেড টিচার্স ফেচিং (My Teachers Tab)
-  Future<void> _fetchMyTeachers() async {
-    if (!mounted) return;
-
-    setState(() {
-      _isTeachersLoading = _myTeachers.isEmpty;
-      _teachersError = null;
-    });
-
-    try {
-      final String? currentUserId = _auth.currentUser?.uid;
-      if (currentUserId == null) {
-        if (mounted) setState(() => _isTeachersLoading = false);
-        return;
-      }
-
-      final collections = ['follow_requests', 'follow_req'];
-      final Set<String> teacherIdsSet = {};
-
-      for (String col in collections) {
-        final snap1 = await _firestore
+        final acceptedSnap1 = await _firestore
             .collection(col)
             .where('senderId', isEqualTo: currentUserId)
             .where('status', isEqualTo: 'accepted')
             .get();
 
-        for (var doc in snap1.docs) {
+        for (var doc in acceptedSnap1.docs) {
           final data = doc.data();
           if (data.containsKey('receiverId')) {
-            teacherIdsSet.add(data['receiverId'].toString());
+            acceptedIds.add(data['receiverId'].toString());
           }
         }
 
-        final snap2 = await _firestore
+        final acceptedSnap2 = await _firestore
             .collection(col)
             .where('receiverId', isEqualTo: currentUserId)
             .where('status', isEqualTo: 'accepted')
             .get();
 
-        for (var doc in snap2.docs) {
+        for (var doc in acceptedSnap2.docs) {
           final data = doc.data();
           if (data.containsKey('senderId')) {
-            teacherIdsSet.add(data['senderId'].toString());
+            acceptedIds.add(data['senderId'].toString());
           }
         }
+      } catch (e) {
+        debugPrint("Error on fallback query in collection $col: $e");
       }
+    }
 
-      final loadedTeachers = await Future.wait(
-        teacherIdsSet.map((tId) async {
-          DocumentSnapshot tDoc = await _firestore.collection('teachers').doc(tId).get();
+    final loadedPending = await _loadTeacherProfiles(pendingIds);
+    final loadedAccepted = await _loadTeacherProfiles(acceptedIds);
+
+    if (mounted) {
+      setState(() {
+        _followingRequests = loadedPending;
+        _myTeachers = loadedAccepted;
+        _isFollowingLoading = false;
+        _isTeachersLoading = false;
+        _followingError = loadedPending.isEmpty && pendingIds.isNotEmpty
+            ? "Unable to load pending requests."
+            : null;
+        _teachersError = loadedAccepted.isEmpty && acceptedIds.isNotEmpty
+            ? "Unable to load teachers."
+            : null;
+      });
+    }
+  }
+
+  Future<List<ConnectedUserModel>> _loadTeacherProfiles(
+      Set<String> teacherIds) async {
+    if (teacherIds.isEmpty) return [];
+
+    final List<ConnectedUserModel> results = [];
+
+    await Future.wait(
+      teacherIds.map((tId) async {
+        try {
+          DocumentSnapshot tDoc =
+              await _firestore.collection('teachers').doc(tId).get();
           if (!tDoc.exists) {
             tDoc = await _firestore.collection('users').doc(tId).get();
           }
 
           if (tDoc.exists && tDoc.data() != null) {
-            return ConnectedUserModel.fromFirestore(
+            final model = ConnectedUserModel.fromFirestore(
               tDoc.data() as Map<String, dynamic>,
               tId,
               'teacher',
             );
+            results.add(model);
           }
-          return null;
-        }),
-      );
+        } catch (e) {
+          debugPrint("Error loading profile for teacher $tId: $e");
+        }
+      }),
+    );
 
-      if (mounted) {
-        setState(() {
-          _myTeachers = loadedTeachers.whereType<ConnectedUserModel>().toList();
-          _isTeachersLoading = false;
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _teachersError = "Unable to load teachers.";
-          _isTeachersLoading = false;
-        });
-      }
-    }
+    return results;
   }
 
-  // 🟢 পেন্ডিং ফলো রিকুয়েস্ট ক্যানসেল করার লজিক
   Future<void> _cancelFollowRequest(ConnectedUserModel teacher) async {
     try {
       final String? currentUserId = _auth.currentUser?.uid;
@@ -203,16 +235,18 @@ class _StudentTeachersScreenState extends State<StudentTeachersScreen> with Sing
       final collections = ['follow_requests', 'follow_req'];
 
       for (String col in collections) {
-        final snap = await _firestore
-            .collection(col)
-            .where('senderId', isEqualTo: currentUserId)
-            .where('receiverId', isEqualTo: teacher.uid)
-            .where('status', isEqualTo: 'pending')
-            .get();
+        try {
+          final snap = await _firestore
+              .collection(col)
+              .where('senderId', isEqualTo: currentUserId)
+              .where('receiverId', isEqualTo: teacher.uid)
+              .where('status', isEqualTo: 'pending')
+              .get();
 
-        for (var doc in snap.docs) {
-          await doc.reference.delete();
-        }
+          for (var doc in snap.docs) {
+            await doc.reference.delete();
+          }
+        } catch (_) {}
       }
 
       if (mounted) {
@@ -221,7 +255,8 @@ class _StudentTeachersScreenState extends State<StudentTeachersScreen> with Sing
         });
 
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Cancelled follow request to ${teacher.name}")),
+          SnackBar(
+              content: Text("Cancelled follow request to ${teacher.name}")),
         );
       }
     } catch (e) {
@@ -233,7 +268,6 @@ class _StudentTeachersScreenState extends State<StudentTeachersScreen> with Sing
     }
   }
 
-  // 🟢 অনফলো লজিক (My Teachers থেকে রিমুভ)
   Future<void> _unfollowTeacher(ConnectedUserModel teacher) async {
     try {
       final String? currentUserId = _auth.currentUser?.uid;
@@ -242,23 +276,25 @@ class _StudentTeachersScreenState extends State<StudentTeachersScreen> with Sing
       final collections = ['follow_requests', 'follow_req'];
 
       for (String col in collections) {
-        final snap1 = await _firestore
-            .collection(col)
-            .where('senderId', isEqualTo: currentUserId)
-            .where('receiverId', isEqualTo: teacher.uid)
-            .get();
-        for (var doc in snap1.docs) {
-          await doc.reference.delete();
-        }
+        try {
+          final snap1 = await _firestore
+              .collection(col)
+              .where('senderId', isEqualTo: currentUserId)
+              .where('receiverId', isEqualTo: teacher.uid)
+              .get();
+          for (var doc in snap1.docs) {
+            await doc.reference.delete();
+          }
 
-        final snap2 = await _firestore
-            .collection(col)
-            .where('senderId', isEqualTo: teacher.uid)
-            .where('receiverId', isEqualTo: currentUserId)
-            .get();
-        for (var doc in snap2.docs) {
-          await doc.reference.delete();
-        }
+          final snap2 = await _firestore
+              .collection(col)
+              .where('senderId', isEqualTo: teacher.uid)
+              .where('receiverId', isEqualTo: currentUserId)
+              .get();
+          for (var doc in snap2.docs) {
+            await doc.reference.delete();
+          }
+        } catch (_) {}
       }
 
       if (mounted) {
@@ -273,7 +309,8 @@ class _StudentTeachersScreenState extends State<StudentTeachersScreen> with Sing
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Unable to unfollow. Please try again.")),
+          const SnackBar(
+              content: Text("Unable to unfollow. Please try again.")),
         );
       }
     }
@@ -319,16 +356,19 @@ class _StudentTeachersScreenState extends State<StudentTeachersScreen> with Sing
             Container(
               width: 48,
               height: 48,
-              decoration: BoxDecoration(color: Colors.grey.shade200, shape: BoxShape.circle),
+              decoration: BoxDecoration(
+                  color: Colors.grey.shade200, shape: BoxShape.circle),
             ),
             const SizedBox(width: 14),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Container(width: 140, height: 14, color: Colors.grey.shade200),
+                  Container(
+                      width: 140, height: 14, color: Colors.grey.shade200),
                   const SizedBox(height: 6),
-                  Container(width: 190, height: 12, color: Colors.grey.shade200),
+                  Container(
+                      width: 190, height: 12, color: Colors.grey.shade200),
                 ],
               ),
             )
@@ -342,12 +382,14 @@ class _StudentTeachersScreenState extends State<StudentTeachersScreen> with Sing
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text("Teacher Connections", style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text("Teacher Connections",
+            style: TextStyle(fontWeight: FontWeight.bold)),
         elevation: 0.5,
         bottom: TabBar(
           controller: _tabController,
           indicatorColor: Theme.of(context).primaryColor,
-          labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+          labelStyle:
+              const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
           tabs: [
             Tab(
               child: Row(
@@ -357,14 +399,18 @@ class _StudentTeachersScreenState extends State<StudentTeachersScreen> with Sing
                   if (_followingRequests.isNotEmpty) ...[
                     const SizedBox(width: 6),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 2),
                       decoration: BoxDecoration(
                         color: Colors.orange.shade100,
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: Text(
                         '${_followingRequests.length}',
-                        style: TextStyle(color: Colors.orange.shade900, fontSize: 11, fontWeight: FontWeight.bold),
+                        style: TextStyle(
+                            color: Colors.orange.shade900,
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold),
                       ),
                     ),
                   ]
@@ -379,14 +425,18 @@ class _StudentTeachersScreenState extends State<StudentTeachersScreen> with Sing
                   if (_myTeachers.isNotEmpty) ...[
                     const SizedBox(width: 6),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 2),
                       decoration: BoxDecoration(
                         color: Colors.grey.shade300,
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: Text(
                         '${_myTeachers.length}',
-                        style: const TextStyle(color: Colors.black87, fontSize: 11, fontWeight: FontWeight.bold),
+                        style: const TextStyle(
+                            color: Colors.black87,
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold),
                       ),
                     ),
                   ]
@@ -399,23 +449,20 @@ class _StudentTeachersScreenState extends State<StudentTeachersScreen> with Sing
       body: TabBarView(
         controller: _tabController,
         children: [
-          // 🟢 TAB ১: Following Tab (Pending Sent Requests)
           _FollowingTabView(
             isLoading: _isFollowingLoading,
             errorMessage: _followingError,
             requests: _followingRequests,
-            onRefresh: _fetchFollowingRequests,
+            onRefresh: () async => _listenToConnections(),
             onCancel: _cancelFollowRequest,
             onTapProfile: _openProfile,
             skeletonBuilder: _buildSkeletonLoader,
           ),
-
-          // 🟢 TAB ২: My Teachers Tab (Accepted Connections)
           _MyTeachersTabView(
             isLoading: _isTeachersLoading,
             errorMessage: _teachersError,
             teachers: _myTeachers,
-            onRefresh: _fetchMyTeachers,
+            onRefresh: () async => _listenToConnections(),
             onTapProfile: _openProfile,
             onMoreTap: _showActionMenu,
             skeletonBuilder: _buildSkeletonLoader,
@@ -426,9 +473,6 @@ class _StudentTeachersScreenState extends State<StudentTeachersScreen> with Sing
   }
 }
 
-// ---------------------------------------------------------------------------
-// 🟢 Sub-Widget: Following Tab View
-// ---------------------------------------------------------------------------
 class _FollowingTabView extends StatelessWidget {
   final bool isLoading;
   final String? errorMessage;
@@ -460,9 +504,12 @@ class _FollowingTabView extends StatelessWidget {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Text(errorMessage!, style: const TextStyle(color: Colors.grey, fontSize: 16)),
+                      Text(errorMessage!,
+                          style: const TextStyle(
+                              color: Colors.grey, fontSize: 16)),
                       const SizedBox(height: 12),
-                      ElevatedButton(onPressed: onRefresh, child: const Text("Retry")),
+                      ElevatedButton(
+                          onPressed: onRefresh, child: const Text("Retry")),
                     ],
                   ),
                 )
@@ -475,11 +522,17 @@ class _FollowingTabView extends StatelessWidget {
                             child: Column(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                Icon(Icons.person_search_outlined, size: 64, color: Colors.grey),
+                                Icon(Icons.person_search_outlined,
+                                    size: 64, color: Colors.grey),
                                 SizedBox(height: 12),
-                                Text("No pending requests", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                                Text("No pending requests",
+                                    style: TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.bold)),
                                 SizedBox(height: 6),
-                                Text("Teachers you requested to follow will show here.", style: TextStyle(color: Colors.grey)),
+                                Text(
+                                    "Teachers you requested to follow will show here.",
+                                    style: TextStyle(color: Colors.grey)),
                               ],
                             ),
                           )
@@ -491,7 +544,8 @@ class _FollowingTabView extends StatelessWidget {
                       itemBuilder: (context, index) {
                         final teacher = requests[index];
                         return Container(
-                          margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          margin: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 4),
                           decoration: BoxDecoration(
                             color: Colors.white,
                             borderRadius: BorderRadius.circular(12),
@@ -500,23 +554,33 @@ class _FollowingTabView extends StatelessWidget {
                             onTap: () => onTapProfile(teacher),
                             leading: CircleAvatar(
                               radius: 24,
-                              backgroundImage: teacher.profileImageUrl != null && teacher.profileImageUrl!.isNotEmpty
+                              backgroundImage: teacher.profileImageUrl != null &&
+                                      teacher.profileImageUrl!.isNotEmpty
                                   ? NetworkImage(teacher.profileImageUrl!)
                                   : null,
-                              child: teacher.profileImageUrl == null || teacher.profileImageUrl!.isEmpty
+                              child: teacher.profileImageUrl == null ||
+                                      teacher.profileImageUrl!.isEmpty
                                   ? const Icon(Icons.person)
                                   : null,
                             ),
-                            title: Text(teacher.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-                            subtitle: Text(teacher.subtitle ?? "Request pending approval", style: const TextStyle(fontSize: 12)),
+                            title: Text(teacher.name,
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.bold)),
+                            subtitle: Text(
+                                teacher.subtitle ??
+                                    "Request pending approval",
+                                style: const TextStyle(fontSize: 12)),
                             trailing: OutlinedButton(
                               style: OutlinedButton.styleFrom(
                                 foregroundColor: Colors.redAccent,
-                                side: const BorderSide(color: Colors.redAccent),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                                side: const BorderSide(
+                                    color: Colors.redAccent),
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(20)),
                               ),
                               onPressed: () => onCancel(teacher),
-                              child: const Text("Cancel", style: TextStyle(fontSize: 12)),
+                              child: const Text("Cancel",
+                                  style: TextStyle(fontSize: 12)),
                             ),
                           ),
                         );
@@ -526,9 +590,6 @@ class _FollowingTabView extends StatelessWidget {
   }
 }
 
-// ---------------------------------------------------------------------------
-// 🟢 Sub-Widget: My Teachers Tab View
-// ---------------------------------------------------------------------------
 class _MyTeachersTabView extends StatelessWidget {
   final bool isLoading;
   final String? errorMessage;
@@ -560,9 +621,12 @@ class _MyTeachersTabView extends StatelessWidget {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Text(errorMessage!, style: const TextStyle(color: Colors.grey, fontSize: 16)),
+                      Text(errorMessage!,
+                          style: const TextStyle(
+                              color: Colors.grey, fontSize: 16)),
                       const SizedBox(height: 12),
-                      ElevatedButton(onPressed: onRefresh, child: const Text("Retry")),
+                      ElevatedButton(
+                          onPressed: onRefresh, child: const Text("Retry")),
                     ],
                   ),
                 )
@@ -575,11 +639,17 @@ class _MyTeachersTabView extends StatelessWidget {
                             child: Column(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                Icon(Icons.school_outlined, size: 64, color: Colors.grey),
+                                Icon(Icons.school_outlined,
+                                    size: 64, color: Colors.grey),
                                 SizedBox(height: 12),
-                                Text("No teachers yet", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                                Text("No teachers yet",
+                                    style: TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.bold)),
                                 SizedBox(height: 6),
-                                Text("Connect with teachers to see them here.", style: TextStyle(color: Colors.grey)),
+                                Text(
+                                    "Connect with teachers to see them here.",
+                                    style: TextStyle(color: Colors.grey)),
                               ],
                             ),
                           )
