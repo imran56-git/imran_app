@@ -23,6 +23,17 @@ class AiCoordinatorService {
     return AppLanguage.en;
   }
 
+  String _getFallbackNotice(AppLanguage lang) {
+    switch (lang) {
+      case AppLanguage.bn:
+        return '⚠️ স্যরি স্যার! FYBTT প্রধান সার্ভার সাময়িক ব্যস্ত থাকায় ব্যাকআপ এআই ইঞ্জিন চালু করা হয়েছে। অনুগ্রহ করে কয়েক সেকেন্ড অপেক্ষা করুন...\n\n';
+      case AppLanguage.hi:
+        return '⚠️ क्षमा करें सर! FYBTT मुख्य सर्वर व्यस्त होने के कारण बैकअप एआई इंजन सक्रिय किया गया है। कृपया कुछ सेकंड प्रतीक्षा करें...\n\n';
+      case AppLanguage.en:
+        return '⚠️ Sorry sir! Due to heavy traffic on the FYBTT primary server, our backup AI engine has been activated. Please wait a few seconds...\n\n';
+    }
+  }
+
   String _getBusyMessage(AppLanguage lang, String waitTime) {
     switch (lang) {
       case AppLanguage.bn:
@@ -90,6 +101,8 @@ class AiCoordinatorService {
         await _cooldownManager.setDailyQuotaCooldown();
       }
 
+      yield _getFallbackNotice(lang);
+
       try {
         final fallbackStream = _fallbackService.generateContentStream(
           prompt,
@@ -125,8 +138,14 @@ class AiCoordinatorService {
         await _cooldownManager.setDailyQuotaCooldown();
       }
 
+      final notice = _getFallbackNotice(lang);
+
       try {
-        return await _fallbackService.generateContent(prompt, systemPrompt: systemPrompt);
+        final fallbackResponse = await _fallbackService.generateContent(
+          prompt,
+          systemPrompt: systemPrompt,
+        );
+        return '$notice$fallbackResponse';
       } catch (fallbackError) {
         if (_isQuotaError(fallbackError)) {
           await _cooldownManager.setDailyQuotaCooldown();
