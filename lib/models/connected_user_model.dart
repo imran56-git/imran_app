@@ -1,35 +1,49 @@
 class ConnectedUserModel {
   final String uid;
   final String name;
-  final String tuitionName;
+  final String? tuitionName;
   final String? photoUrl;
   final String role;
 
   ConnectedUserModel({
     required this.uid,
     required this.name,
-    required this.tuitionName,
+    this.tuitionName,
     this.photoUrl,
     required this.role,
   });
 
-  
   String? get profileImageUrl => photoUrl;
-  String get subtitle => tuitionName;
+  String? get subtitle => tuitionName;
 
-  factory ConnectedUserModel.fromFirestore(Map<String, dynamic> data, String docId, String userRole) {
-    String fetchedName = data['name'] ?? data['displayName'] ?? 'User';
+  factory ConnectedUserModel.fromFirestore(
+    Map<String, dynamic> data,
+    String docId,
+    String userRole,
+  ) {
+    final fetchedName = (data['name'] ?? data['displayName'] ?? 'User').toString();
 
-    String rawTuition = data['tuitionName'] ?? data['tuition_name'] ?? data['institution'] ?? '';
-    String cleanTuition = rawTuition.trim().isEmpty ? 'Tuition not specified' : rawTuition.trim();
+    final rawTuition = data['tuitionName'] ?? 
+        data['tuition_name'] ?? 
+        data['coachingName'] ?? 
+        data['batchName'] ?? 
+        data['institution'];
 
-    String? image = data['photoUrl'] ?? data['profilePic'] ?? data['imageUrl'] ?? data['profileImageUrl'];
+    String? displayTuition;
+    if (rawTuition != null && rawTuition.toString().trim().isNotEmpty) {
+      displayTuition = rawTuition.toString().trim();
+    }
+
+    final image = data['photoUrl'] ??
+        data['profilePic'] ??
+        data['imageUrl'] ??
+        data['profileImageUrl'];
 
     return ConnectedUserModel(
       uid: docId,
       name: fetchedName,
-      tuitionName: cleanTuition,
-      photoUrl: image,
+      tuitionName: displayTuition,
+      photoUrl: image?.toString(),
       role: userRole,
     );
   }
