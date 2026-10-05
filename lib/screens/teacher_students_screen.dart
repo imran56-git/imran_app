@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -12,10 +13,13 @@ class TeacherStudentsScreen extends StatefulWidget {
   State<TeacherStudentsScreen> createState() => _TeacherStudentsScreenState();
 }
 
-class _TeacherStudentsScreenState extends State<TeacherStudentsScreen> with SingleTickerProviderStateMixin {
+class _TeacherStudentsScreenState extends State<TeacherStudentsScreen>
+    with SingleTickerProviderStateMixin {
   late TabController _tabController;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
+
+  StreamSubscription? _requestsSubscription;
 
   bool _isFollowersLoading = true;
   bool _isStudentsLoading = true;
@@ -29,172 +33,200 @@ class _TeacherStudentsScreenState extends State<TeacherStudentsScreen> with Sing
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
-    _fetchAllData();
+    _listenToNetwork();
   }
 
   @override
   void dispose() {
+    _requestsSubscription?.cancel();
     _tabController.dispose();
     super.dispose();
   }
 
-  Future<void> _fetchAllData() async {
-    await Future.wait([
-      _fetchFollowersRequests(),
-      _fetchStudents(),
-    ]);
+  void _listenToNetwork() {
+    final String? currentUserId = _auth.currentUser?.uid;
+    if (currentUserId == null) {
+      if (mounted) {
+        setState(() {
+          _isFollowersLoading = false;
+          _isStudentsLoading = false;
+          _followersError = "User not logged in";
+          _studentsError = "User not logged in";
+        });
+      }
+      return;
+    }
+
+    _requestsSubscription?.cancel();
+    _requestsSubscription = _firestore
+        .collection('follow_requests')
+        .where('receiverId', isEqualTo: currentUserId)
+        .snapshots()
+        .listen(
+      (snapshot) {
+        _processSnapshotData(snapshot, currentUserId);
+      },
+      onError: (error) {
+        debugPrint("Error listening to follow_requests: $error");
+        _fallbackFetchAll(currentUserId);
+      },
+    );
   }
 
-  // 🟢 ১. পেন্ডিং ফলোয়ার্স রিকুয়েস্ট ফেচিং (Followers Tab)
-  Future<void> _fetchFollowersRequests() async {
-    if (!mounted) return;
+  Future<void> _processSnapshotData(
+      QuerySnapshot snapshot, String currentUserId) async {
+    final Set<String> pendingStudentIds = {};
+    final Set<String> acceptedStudentIds = {};
 
-    setState(() {
-      _isFollowersLoading = _followersRequests.isEmpty;
-      _followersError = null;
-    });
+    for (var doc in snapshot.docs) {
+      final data = doc.data() as Map<String, dynamic>?;
+      if (data == null) continue;
+
+      final status = data['status']?.toString().toLowerCase();
+      final senderId = data['senderId']?.toString();
+
+      if (senderId != null && senderId.isNotEmpty) {
+        if (status == 'pending') {
+          pendingStudentIds.add(senderId);
+        } else if (status == 'accepted') {
+          acceptedStudentIds.add(senderId);
+        }
+      }
+    }
 
     try {
-      final String? currentUserId = _auth.currentUser?.uid;
-      if (currentUserId == null) {
-        if (mounted) setState(() => _isFollowersLoading = false);
-        return;
+      final outgoingAccepted = await _firestore
+          .collection('follow_requests')
+          .where('senderId', isEqualTo: currentUserId)
+          .where('status', isEqualTo: 'accepted')
+          .get();
+
+      for (var doc in outgoingAccepted.docs) {
+        final data = doc.data();
+        if (data.containsKey('receiverId')) {
+          acceptedStudentIds.add(data['receiverId'].toString());
+        }
       }
+    } catch (e) {
+      debugPrint("Error fetching outgoing accepted: $e");
+    }
 
-      final collections = ['follow_requests', 'follow_req'];
-      final Set<String> pendingSenderIds = {};
+    final loadedFollowers = await _loadStudentProfiles(pendingStudentIds);
+    final loadedStudents = await _loadStudentProfiles(acceptedStudentIds);
 
-      for (String col in collections) {
-        final snap = await _firestore
+    if (mounted) {
+      setState(() {
+        _followersRequests = loadedFollowers;
+        _students = loadedStudents;
+        _isFollowersLoading = false;
+        _isStudentsLoading = false;
+        _followersError = null;
+        _studentsError = null;
+      });
+    }
+  }
+
+  Future<void> _fallbackFetchAll(String currentUserId) async {
+    final collections = ['follow_requests', 'follow_req'];
+    final Set<String> pendingStudentIds = {};
+    final Set<String> acceptedStudentIds = {};
+
+    for (String col in collections) {
+      try {
+        final pendingSnap = await _firestore
             .collection(col)
             .where('receiverId', isEqualTo: currentUserId)
             .where('status', isEqualTo: 'pending')
             .get();
 
-        for (var doc in snap.docs) {
+        for (var doc in pendingSnap.docs) {
           final data = doc.data();
           if (data.containsKey('senderId')) {
-            pendingSenderIds.add(data['senderId'].toString());
-          }
-        }
-      }
-
-      final loadedRequests = await Future.wait(
-        pendingSenderIds.map((sId) async {
-          DocumentSnapshot sDoc = await _firestore.collection('students').doc(sId).get();
-          if (!sDoc.exists) {
-            sDoc = await _firestore.collection('users').doc(sId).get();
-          }
-
-          if (sDoc.exists && sDoc.data() != null) {
-            return ConnectedUserModel.fromFirestore(
-              sDoc.data() as Map<String, dynamic>,
-              sId,
-              'student',
-            );
-          }
-          return null;
-        }),
-      );
-
-      if (mounted) {
-        setState(() {
-          _followersRequests = loadedRequests.whereType<ConnectedUserModel>().toList();
-          _isFollowersLoading = false;
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _followersError = "Unable to load follow requests.";
-          _isFollowersLoading = false;
-        });
-      }
-    }
-  }
-
-  // 🟢 ২. অ্যাকসেপ্টেড স্টুডেন্টস ফেচিং (Students Tab)
-  Future<void> _fetchStudents() async {
-    if (!mounted) return;
-
-    setState(() {
-      _isStudentsLoading = _students.isEmpty;
-      _studentsError = null;
-    });
-
-    try {
-      final String? currentUserId = _auth.currentUser?.uid;
-      if (currentUserId == null) {
-        if (mounted) setState(() => _isStudentsLoading = false);
-        return;
-      }
-
-      final collections = ['follow_requests', 'follow_req'];
-      final Set<String> studentIdsSet = {};
-
-      for (String col in collections) {
-        final snap1 = await _firestore
-            .collection(col)
-            .where('senderId', isEqualTo: currentUserId)
-            .where('status', isEqualTo: 'accepted')
-            .get();
-
-        for (var doc in snap1.docs) {
-          final data = doc.data();
-          if (data.containsKey('receiverId')) {
-            studentIdsSet.add(data['receiverId'].toString());
+            pendingStudentIds.add(data['senderId'].toString());
           }
         }
 
-        final snap2 = await _firestore
+        final acceptedSnap1 = await _firestore
             .collection(col)
             .where('receiverId', isEqualTo: currentUserId)
             .where('status', isEqualTo: 'accepted')
             .get();
 
-        for (var doc in snap2.docs) {
+        for (var doc in acceptedSnap1.docs) {
           final data = doc.data();
           if (data.containsKey('senderId')) {
-            studentIdsSet.add(data['senderId'].toString());
+            acceptedStudentIds.add(data['senderId'].toString());
           }
         }
-      }
 
-      final loadedStudents = await Future.wait(
-        studentIdsSet.map((sId) async {
-          DocumentSnapshot sDoc = await _firestore.collection('students').doc(sId).get();
+        final acceptedSnap2 = await _firestore
+            .collection(col)
+            .where('senderId', isEqualTo: currentUserId)
+            .where('status', isEqualTo: 'accepted')
+            .get();
+
+        for (var doc in acceptedSnap2.docs) {
+          final data = doc.data();
+          if (data.containsKey('receiverId')) {
+            acceptedStudentIds.add(data['receiverId'].toString());
+          }
+        }
+      } catch (e) {
+        debugPrint("Fallback query error on collection $col: $e");
+      }
+    }
+
+    final loadedFollowers = await _loadStudentProfiles(pendingStudentIds);
+    final loadedStudents = await _loadStudentProfiles(acceptedStudentIds);
+
+    if (mounted) {
+      setState(() {
+        _followersRequests = loadedFollowers;
+        _students = loadedStudents;
+        _isFollowersLoading = false;
+        _isStudentsLoading = false;
+        _followersError = loadedFollowers.isEmpty && pendingStudentIds.isNotEmpty
+            ? "Unable to load follow requests."
+            : null;
+        _studentsError = loadedStudents.isEmpty && acceptedStudentIds.isNotEmpty
+            ? "Unable to load students."
+            : null;
+      });
+    }
+  }
+
+  Future<List<ConnectedUserModel>> _loadStudentProfiles(
+      Set<String> studentIds) async {
+    if (studentIds.isEmpty) return [];
+
+    final List<ConnectedUserModel> results = [];
+
+    await Future.wait(
+      studentIds.map((sId) async {
+        try {
+          DocumentSnapshot sDoc =
+              await _firestore.collection('students').doc(sId).get();
           if (!sDoc.exists) {
             sDoc = await _firestore.collection('users').doc(sId).get();
           }
 
           if (sDoc.exists && sDoc.data() != null) {
-            return ConnectedUserModel.fromFirestore(
+            final model = ConnectedUserModel.fromFirestore(
               sDoc.data() as Map<String, dynamic>,
               sId,
               'student',
             );
+            results.add(model);
           }
-          return null;
-        }),
-      );
+        } catch (e) {
+          debugPrint("Error loading profile for student $sId: $e");
+        }
+      }),
+    );
 
-      if (mounted) {
-        setState(() {
-          _students = loadedStudents.whereType<ConnectedUserModel>().toList();
-          _isStudentsLoading = false;
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _studentsError = "Unable to load students.";
-          _isStudentsLoading = false;
-        });
-      }
-    }
+    return results;
   }
 
-  // 🟢 রিকুয়েস্ট অ্যাকসেপ্ট লজিক (Followers -> Students অটো শিফট)
   Future<void> _acceptFollowRequest(ConnectedUserModel student) async {
     try {
       final String? currentUserId = _auth.currentUser?.uid;
@@ -203,28 +235,26 @@ class _TeacherStudentsScreenState extends State<TeacherStudentsScreen> with Sing
       final collections = ['follow_requests', 'follow_req'];
 
       for (String col in collections) {
-        final snap = await _firestore
-            .collection(col)
-            .where('senderId', isEqualTo: student.uid)
-            .where('receiverId', isEqualTo: currentUserId)
-            .get();
+        try {
+          final snap = await _firestore
+              .collection(col)
+              .where('senderId', isEqualTo: student.uid)
+              .where('receiverId', isEqualTo: currentUserId)
+              .get();
 
-        for (var doc in snap.docs) {
-          await doc.reference.update({'status': 'accepted', 'updatedAt': FieldValue.serverTimestamp()});
-        }
+          for (var doc in snap.docs) {
+            await doc.reference.update({
+              'status': 'accepted',
+              'updatedAt': FieldValue.serverTimestamp(),
+            });
+          }
+        } catch (_) {}
       }
 
       if (mounted) {
-        setState(() {
-          _followersRequests.removeWhere((s) => s.uid == student.uid);
-        });
-
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text("Accepted ${student.name}'s request")),
         );
-
-        // স্টুডেন্ট লিস্ট রিলোড করে নতুন স্টুডেন্ট যোগ করা
-        _fetchStudents();
       }
     } catch (e) {
       if (mounted) {
@@ -235,7 +265,6 @@ class _TeacherStudentsScreenState extends State<TeacherStudentsScreen> with Sing
     }
   }
 
-  // 🟢 রিকুয়েস্ট রিজেক্ট লজিক
   Future<void> _rejectFollowRequest(ConnectedUserModel student) async {
     try {
       final String? currentUserId = _auth.currentUser?.uid;
@@ -244,22 +273,20 @@ class _TeacherStudentsScreenState extends State<TeacherStudentsScreen> with Sing
       final collections = ['follow_requests', 'follow_req'];
 
       for (String col in collections) {
-        final snap = await _firestore
-            .collection(col)
-            .where('senderId', isEqualTo: student.uid)
-            .where('receiverId', isEqualTo: currentUserId)
-            .get();
+        try {
+          final snap = await _firestore
+              .collection(col)
+              .where('senderId', isEqualTo: student.uid)
+              .where('receiverId', isEqualTo: currentUserId)
+              .get();
 
-        for (var doc in snap.docs) {
-          await doc.reference.delete();
-        }
+          for (var doc in snap.docs) {
+            await doc.reference.delete();
+          }
+        } catch (_) {}
       }
 
       if (mounted) {
-        setState(() {
-          _followersRequests.removeWhere((s) => s.uid == student.uid);
-        });
-
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text("Declined ${student.name}'s request")),
         );
@@ -281,30 +308,28 @@ class _TeacherStudentsScreenState extends State<TeacherStudentsScreen> with Sing
       final collections = ['follow_requests', 'follow_req'];
 
       for (String col in collections) {
-        final snap1 = await _firestore
-            .collection(col)
-            .where('senderId', isEqualTo: currentUserId)
-            .where('receiverId', isEqualTo: student.uid)
-            .get();
-        for (var doc in snap1.docs) {
-          await doc.reference.delete();
-        }
+        try {
+          final snap1 = await _firestore
+              .collection(col)
+              .where('senderId', isEqualTo: currentUserId)
+              .where('receiverId', isEqualTo: student.uid)
+              .get();
+          for (var doc in snap1.docs) {
+            await doc.reference.delete();
+          }
 
-        final snap2 = await _firestore
-            .collection(col)
-            .where('senderId', isEqualTo: student.uid)
-            .where('receiverId', isEqualTo: currentUserId)
-            .get();
-        for (var doc in snap2.docs) {
-          await doc.reference.delete();
-        }
+          final snap2 = await _firestore
+              .collection(col)
+              .where('senderId', isEqualTo: student.uid)
+              .where('receiverId', isEqualTo: currentUserId)
+              .get();
+          for (var doc in snap2.docs) {
+            await doc.reference.delete();
+          }
+        } catch (_) {}
       }
 
       if (mounted) {
-        setState(() {
-          _students.removeWhere((s) => s.uid == student.uid);
-        });
-
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text("Removed ${student.name}")),
         );
@@ -358,16 +383,19 @@ class _TeacherStudentsScreenState extends State<TeacherStudentsScreen> with Sing
             Container(
               width: 48,
               height: 48,
-              decoration: BoxDecoration(color: Colors.grey.shade200, shape: BoxShape.circle),
+              decoration: BoxDecoration(
+                  color: Colors.grey.shade200, shape: BoxShape.circle),
             ),
             const SizedBox(width: 14),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Container(width: 140, height: 14, color: Colors.grey.shade200),
+                  Container(
+                      width: 140, height: 14, color: Colors.grey.shade200),
                   const SizedBox(height: 6),
-                  Container(width: 190, height: 12, color: Colors.grey.shade200),
+                  Container(
+                      width: 190, height: 12, color: Colors.grey.shade200),
                 ],
               ),
             )
@@ -381,12 +409,14 @@ class _TeacherStudentsScreenState extends State<TeacherStudentsScreen> with Sing
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text("Student Network", style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text("Student Network",
+            style: TextStyle(fontWeight: FontWeight.bold)),
         elevation: 0.5,
         bottom: TabBar(
           controller: _tabController,
           indicatorColor: Theme.of(context).primaryColor,
-          labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+          labelStyle:
+              const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
           tabs: [
             Tab(
               child: Row(
@@ -397,10 +427,14 @@ class _TeacherStudentsScreenState extends State<TeacherStudentsScreen> with Sing
                     const SizedBox(width: 6),
                     Container(
                       padding: const EdgeInsets.all(5),
-                      decoration: const BoxDecoration(color: Colors.redAccent, shape: BoxShape.circle),
+                      decoration: const BoxDecoration(
+                          color: Colors.redAccent, shape: BoxShape.circle),
                       child: Text(
                         '${_followersRequests.length}',
-                        style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold),
                       ),
                     ),
                   ]
@@ -415,14 +449,18 @@ class _TeacherStudentsScreenState extends State<TeacherStudentsScreen> with Sing
                   if (_students.isNotEmpty) ...[
                     const SizedBox(width: 6),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 2),
                       decoration: BoxDecoration(
                         color: Colors.grey.shade300,
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: Text(
                         '${_students.length}',
-                        style: const TextStyle(color: Colors.black87, fontSize: 11, fontWeight: FontWeight.bold),
+                        style: const TextStyle(
+                            color: Colors.black87,
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold),
                       ),
                     ),
                   ]
@@ -435,24 +473,21 @@ class _TeacherStudentsScreenState extends State<TeacherStudentsScreen> with Sing
       body: TabBarView(
         controller: _tabController,
         children: [
-          // 🟢 TAB ১: Followers Tab (Pending Requests)
           _FollowersTabView(
             isLoading: _isFollowersLoading,
             errorMessage: _followersError,
             requests: _followersRequests,
-            onRefresh: _fetchFollowersRequests,
+            onRefresh: () async => _listenToNetwork(),
             onAccept: _acceptFollowRequest,
             onReject: _rejectFollowRequest,
             onTapProfile: _openProfile,
             skeletonBuilder: _buildSkeletonLoader,
           ),
-
-          // 🟢 TAB ২: Students Tab (Accepted Connections)
           _StudentsTabView(
             isLoading: _isStudentsLoading,
             errorMessage: _studentsError,
             students: _students,
-            onRefresh: _fetchStudents,
+            onRefresh: () async => _listenToNetwork(),
             onTapProfile: _openProfile,
             onMoreTap: _showActionMenu,
             skeletonBuilder: _buildSkeletonLoader,
@@ -463,9 +498,6 @@ class _TeacherStudentsScreenState extends State<TeacherStudentsScreen> with Sing
   }
 }
 
-// ---------------------------------------------------------------------------
-// 🟢 Sub-Widget: Followers Tab View
-// ---------------------------------------------------------------------------
 class _FollowersTabView extends StatelessWidget {
   final bool isLoading;
   final String? errorMessage;
@@ -499,9 +531,12 @@ class _FollowersTabView extends StatelessWidget {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Text(errorMessage!, style: const TextStyle(color: Colors.grey, fontSize: 16)),
+                      Text(errorMessage!,
+                          style: const TextStyle(
+                              color: Colors.grey, fontSize: 16)),
                       const SizedBox(height: 12),
-                      ElevatedButton(onPressed: onRefresh, child: const Text("Retry")),
+                      ElevatedButton(
+                          onPressed: onRefresh, child: const Text("Retry")),
                     ],
                   ),
                 )
@@ -514,11 +549,17 @@ class _FollowersTabView extends StatelessWidget {
                             child: Column(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                Icon(Icons.person_add_outlined, size: 64, color: Colors.grey),
+                                Icon(Icons.person_add_outlined,
+                                    size: 64, color: Colors.grey),
                                 SizedBox(height: 12),
-                                Text("No followers yet", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                                Text("No followers yet",
+                                    style: TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.bold)),
                                 SizedBox(height: 6),
-                                Text("Pending follow requests will appear here.", style: TextStyle(color: Colors.grey)),
+                                Text(
+                                    "Pending follow requests will appear here.",
+                                    style: TextStyle(color: Colors.grey)),
                               ],
                             ),
                           )
@@ -530,7 +571,8 @@ class _FollowersTabView extends StatelessWidget {
                       itemBuilder: (context, index) {
                         final student = requests[index];
                         return Container(
-                          margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          margin: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 4),
                           decoration: BoxDecoration(
                             color: Colors.white,
                             borderRadius: BorderRadius.circular(12),
@@ -539,25 +581,33 @@ class _FollowersTabView extends StatelessWidget {
                             onTap: () => onTapProfile(student),
                             leading: CircleAvatar(
                               radius: 24,
-                              backgroundImage: student.profileImageUrl != null && student.profileImageUrl!.isNotEmpty
+                              backgroundImage: student.profileImageUrl != null &&
+                                      student.profileImageUrl!.isNotEmpty
                                   ? NetworkImage(student.profileImageUrl!)
                                   : null,
-                              child: student.profileImageUrl == null || student.profileImageUrl!.isEmpty
+                              child: student.profileImageUrl == null ||
+                                      student.profileImageUrl!.isEmpty
                                   ? const Icon(Icons.person)
                                   : null,
                             ),
-                            title: Text(student.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-                            subtitle: Text(student.subtitle ?? "Requested to follow you", style: const TextStyle(fontSize: 12)),
+                            title: Text(student.name,
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.bold)),
+                            subtitle: Text(
+                                student.subtitle ?? "Requested to follow you",
+                                style: const TextStyle(fontSize: 12)),
                             trailing: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 IconButton(
-                                  icon: const Icon(Icons.check_circle, color: Colors.green, size: 28),
+                                  icon: const Icon(Icons.check_circle,
+                                      color: Colors.green, size: 28),
                                   onPressed: () => onAccept(student),
                                   tooltip: 'Accept',
                                 ),
                                 IconButton(
-                                  icon: const Icon(Icons.cancel, color: Colors.redAccent, size: 28),
+                                  icon: const Icon(Icons.cancel,
+                                      color: Colors.redAccent, size: 28),
                                   onPressed: () => onReject(student),
                                   tooltip: 'Decline',
                                 ),
@@ -571,9 +621,6 @@ class _FollowersTabView extends StatelessWidget {
   }
 }
 
-// ---------------------------------------------------------------------------
-// 🟢 Sub-Widget: Students Tab View
-// ---------------------------------------------------------------------------
 class _StudentsTabView extends StatelessWidget {
   final bool isLoading;
   final String? errorMessage;
@@ -605,9 +652,12 @@ class _StudentsTabView extends StatelessWidget {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Text(errorMessage!, style: const TextStyle(color: Colors.grey, fontSize: 16)),
+                      Text(errorMessage!,
+                          style: const TextStyle(
+                              color: Colors.grey, fontSize: 16)),
                       const SizedBox(height: 12),
-                      ElevatedButton(onPressed: onRefresh, child: const Text("Retry")),
+                      ElevatedButton(
+                          onPressed: onRefresh, child: const Text("Retry")),
                     ],
                   ),
                 )
@@ -620,11 +670,17 @@ class _StudentsTabView extends StatelessWidget {
                             child: Column(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                Icon(Icons.people_outline, size: 64, color: Colors.grey),
+                                Icon(Icons.people_outline,
+                                    size: 64, color: Colors.grey),
                                 SizedBox(height: 12),
-                                Text("No students yet", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                                Text("No students yet",
+                                    style: TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.bold)),
                                 SizedBox(height: 6),
-                                Text("Your connected students will appear here.", style: TextStyle(color: Colors.grey)),
+                                Text(
+                                    "Your connected students will appear here.",
+                                    style: TextStyle(color: Colors.grey)),
                               ],
                             ),
                           )
