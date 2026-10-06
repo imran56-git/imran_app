@@ -453,8 +453,9 @@ class _FollowingTabView extends StatelessWidget {
                                 style: const TextStyle(
                                     fontWeight: FontWeight.bold)),
                             subtitle: Text(
-                                teacher.subtitle.isNotEmpty
-                                    ? teacher.subtitle
+                                (teacher.subtitle != null &&
+                                        teacher.subtitle!.isNotEmpty)
+                                    ? teacher.subtitle!
                                     : "Request pending approval",
                                 style: const TextStyle(fontSize: 12)),
                             trailing: OutlinedButton(
