@@ -1,19 +1,26 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';
 import '../constants/ai_knowledge.dart';
 
 class GeminiService {
+  static final GeminiService _instance = GeminiService._internal();
+  factory GeminiService() => _instance;
+  GeminiService._internal() {
+    _initModel();
+  }
+
   static const String _apiKey = String.fromEnvironment('GEMINI_API_KEY');
 
   GenerativeModel? _model;
   ChatSession? _chatSession;
-
-  GeminiService() {
-    _initModel();
-  }
+  bool _isBusy = false;
 
   void _initModel({String? customSystemPrompt}) {
-    if (_apiKey.isEmpty) return;
+    if (_apiKey.isEmpty) {
+      debugPrint("GEMINI_API_KEY is not configured!");
+      return;
+    }
 
     try {
       final sysInstruction = (customSystemPrompt != null && customSystemPrompt.isNotEmpty)
@@ -30,11 +37,13 @@ class GeminiService {
         systemInstruction: Content.system(sysInstruction),
         generationConfig: GenerationConfig(
           maxOutputTokens: 1024,
-          temperature: 0.6,
+          temperature: 0.7,
         ),
       );
       _chatSession = _model!.startChat();
-    } catch (_) {}
+    } catch (e) {
+      debugPrint("Gemini initialization failed: $e");
+    }
   }
 
   Future<String> generateContent(String prompt, {String? systemPrompt}) async {
@@ -53,17 +62,18 @@ class GeminiService {
       final response = _chatSession != null
           ? await _chatSession!
               .sendMessage(Content.text(prompt))
-              .timeout(const Duration(seconds: 12))
+              .timeout(const Duration(seconds: 25))
           : await _model!
               .generateContent([Content.text(prompt)])
-              .timeout(const Duration(seconds: 12));
+              .timeout(const Duration(seconds: 25));
 
       final text = response.text;
-      if (text != null && text.isNotEmpty) {
+      if (text != null && text.trim().isNotEmpty) {
         return text.trim();
       }
       throw Exception('Empty response from Gemini');
     } catch (e) {
+      debugPrint("Gemini generateContent error: $e");
       resetChat();
       rethrow;
     }
@@ -74,6 +84,10 @@ class GeminiService {
       throw Exception('GEMINI_API_KEY is not configured');
     }
 
+    if (_isBusy) {
+      resetChat();
+    }
+
     if (_model == null) {
       _initModel(customSystemPrompt: systemPrompt);
       if (_model == null) {
@@ -81,14 +95,15 @@ class GeminiService {
       }
     }
 
+    _isBusy = true;
     try {
       final stream = _chatSession != null
           ? _chatSession!
               .sendMessageStream(Content.text(prompt))
-              .timeout(const Duration(seconds: 12))
+              .timeout(const Duration(seconds: 25))
           : _model!
               .generateContentStream([Content.text(prompt)])
-              .timeout(const Duration(seconds: 12));
+              .timeout(const Duration(seconds: 25));
 
       await for (final response in stream) {
         final text = response.text;
@@ -97,8 +112,11 @@ class GeminiService {
         }
       }
     } catch (e) {
+      debugPrint("Gemini generateContentStream error: $e");
       resetChat();
       rethrow;
+    } finally {
+      _isBusy = false;
     }
   }
 
@@ -111,8 +129,11 @@ class GeminiService {
   }
 
   void resetChat() {
+    _isBusy = false;
     if (_model != null) {
-      _chatSession = _model!.startChat();
+      try {
+        _chatSession = _model!.startChat();
+      } catch (_) {}
     }
   }
 }
