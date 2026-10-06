@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/connected_user_model.dart';
+import '../services/follow_service.dart';
 import '../widgets/connected_user_tile.dart';
 import '../widgets/connection_action_bottom_sheet.dart';
 
@@ -18,6 +19,7 @@ class _TeacherStudentsScreenState extends State<TeacherStudentsScreen>
   late TabController _tabController;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
+  final FollowService _followService = FollowService();
 
   StreamSubscription? _requestsSubscription;
 
@@ -60,7 +62,7 @@ class _TeacherStudentsScreenState extends State<TeacherStudentsScreen>
     _requestsSubscription?.cancel();
     _requestsSubscription = _firestore
         .collection('follow_requests')
-        .where('receiverId', isEqualTo: currentUserId)
+        .where('teacherId', isEqualTo: currentUserId)
         .snapshots()
         .listen(
       (snapshot) {
@@ -68,7 +70,14 @@ class _TeacherStudentsScreenState extends State<TeacherStudentsScreen>
       },
       onError: (error) {
         debugPrint("Error listening to follow_requests: $error");
-        _fallbackFetchAll(currentUserId);
+        if (mounted) {
+          setState(() {
+            _isFollowersLoading = false;
+            _isStudentsLoading = false;
+            _followersError = "Failed to load follow requests";
+            _studentsError = "Failed to load students";
+          });
+        }
       },
     );
   }
@@ -83,32 +92,15 @@ class _TeacherStudentsScreenState extends State<TeacherStudentsScreen>
       if (data == null) continue;
 
       final status = data['status']?.toString().toLowerCase();
-      final senderId = data['senderId']?.toString();
+      final studentId = data['studentId']?.toString();
 
-      if (senderId != null && senderId.isNotEmpty) {
+      if (studentId != null && studentId.isNotEmpty) {
         if (status == 'pending') {
-          pendingStudentIds.add(senderId);
+          pendingStudentIds.add(studentId);
         } else if (status == 'accepted') {
-          acceptedStudentIds.add(senderId);
+          acceptedStudentIds.add(studentId);
         }
       }
-    }
-
-    try {
-      final outgoingAccepted = await _firestore
-          .collection('follow_requests')
-          .where('senderId', isEqualTo: currentUserId)
-          .where('status', isEqualTo: 'accepted')
-          .get();
-
-      for (var doc in outgoingAccepted.docs) {
-        final data = doc.data();
-        if (data.containsKey('receiverId')) {
-          acceptedStudentIds.add(data['receiverId'].toString());
-        }
-      }
-    } catch (e) {
-      debugPrint("Error fetching outgoing accepted: $e");
     }
 
     final loadedFollowers = await _loadStudentProfiles(pendingStudentIds);
@@ -122,75 +114,6 @@ class _TeacherStudentsScreenState extends State<TeacherStudentsScreen>
         _isStudentsLoading = false;
         _followersError = null;
         _studentsError = null;
-      });
-    }
-  }
-
-  Future<void> _fallbackFetchAll(String currentUserId) async {
-    final collections = ['follow_requests', 'follow_req'];
-    final Set<String> pendingStudentIds = {};
-    final Set<String> acceptedStudentIds = {};
-
-    for (String col in collections) {
-      try {
-        final pendingSnap = await _firestore
-            .collection(col)
-            .where('receiverId', isEqualTo: currentUserId)
-            .where('status', isEqualTo: 'pending')
-            .get();
-
-        for (var doc in pendingSnap.docs) {
-          final data = doc.data();
-          if (data.containsKey('senderId')) {
-            pendingStudentIds.add(data['senderId'].toString());
-          }
-        }
-
-        final acceptedSnap1 = await _firestore
-            .collection(col)
-            .where('receiverId', isEqualTo: currentUserId)
-            .where('status', isEqualTo: 'accepted')
-            .get();
-
-        for (var doc in acceptedSnap1.docs) {
-          final data = doc.data();
-          if (data.containsKey('senderId')) {
-            acceptedStudentIds.add(data['senderId'].toString());
-          }
-        }
-
-        final acceptedSnap2 = await _firestore
-            .collection(col)
-            .where('senderId', isEqualTo: currentUserId)
-            .where('status', isEqualTo: 'accepted')
-            .get();
-
-        for (var doc in acceptedSnap2.docs) {
-          final data = doc.data();
-          if (data.containsKey('receiverId')) {
-            acceptedStudentIds.add(data['receiverId'].toString());
-          }
-        }
-      } catch (e) {
-        debugPrint("Fallback query error on collection $col: $e");
-      }
-    }
-
-    final loadedFollowers = await _loadStudentProfiles(pendingStudentIds);
-    final loadedStudents = await _loadStudentProfiles(acceptedStudentIds);
-
-    if (mounted) {
-      setState(() {
-        _followersRequests = loadedFollowers;
-        _students = loadedStudents;
-        _isFollowersLoading = false;
-        _isStudentsLoading = false;
-        _followersError = loadedFollowers.isEmpty && pendingStudentIds.isNotEmpty
-            ? "Unable to load follow requests."
-            : null;
-        _studentsError = loadedStudents.isEmpty && acceptedStudentIds.isNotEmpty
-            ? "Unable to load students."
-            : null;
       });
     }
   }
@@ -232,24 +155,7 @@ class _TeacherStudentsScreenState extends State<TeacherStudentsScreen>
       final String? currentUserId = _auth.currentUser?.uid;
       if (currentUserId == null) return;
 
-      final collections = ['follow_requests', 'follow_req'];
-
-      for (String col in collections) {
-        try {
-          final snap = await _firestore
-              .collection(col)
-              .where('senderId', isEqualTo: student.uid)
-              .where('receiverId', isEqualTo: currentUserId)
-              .get();
-
-          for (var doc in snap.docs) {
-            await doc.reference.update({
-              'status': 'accepted',
-              'updatedAt': FieldValue.serverTimestamp(),
-            });
-          }
-        } catch (_) {}
-      }
+      await _followService.acceptRequest(currentUserId, student.uid);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -270,21 +176,7 @@ class _TeacherStudentsScreenState extends State<TeacherStudentsScreen>
       final String? currentUserId = _auth.currentUser?.uid;
       if (currentUserId == null) return;
 
-      final collections = ['follow_requests', 'follow_req'];
-
-      for (String col in collections) {
-        try {
-          final snap = await _firestore
-              .collection(col)
-              .where('senderId', isEqualTo: student.uid)
-              .where('receiverId', isEqualTo: currentUserId)
-              .get();
-
-          for (var doc in snap.docs) {
-            await doc.reference.delete();
-          }
-        } catch (_) {}
-      }
+      await _followService.rejectRequest(currentUserId, student.uid);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -305,29 +197,7 @@ class _TeacherStudentsScreenState extends State<TeacherStudentsScreen>
       final String? currentUserId = _auth.currentUser?.uid;
       if (currentUserId == null) return;
 
-      final collections = ['follow_requests', 'follow_req'];
-
-      for (String col in collections) {
-        try {
-          final snap1 = await _firestore
-              .collection(col)
-              .where('senderId', isEqualTo: currentUserId)
-              .where('receiverId', isEqualTo: student.uid)
-              .get();
-          for (var doc in snap1.docs) {
-            await doc.reference.delete();
-          }
-
-          final snap2 = await _firestore
-              .collection(col)
-              .where('senderId', isEqualTo: student.uid)
-              .where('receiverId', isEqualTo: currentUserId)
-              .get();
-          for (var doc in snap2.docs) {
-            await doc.reference.delete();
-          }
-        } catch (_) {}
-      }
+      await _followService.unfollowTeacher(currentUserId, student.uid);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -594,7 +464,9 @@ class _FollowersTabView extends StatelessWidget {
                                 style: const TextStyle(
                                     fontWeight: FontWeight.bold)),
                             subtitle: Text(
-                                student.subtitle ?? "Requested to follow you",
+                                student.subtitle != null && student.subtitle!.isNotEmpty
+                                    ? student.subtitle!
+                                    : "Requested to follow you",
                                 style: const TextStyle(fontSize: 12)),
                             trailing: Row(
                               mainAxisSize: MainAxisSize.min,
