@@ -8,21 +8,18 @@ class ChatService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseStorage _storage = FirebaseStorage.instance;
 
-  // 🟢 স্মার্ট প্রোফাইল ফেচিং (সকল কালেকশনে অটোমেটিক সার্চ)
   Future<Map<String, dynamic>?> getUserProfile(String userId, bool isTeacher) async {
+    if (userId.trim().isEmpty) return null;
     try {
       final String primaryCollection = isTeacher ? 'teachers' : 'students';
       final String secondaryCollection = isTeacher ? 'students' : 'teachers';
 
-      // ১. প্রাইমারি কালেকশন চেক
       var doc = await _firestore.collection(primaryCollection).doc(userId).get();
       if (doc.exists && doc.data() != null) return doc.data();
 
-      // ২. সেকেন্ডারি কালেকশন চেক
       doc = await _firestore.collection(secondaryCollection).doc(userId).get();
       if (doc.exists && doc.data() != null) return doc.data();
 
-      // ৩. সাধারণ 'users' কালেকশন চেক
       final userDoc = await _firestore.collection('users').doc(userId).get();
       return userDoc.data();
     } catch (e) {
@@ -32,18 +29,20 @@ class ChatService {
   }
 
   Stream<QuerySnapshot> getUserChatsStream(String userId) {
+    if (userId.trim().isEmpty) {
+      return const Stream.empty();
+    }
     return _firestore
         .collection('chats')
         .where('participants', arrayContains: userId)
-        .orderBy('lastMessageTime', descending: true)
-        .snapshots(includeMetadataChanges: true)
+        .snapshots()
         .handleError((error) {
       _handleError('getUserChatsStream', error);
     });
   }
 
-  // 🟢 অনলাইন স্ট্যাটাস সিঙ্ক
   Future<void> updateOnlineStatus(String userId, bool isOnline, bool isTeacher) async {
+    if (userId.trim().isEmpty) return;
     try {
       final String collectionPath = isTeacher ? 'teachers' : 'students';
       final Map<String, dynamic> statusData = {
@@ -60,6 +59,7 @@ class ChatService {
   }
 
   Future<void> updateTypingStatus(String chatId, String userId, bool isTyping) async {
+    if (chatId.trim().isEmpty || userId.trim().isEmpty) return;
     try {
       await _firestore.collection('typing').doc(chatId).set({
         userId: isTyping,
@@ -70,8 +70,11 @@ class ChatService {
     }
   }
 
-  // 🟢 রিয়েলটাইম ফলব্যাক স্ট্রিম
   Stream<Map<String, dynamic>> getUserStatusStream(String userId, bool isTeacher) {
+    if (userId.trim().isEmpty) {
+      return Stream.value({'status': 'Offline', 'lastSeen': null, 'isOnline': false});
+    }
+
     final String primaryCollection = isTeacher ? 'teachers' : 'students';
 
     return _firestore.collection(primaryCollection).doc(userId).snapshots().asyncMap((doc) async {
@@ -117,7 +120,6 @@ class ChatService {
     });
   }
 
-  // Alphabetical Sorting to ensure EXACT SAME Chat Room ID
   String getChatRoomId(String user1, String user2) {
     List<String> ids = [user1, user2];
     ids.sort();
@@ -179,7 +181,7 @@ class ChatService {
     required String message,
     required String type,
     String? replyToMessageId,
-    String? replyToText, // 🟢 রিপ্লাই টেক্সট সিঙ্ক করার জন্য যোগ করা হয়েছে
+    String? replyToText,
     Map<String, dynamic>? mediaMetaData,
   }) async {
     try {
@@ -238,7 +240,7 @@ class ChatService {
         'lastSenderId': senderId,
         'unreadCount': currentUnread + 1,
         'unreadFor': receiverId,
-        'unreadCount_$receiverId': currentUnread + 1, // 🟢 Per-user count sync
+        'unreadCount_$receiverId': currentUnread + 1,
         'participants': [senderId, receiverId],
       }, SetOptions(merge: true));
 
@@ -270,7 +272,7 @@ class ChatService {
         batch.set(_firestore.collection('chats').doc(chatId), {
           'unreadCount': 0,
           'unreadFor': '',
-          'unreadCount_$currentUserId': 0, // 🟢 Reset per-user unread count
+          'unreadCount_$currentUserId': 0,
         }, SetOptions(merge: true));
       }
 
@@ -279,8 +281,6 @@ class ChatService {
       _handleError('markAsSeen', e);
     }
   }
-
-  // --- File Upload Helpers ---
 
   Future<String> _uploadFileToStorage(File file, String folder) async {
     try {
