@@ -61,7 +61,7 @@ class AiCooldownManager extends ChangeNotifier {
     }
   }
 
-  Future<void> setShortCooldown({int seconds = 30}) async {
+  Future<void> setShortCooldown({int seconds = 15}) async {
     await _applyCooldown(Duration(seconds: seconds), isDaily: false);
   }
 
