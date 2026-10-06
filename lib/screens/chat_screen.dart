@@ -2,7 +2,7 @@ import 'dart:io';
 import 'dart:async';
 import 'dart:developer';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; // Clipboard এবং HapticFeedback-এর জন্য
+import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -40,7 +40,8 @@ class ChatScreen extends StatefulWidget {
   State<ChatScreen> createState() => _ChatScreenState();
 }
 
-class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver, SingleTickerProviderStateMixin {
+class _ChatScreenState extends State<ChatScreen>
+    with WidgetsBindingObserver, SingleTickerProviderStateMixin {
   final ChatService _chatService = ChatService();
   final ChatMenuService _chatMenuService = ChatMenuService();
   final ScrollController _scrollController = ScrollController();
@@ -53,11 +54,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver, Si
   String? _customBgImagePath;
   bool _isMarkingRead = false;
   bool _isInitializing = true;
-  
-  // ড্র্যাগ অ্যান্ড ড্রপ স্টেট
+
   bool _isDraggingMessage = false;
   bool _isDragHoveringInput = false;
-  String? _hoveredTopAction; // 'copy', 'delete_me', 'delete_all'
+  String? _hoveredTopAction;
   MessageModel? _draggedMessage;
 
   late AnimationController _bounceController;
@@ -69,7 +69,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver, Si
     WidgetsBinding.instance.addObserver(this);
     _activeChatRoomId = widget.chatRoomId;
 
-    // বাউন্স অ্যানিমেশন কন্ট্রোলার সেটআপ
     _bounceController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 400),
@@ -257,7 +256,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver, Si
     }
   }
 
-  // 🔹 ভাসমান টপ বার আইকন তৈরি উইজেট (Hover Scaling সহ)
   Widget _buildTopActionIcon({
     required String actionKey,
     required IconData icon,
@@ -287,7 +285,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver, Si
       },
       builder: (context, candidateData, rejectedData) {
         return AnimatedScale(
-          scale: isHovered ? 1.45 : 1.0, // মেসজ ওপরে আইকনের কাছে আনলে বড় হবে
+          scale: isHovered ? 1.45 : 1.0,
           duration: const Duration(milliseconds: 200),
           curve: Curves.easeOutBack,
           child: Container(
@@ -307,7 +305,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver, Si
     );
   }
 
-  // 🔹 ড্র্যাগ করার সময় ওপরে আসা ফ্লোটিং একশন বার
   Widget _buildTopActionToolbar() {
     return Positioned(
       top: 10,
@@ -335,7 +332,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver, Si
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
-                // ১. কপি
                 _buildTopActionIcon(
                   actionKey: 'copy',
                   icon: Icons.copy_rounded,
@@ -349,29 +345,27 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver, Si
                     }
                   },
                 ),
-
-                // ২. ডিলিট ফর মি
                 _buildTopActionIcon(
                   actionKey: 'delete_me',
                   icon: Icons.delete_outline_rounded,
                   color: Colors.orangeAccent,
                   onAccept: (msg) async {
                     try {
-                      await _chatService.deleteMessageForMe(_activeChatRoomId, msg.messageId, widget.currentUserId);
+                      await _chatService.deleteMessageForMe(
+                          _activeChatRoomId, msg.messageId, widget.currentUserId);
                     } catch (e) {
                       log("Delete for me error: $e");
                     }
                   },
                 ),
-
-                // ৩. ডিলিট ফর এভরিওয়ান
                 _buildTopActionIcon(
                   actionKey: 'delete_all',
                   icon: Icons.delete_forever_rounded,
                   color: Colors.redAccent,
                   onAccept: (msg) async {
                     try {
-                      await _chatService.deleteMessageForEveryone(_activeChatRoomId, msg.messageId);
+                      await _chatService.deleteMessageForEveryone(
+                          _activeChatRoomId, msg.messageId);
                     } catch (e) {
                       log("Delete for everyone error: $e");
                     }
@@ -407,7 +401,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver, Si
           scrolledUnderElevation: 0,
           title: StreamBuilder<Map<String, dynamic>>(
             stream: _chatService.getUserStatusStream(
-              widget.receiverId, 
+              widget.receiverId,
               widget.isTeacher,
             ),
             builder: (context, statusSnapshot) {
@@ -422,7 +416,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver, Si
                 if (data['fullName'] != null && data['fullName'].toString().isNotEmpty) {
                   displayName = data['fullName'].toString();
                 }
-                if (data['profileImageUrl'] != null && data['profileImageUrl'].toString().isNotEmpty) {
+                if (data['profileImageUrl'] != null &&
+                    data['profileImageUrl'].toString().isNotEmpty) {
                   displayPic = data['profileImageUrl'].toString();
                 }
               }
@@ -436,7 +431,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver, Si
                   IconButton(
                     icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
                     onPressed: () async {
-                      _chatService.updateTypingStatus(_activeChatRoomId, widget.currentUserId, false);
+                      _chatService.updateTypingStatus(
+                          _activeChatRoomId, widget.currentUserId, false);
                       await _markMessagesAsReadSafe();
                       if (context.mounted) {
                         Navigator.pop(context);
@@ -446,9 +442,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver, Si
                   CircleAvatar(
                     radius: 18,
                     backgroundColor: Colors.white24,
-                    backgroundImage: displayPic.isNotEmpty
-                        ? NetworkImage(displayPic)
-                        : null,
+                    backgroundImage:
+                        displayPic.isNotEmpty ? NetworkImage(displayPic) : null,
                     child: displayPic.isEmpty
                         ? const Icon(Icons.person_rounded, color: Colors.white, size: 20)
                         : null,
@@ -479,7 +474,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver, Si
                           builder: (context, typingSnapshot) {
                             bool isTyping = false;
                             if (typingSnapshot.hasData && typingSnapshot.data!.exists) {
-                              var data = typingSnapshot.data!.data() as Map<String, dynamic>?;
+                              var data =
+                                  typingSnapshot.data!.data() as Map<String, dynamic>?;
                               isTyping = data?[widget.receiverId] ?? false;
                             }
 
@@ -499,7 +495,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver, Si
                               style: TextStyle(
                                 fontSize: 11,
                                 fontWeight: FontWeight.w500,
-                                color: isOnline ? const Color(0xFF22C55E) : Colors.white70,
+                                color:
+                                    isOnline ? const Color(0xFF22C55E) : Colors.white70,
                               ),
                             );
                           },
@@ -537,7 +534,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver, Si
                 children: [
                   Expanded(
                     child: _isInitializing || _messageStream == null
-                        ? const Center(child: CircularProgressIndicator(color: Color(0xFF1E4C7A), strokeWidth: 3))
+                        ? const Center(
+                            child: CircularProgressIndicator(
+                                color: Color(0xFF1E4C7A), strokeWidth: 3))
                         : StreamBuilder<List<MessageModel>>(
                             stream: _messageStream,
                             builder: (context, snapshot) {
@@ -545,14 +544,18 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver, Si
                                 return Center(
                                   child: Text(
                                     'Failed to load messages.',
-                                    style: TextStyle(color: Colors.red.shade400, fontWeight: FontWeight.bold),
+                                    style: TextStyle(
+                                        color: Colors.red.shade400,
+                                        fontWeight: FontWeight.bold),
                                   ),
                                 );
                               }
 
                               
                               if (snapshot.connectionState == ConnectionState.waiting) {
-                                return const Center(child: CircularProgressIndicator(color: Color(0xFF1E4C7A), strokeWidth: 3));
+                                return const Center(
+                                    child: CircularProgressIndicator(
+                                        color: Color(0xFF1E4C7A), strokeWidth: 3));
                               }
 
                               final messages = snapshot.data ?? [];
@@ -560,7 +563,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver, Si
                               if (messages.isEmpty) {
                                 return Center(
                                   child: Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 18, vertical: 10),
                                     decoration: BoxDecoration(
                                       color: Colors.black.withOpacity(0.05),
                                       borderRadius: BorderRadius.circular(16),
@@ -568,11 +572,15 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver, Si
                                     child: const Row(
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
-                                        Icon(Icons.lock_outline_rounded, size: 14, color: Colors.black54),
+                                        Icon(Icons.lock_outline_rounded,
+                                            size: 14, color: Colors.black54),
                                         SizedBox(width: 6),
                                         Text(
                                           'Messages are end-to-end encrypted',
-                                          style: TextStyle(color: Colors.black54, fontSize: 12, fontWeight: FontWeight.w500),
+                                          style: TextStyle(
+                                              color: Colors.black54,
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w500),
                                         ),
                                       ],
                                     ),
@@ -580,19 +588,21 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver, Si
                                 );
                               }
 
-                              WidgetsBinding.instance.addPostFrameCallback((_) => _markMessagesAsReadSafe());
+                              WidgetsBinding.instance.addPostFrameCallback(
+                                  (_) => _markMessagesAsReadSafe());
 
                               return ListView.builder(
                                 controller: _scrollController,
                                 reverse: true,
                                 physics: const BouncingScrollPhysics(),
-                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 16, vertical: 12),
                                 itemCount: messages.length,
                                 itemBuilder: (context, index) {
                                   final message = messages[index];
-                                  final bool isMe = message.senderId == widget.currentUserId;
+                                  final bool isMe =
+                                      message.senderId == widget.currentUserId;
 
-                                  // ০.৫ সেকেন্ড ড্রাইভেবল প্রেস
                                   return LongPressDraggable<MessageModel>(
                                     delay: const Duration(milliseconds: 500),
                                     data: message,
@@ -660,8 +670,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver, Si
                             },
                           ),
                   ),
-
-                  // কিবোর্ড এরিয়া - Reply Drag Target
                   DragTarget<MessageModel>(
                     onWillAcceptWithDetails: (details) {
                       HapticFeedback.selectionClick();
@@ -687,7 +695,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver, Si
                             decoration: BoxDecoration(
                               color: Colors.white,
                               border: _isDragHoveringInput
-                                  ? Border.all(color: const Color(0xFF1E4C7A), width: 2)
+                                  ? Border.all(
+                                      color: const Color(0xFF1E4C7A), width: 2)
                                   : null,
                               boxShadow: [
                                 BoxShadow(
@@ -712,7 +721,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver, Si
                                 });
                               },
                               onTypingChanged: (isTyping) {
-                                _chatService.updateTypingStatus(_activeChatRoomId, widget.currentUserId, isTyping);
+                                _chatService.updateTypingStatus(
+                                    _activeChatRoomId, widget.currentUserId, isTyping);
                               },
                             ),
                           ),
@@ -722,7 +732,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver, Si
                   ),
                 ],
               ),
-
               if (_isDraggingMessage) _buildTopActionToolbar(),
             ],
           ),
