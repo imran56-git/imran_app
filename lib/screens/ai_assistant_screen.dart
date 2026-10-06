@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
+import 'package:url_launcher/url_launcher.dart';
 import '../services/ai_coordinator_service.dart';
 import '../services/tts_voice_service.dart';
 import '../utils/ai_cooldown_manager.dart';
@@ -28,7 +29,8 @@ class AiAssistantScreen extends StatefulWidget {
   State<AiAssistantScreen> createState() => _AiAssistantScreenState();
 }
 
-class _AiAssistantScreenState extends State<AiAssistantScreen> {
+class _AiAssistantScreenState extends State<AiAssistantScreen>
+    with TickerProviderStateMixin {
   final TextEditingController _controller = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final AiCoordinatorService _coordinatorService = AiCoordinatorService();
@@ -39,23 +41,40 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
 
   late stt.SpeechToText _speechToText;
   StreamSubscription<String>? _streamSubscription;
+  Timer? _typewriterTimer;
+  final StringBuffer _incomingBuffer = StringBuffer();
+
+  late AnimationController _pulseController;
+  late Animation<double> _pulseAnimation;
 
   bool _isListening = false;
   bool _isLoading = false;
   bool _isSelectionMode = false;
+  bool _isFallbackActive = false;
   int? _currentlySpeakingIndex;
 
   static const Color primaryNavy = Color(0xFF1E3A8A);
   static const Color accentBlue = Color(0xFF2563EB);
   static const Color userBubbleColor = Color(0xFF1D4ED8);
-  static const Color aiBubbleColor = Color(0xFFF8FAFC);
   static const Color scaffoldBg = Color(0xFFF1F5F9);
 
   @override
   void initState() {
     super.initState();
     _speechToText = stt.SpeechToText();
+    _initAnimations();
     _initServices();
+  }
+
+  void _initAnimations() {
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    )..repeat(reverse: true);
+
+    _pulseAnimation = Tween<double>(begin: 0.35, end: 1.0).animate(
+      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
+    );
   }
 
   void _initServices() {
@@ -77,6 +96,8 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
   @override
   void dispose() {
     _streamSubscription?.cancel();
+    _typewriterTimer?.cancel();
+    _pulseController.dispose();
     _cooldownManager.removeListener(_onCooldownTick);
     _ttsVoiceService.stop();
     _controller.dispose();
@@ -89,7 +110,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
       if (_scrollController.hasClients) {
         _scrollController.animateTo(
           _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 300),
+          duration: const Duration(milliseconds: 100),
           curve: Curves.easeOut,
         );
       }
@@ -110,6 +131,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
         timestamp: DateTime.now(),
       ));
       _isLoading = true;
+      _isFallbackActive = false;
     });
     _scrollToBottom();
 
@@ -123,52 +145,96 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
       _messages.add(aiMessage);
     });
 
+    _incomingBuffer.clear();
+    _startTypewriter(aiMessage);
+
     try {
-      final stream = _coordinatorService.sendMessageStream(text);
-      _streamSubscription = stream.listen(
-        (chunk) {
+      final stream = _coordinatorService.sendMessageStream(
+        text,
+        onFallbackStatus: (isActive) {
           if (mounted) {
             setState(() {
-              aiMessage.text += chunk;
-            });
-            _scrollToBottom();
-          }
-        },
-        onError: (_) {
-          if (mounted) {
-            setState(() {
-              if (aiMessage.text.isEmpty) {
-                aiMessage.text = '⚠️ Connection error. Please try again.';
-              }
-              _isLoading = false;
-            });
-          }
-        },
-        onDone: () {
-          if (mounted) {
-            setState(() {
-              if (aiMessage.text.isEmpty) {
-                aiMessage.text = '⚠️ No response received.';
-              }
-              _isLoading = false;
+              _isFallbackActive = isActive && aiMessage.text.isEmpty;
             });
           }
         },
       );
+
+      _streamSubscription = stream.listen(
+        (chunk) {
+          if (_isFallbackActive && mounted) {
+            setState(() => _isFallbackActive = false);
+          }
+          _incomingBuffer.write(chunk);
+        },
+        onError: (_) {
+          if (mounted) {
+            setState(() => _isFallbackActive = false);
+          }
+          _incomingBuffer.write('\n⚠️ Connection error.');
+          _stopGenerating();
+        },
+        onDone: () {
+          _drainBufferAndFinish();
+        },
+      );
     } catch (_) {
       if (mounted) {
-        setState(() {
-          aiMessage.text = '⚠️ Error occurred. Please try again.';
-          _isLoading = false;
-        });
+        setState(() => _isFallbackActive = false);
       }
+      _incomingBuffer.write('\n⚠️ Unable to connect.');
+      _stopGenerating();
     }
+  }
+
+  void _startTypewriter(ChatMessage aiMessage) {
+    _typewriterTimer?.cancel();
+    _typewriterTimer = Timer.periodic(const Duration(milliseconds: 14), (timer) {
+      if (_incomingBuffer.isNotEmpty) {
+        final current = _incomingBuffer.toString();
+        final chunkSize = current.length > 25 ? 3 : (current.length > 8 ? 2 : 1);
+        final addText = current.substring(0, chunkSize);
+        _incomingBuffer.clear();
+        _incomingBuffer.write(current.substring(chunkSize));
+
+        if (mounted) {
+          setState(() {
+            aiMessage.text += addText;
+            if (_isFallbackActive) _isFallbackActive = false;
+          });
+          _scrollToBottom();
+        }
+      } else if (!_isLoading) {
+        timer.cancel();
+      }
+    });
+  }
+
+  void _drainBufferAndFinish() {
+    Timer.periodic(const Duration(milliseconds: 25), (t) {
+      if (_incomingBuffer.isEmpty) {
+        t.cancel();
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+            _isFallbackActive = false;
+          });
+        }
+      }
+    });
   }
 
   void _stopGenerating() {
     _streamSubscription?.cancel();
     _streamSubscription = null;
-    setState(() => _isLoading = false);
+    _typewriterTimer?.cancel();
+    _incomingBuffer.clear();
+    if (mounted) {
+      setState(() {
+        _isLoading = false;
+        _isFallbackActive = false;
+      });
+    }
   }
 
   void _toggleListening() async {
@@ -204,6 +270,21 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
     setState(() => _isListening = false);
   }
 
+  Future<void> _handleLinkTap(String? href, String text) async {
+    if (href == null || href.isEmpty) return;
+
+    try {
+      final uri = Uri.parse(href);
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      } else {
+        _copyToClipboard(text);
+      }
+    } catch (_) {
+      _copyToClipboard(text);
+    }
+  }
+
   Future<void> _toggleSpeak(int index, String text) async {
     if (_currentlySpeakingIndex == index) {
       await _ttsVoiceService.stop();
@@ -223,7 +304,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
           children: [
             Icon(Icons.check_circle, color: Colors.white, size: 18),
             SizedBox(width: 8),
-            Text("Text copied to clipboard"),
+            Text("Copied to clipboard"),
           ],
         ),
         behavior: SnackBarBehavior.floating,
@@ -268,8 +349,10 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
       context: context,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text("Delete all messages?", style: TextStyle(fontWeight: FontWeight.bold)),
-        content: const Text("All messages in this conversation will be permanently deleted."),
+        title: const Text("Delete all messages?",
+            style: TextStyle(fontWeight: FontWeight.bold)),
+        content: const Text(
+            "All messages in this conversation will be permanently deleted."),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
@@ -332,18 +415,26 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
           ),
           const SizedBox(width: 14),
           _buildActionButton(
-            icon: message.isLiked == true ? Icons.thumb_up_rounded : Icons.thumb_up_outlined,
+            icon: message.isLiked == true
+                ? Icons.thumb_up_rounded
+                : Icons.thumb_up_outlined,
             color: message.isLiked == true ? accentBlue : const Color(0xFF94A3B8),
             onTap: () {
-              setState(() => message.isLiked = message.isLiked == true ? null : true);
+              setState(() =>
+                  message.isLiked = message.isLiked == true ? null : true);
             },
           ),
           const SizedBox(width: 14),
           _buildActionButton(
-            icon: message.isLiked == false ? Icons.thumb_down_rounded : Icons.thumb_down_outlined,
-            color: message.isLiked == false ? Colors.red.shade400 : const Color(0xFF94A3B8),
+            icon: message.isLiked == false
+                ? Icons.thumb_down_rounded
+                : Icons.thumb_down_outlined,
+            color: message.isLiked == false
+                ? Colors.red.shade400
+                : const Color(0xFF94A3B8),
             onTap: () {
-              setState(() => message.isLiked = message.isLiked == false ? null : false);
+              setState(() =>
+                  message.isLiked = message.isLiked == false ? null : false);
             },
           ),
         ],
@@ -366,13 +457,6 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
             : const LinearGradient(
                 colors: [Color(0xFF64748B), Color(0xFF334155)],
               ),
-        boxShadow: [
-          BoxShadow(
-            color: (isAi ? accentBlue : Colors.black).withOpacity(0.15),
-            blurRadius: 4,
-            offset: const Offset(0, 2),
-          ),
-        ],
       ),
       child: Icon(
         isAi ? Icons.auto_awesome : Icons.person,
@@ -407,14 +491,52 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
             const SizedBox(height: 20),
             const Text(
               'Ask FYBTT AI Assistant',
-              style: TextStyle(fontSize: 18, color: Color(0xFF0F172A), fontWeight: FontWeight.bold),
+              style: TextStyle(
+                  fontSize: 18,
+                  color: Color(0xFF0F172A),
+                  fontWeight: FontWeight.bold),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 8),
             Text(
-              'Find qualified teachers, ask academic questions, or get immediate study guidance.',
-              style: TextStyle(fontSize: 13, color: Colors.grey.shade600, height: 1.4),
+              'Find qualified teachers, ask academic questions, or get immediate support.',
+              style: TextStyle(
+                  fontSize: 13, color: Colors.grey.shade600, height: 1.4),
               textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPulsingFallbackIndicator() {
+    if (!_isFallbackActive) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 6),
+      child: FadeTransition(
+        opacity: _pulseAnimation,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 8,
+              height: 8,
+              decoration: const BoxDecoration(
+                color: Colors.amber,
+                shape: BoxShape.circle,
+              ),
+            ),
+            const SizedBox(width: 8),
+            const Text(
+              'Connecting to FYBTT backup AI engine...',
+              style: TextStyle(
+                color: Color(0xFFB45309),
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.2,
+              ),
             ),
           ],
         ),
@@ -503,14 +625,18 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                               ? 'Cooldown active (${_cooldownManager.formattedRemainingTime})...'
                               : (_isLoading
                                   ? 'Generating response...'
-                                  : (_isListening ? 'Listening...' : 'Type your question...')),
+                                  : (_isListening
+                                      ? 'Listening...'
+                                      : 'Type your question...')),
                           hintStyle: TextStyle(
-                            color: _isListening ? Colors.red : const Color(0xFF94A3B8),
+                            color:
+                                _isListening ? Colors.red : const Color(0xFF94A3B8),
                             fontSize: 14,
                           ),
                           border: InputBorder.none,
                           isDense: true,
-                          contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                          contentPadding:
+                              const EdgeInsets.symmetric(vertical: 12),
                         ),
                         onSubmitted: (_) => _sendMessage(),
                       ),
@@ -518,7 +644,8 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                     IconButton(
                       icon: Icon(
                         _isListening ? Icons.mic : Icons.mic_none_rounded,
-                        color: _isListening ? Colors.red : const Color(0xFF64748B),
+                        color:
+                            _isListening ? Colors.red : const Color(0xFF64748B),
                         size: 22,
                       ),
                       onPressed: isBlocked ? null : _toggleListening,
@@ -539,13 +666,6 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                           : [accentBlue, primaryNavy]),
                 ),
                 shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                    color: (_isLoading ? Colors.red : accentBlue).withOpacity(0.3),
-                    blurRadius: 8,
-                    offset: const Offset(0, 3),
-                  ),
-                ],
               ),
               child: IconButton(
                 icon: Icon(
@@ -574,7 +694,10 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
         elevation: 0.5,
         title: _isSelectionMode
             ? Text('${_selectedIndices.length} selected',
-                style: const TextStyle(color: primaryNavy, fontWeight: FontWeight.bold, fontSize: 17))
+                style: const TextStyle(
+                    color: primaryNavy,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 17))
             : Row(
                 children: [
                   Container(
@@ -582,12 +705,11 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                     decoration: BoxDecoration(
                       gradient: const LinearGradient(
                         colors: [Color(0xFF2563EB), Color(0xFF1E3A8A)],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
                       ),
                       borderRadius: BorderRadius.circular(10),
                     ),
-                    child: const Icon(Icons.auto_awesome, size: 18, color: Colors.white),
+                    child: const Icon(Icons.auto_awesome,
+                        size: 18, color: Colors.white),
                   ),
                   const SizedBox(width: 10),
                   const Column(
@@ -603,7 +725,10 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                       ),
                       Text(
                         'Online Support',
-                        style: TextStyle(color: Colors.green, fontSize: 11, fontWeight: FontWeight.w500),
+                        style: TextStyle(
+                            color: Colors.green,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w500),
                       ),
                     ],
                   ),
@@ -612,21 +737,20 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
         actions: _isSelectionMode
             ? [
                 IconButton(
-                  icon: const Icon(Icons.delete_outline_rounded, color: Colors.red),
+                  icon: const Icon(Icons.delete_outline_rounded,
+                      color: Colors.red),
                   onPressed: _deleteSelectedMessages,
-                  tooltip: 'Delete',
                 ),
                 IconButton(
                   icon: const Icon(Icons.close_rounded, color: Colors.black87),
                   onPressed: _clearSelection,
-                  tooltip: 'Cancel',
                 ),
               ]
             : [
                 IconButton(
-                  icon: const Icon(Icons.delete_sweep_outlined, color: Color(0xFF64748B)),
+                  icon: const Icon(Icons.delete_sweep_outlined,
+                      color: Color(0xFF64748B)),
                   onPressed: _messages.isNotEmpty ? _clearAllMessages : null,
-                  tooltip: 'Clear Chat',
                 ),
               ],
       ),
@@ -638,32 +762,44 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                 ? _buildEmptyState()
                 : ListView.builder(
                     controller: _scrollController,
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 16),
                     itemCount: _messages.length,
                     itemBuilder: (context, index) {
                       final message = _messages[index];
                       final isSelected = _selectedIndices.contains(index);
                       final isSpeaking = _currentlySpeakingIndex == index;
+                      final isLastAiMessage = !message.isUser &&
+                          index == _messages.length - 1 &&
+                          _isLoading;
 
                       return GestureDetector(
                         onLongPress: () {
-                          if (!_isSelectionMode) setState(() => _isSelectionMode = true);
+                          if (!_isSelectionMode) {
+                            setState(() => _isSelectionMode = true);
+                          }
                           _toggleSelection(index);
                         },
                         onTap: () {
                           if (_isSelectionMode) _toggleSelection(index);
                         },
                         child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 180),
+                          duration: const Duration(milliseconds: 150),
                           margin: const EdgeInsets.symmetric(vertical: 6),
                           padding: const EdgeInsets.all(4),
                           decoration: BoxDecoration(
-                            color: isSelected ? accentBlue.withOpacity(0.08) : Colors.transparent,
+                            color: isSelected
+                                ? accentBlue.withOpacity(0.08)
+                                : Colors.transparent,
                             borderRadius: BorderRadius.circular(16),
-                            border: isSelected ? Border.all(color: accentBlue, width: 1.5) : null,
+                            border: isSelected
+                                ? Border.all(color: accentBlue, width: 1.5)
+                                : null,
                           ),
                           child: Row(
-                            mainAxisAlignment: message.isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
+                            mainAxisAlignment: message.isUser
+                                ? MainAxisAlignment.end
+                                : MainAxisAlignment.start,
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               if (_isSelectionMode) ...[
@@ -671,7 +807,8 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                                   value: isSelected,
                                   onChanged: (_) => _toggleSelection(index),
                                   activeColor: accentBlue,
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                                  shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(4)),
                                 ),
                               ],
                               if (!message.isUser) ...[
@@ -680,32 +817,35 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                               ],
                               Flexible(
                                 child: Column(
-                                  crossAxisAlignment:
-                                      message.isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+                                  crossAxisAlignment: message.isUser
+                                      ? CrossAxisAlignment.end
+                                      : CrossAxisAlignment.start,
                                   children: [
                                     Container(
                                       constraints: BoxConstraints(
-                                        maxWidth: MediaQuery.of(context).size.width * 0.76,
+                                        maxWidth:
+                                            MediaQuery.of(context).size.width *
+                                                0.76,
                                       ),
-                                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 16, vertical: 12),
                                       decoration: BoxDecoration(
-                                        color: message.isUser ? userBubbleColor : Colors.white,
+                                        color: message.isUser
+                                            ? userBubbleColor
+                                            : Colors.white,
                                         borderRadius: BorderRadius.only(
                                           topLeft: const Radius.circular(18),
                                           topRight: const Radius.circular(18),
-                                          bottomLeft: Radius.circular(message.isUser ? 18 : 4),
-                                          bottomRight: Radius.circular(message.isUser ? 4 : 18),
+                                          bottomLeft: Radius.circular(
+                                              message.isUser ? 18 : 4),
+                                          bottomRight: Radius.circular(
+                                              message.isUser ? 4 : 18),
                                         ),
-                                        boxShadow: [
-                                          BoxShadow(
-                                            color: Colors.black.withOpacity(0.04),
-                                            blurRadius: 6,
-                                            offset: const Offset(0, 2),
-                                          ),
-                                        ],
                                         border: message.isUser
                                             ? null
-                                            : Border.all(color: const Color(0xFFE2E8F0), width: 1),
+                                            : Border.all(
+                                                color: const Color(0xFFE2E8F0),
+                                                width: 1),
                                       ),
                                       child: message.isUser
                                           ? Text(
@@ -717,37 +857,46 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                                               ),
                                             )
                                           : MarkdownBody(
-                                              data: message.text,
+                                              data: isLastAiMessage
+                                                  ? '${message.text} ▍'
+                                                  : message.text,
                                               selectable: true,
-                                              styleSheet: MarkdownStyleSheet(
+                                              onTapLink: (text, href, title) =>
+                                                  _handleLinkTap(href, text),
+                                              styleSheet:
+                                                  MarkdownStyleSheet(
                                                 p: const TextStyle(
                                                   color: Color(0xFF1E293B),
                                                   fontSize: 14.5,
                                                   height: 1.5,
                                                 ),
-                                                h1: const TextStyle(color: primaryNavy, fontWeight: FontWeight.bold, fontSize: 18),
-                                                h2: const TextStyle(color: primaryNavy, fontWeight: FontWeight.bold, fontSize: 16),
-                                                h3: const TextStyle(color: primaryNavy, fontWeight: FontWeight.w600, fontSize: 15),
-                                                code: TextStyle(
-                                                  backgroundColor: Colors.grey.shade100,
-                                                  color: Colors.pink.shade700,
-                                                  fontSize: 13,
+                                                a: const TextStyle(
+                                                  color: Color(0xFF2563EB),
+                                                  decoration:
+                                                      TextDecoration.underline,
+                                                  fontWeight: FontWeight.bold,
                                                 ),
-                                                codeblockDecoration: BoxDecoration(
-                                                  color: const Color(0xFF0F172A),
-                                                  borderRadius: BorderRadius.circular(8),
-                                                ),
-                                                blockquoteDecoration: BoxDecoration(
-                                                  border: const Border(left: BorderSide(color: accentBlue, width: 3)),
-                                                  color: const Color(0xFFF8FAFC),
-                                                  borderRadius: BorderRadius.circular(4),
-                                                ),
+                                                h1: const TextStyle(
+                                                    color: primaryNavy,
+                                                    fontWeight: FontWeight.bold,
+                                                    fontSize: 18),
+                                                h2: const TextStyle(
+                                                    color: primaryNavy,
+                                                    fontWeight: FontWeight.bold,
+                                                    fontSize: 16),
+                                                h3: const TextStyle(
+                                                    color: primaryNavy,
+                                                    fontWeight: FontWeight.w600,
+                                                    fontSize: 15),
                                               ),
                                             ),
                                     ),
-                                    if (!message.isUser) ...[
+                                    if (!message.isUser &&
+                                        message.text.isNotEmpty &&
+                                        !isLastAiMessage) ...[
                                       const SizedBox(height: 6),
-                                      _buildInteractionBar(index, message, isSpeaking),
+                                      _buildInteractionBar(
+                                          index, message, isSpeaking),
                                     ],
                                   ],
                                 ),
@@ -763,7 +912,9 @@ class _AiAssistantScreenState extends State<AiAssistantScreen> {
                     },
                   ),
           ),
-          if (_isLoading) const _ModernThinkingIndicator(),
+_buildPulsingFallbackIndicator(),
+          if (_isLoading && !_isFallbackActive && (_messages.isEmpty || _messages.last.text.isEmpty))
+            const _ModernThinkingIndicator(),
           _buildInputBar(),
         ],
       ),
@@ -775,7 +926,8 @@ class _ModernThinkingIndicator extends StatefulWidget {
   const _ModernThinkingIndicator();
 
   @override
-  State<_ModernThinkingIndicator> createState() => _ModernThinkingIndicatorState();
+  State<_ModernThinkingIndicator> createState() =>
+      _ModernThinkingIndicatorState();
 }
 
 class _ModernThinkingIndicatorState extends State<_ModernThinkingIndicator>
@@ -801,7 +953,8 @@ class _ModernThinkingIndicatorState extends State<_ModernThinkingIndicator>
     _stepTimer = Timer.periodic(const Duration(milliseconds: 1500), (timer) {
       if (mounted) {
         setState(() {
-          _currentStepIndex = (_currentStepIndex + 1) % _thinkingSteps.length;
+          _currentStepIndex =
+              (_currentStepIndex + 1) % _thinkingSteps.length;
         });
       }
     });
