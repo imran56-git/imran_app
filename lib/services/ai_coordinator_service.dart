@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'gemini_service.dart';
 import 'fallback_ai_service.dart';
 import '../utils/ai_cooldown_manager.dart';
@@ -14,7 +15,7 @@ class AiCoordinatorService {
   final FallbackAiService _fallbackService = FallbackAiService();
   final AiCooldownManager _cooldownManager = AiCooldownManager();
 
-  AppLanguage _detectLanguage(String text) {
+  AppLanguage detectLanguage(String text) {
     if (RegExp(r'[\u0980-\u09FF]').hasMatch(text)) {
       return AppLanguage.bn;
     } else if (RegExp(r'[\u0900-\u097F]').hasMatch(text)) {
@@ -23,14 +24,14 @@ class AiCoordinatorService {
     return AppLanguage.en;
   }
 
-  String _getFallbackNotice(AppLanguage lang) {
+  String getFallbackNoticeText(AppLanguage lang) {
     switch (lang) {
       case AppLanguage.bn:
-        return '⚠️ স্যরি স্যার! FYBTT প্রধান সার্ভার সাময়িক ব্যস্ত থাকায় ব্যাকআপ এআই ইঞ্জিন চালু করা হয়েছে। অনুগ্রহ করে কয়েক সেকেন্ড অপেক্ষা করুন...\n\n';
+        return 'FYBTT ব্যাকআপ এআই সক্রিয় হচ্ছে...';
       case AppLanguage.hi:
-        return '⚠️ क्षमा करें सर! FYBTT मुख्य सर्वर व्यस्त होने के कारण बैकअप एआई इंजन सक्रिय किया गया है। कृपया कुछ सेकंड प्रतीक्षा करें...\n\n';
+        return 'FYBTT बैकअप एआई सक्रिय हो रहा है...';
       case AppLanguage.en:
-        return '⚠️ Sorry sir! Due to heavy traffic on the FYBTT primary server, our backup AI engine has been activated. Please wait a few seconds...\n\n';
+        return 'Activating FYBTT backup AI...';
     }
   }
 
@@ -56,27 +57,32 @@ class AiCoordinatorService {
     }
   }
 
-  String _getHighTrafficMessage(AppLanguage lang, String waitTime) {
+  String _getGeneralErrorMessage(AppLanguage lang) {
     switch (lang) {
       case AppLanguage.bn:
-        return '✨ FYBTT Assistant বর্তমানে উচ্চ ট্রাফিকের মধ্যে রয়েছে। অনুগ্রহ করে $waitTime পর আবার চেষ্টা করুন।';
+        return '⚠️ সার্ভারের সাথে সংযোগ বিচ্ছিন্ন হয়েছে। অনুগ্রহ করে ইন্টারনেট চেক করে আবার প্রশ্ন করুন।';
       case AppLanguage.hi:
-        return '✨ FYBTT Assistant वर्तमान में उच्च ट्रैफ़िक पर है। कृपया $waitTime बाद पुनः प्रयास करें।';
+        return '⚠️ सर्वर कनेक्शन में समस्या आई। कृपया पुनः प्रयास करें।';
       case AppLanguage.en:
-        return '✨ FYBTT Assistant is handling high traffic right now. Please try again in $waitTime.';
+        return '⚠️ Unable to connect to servers. Please try again in a moment.';
     }
   }
 
   bool _isQuotaError(dynamic error) {
     final str = error.toString().toLowerCase();
-    return str.contains('quota') ||
+    return str.contains('429') ||
+        str.contains('quota') ||
         str.contains('resourceexhausted') ||
         str.contains('daily limit') ||
         str.contains('exceeded your current quota');
   }
 
-  Stream<String> sendMessageStream(String prompt, {String? systemPrompt}) async* {
-    final lang = _detectLanguage(prompt);
+  Stream<String> sendMessageStream(
+    String prompt, {
+    String? systemPrompt,
+    void Function(bool isFallbackActive)? onFallbackStatus,
+  }) async* {
+    final lang = detectLanguage(prompt);
 
     if (_cooldownManager.isInCooldown) {
       final waitTime = _cooldownManager.formattedRemainingTime;
@@ -84,24 +90,22 @@ class AiCoordinatorService {
       return;
     }
 
-    bool geminiSucceeded = false;
+    bool geminiEmittedAny = false;
     try {
-      final stream = _geminiService.generateContentStream(prompt, systemPrompt: systemPrompt);
+      final stream = _geminiService.generateContentStream(
+        prompt,
+        systemPrompt: systemPrompt,
+      );
       await for (final chunk in stream) {
-        geminiSucceeded = true;
+        geminiEmittedAny = true;
         yield chunk;
       }
       return;
-    } catch (e) {
-      if (geminiSucceeded) {
-        return;
-      }
+    } catch (geminiError) {
+      debugPrint("Primary Gemini failed: $geminiError");
+      if (geminiEmittedAny) return;
 
-      if (_isQuotaError(e)) {
-        await _cooldownManager.setDailyQuotaCooldown();
-      }
-
-      yield _getFallbackNotice(lang);
+      onFallbackStatus?.call(true);
 
       try {
         final fallbackStream = _fallbackService.generateContentStream(
@@ -112,19 +116,21 @@ class AiCoordinatorService {
           yield chunk;
         }
       } catch (fallbackError) {
-        if (_isQuotaError(fallbackError)) {
-          await _cooldownManager.setDailyQuotaCooldown();
+        debugPrint("Fallback Groq also failed: $fallbackError");
+        if (_isQuotaError(fallbackError) || _isQuotaError(geminiError)) {
+          await _cooldownManager.setShortCooldown(seconds: 20);
           yield _getQuotaExceededMessage(lang, _cooldownManager.formattedRemainingTime);
         } else {
-          await _cooldownManager.setShortCooldown(seconds: 45);
-          yield _getHighTrafficMessage(lang, _cooldownManager.formattedRemainingTime);
+          yield _getGeneralErrorMessage(lang);
         }
+      } finally {
+        onFallbackStatus?.call(false);
       }
     }
   }
 
   Future<String> sendMessage(String prompt, {String? systemPrompt}) async {
-    final lang = _detectLanguage(prompt);
+    final lang = detectLanguage(prompt);
 
     if (_cooldownManager.isInCooldown) {
       final waitTime = _cooldownManager.formattedRemainingTime;
@@ -132,27 +138,19 @@ class AiCoordinatorService {
     }
 
     try {
-      return await _geminiService.generateContent(prompt, systemPrompt: systemPrompt);
+      return await _geminiService.generateContentStream(prompt, systemPrompt: systemPrompt).join();
     } catch (e) {
-      if (_isQuotaError(e)) {
-        await _cooldownManager.setDailyQuotaCooldown();
-      }
-
-      final notice = _getFallbackNotice(lang);
-
       try {
-        final fallbackResponse = await _fallbackService.generateContent(
+        return await _fallbackService.generateContent(
           prompt,
           systemPrompt: systemPrompt,
         );
-        return '$notice$fallbackResponse';
       } catch (fallbackError) {
-        if (_isQuotaError(fallbackError)) {
-          await _cooldownManager.setDailyQuotaCooldown();
+        if (_isQuotaError(fallbackError) || _isQuotaError(e)) {
+          await _cooldownManager.setShortCooldown(seconds: 20);
           return _getQuotaExceededMessage(lang, _cooldownManager.formattedRemainingTime);
         } else {
-          await _cooldownManager.setShortCooldown(seconds: 45);
-          return _getHighTrafficMessage(lang, _cooldownManager.formattedRemainingTime);
+          return _getGeneralErrorMessage(lang);
         }
       }
     }
