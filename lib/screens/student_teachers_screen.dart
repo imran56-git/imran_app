@@ -4,6 +4,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/connected_user_model.dart';
 import '../services/follow_service.dart';
+import '../services/chat_service.dart';
+import 'chat_screen.dart';
 import '../widgets/connected_user_tile.dart';
 import '../widgets/connection_action_bottom_sheet.dart';
 
@@ -20,6 +22,7 @@ class _StudentTeachersScreenState extends State<StudentTeachersScreen>
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FollowService _followService = FollowService();
+  final ChatService _chatService = ChatService();
 
   StreamSubscription? _requestsSubscription;
 
@@ -30,6 +33,10 @@ class _StudentTeachersScreenState extends State<StudentTeachersScreen>
 
   List<ConnectedUserModel> _followingRequests = [];
   List<ConnectedUserModel> _myTeachers = [];
+
+  static const Color primaryBlue = Color(0xFF1E4C7A);
+  static const Color accentBlue = Color(0xFF2563EB);
+  static const Color scaffoldBg = Color(0xFFF8FAFC);
 
   @override
   void initState() {
@@ -164,7 +171,10 @@ class _StudentTeachersScreenState extends State<StudentTeachersScreen>
 
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-              content: Text("Cancelled follow request to ${teacher.name}")),
+            content: Text("Cancelled follow request to ${teacher.name}"),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
         );
       }
     } catch (e) {
@@ -189,24 +199,44 @@ class _StudentTeachersScreenState extends State<StudentTeachersScreen>
         });
 
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Unfollowed ${teacher.name}")),
+          SnackBar(
+            content: Text("Unfollowed ${teacher.name}"),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text("Unable to unfollow. Please try again.")),
+          const SnackBar(content: Text("Unable to unfollow. Please try again.")),
         );
       }
     }
   }
 
   void _openMessage(ConnectedUserModel teacher) {
-    Navigator.pushNamed(
+    final currentUserId = _auth.currentUser?.uid;
+    if (currentUserId == null || currentUserId.isEmpty) return;
+
+    final String chatRoomId = _chatService.getChatRoomId(currentUserId, teacher.uid);
+
+    final String profileImage = (teacher.photoUrl != null && teacher.photoUrl!.isNotEmpty)
+        ? teacher.photoUrl!
+        : (teacher.profileImageUrl ?? '');
+
+    Navigator.push(
       context,
-      '/chat',
-      arguments: {'peerId': teacher.uid, 'peerName': teacher.name},
+      MaterialPageRoute(
+        builder: (_) => ChatScreen(
+          chatRoomId: chatRoomId,
+          receiverId: teacher.uid,
+          receiverName: teacher.name,
+          receiverProfilePic: profileImage,
+          currentUserId: currentUserId,
+          isTeacher: false,
+        ),
+      ),
     );
   }
 
@@ -236,14 +266,16 @@ class _StudentTeachersScreenState extends State<StudentTeachersScreen>
     return ListView.builder(
       itemCount: 6,
       itemBuilder: (context, index) => Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 10.0),
         child: Row(
           children: [
             Container(
-              width: 48,
-              height: 48,
+              width: 50,
+              height: 50,
               decoration: BoxDecoration(
-                  color: Colors.grey.shade200, shape: BoxShape.circle),
+                color: Colors.grey.shade200,
+                shape: BoxShape.circle,
+              ),
             ),
             const SizedBox(width: 14),
             Expanded(
@@ -251,10 +283,22 @@ class _StudentTeachersScreenState extends State<StudentTeachersScreen>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Container(
-                      width: 140, height: 14, color: Colors.grey.shade200),
-                  const SizedBox(height: 6),
+                    width: 140,
+                    height: 14,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade200,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
                   Container(
-                      width: 190, height: 12, color: Colors.grey.shade200),
+                    width: 200,
+                    height: 12,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade200,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                  ),
                 ],
               ),
             )
@@ -267,93 +311,125 @@ class _StudentTeachersScreenState extends State<StudentTeachersScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text("Teacher Connections",
-            style: TextStyle(fontWeight: FontWeight.bold)),
-        elevation: 0.5,
-        bottom: TabBar(
-          controller: _tabController,
-          indicatorColor: Theme.of(context).primaryColor,
-          labelStyle:
-              const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-          tabs: [
-            Tab(
+      backgroundColor: scaffoldBg,
+      body: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
               child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Text("Following"),
-                  if (_followingRequests.isNotEmpty) ...[
-                    const SizedBox(width: 6),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: Colors.orange.shade100,
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Text(
-                        '${_followingRequests.length}',
-                        style: TextStyle(
-                            color: Colors.orange.shade900,
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold),
-                      ),
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: const [
+                  Text(
+                    "Teacher Connections",
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.w800,
+                      color: Color(0xFF0F172A),
+                      letterSpacing: -0.5,
                     ),
-                  ]
+                  ),
                 ],
               ),
             ),
-            Tab(
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Text("My Teachers"),
-                  if (_myTeachers.isNotEmpty) ...[
-                    const SizedBox(width: 6),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: Colors.grey.shade300,
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Text(
-                        '${_myTeachers.length}',
-                        style: const TextStyle(
-                            color: Colors.black87,
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold),
-                      ),
+            Container(
+              decoration: const BoxDecoration(
+                border: Border(
+                  bottom: BorderSide(color: Color(0xFFE2E8F0), width: 1.2),
+                ),
+              ),
+              child: TabBar(
+                controller: _tabController,
+                indicatorColor: accentBlue,
+                indicatorWeight: 3,
+                labelColor: primaryBlue,
+                unselectedLabelColor: const Color(0xFF64748B),
+                labelStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+                unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w500, fontSize: 15),
+                tabs: [
+                  Tab(
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Text("Following"),
+                        if (_followingRequests.isNotEmpty) ...[
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.orange.shade100,
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Text(
+                              '${_followingRequests.length}',
+                              style: TextStyle(
+                                color: Colors.orange.shade900,
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ]
+                      ],
                     ),
-                  ]
+                  ),
+                  Tab(
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Text("My Teachers"),
+                        if (_myTeachers.isNotEmpty) ...[
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFE2E8F0),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Text(
+                              '${_myTeachers.length}',
+                              style: const TextStyle(
+                                color: Color(0xFF1E293B),
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ]
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: TabBarView(
+                controller: _tabController,
+                children: [
+                  _FollowingTabView(
+                    isLoading: _isFollowingLoading,
+                    errorMessage: _followingError,
+                    requests: _followingRequests,
+                    onRefresh: () async => _listenToConnections(),
+                    onCancel: _cancelFollowRequest,
+                    onTapProfile: _openProfile,
+                    skeletonBuilder: _buildSkeletonLoader,
+                  ),
+                  _MyTeachersTabView(
+                    isLoading: _isTeachersLoading,
+                    errorMessage: _teachersError,
+                    teachers: _myTeachers,
+                    onRefresh: () async => _listenToConnections(),
+                    onTapProfile: _openProfile,
+                    onMoreTap: _showActionMenu,
+                    skeletonBuilder: _buildSkeletonLoader,
+                  ),
                 ],
               ),
             ),
           ],
         ),
-      ),
-      body: TabBarView(
-        controller: _tabController,
-        children: [
-          _FollowingTabView(
-            isLoading: _isFollowingLoading,
-            errorMessage: _followingError,
-            requests: _followingRequests,
-            onRefresh: () async => _listenToConnections(),
-            onCancel: _cancelFollowRequest,
-            onTapProfile: _openProfile,
-            skeletonBuilder: _buildSkeletonLoader,
-          ),
-          _MyTeachersTabView(
-            isLoading: _isTeachersLoading,
-            errorMessage: _teachersError,
-            teachers: _myTeachers,
-            onRefresh: () async => _listenToConnections(),
-            onTapProfile: _openProfile,
-            onMoreTap: _showActionMenu,
-            skeletonBuilder: _buildSkeletonLoader,
-          ),
-        ],
       ),
     );
   }
@@ -382,6 +458,7 @@ class _FollowingTabView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return RefreshIndicator(
+      color: const Color(0xFF2563EB),
       onRefresh: onRefresh,
       child: isLoading
           ? skeletonBuilder()
@@ -391,11 +468,16 @@ class _FollowingTabView extends StatelessWidget {
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Text(errorMessage!,
-                          style: const TextStyle(
-                              color: Colors.grey, fontSize: 16)),
+                          style: const TextStyle(color: Colors.grey, fontSize: 15)),
                       const SizedBox(height: 12),
                       ElevatedButton(
-                          onPressed: onRefresh, child: const Text("Retry")),
+                        onPressed: onRefresh,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF2563EB),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
+                        child: const Text("Retry", style: TextStyle(color: Colors.white)),
+                      ),
                     ],
                   ),
                 )
@@ -408,17 +490,21 @@ class _FollowingTabView extends StatelessWidget {
                             child: Column(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                Icon(Icons.person_search_outlined,
-                                    size: 64, color: Colors.grey),
-                                SizedBox(height: 12),
-                                Text("No pending requests",
-                                    style: TextStyle(
-                                        fontSize: 18,
-                                        fontWeight: FontWeight.bold)),
+                                Icon(Icons.person_search_outlined, size: 68, color: Color(0xFF94A3B8)),
+                                SizedBox(height: 14),
+                                Text(
+                                  "No pending requests",
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                    color: Color(0xFF1E293B),
+                                  ),
+                                ),
                                 SizedBox(height: 6),
                                 Text(
-                                    "Teachers you requested to follow will show here.",
-                                    style: TextStyle(color: Colors.grey)),
+                                  "Teachers you requested to follow will show here.",
+                                  style: TextStyle(color: Color(0xFF64748B), fontSize: 13),
+                                ),
                               ],
                             ),
                           )
@@ -426,49 +512,103 @@ class _FollowingTabView extends StatelessWidget {
                       ),
                     )
                   : ListView.builder(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
                       itemCount: requests.length,
                       itemBuilder: (context, index) {
                         final teacher = requests[index];
+                        final hasPhoto = (teacher.photoUrl != null && teacher.photoUrl!.isNotEmpty) ||
+                            (teacher.profileImageUrl != null && teacher.profileImageUrl!.isNotEmpty);
+                        final String displayPhoto = (teacher.photoUrl != null && teacher.photoUrl!.isNotEmpty)
+                            ? teacher.photoUrl!
+                            : (teacher.profileImageUrl ?? '');
+
                         return Container(
-                          margin: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 4),
+                          margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
                           decoration: BoxDecoration(
                             color: Colors.white,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: ListTile(
-                            onTap: () => onTapProfile(teacher),
-                            leading: CircleAvatar(
-                              radius: 24,
-                              backgroundImage: teacher.profileImageUrl != null &&
-                                      teacher.profileImageUrl!.isNotEmpty
-                                  ? NetworkImage(teacher.profileImageUrl!)
-                                  : null,
-                              child: teacher.profileImageUrl == null ||
-                                      teacher.profileImageUrl!.isEmpty
-                                  ? const Icon(Icons.person)
-                                  : null,
-                            ),
-                            title: Text(teacher.name,
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.bold)),
-                            subtitle: Text(
-                                (teacher.subtitle != null &&
-                                        teacher.subtitle!.isNotEmpty)
-                                    ? teacher.subtitle!
-                                    : "Request pending approval",
-                                style: const TextStyle(fontSize: 12)),
-                            trailing: OutlinedButton(
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: Colors.redAccent,
-                                side: const BorderSide(
-                                    color: Colors.redAccent),
-                                shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(20)),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: const Color(0xFFE2E8F0)),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.02),
+                                blurRadius: 6,
+                                offset: const Offset(0, 2),
                               ),
-                              onPressed: () => onCancel(teacher),
-                              child: const Text("Cancel",
-                                  style: TextStyle(fontSize: 12)),
+                            ],
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Row(
+                              children: [
+                                InkWell(
+                                  onTap: () => onTapProfile(teacher),
+                                  child: CircleAvatar(
+                                    radius: 24,
+                                    backgroundColor: const Color(0xFFE2E8F0),
+                                    backgroundImage: hasPhoto ? NetworkImage(displayPhoto) : null,
+                                    child: !hasPhoto
+                                        ? Text(
+                                            teacher.name.isNotEmpty
+                                                ? teacher.name[0].toUpperCase()
+                                                : 'T',
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              color: Color(0xFF1E4C7A),
+                                              fontSize: 16,
+                                            ),
+                                          )
+                                        : null,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: InkWell(
+                                    onTap: () => onTapProfile(teacher),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          teacher.name,
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 15,
+                                            color: Color(0xFF0F172A),
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          (teacher.subtitle != null && teacher.subtitle!.isNotEmpty)
+                                              ? teacher.subtitle!
+                                              : "Request pending approval",
+                                          style: const TextStyle(
+                                            fontSize: 12,
+                                            color: Color(0xFF64748B),
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                                OutlinedButton(
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: const Color(0xFFEF4444),
+                                    side: const BorderSide(color: Color(0xFFFCA5A5)),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(20),
+                                    ),
+                                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                                  ),
+                                  onPressed: () => onCancel(teacher),
+                                  child: const Text(
+                                    "Cancel",
+                                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         );
@@ -501,6 +641,7 @@ class _MyTeachersTabView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return RefreshIndicator(
+      color: const Color(0xFF2563EB),
       onRefresh: onRefresh,
       child: isLoading
           ? skeletonBuilder()
@@ -510,11 +651,16 @@ class _MyTeachersTabView extends StatelessWidget {
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Text(errorMessage!,
-                          style: const TextStyle(
-                              color: Colors.grey, fontSize: 16)),
+                          style: const TextStyle(color: Colors.grey, fontSize: 15)),
                       const SizedBox(height: 12),
                       ElevatedButton(
-                          onPressed: onRefresh, child: const Text("Retry")),
+                        onPressed: onRefresh,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF2563EB),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
+                        child: const Text("Retry", style: TextStyle(color: Colors.white)),
+                      ),
                     ],
                   ),
                 )
@@ -527,17 +673,21 @@ class _MyTeachersTabView extends StatelessWidget {
                             child: Column(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                Icon(Icons.school_outlined,
-                                    size: 64, color: Colors.grey),
-                                SizedBox(height: 12),
-                                Text("No teachers yet",
-                                    style: TextStyle(
-                                        fontSize: 18,
-                                        fontWeight: FontWeight.bold)),
+                                Icon(Icons.school_outlined, size: 68, color: Color(0xFF94A3B8)),
+                                SizedBox(height: 14),
+                                Text(
+                                  "No teachers yet",
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                    color: Color(0xFF1E293B),
+                                  ),
+                                ),
                                 SizedBox(height: 6),
                                 Text(
-                                    "Connect with teachers to see them here.",
-                                    style: TextStyle(color: Colors.grey)),
+                                  "Connect with teachers to see them here.",
+                                  style: TextStyle(color: Color(0xFF64748B), fontSize: 13),
+                                ),
                               ],
                             ),
                           )
@@ -545,6 +695,7 @@ class _MyTeachersTabView extends StatelessWidget {
                       ),
                     )
                   : ListView.builder(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
                       itemCount: teachers.length,
                       itemBuilder: (context, index) {
                         final teacher = teachers[index];
@@ -557,4 +708,4 @@ class _MyTeachersTabView extends StatelessWidget {
                     ),
     );
   }
-}
+}  
