@@ -14,7 +14,7 @@ class FallbackAiService {
 
   static const String _endpoint =
       'https://api.groq.com/openai/v1/chat/completions';
-  static const String _model = 'llama-3.3-70b-versatile';
+  static const String _model = 'llama-3.1-8b-instant';
 
   Future<String> generateContent(String prompt, {String? systemPrompt}) async {
     if (_apiKey.isEmpty) {
@@ -22,24 +22,26 @@ class FallbackAiService {
     }
 
     final messages = <Map<String, String>>[];
-    if (systemPrompt != null && systemPrompt.isNotEmpty) {
-      messages.add({'role': 'system', 'content': systemPrompt});
+    if (systemPrompt != null && systemPrompt.trim().isNotEmpty) {
+      messages.add({'role': 'system', 'content': systemPrompt.trim()});
     }
     messages.add({'role': 'user', 'content': prompt});
 
-    final response = await http.post(
-      Uri.parse(_endpoint),
-      headers: {
-        'Authorization': 'Bearer $_apiKey',
-        'Content-Type': 'application/json',
-      },
-      body: jsonEncode({
-        'model': _model,
-        'messages': messages,
-        'temperature': 0.7,
-        'max_tokens': 1024,
-      }),
-    );
+    final response = await http
+        .post(
+          Uri.parse(_endpoint),
+          headers: {
+            'Authorization': 'Bearer $_apiKey',
+            'Content-Type': 'application/json',
+          },
+          body: jsonEncode({
+            'model': _model,
+            'messages': messages,
+            'temperature': 0.7,
+            'max_tokens': 1024,
+          }),
+        )
+        .timeout(const Duration(seconds: 15));
 
     if (response.statusCode == 200) {
       final data = jsonDecode(utf8.decode(response.bodyBytes));
@@ -47,9 +49,10 @@ class FallbackAiService {
       if (content != null) {
         return content.toString().trim();
       }
-      throw Exception('Invalid response structure');
+      throw Exception('Empty content from Groq');
     } else {
-      throw Exception('Fallback API error: ${response.statusCode}');
+      final errorBody = utf8.decode(response.bodyBytes);
+      throw Exception('Groq API error ${response.statusCode}: $errorBody');
     }
   }
 
@@ -59,8 +62,8 @@ class FallbackAiService {
     }
 
     final messages = <Map<String, String>>[];
-    if (systemPrompt != null && systemPrompt.isNotEmpty) {
-      messages.add({'role': 'system', 'content': systemPrompt});
+    if (systemPrompt != null && systemPrompt.trim().isNotEmpty) {
+      messages.add({'role': 'system', 'content': systemPrompt.trim()});
     }
     messages.add({'role': 'user', 'content': prompt});
 
@@ -80,9 +83,10 @@ class FallbackAiService {
 
     final client = http.Client();
     try {
-      final response = await client.send(request);
+      final response = await client.send(request).timeout(const Duration(seconds: 15));
       if (response.statusCode != 200) {
-        throw Exception('Fallback API error: ${response.statusCode}');
+        final errBody = await response.stream.bytesToString();
+        throw Exception('Groq Stream error ${response.statusCode}: $errBody');
       }
 
       final lineStream = response.stream
