@@ -41,8 +41,6 @@ class _AiAssistantScreenState extends State<AiAssistantScreen>
 
   late stt.SpeechToText _speechToText;
   StreamSubscription<String>? _streamSubscription;
-  Timer? _typewriterTimer;
-  final StringBuffer _incomingBuffer = StringBuffer();
 
   late AnimationController _pulseController;
   late Animation<double> _pulseAnimation;
@@ -96,7 +94,6 @@ class _AiAssistantScreenState extends State<AiAssistantScreen>
   @override
   void dispose() {
     _streamSubscription?.cancel();
-    _typewriterTimer?.cancel();
     _pulseController.dispose();
     _cooldownManager.removeListener(_onCooldownTick);
     _ttsVoiceService.stop();
@@ -110,7 +107,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen>
       if (_scrollController.hasClients) {
         _scrollController.animateTo(
           _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 100),
+          duration: const Duration(milliseconds: 120),
           curve: Curves.easeOut,
         );
       }
@@ -145,9 +142,6 @@ class _AiAssistantScreenState extends State<AiAssistantScreen>
       _messages.add(aiMessage);
     });
 
-    _incomingBuffer.clear();
-    _startTypewriter(aiMessage);
-
     try {
       final stream = _coordinatorService.sendMessageStream(
         text,
@@ -162,73 +156,49 @@ class _AiAssistantScreenState extends State<AiAssistantScreen>
 
       _streamSubscription = stream.listen(
         (chunk) {
-          if (_isFallbackActive && mounted) {
-            setState(() => _isFallbackActive = false);
+          if (mounted) {
+            setState(() {
+              if (_isFallbackActive) _isFallbackActive = false;
+              aiMessage.text += chunk;
+            });
+            _scrollToBottom();
           }
-          _incomingBuffer.write(chunk);
         },
         onError: (_) {
           if (mounted) {
-            setState(() => _isFallbackActive = false);
+            setState(() {
+              _isFallbackActive = false;
+              if (aiMessage.text.isEmpty) {
+                aiMessage.text = '⚠️ Connection error. Please try again.';
+              }
+              _isLoading = false;
+            });
           }
-          _incomingBuffer.write('\n⚠️ Connection error.');
-          _stopGenerating();
         },
         onDone: () {
-          _drainBufferAndFinish();
+          if (mounted) {
+            setState(() {
+              _isLoading = false;
+              _isFallbackActive = false;
+            });
+          }
         },
+        cancelOnError: true,
       );
     } catch (_) {
       if (mounted) {
-        setState(() => _isFallbackActive = false);
+        setState(() {
+          _isFallbackActive = false;
+          aiMessage.text = '⚠️ Unable to connect to servers.';
+          _isLoading = false;
+        });
       }
-      _incomingBuffer.write('\n⚠️ Unable to connect.');
-      _stopGenerating();
     }
-  }
-
-  void _startTypewriter(ChatMessage aiMessage) {
-    _typewriterTimer?.cancel();
-    _typewriterTimer = Timer.periodic(const Duration(milliseconds: 14), (timer) {
-      if (_incomingBuffer.isNotEmpty) {
-        final current = _incomingBuffer.toString();
-        final chunkSize = current.length > 25 ? 3 : (current.length > 8 ? 2 : 1);
-        final addText = current.substring(0, chunkSize);
-        _incomingBuffer.clear();
-        _incomingBuffer.write(current.substring(chunkSize));
-
-        if (mounted) {
-          setState(() {
-            aiMessage.text += addText;
-            if (_isFallbackActive) _isFallbackActive = false;
-          });
-          _scrollToBottom();
-        }
-      } else if (!_isLoading) {
-        timer.cancel();
-      }
-    });
-  }
-
-  void _drainBufferAndFinish() {
-    Timer.periodic(const Duration(milliseconds: 25), (t) {
-      if (_incomingBuffer.isEmpty) {
-        t.cancel();
-        if (mounted) {
-          setState(() {
-            _isLoading = false;
-            _isFallbackActive = false;
-          });
-        }
-      }
-    });
   }
 
   void _stopGenerating() {
     _streamSubscription?.cancel();
     _streamSubscription = null;
-    _typewriterTimer?.cancel();
-    _incomingBuffer.clear();
     if (mounted) {
       setState(() {
         _isLoading = false;
@@ -769,9 +739,6 @@ class _AiAssistantScreenState extends State<AiAssistantScreen>
                       final message = _messages[index];
                       final isSelected = _selectedIndices.contains(index);
                       final isSpeaking = _currentlySpeakingIndex == index;
-                      final isLastAiMessage = !message.isUser &&
-                          index == _messages.length - 1 &&
-                          _isLoading;
 
                       return GestureDetector(
                         onLongPress: () {
@@ -821,79 +788,81 @@ class _AiAssistantScreenState extends State<AiAssistantScreen>
                                       ? CrossAxisAlignment.end
                                       : CrossAxisAlignment.start,
                                   children: [
-                                    Container(
-                                      constraints: BoxConstraints(
-                                        maxWidth:
-                                            MediaQuery.of(context).size.width *
-                                                0.76,
-                                      ),
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 16, vertical: 12),
-                                      decoration: BoxDecoration(
-                                        color: message.isUser
-                                            ? userBubbleColor
-                                            : Colors.white,
-                                        borderRadius: BorderRadius.only(
-                                          topLeft: const Radius.circular(18),
-                                          topRight: const Radius.circular(18),
-                                          bottomLeft: Radius.circular(
-                                              message.isUser ? 18 : 4),
-                                          bottomRight: Radius.circular(
-                                              message.isUser ? 4 : 18),
+                                    AnimatedOpacity(
+                                      opacity: message.text.isEmpty ? 0.0 : 1.0,
+                                      duration: const Duration(milliseconds: 250),
+                                      curve: Curves.easeIn,
+                                      child: Container(
+                                        constraints: BoxConstraints(
+                                          maxWidth:
+                                              MediaQuery.of(context).size.width *
+                                                  0.76,
                                         ),
-                                        border: message.isUser
-                                            ? null
-                                            : Border.all(
-                                                color: const Color(0xFFE2E8F0),
-                                                width: 1),
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 16, vertical: 12),
+                                        decoration: BoxDecoration(
+                                          color: message.isUser
+                                              ? userBubbleColor
+                                              : Colors.white,
+                                          borderRadius: BorderRadius.only(
+                                            topLeft: const Radius.circular(18),
+                                            topRight: const Radius.circular(18),
+                                            bottomLeft: Radius.circular(
+                                                message.isUser ? 18 : 4),
+                                            bottomRight: Radius.circular(
+                                                message.isUser ? 4 : 18),
+                                          ),
+                                          border: message.isUser
+                                              ? null
+                                              : Border.all(
+                                                  color: const Color(0xFFE2E8F0),
+                                                  width: 1),
+                                        ),
+                                        child: message.isUser
+                                            ? Text(
+                                                message.text,
+                                                style: const TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 15,
+                                                  height: 1.4,
+                                                ),
+                                              )
+                                            : MarkdownBody(
+                                                data: message.text,
+                                                selectable: true,
+                                                onTapLink: (text, href, title) =>
+                                                    _handleLinkTap(href, text),
+                                                styleSheet:
+                                                    MarkdownStyleSheet(
+                                                  p: const TextStyle(
+                                                    color: Color(0xFF1E293B),
+                                                    fontSize: 14.5,
+                                                    height: 1.5,
+                                                  ),
+                                                  a: const TextStyle(
+                                                    color: Color(0xFF2563EB),
+                                                    decoration:
+                                                        TextDecoration.underline,
+                                                    fontWeight: FontWeight.bold,
+                                                  ),
+                                                  h1: const TextStyle(
+                                                      color: primaryNavy,
+                                                      fontWeight: FontWeight.bold,
+                                                      fontSize: 18),
+                                                  h2: const TextStyle(
+                                                      color: primaryNavy,
+                                                      fontWeight: FontWeight.bold,
+                                                      fontSize: 16),
+                                                  h3: const TextStyle(
+                                                      color: primaryNavy,
+                                                      fontWeight: FontWeight.w600,
+                                                      fontSize: 15),
+                                                ),
+                                              ),
                                       ),
-                                      child: message.isUser
-                                          ? Text(
-                                              message.text,
-                                              style: const TextStyle(
-                                                color: Colors.white,
-                                                fontSize: 15,
-                                                height: 1.4,
-                                              ),
-                                            )
-                                          : MarkdownBody(
-                                              data: isLastAiMessage
-                                                  ? '${message.text} ▍'
-                                                  : message.text,
-                                              selectable: true,
-                                              onTapLink: (text, href, title) =>
-                                                  _handleLinkTap(href, text),
-                                              styleSheet:
-                                                  MarkdownStyleSheet(
-                                                p: const TextStyle(
-                                                  color: Color(0xFF1E293B),
-                                                  fontSize: 14.5,
-                                                  height: 1.5,
-                                                ),
-                                                a: const TextStyle(
-                                                  color: Color(0xFF2563EB),
-                                                  decoration:
-                                                      TextDecoration.underline,
-                                                  fontWeight: FontWeight.bold,
-                                                ),
-                                                h1: const TextStyle(
-                                                    color: primaryNavy,
-                                                    fontWeight: FontWeight.bold,
-                                                    fontSize: 18),
-                                                h2: const TextStyle(
-                                                    color: primaryNavy,
-                                                    fontWeight: FontWeight.bold,
-                                                    fontSize: 16),
-                                                h3: const TextStyle(
-                                                    color: primaryNavy,
-                                                    fontWeight: FontWeight.w600,
-                                                    fontSize: 15),
-                                              ),
-                                            ),
                                     ),
                                     if (!message.isUser &&
-                                        message.text.isNotEmpty &&
-                                        !isLastAiMessage) ...[
+                                        message.text.isNotEmpty) ...[
                                       const SizedBox(height: 6),
                                       _buildInteractionBar(
                                           index, message, isSpeaking),
@@ -912,7 +881,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen>
                     },
                   ),
           ),
-_buildPulsingFallbackIndicator(),
+          _buildPulsingFallbackIndicator(),
           if (_isLoading && !_isFallbackActive && (_messages.isEmpty || _messages.last.text.isEmpty))
             const _ModernThinkingIndicator(),
           _buildInputBar(),
