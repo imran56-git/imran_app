@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/connected_user_model.dart';
+import '../services/follow_service.dart';
 import '../widgets/connected_user_tile.dart';
 import '../widgets/connection_action_bottom_sheet.dart';
 
@@ -18,6 +19,7 @@ class _StudentTeachersScreenState extends State<StudentTeachersScreen>
   late TabController _tabController;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
+  final FollowService _followService = FollowService();
 
   StreamSubscription? _requestsSubscription;
 
@@ -60,7 +62,7 @@ class _StudentTeachersScreenState extends State<StudentTeachersScreen>
     _requestsSubscription?.cancel();
     _requestsSubscription = _firestore
         .collection('follow_requests')
-        .where('senderId', isEqualTo: currentUserId)
+        .where('studentId', isEqualTo: currentUserId)
         .snapshots()
         .listen(
       (snapshot) {
@@ -68,51 +70,41 @@ class _StudentTeachersScreenState extends State<StudentTeachersScreen>
       },
       onError: (error) {
         debugPrint("Error listening to follow_requests: $error");
-        _fallbackFetchAll(currentUserId);
+        if (mounted) {
+          setState(() {
+            _isFollowingLoading = false;
+            _isTeachersLoading = false;
+            _followingError = "Failed to load requests";
+            _teachersError = "Failed to load teachers";
+          });
+        }
       },
     );
   }
 
   Future<void> _processSnapshotData(
       QuerySnapshot snapshot, String currentUserId) async {
-    final Set<String> pendingIds = {};
-    final Set<String> acceptedIds = {};
+    final Set<String> pendingTeacherIds = {};
+    final Set<String> acceptedTeacherIds = {};
 
     for (var doc in snapshot.docs) {
       final data = doc.data() as Map<String, dynamic>?;
       if (data == null) continue;
 
       final status = data['status']?.toString().toLowerCase();
-      final receiverId = data['receiverId']?.toString();
+      final teacherId = data['teacherId']?.toString();
 
-      if (receiverId != null && receiverId.isNotEmpty) {
+      if (teacherId != null && teacherId.isNotEmpty) {
         if (status == 'pending') {
-          pendingIds.add(receiverId);
+          pendingTeacherIds.add(teacherId);
         } else if (status == 'accepted') {
-          acceptedIds.add(receiverId);
+          acceptedTeacherIds.add(teacherId);
         }
       }
     }
 
-    try {
-      final incomingAccepted = await _firestore
-          .collection('follow_requests')
-          .where('receiverId', isEqualTo: currentUserId)
-          .where('status', isEqualTo: 'accepted')
-          .get();
-
-      for (var doc in incomingAccepted.docs) {
-        final data = doc.data();
-        if (data.containsKey('senderId')) {
-          acceptedIds.add(data['senderId'].toString());
-        }
-      }
-    } catch (e) {
-      debugPrint("Error fetching incoming accepted: $e");
-    }
-
-    final loadedPending = await _loadTeacherProfiles(pendingIds);
-    final loadedAccepted = await _loadTeacherProfiles(acceptedIds);
+    final loadedPending = await _loadTeacherProfiles(pendingTeacherIds);
+    final loadedAccepted = await _loadTeacherProfiles(acceptedTeacherIds);
 
     if (mounted) {
       setState(() {
@@ -122,75 +114,6 @@ class _StudentTeachersScreenState extends State<StudentTeachersScreen>
         _isTeachersLoading = false;
         _followingError = null;
         _teachersError = null;
-      });
-    }
-  }
-
-  Future<void> _fallbackFetchAll(String currentUserId) async {
-    final collections = ['follow_requests', 'follow_req'];
-    final Set<String> pendingIds = {};
-    final Set<String> acceptedIds = {};
-
-    for (String col in collections) {
-      try {
-        final pendingSnap = await _firestore
-            .collection(col)
-            .where('senderId', isEqualTo: currentUserId)
-            .where('status', isEqualTo: 'pending')
-            .get();
-
-        for (var doc in pendingSnap.docs) {
-          final data = doc.data();
-          if (data.containsKey('receiverId')) {
-            pendingIds.add(data['receiverId'].toString());
-          }
-        }
-
-        final acceptedSnap1 = await _firestore
-            .collection(col)
-            .where('senderId', isEqualTo: currentUserId)
-            .where('status', isEqualTo: 'accepted')
-            .get();
-
-        for (var doc in acceptedSnap1.docs) {
-          final data = doc.data();
-          if (data.containsKey('receiverId')) {
-            acceptedIds.add(data['receiverId'].toString());
-          }
-        }
-
-        final acceptedSnap2 = await _firestore
-            .collection(col)
-            .where('receiverId', isEqualTo: currentUserId)
-            .where('status', isEqualTo: 'accepted')
-            .get();
-
-        for (var doc in acceptedSnap2.docs) {
-          final data = doc.data();
-          if (data.containsKey('senderId')) {
-            acceptedIds.add(data['senderId'].toString());
-          }
-        }
-      } catch (e) {
-        debugPrint("Error on fallback query in collection $col: $e");
-      }
-    }
-
-    final loadedPending = await _loadTeacherProfiles(pendingIds);
-    final loadedAccepted = await _loadTeacherProfiles(acceptedIds);
-
-    if (mounted) {
-      setState(() {
-        _followingRequests = loadedPending;
-        _myTeachers = loadedAccepted;
-        _isFollowingLoading = false;
-        _isTeachersLoading = false;
-        _followingError = loadedPending.isEmpty && pendingIds.isNotEmpty
-            ? "Unable to load pending requests."
-            : null;
-        _teachersError = loadedAccepted.isEmpty && acceptedIds.isNotEmpty
-            ? "Unable to load teachers."
-            : null;
       });
     }
   }
@@ -232,22 +155,7 @@ class _StudentTeachersScreenState extends State<StudentTeachersScreen>
       final String? currentUserId = _auth.currentUser?.uid;
       if (currentUserId == null) return;
 
-      final collections = ['follow_requests', 'follow_req'];
-
-      for (String col in collections) {
-        try {
-          final snap = await _firestore
-              .collection(col)
-              .where('senderId', isEqualTo: currentUserId)
-              .where('receiverId', isEqualTo: teacher.uid)
-              .where('status', isEqualTo: 'pending')
-              .get();
-
-          for (var doc in snap.docs) {
-            await doc.reference.delete();
-          }
-        } catch (_) {}
-      }
+      await _followService.cancelRequest(teacher.uid, currentUserId);
 
       if (mounted) {
         setState(() {
@@ -273,29 +181,7 @@ class _StudentTeachersScreenState extends State<StudentTeachersScreen>
       final String? currentUserId = _auth.currentUser?.uid;
       if (currentUserId == null) return;
 
-      final collections = ['follow_requests', 'follow_req'];
-
-      for (String col in collections) {
-        try {
-          final snap1 = await _firestore
-              .collection(col)
-              .where('senderId', isEqualTo: currentUserId)
-              .where('receiverId', isEqualTo: teacher.uid)
-              .get();
-          for (var doc in snap1.docs) {
-            await doc.reference.delete();
-          }
-
-          final snap2 = await _firestore
-              .collection(col)
-              .where('senderId', isEqualTo: teacher.uid)
-              .where('receiverId', isEqualTo: currentUserId)
-              .get();
-          for (var doc in snap2.docs) {
-            await doc.reference.delete();
-          }
-        } catch (_) {}
-      }
+      await _followService.unfollowTeacher(teacher.uid, currentUserId);
 
       if (mounted) {
         setState(() {
@@ -567,8 +453,9 @@ class _FollowingTabView extends StatelessWidget {
                                 style: const TextStyle(
                                     fontWeight: FontWeight.bold)),
                             subtitle: Text(
-                                teacher.subtitle ??
-                                    "Request pending approval",
+                                teacher.subtitle.isNotEmpty
+                                    ? teacher.subtitle
+                                    : "Request pending approval",
                                 style: const TextStyle(fontSize: 12)),
                             trailing: OutlinedButton(
                               style: OutlinedButton.styleFrom(
