@@ -4,6 +4,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/connected_user_model.dart';
 import '../services/follow_service.dart';
+import '../services/chat_service.dart';
+import 'chat_screen.dart';
 import '../widgets/connected_user_tile.dart';
 import '../widgets/connection_action_bottom_sheet.dart';
 
@@ -20,6 +22,7 @@ class _TeacherStudentsScreenState extends State<TeacherStudentsScreen>
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FollowService _followService = FollowService();
+  final ChatService _chatService = ChatService();
 
   StreamSubscription? _requestsSubscription;
 
@@ -30,6 +33,10 @@ class _TeacherStudentsScreenState extends State<TeacherStudentsScreen>
 
   List<ConnectedUserModel> _followersRequests = [];
   List<ConnectedUserModel> _students = [];
+
+  static const Color tealPrimary = Color(0xFF0F766E);
+  static const Color tealDark = Color(0xFF115E59);
+  static const Color scaffoldBg = Color(0xFFF8FAFC);
 
   @override
   void initState() {
@@ -74,7 +81,7 @@ class _TeacherStudentsScreenState extends State<TeacherStudentsScreen>
           setState(() {
             _isFollowersLoading = false;
             _isStudentsLoading = false;
-            _followersError = "Failed to load follow requests";
+            _followersError = "Failed to load requests";
             _studentsError = "Failed to load students";
           });
         }
@@ -159,7 +166,11 @@ class _TeacherStudentsScreenState extends State<TeacherStudentsScreen>
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Accepted ${student.name}'s request")),
+          SnackBar(
+            content: Text("Accepted ${student.name}'s request"),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
         );
       }
     } catch (e) {
@@ -180,7 +191,11 @@ class _TeacherStudentsScreenState extends State<TeacherStudentsScreen>
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Declined ${student.name}'s request")),
+          SnackBar(
+            content: Text("Declined ${student.name}'s request"),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
         );
       }
     } catch (e) {
@@ -201,7 +216,11 @@ class _TeacherStudentsScreenState extends State<TeacherStudentsScreen>
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Removed ${student.name}")),
+          SnackBar(
+            content: Text("Removed ${student.name}"),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
         );
       }
     } catch (e) {
@@ -214,10 +233,23 @@ class _TeacherStudentsScreenState extends State<TeacherStudentsScreen>
   }
 
   void _openMessage(ConnectedUserModel student) {
-    Navigator.pushNamed(
+    final currentUserId = _auth.currentUser?.uid;
+    if (currentUserId == null || currentUserId.isEmpty) return;
+
+    final String chatRoomId = _chatService.getChatRoomId(currentUserId, student.uid);
+
+    Navigator.push(
       context,
-      '/chat',
-      arguments: {'peerId': student.uid, 'peerName': student.name},
+      MaterialPageRoute(
+        builder: (_) => ChatScreen(
+          chatRoomId: chatRoomId,
+          receiverId: student.uid,
+          receiverName: student.name,
+          receiverProfilePic: student.profileImageUrl ?? '',
+          currentUserId: currentUserId,
+          isTeacher: true,
+        ),
+      ),
     );
   }
 
@@ -247,14 +279,16 @@ class _TeacherStudentsScreenState extends State<TeacherStudentsScreen>
     return ListView.builder(
       itemCount: 6,
       itemBuilder: (context, index) => Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 10.0),
         child: Row(
           children: [
             Container(
-              width: 48,
-              height: 48,
+              width: 50,
+              height: 50,
               decoration: BoxDecoration(
-                  color: Colors.grey.shade200, shape: BoxShape.circle),
+                color: Colors.grey.shade200,
+                shape: BoxShape.circle,
+              ),
             ),
             const SizedBox(width: 14),
             Expanded(
@@ -262,10 +296,22 @@ class _TeacherStudentsScreenState extends State<TeacherStudentsScreen>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Container(
-                      width: 140, height: 14, color: Colors.grey.shade200),
-                  const SizedBox(height: 6),
+                    width: 140,
+                    height: 14,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade200,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
                   Container(
-                      width: 190, height: 12, color: Colors.grey.shade200),
+                    width: 200,
+                    height: 12,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade200,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                  ),
                 ],
               ),
             )
@@ -278,91 +324,126 @@ class _TeacherStudentsScreenState extends State<TeacherStudentsScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text("Student Network",
-            style: TextStyle(fontWeight: FontWeight.bold)),
-        elevation: 0.5,
-        bottom: TabBar(
-          controller: _tabController,
-          indicatorColor: Theme.of(context).primaryColor,
-          labelStyle:
-              const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-          tabs: [
-            Tab(
+      backgroundColor: scaffoldBg,
+      body: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
               child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Text("Followers"),
-                  if (_followersRequests.isNotEmpty) ...[
-                    const SizedBox(width: 6),
-                    Container(
-                      padding: const EdgeInsets.all(5),
-                      decoration: const BoxDecoration(
-                          color: Colors.redAccent, shape: BoxShape.circle),
-                      child: Text(
-                        '${_followersRequests.length}',
-                        style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold),
-                      ),
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: const [
+                  Text(
+                    "Student Network",
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.w800,
+                      color: Color(0xFF0F172A),
+                      letterSpacing: -0.5,
                     ),
-                  ]
+                  ),
                 ],
               ),
             ),
-            Tab(
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Text("Students"),
-                  if (_students.isNotEmpty) ...[
-                    const SizedBox(width: 6),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: Colors.grey.shade300,
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Text(
-                        '${_students.length}',
-                        style: const TextStyle(
-                            color: Colors.black87,
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold),
-                      ),
+            Container(
+              decoration: const BoxDecoration(
+                border: Border(
+                  bottom: BorderSide(color: Color(0xFFE2E8F0), width: 1.2),
+                ),
+              ),
+              child: TabBar(
+                controller: _tabController,
+                indicatorColor: tealPrimary,
+                indicatorWeight: 3,
+                labelColor: tealDark,
+                unselectedLabelColor: const Color(0xFF64748B),
+                labelStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+                unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w500, fontSize: 15),
+                tabs: [
+                  Tab(
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Text("Followers"),
+                        if (_followersRequests.isNotEmpty) ...[
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.redAccent,
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Text(
+                              '${_followersRequests.length}',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ]
+                      ],
                     ),
-                  ]
+                  ),
+                  Tab(
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Text("Students"),
+                        if (_students.isNotEmpty) ...[
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFE2E8F0),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Text(
+                              '${_students.length}',
+                              style: const TextStyle(
+                                color: Color(0xFF1E293B),
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ]
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: TabBarView(
+                controller: _tabController,
+                children: [
+                  _FollowersTabView(
+                    isLoading: _isFollowersLoading,
+                    errorMessage: _followersError,
+                    requests: _followersRequests,
+                    onRefresh: () async => _listenToNetwork(),
+                    onAccept: _acceptFollowRequest,
+                    onReject: _rejectFollowRequest,
+                    onTapProfile: _openProfile,
+                    skeletonBuilder: _buildSkeletonLoader,
+                  ),
+                  _StudentsTabView(
+                    isLoading: _isStudentsLoading,
+                    errorMessage: _studentsError,
+                    students: _students,
+                    onRefresh: () async => _listenToNetwork(),
+                    onTapProfile: _openProfile,
+                    onMoreTap: _showActionMenu,
+                    skeletonBuilder: _buildSkeletonLoader,
+                  ),
                 ],
               ),
             ),
           ],
         ),
-      ),
-      body: TabBarView(
-        controller: _tabController,
-        children: [
-          _FollowersTabView(
-            isLoading: _isFollowersLoading,
-            errorMessage: _followersError,
-            requests: _followersRequests,
-            onRefresh: () async => _listenToNetwork(),
-            onAccept: _acceptFollowRequest,
-            onReject: _rejectFollowRequest,
-            onTapProfile: _openProfile,
-            skeletonBuilder: _buildSkeletonLoader,
-          ),
-          _StudentsTabView(
-            isLoading: _isStudentsLoading,
-            errorMessage: _studentsError,
-            students: _students,
-            onRefresh: () async => _listenToNetwork(),
-            onTapProfile: _openProfile,
-            onMoreTap: _showActionMenu,
-            skeletonBuilder: _buildSkeletonLoader,
-          ),
-        ],
       ),
     );
   }
@@ -393,6 +474,7 @@ class _FollowersTabView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return RefreshIndicator(
+      color: const Color(0xFF0F766E),
       onRefresh: onRefresh,
       child: isLoading
           ? skeletonBuilder()
@@ -402,11 +484,16 @@ class _FollowersTabView extends StatelessWidget {
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Text(errorMessage!,
-                          style: const TextStyle(
-                              color: Colors.grey, fontSize: 16)),
+                          style: const TextStyle(color: Colors.grey, fontSize: 15)),
                       const SizedBox(height: 12),
                       ElevatedButton(
-                          onPressed: onRefresh, child: const Text("Retry")),
+                        onPressed: onRefresh,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF0F766E),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
+                        child: const Text("Retry", style: TextStyle(color: Colors.white)),
+                      ),
                     ],
                   ),
                 )
@@ -419,17 +506,21 @@ class _FollowersTabView extends StatelessWidget {
                             child: Column(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                Icon(Icons.person_add_outlined,
-                                    size: 64, color: Colors.grey),
-                                SizedBox(height: 12),
-                                Text("No followers yet",
-                                    style: TextStyle(
-                                        fontSize: 18,
-                                        fontWeight: FontWeight.bold)),
+                                Icon(Icons.person_add_outlined, size: 68, color: Color(0xFF94A3B8)),
+                                SizedBox(height: 14),
+                                Text(
+                                  "No followers yet",
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                    color: Color(0xFF1E293B),
+                                  ),
+                                ),
                                 SizedBox(height: 6),
                                 Text(
-                                    "Pending follow requests will appear here.",
-                                    style: TextStyle(color: Colors.grey)),
+                                  "Pending follow requests will appear here.",
+                                  style: TextStyle(color: Color(0xFF64748B), fontSize: 13),
+                                ),
                               ],
                             ),
                           )
@@ -437,51 +528,104 @@ class _FollowersTabView extends StatelessWidget {
                       ),
                     )
                   : ListView.builder(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
                       itemCount: requests.length,
                       itemBuilder: (context, index) {
                         final student = requests[index];
+                        final hasPhoto = student.profileImageUrl != null &&
+                            student.profileImageUrl!.isNotEmpty;
+
                         return Container(
-                          margin: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 4),
+                          margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
                           decoration: BoxDecoration(
                             color: Colors.white,
-                            borderRadius: BorderRadius.circular(12),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: const Color(0xFFE2E8F0)),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.02),
+                                blurRadius: 6,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
                           ),
-                          child: ListTile(
-                            onTap: () => onTapProfile(student),
-                            leading: CircleAvatar(
-                              radius: 24,
-                              backgroundImage: student.profileImageUrl != null &&
-                                      student.profileImageUrl!.isNotEmpty
-                                  ? NetworkImage(student.profileImageUrl!)
-                                  : null,
-                              child: student.profileImageUrl == null ||
-                                      student.profileImageUrl!.isEmpty
-                                  ? const Icon(Icons.person)
-                                  : null,
-                            ),
-                            title: Text(student.name,
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.bold)),
-                            subtitle: Text(
-                                student.subtitle != null && student.subtitle!.isNotEmpty
-                                    ? student.subtitle!
-                                    : "Requested to follow you",
-                                style: const TextStyle(fontSize: 12)),
-                            trailing: Row(
-                              mainAxisSize: MainAxisSize.min,
+                          child: Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Row(
                               children: [
-                                IconButton(
-                                  icon: const Icon(Icons.check_circle,
-                                      color: Colors.green, size: 28),
-                                  onPressed: () => onAccept(student),
-                                  tooltip: 'Accept',
+                                InkWell(
+                                  onTap: () => onTapProfile(student),
+                                  child: CircleAvatar(
+                                    radius: 24,
+                                    backgroundColor: const Color(0xFFE2E8F0),
+                                    backgroundImage: hasPhoto
+                                        ? NetworkImage(student.profileImageUrl!)
+                                        : null,
+                                    child: !hasPhoto
+                                        ? Text(
+                                            student.name.isNotEmpty
+                                                ? student.name[0].toUpperCase()
+                                                : 'S',
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              color: Color(0xFF0F766E),
+                                              fontSize: 16,
+                                            ),
+                                          )
+                                        : null,
+                                  ),
                                 ),
-                                IconButton(
-                                  icon: const Icon(Icons.cancel,
-                                      color: Colors.redAccent, size: 28),
-                                  onPressed: () => onReject(student),
-                                  tooltip: 'Decline',
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: InkWell(
+                                    onTap: () => onTapProfile(student),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          student.name,
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 15,
+                                            color: Color(0xFF0F172A),
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          (student.subtitle != null && student.subtitle!.isNotEmpty)
+                                              ? student.subtitle!
+                                              : "Requested to follow you",
+                                          style: const TextStyle(
+                                            fontSize: 12,
+                                            color: Color(0xFF64748B),
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    IconButton(
+                                      icon: const Icon(Icons.check_circle_rounded,
+                                          color: Color(0xFF10B981), size: 30),
+                                      onPressed: () => onAccept(student),
+                                      tooltip: 'Accept',
+                                      splashRadius: 22,
+                                    ),
+                                    IconButton(
+                                      icon: const Icon(Icons.cancel_rounded,
+                                          color: Color(0xFFEF4444), size: 30),
+                                      onPressed: () => onReject(student),
+                                      tooltip: 'Decline',
+                                      splashRadius: 22,
+                                    ),
+                                  ],
                                 ),
                               ],
                             ),
@@ -516,6 +660,7 @@ class _StudentsTabView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return RefreshIndicator(
+      color: const Color(0xFF0F766E),
       onRefresh: onRefresh,
       child: isLoading
           ? skeletonBuilder()
@@ -525,11 +670,16 @@ class _StudentsTabView extends StatelessWidget {
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Text(errorMessage!,
-                          style: const TextStyle(
-                              color: Colors.grey, fontSize: 16)),
+                          style: const TextStyle(color: Colors.grey, fontSize: 15)),
                       const SizedBox(height: 12),
                       ElevatedButton(
-                          onPressed: onRefresh, child: const Text("Retry")),
+                        onPressed: onRefresh,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF0F766E),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
+                        child: const Text("Retry", style: TextStyle(color: Colors.white)),
+                      ),
                     ],
                   ),
                 )
@@ -542,17 +692,21 @@ class _StudentsTabView extends StatelessWidget {
                             child: Column(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                Icon(Icons.people_outline,
-                                    size: 64, color: Colors.grey),
-                                SizedBox(height: 12),
-                                Text("No students yet",
-                                    style: TextStyle(
-                                        fontSize: 18,
-                                        fontWeight: FontWeight.bold)),
+                                Icon(Icons.people_outline, size: 68, color: Color(0xFF94A3B8)),
+                                SizedBox(height: 14),
+                                Text(
+                                  "No students yet",
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                    color: Color(0xFF1E293B),
+                                  ),
+                                ),
                                 SizedBox(height: 6),
                                 Text(
-                                    "Your connected students will appear here.",
-                                    style: TextStyle(color: Colors.grey)),
+                                  "Your connected students will appear here.",
+                                  style: TextStyle(color: Color(0xFF64748B), fontSize: 13),
+                                ),
                               ],
                             ),
                           )
@@ -560,6 +714,7 @@ class _StudentsTabView extends StatelessWidget {
                       ),
                     )
                   : ListView.builder(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
                       itemCount: students.length,
                       itemBuilder: (context, index) {
                         final student = students[index];
