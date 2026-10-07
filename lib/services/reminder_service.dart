@@ -5,12 +5,10 @@ class ReminderService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   Future<Map<String, dynamic>?> searchStudentById(String studentId) async {
-    // যেকোনো স্পেস রিমুভ করার জন্য ট্রিম করে নেওয়া হলো
     final cleanId = studentId.trim();
     if (cleanId.isEmpty) return null;
 
     try {
-      // ১. প্রথমে সরাসরি Document ID (ডকুমেন্ট নাম) দিয়ে খোঁজার চেষ্টা করবে
       var docSnapshot = await _firestore.collection('students').doc(cleanId).get();
 
       if (docSnapshot.exists && docSnapshot.data() != null) {
@@ -19,7 +17,6 @@ class ReminderService {
         return data;
       }
 
-      // ২. যদি সরাসরি না পাওয়া যায়, তবে ডকুমেন্টের ভেতরের 'uid' ফিল্ড কুয়েরি করবে
       final querySnapshot = await _firestore
           .collection('students')
           .where('uid', isEqualTo: cleanId)
@@ -33,7 +30,6 @@ class ReminderService {
         return data;
       }
 
-      // ৩. সবশেষে ব্যাকআপ হিসেবে 'studentId' ফিল্ড দিয়েও চেক করে নেওয়া নিরাপদ
       final backupQuery = await _firestore
           .collection('students')
           .where('studentId', isEqualTo: cleanId)
@@ -47,19 +43,24 @@ class ReminderService {
         return data;
       }
 
+      final userDoc = await _firestore.collection('users').doc(cleanId).get();
+      if (userDoc.exists && userDoc.data() != null) {
+        final data = userDoc.data()!;
+        _normalizeStudentData(data, userDoc.id);
+        return data;
+      }
+
       return null;
     } catch (e) {
-      intlLog("Error in searchStudentById: $e");
       return null;
     }
   }
 
-  /// ডেটার ফিল্ডগুলোকে স্ট্যান্ডার্ড ফরম্যাটে রূপান্তর করার হেল্পার মেথড
   void _normalizeStudentData(Map<String, dynamic> data, String fallbackId) {
-    if (data['uid'] == null) {
+    if (data['uid'] == null || data['uid'].toString().isEmpty) {
       data['uid'] = fallbackId;
     }
-    if (data['name'] == null) {
+    if (data['name'] == null || data['name'].toString().isEmpty) {
       data['name'] = data['displayName'] ?? data['fullName'] ?? 'No Name Provided';
     }
   }
@@ -68,7 +69,17 @@ class ReminderService {
     final batch = _firestore.batch();
 
     final reminderRef = _firestore.collection('payment_reminders').doc(reminder.reminderId);
-    batch.set(reminderRef, reminder.toMap());
+
+    final reminderData = reminder.toMap();
+    reminderData['dayOfMonth'] = reminder.dueDate.day;
+    reminderData['reminderHour'] = reminder.reminderTime.hour;
+    reminderData['reminderMinute'] = reminder.reminderTime.minute;
+    reminderData['isRecurring'] = true;
+    reminderData['status'] = 'active';
+    reminderData['createdAt'] = FieldValue.serverTimestamp();
+    reminderData['lastSentAt'] = FieldValue.serverTimestamp();
+
+    batch.set(reminderRef, reminderData, SetOptions(merge: true));
 
     final String chatRoomId = _getChatRoomId(reminder.teacherId, reminder.studentId);
     final messageRef = _firestore
@@ -97,19 +108,28 @@ class ReminderService {
 
     final chatRef = _firestore.collection('chats').doc(chatRoomId);
     batch.set(chatRef, {
-      'lastMessage': "Tuition fee reminder sent.",
+      'chatId': chatRoomId,
+      'lastMessage': "Tuition fee reminder sent: ₹${reminder.amount.toStringAsFixed(0)}",
       'lastMessageTime': Timestamp.fromDate(reminder.reminderTime),
+      'lastSenderId': reminder.teacherId,
       'participants': [reminder.teacherId, reminder.studentId],
     }, SetOptions(merge: true));
 
     await batch.commit();
   }
 
-  String _getChatRoomId(String user1, String user2) {
-    return user1.compareTo(user2) <= 0 ? '${user1}_$user2' : '${user2}_$user1';
+  Future<void> deleteReminder(String reminderId) async {
+    await _firestore.collection('payment_reminders').doc(reminderId).delete();
   }
 
-  void intlLog(String msg) {
-    print("[ReminderService] $msg");
+  Stream<QuerySnapshot> getActiveReminders(String teacherId) {
+    return _firestore
+        .collection('payment_reminders')
+        .where('teacherId', isEqualTo: teacherId)
+        .snapshots();
+  }
+
+  String _getChatRoomId(String user1, String user2) {
+    return user1.compareTo(user2) <= 0 ? '${user1}_$user2' : '${user2}_$user1';
   }
 }
