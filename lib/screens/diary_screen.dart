@@ -26,81 +26,83 @@ class _DiaryScreenState extends State<DiaryScreen> {
 
   final TextEditingController _searchController = TextEditingController();
   final TextEditingController _subjectController = TextEditingController();
-  final TextEditingController _topicController = TextEditingController();
-  final TextEditingController _homeworkController = TextEditingController();
-  final TextEditingController _noteController = TextEditingController();
-  final TextEditingController _amountController = TextEditingController();
+  final TextEditingController _monthlyFeeController = TextEditingController();
 
   Map<String, dynamic>? _foundStudent;
   bool _isSearching = false;
   bool _isSaving = false;
+  bool _isLoadingHistory = false;
 
-  DateTime _selectedDate = DateTime.now();
-  String _attendanceStatus = 'Present';
-  String _feeStatus = 'NO';
+  int _selectedYear = 2026;
+  final List<int> _availableYears = [2024, 2025, 2026, 2027, 2028, 2029];
 
-  double _monthlyFee = 0.0;
-  double _previousPending = 0.0;
-  double _paidAmount = 0.0;
-  double _remainingPending = 0.0;
-
-  final List<String> _attendanceStates = ['Present', 'Absent', 'Late', 'Holiday'];
   final List<String> _months = [
     'January', 'February', 'March', 'April', 'May', 'June',
     'July', 'August', 'September', 'October', 'November', 'December'
   ];
-  late String _selectedMonth;
+
+  final Map<String, String> _monthStatuses = {};
 
   @override
   void initState() {
     super.initState();
-    _selectedMonth = _months[DateTime.now().month - 1];
+    _resetMonthStatuses();
+  }
+
+  void _resetMonthStatuses() {
+    for (var month in _months) {
+      _monthStatuses[month] = 'NOT_ENROLLED';
+    }
   }
 
   @override
   void dispose() {
     _searchController.dispose();
     _subjectController.dispose();
-    _topicController.dispose();
-    _homeworkController.dispose();
-    _noteController.dispose();
-    _amountController.dispose();
+    _monthlyFeeController.dispose();
     super.dispose();
   }
 
-  // ফায়ারস্টোর থেকে লাইভ ফি ব্যালেন্স লোড করার মেথড
-  void _fetchStudentFeeStructure(String studentId) async {
+  double get _monthlyFee => double.tryParse(_monthlyFeeController.text.trim()) ?? 0.0;
+
+  int get _paidMonthsCount => _monthStatuses.values.where((status) => status == 'PAID').length;
+  int get _dueMonthsCount => _monthStatuses.values.where((status) => status == 'DUE').length;
+
+  double get _totalPaid => _paidMonthsCount * _monthlyFee;
+  double get _totalDue => _dueMonthsCount * _monthlyFee;
+
+  void _fetchStudentFeeHistory(String studentId) async {
+    setState(() => _isLoadingHistory = true);
     try {
-      final feeDoc = await _firestore.collection('monthly_fee').doc(studentId).get();
-      if (feeDoc.exists && feeDoc.data() != null) {
-        final data = feeDoc.data()!;
+      final docId = '${widget.currentUserId}_${studentId}_$_selectedYear';
+      final doc = await _firestore.collection('student_fees').doc(docId).get();
+
+      if (doc.exists && doc.data() != null) {
+        final data = doc.data()!;
+        final savedStatuses = data['monthStatuses'] as Map<String, dynamic>?;
+
         setState(() {
-          _monthlyFee = (data['monthlyFee'] ?? 1000.0).toDouble();
-          _previousPending = (data['pendingAmount'] ?? 0.0).toDouble();
-          _calculateBalances();
+          _monthlyFeeController.text = (data['monthlyFee'] != null)
+              ? data['monthlyFee'].toString()
+              : '';
+          _subjectController.text = (data['subject'] ?? '').toString();
+          if (savedStatuses != null) {
+            for (var month in _months) {
+              _monthStatuses[month] = savedStatuses[month]?.toString() ?? 'NOT_ENROLLED';
+            }
+          }
         });
       } else {
         setState(() {
-          _monthlyFee = 1000.0;
-          _previousPending = 0.0;
-          _calculateBalances();
+          _resetMonthStatuses();
+          _subjectController.clear();
         });
       }
     } catch (e) {
-      debugPrint("Error fetching fee structure: $e");
+      debugPrint("Error fetching student fee record: $e");
+    } finally {
+      if (mounted) setState(() => _isLoadingHistory = false);
     }
-  }
-
-  void _calculateBalances() {
-    setState(() {
-      if (_feeStatus == 'YES') {
-        _paidAmount = double.tryParse(_amountController.text.trim()) ?? 0.0;
-        _remainingPending = (_previousPending + _monthlyFee) - _paidAmount;
-      } else {
-        _paidAmount = 0.0;
-        _remainingPending = _previousPending + _monthlyFee;
-      }
-    });
   }
 
   void _searchStudent() async {
@@ -119,14 +121,15 @@ class _DiaryScreenState extends State<DiaryScreen> {
         _foundStudent = student;
         _isSearching = false;
       });
+
       if (student != null) {
-        _fetchStudentFeeStructure(searchId);
+        _fetchStudentFeeHistory(student['uid'] ?? searchId);
       } else {
-        _showErrorPopup('Student Not Found', 'Please check the Student User ID and try again.');
+        _showErrorPopup('Student Not Found', 'No student registered with UID: $searchId\nPlease verify the ID and try again.');
       }
     } catch (e) {
       setState(() => _isSearching = false);
-      _showErrorPopup('Error', 'Something went wrong while searching.');
+      _showErrorPopup('Error', 'Failed to retrieve student data from the database.');
     }
   }
 
@@ -169,85 +172,158 @@ class _DiaryScreenState extends State<DiaryScreen> {
     );
   }
 
-  void _saveDiaryToFirebase() async {
+  void _saveFeeRecord() async {
     FocusScope.of(context).unfocus();
-    if (_foundStudent == null || _subjectController.text.isEmpty) return;
+    if (_foundStudent == null) return;
 
     setState(() => _isSaving = true);
-    final studentId = _foundStudent!['uid'] ?? '';
-    final String entryId = _firestore.collection('diary').doc().id;
-
-    final batch = _firestore.batch();
+    final studentId = _foundStudent!['uid'] ?? _searchController.text.trim();
+    final docId = '${widget.currentUserId}_${studentId}_$_selectedYear';
 
     try {
-      final diaryRef = _firestore.collection('diary').doc(entryId);
-      batch.set(diaryRef, {
-        'diaryId': entryId,
-        'studentId': studentId,
-        'studentName': _foundStudent!['name'] ?? 'Student',
+      await _firestore.collection('student_fees').doc(docId).set({
         'teacherId': widget.currentUserId,
         'teacherName': widget.currentUserName,
-        'date': Timestamp.fromDate(_selectedDate),
-        'attendanceStatus': _attendanceStatus,
-        'subject': _subjectController.text.trim(),
-        'topicCovered': _topicController.text.trim(),
-        'homework': _homeworkController.text.trim(),
-        'month': _selectedMonth,
-        'feeStatus': _feeStatus,
-        'privateNote': _noteController.text.trim(),
-        'createdAt': FieldValue.serverTimestamp(),
-      });
-
-      final feeRef = _firestore.collection('monthly_fee').doc(studentId);
-      batch.set(feeRef, {
         'studentId': studentId,
         'studentName': _foundStudent!['name'] ?? 'Student',
+        'subject': _subjectController.text.trim(),
+        'year': _selectedYear,
         'monthlyFee': _monthlyFee,
-        'pendingAmount': _remainingPending,
-        'totalPaid': FieldValue.increment(_paidAmount),
+        'monthStatuses': _monthStatuses,
+        'paidMonthsCount': _paidMonthsCount,
+        'dueMonthsCount': _dueMonthsCount,
+        'totalPaid': _totalPaid,
+        'totalDue': _totalDue,
         'lastUpdated': FieldValue.serverTimestamp(),
-        'feeStatus12Months.$_selectedMonth': _feeStatus,
       }, SetOptions(merge: true));
 
-      if (_feeStatus == 'YES' && _paidAmount > 0) {
-        final paymentId = _firestore.collection('payment_history').doc().id;
-        final paymentRef = _firestore.collection('payment_history').doc(paymentId);
-        batch.set(paymentRef, {
-          'paymentId': paymentId,
-          'studentId': studentId,
-          'studentName': _foundStudent!['name'] ?? 'Student',
-          'teacherId': widget.currentUserId,
-          'teacherName': widget.currentUserName,
-          'amount': _paidAmount,
-          'month': _selectedMonth,
-          'date': Timestamp.fromDate(_selectedDate),
-          'timestamp': FieldValue.serverTimestamp(),
-        });
-      }
-
-      await batch.commit();
+      await _firestore.collection('monthly_fee').doc(studentId).set({
+        'studentId': studentId,
+        'studentName': _foundStudent!['name'] ?? 'Student',
+        'subject': _subjectController.text.trim(),
+        'teacherId': widget.currentUserId,
+        'pendingAmount': _totalDue,
+        'totalPaid': _totalPaid,
+        'monthlyFee': _monthlyFee,
+        'lastUpdated': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
 
       if (mounted) {
-        SuccessToast.show(context, 'Diary & Fee Saved Successfully');
+        SuccessToast.show(context, 'Fee Record Saved Successfully');
         setState(() {
-          _foundStudent = null;
-          _searchController.clear();
-          _subjectController.clear();
-          _topicController.clear();
-          _homeworkController.clear();
-          _noteController.clear();
-          _amountController.clear();
-          _attendanceStatus = 'Present';
-          _feeStatus = 'NO';
-          _paidAmount = 0.0;
-          _remainingPending = 0.0;
           _isSaving = false;
         });
       }
     } catch (e) {
       setState(() => _isSaving = false);
-      _showErrorPopup('Failed', 'Database Write Failed. Try Again.');
+      _showErrorPopup('Save Failed', 'Unable to write fee record to database. Please check connection.');
     }
+  }
+
+  Widget _buildStatusChip(String month, String status, String label, Color activeBgColor) {
+    final bool isSelected = _monthStatuses[month] == status;
+
+    return Expanded(
+      child: GestureDetector(
+        onTap: () {
+          HapticFeedback.selectionClick();
+          setState(() {
+            _monthStatuses[month] = status;
+          });
+        },
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          margin: const EdgeInsets.symmetric(horizontal: 3),
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          decoration: BoxDecoration(
+            color: isSelected ? activeBgColor : const Color(0xFFF1F5F9),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: isSelected ? activeBgColor : const Color(0xFFE2E8F0),
+              width: 1.2,
+            ),
+          ),
+          child: Center(
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 11.5,
+                fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                color: isSelected ? Colors.white : const Color(0xFF64748B),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMonthCard(String month) {
+    final status = _monthStatuses[month] ?? 'NOT_ENROLLED';
+
+    Color monthBadgeColor = const Color(0xFF64748B);
+    if (status == 'PAID') monthBadgeColor = const Color(0xFF10B981);
+    if (status == 'DUE') monthBadgeColor = const Color(0xFFEF4444);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.02),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                month,
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF0F172A),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: monthBadgeColor.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  status == 'PAID'
+                      ? 'PAID'
+                      : (status == 'DUE' ? 'DUE' : 'NOT ENROLLED'),
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w800,
+                    color: monthBadgeColor,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              _buildStatusChip(month, 'PAID', 'Paid', const Color(0xFF10B981)),
+              _buildStatusChip(month, 'DUE', 'Due', const Color(0xFFEF4444)),
+              _buildStatusChip(month, 'NOT_ENROLLED', 'Not Enrolled', const Color(0xFF64748B)),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -267,7 +343,7 @@ class _DiaryScreenState extends State<DiaryScreen> {
       ),
       body: SingleChildScrollView(
         physics: const BouncingScrollPhysics(),
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -299,6 +375,7 @@ class _DiaryScreenState extends State<DiaryScreen> {
                             focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: Colors.blue.shade400, width: 1.5)),
                             contentPadding: const EdgeInsets.symmetric(vertical: 14),
                           ),
+                          onSubmitted: (_) => _searchStudent(),
                         ),
                       ),
                       const SizedBox(width: 12),
@@ -311,7 +388,7 @@ class _DiaryScreenState extends State<DiaryScreen> {
                           elevation: 2,
                         ),
                         onPressed: _isSearching ? null : _searchStudent,
-                        child: _isSearching 
+                        child: _isSearching
                             ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5))
                             : const Icon(Icons.search_rounded, size: 22),
                       ),
@@ -321,240 +398,168 @@ class _DiaryScreenState extends State<DiaryScreen> {
               ),
             ),
             if (_foundStudent != null) ...[
-              const SizedBox(height: 24),
-              TweenAnimationBuilder<double>(
-                tween: Tween(begin: 0.0, end: 1.0),
-                duration: const Duration(milliseconds: 400),
-                curve: Curves.easeOutCubic,
-                builder: (context, value, child) => Opacity(
-                  opacity: value,
-                  child: Transform.translate(
-                    offset: Offset(0, (1 - value) * 20),
-                    child: child,
-                  ),
+              const SizedBox(height: 20),
+              Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 15, offset: const Offset(0, 6))],
                 ),
+                padding: const EdgeInsets.all(20),
                 child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Container(
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(20),
-                        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 15, offset: const Offset(0, 6))],
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                _foundStudent!['name'] ?? 'Student',
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Color(0xFF0F172A)),
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                _foundStudent!['uid'] ?? '',
+                                style: TextStyle(fontSize: 12, color: Colors.grey[600], fontFamily: 'monospace'),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.blue.shade50,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.blue.shade200),
+                          ),
+                          child: DropdownButtonHideUnderline(
+                            child: DropdownButton<int>(
+                              value: _selectedYear,
+                              icon: Icon(Icons.arrow_drop_down, color: Colors.blue[800]),
+                              items: _availableYears.map((year) {
+                                return DropdownMenuItem<int>(
+                                  value: year,
+                                  child: Text(
+                                    year.toString(),
+                                    style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue[800], fontSize: 14),
+                                  ),
+                                );
+                              }).toList(),
+                              onChanged: (year) {
+                                if (year != null) {
+                                  setState(() => _selectedYear = year);
+                                  _fetchStudentFeeHistory(_foundStudent!['uid'] ?? _searchController.text.trim());
+                                }
+                              },
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const Padding(padding: EdgeInsets.symmetric(vertical: 14.0), child: Divider(height: 1, thickness: 1, color: Color(0xFFF1F5F9))),
+                    TextField(
+                      controller: _subjectController,
+                      decoration: InputDecoration(
+                        labelText: 'Subject Taught',
+                        hintText: 'e.g. Mathematics, Science, English',
+                        prefixIcon: Icon(Icons.menu_book_rounded, color: Colors.blue[800], size: 20),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+                        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: Colors.blue.shade400, width: 1.5)),
                       ),
-                      padding: const EdgeInsets.all(20),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                    ),
+                    const SizedBox(height: 14),
+                    TextField(
+                      controller: _monthlyFeeController,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}'))],
+                      decoration: InputDecoration(
+                        labelText: 'Monthly Tuition Fee (₹)',
+                        hintText: 'e.g. 1000',
+                        prefixIcon: Icon(Icons.currency_rupee_rounded, color: Colors.blue[800]),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+                        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: Colors.blue.shade400, width: 1.5)),
+                      ),
+                      onChanged: (_) => setState(() {}),
+                    ),
+                    const SizedBox(height: 14),
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                      ),
+                      child: Row(
                         children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(_foundStudent!['name'] ?? 'No Name', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17, color: Color(0xFF1B1B1B))),
-                                    const SizedBox(height: 3),
-                                    Text(_foundStudent!['uid'] ?? 'No ID', style: TextStyle(fontSize: 12, color: Colors.grey[500], fontFamily: 'monospace'), overflow: TextOverflow.ellipsis),
-                                  ],
-                                ),
-                              ),
-                              InkWell(
-                                onTap: () async {
-                                  final picked = await showDatePicker(
-                                    context: context,
-                                    initialDate: _selectedDate,
-                                    firstDate: DateTime.now().subtract(const Duration(days: 365)),
-                                    lastDate: DateTime.now().add(const Duration(days: 30)),
-                                  );
-                                  if (picked != null) setState(() => _selectedDate = picked);
-                                },
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                  decoration: BoxDecoration(color: Colors.blue[50], borderRadius: BorderRadius.circular(12)),
-                                  child: Row(
-                                    children: [
-                                      Icon(Icons.calendar_today_rounded, size: 14, color: Colors.blue[800]),
-                                      const SizedBox(width: 6),
-                                      Text('${_selectedDate.day}/${_selectedDate.month}/${_selectedDate.year}', style: TextStyle(color: Colors.blue[800], fontWeight: FontWeight.bold, fontSize: 13)),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const Padding(padding: EdgeInsets.symmetric(vertical: 16.0), child: Divider(height: 1, thickness: 1, color: Color(0xFFF1F5F9))),
-                          const Text('Attendance Status', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.black54)),
-                          const SizedBox(height: 12),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: _attendanceStates.map((state) {
-                              final isSelected = _attendanceStatus == state;
-                              Color btnColor = const Color(0xFFF1F5F9);
-                              Color textColor = Colors.black87;
-                              if (isSelected) {
-                                if (state == 'Present') { btnColor = const Color(0xFF10B981); textColor = Colors.white; }
-                                if (state == 'Absent') { btnColor = const Color(0xFFEF4444); textColor = Colors.white; }
-                                if (state == 'Late') { btnColor = const Color(0xFFF59E0B); textColor = Colors.white; }
-                                if (state == 'Holiday') { btnColor = const Color(0xFF3B82F6); textColor = Colors.white; }
-                              }
-                              return Expanded(
-                                child: GestureDetector(
-                                  onTap: () => setState(() => _attendanceStatus = state),
-                                  child: AnimatedContainer(
-                                    duration: const Duration(milliseconds: 200),
-                                    margin: const EdgeInsets.symmetric(horizontal: 4),
-                                    padding: const EdgeInsets.symmetric(vertical: 12),
-                                    decoration: BoxDecoration(
-                                      color: btnColor,
-                                      borderRadius: BorderRadius.circular(12),
-                                      boxShadow: isSelected ? [BoxShadow(color: btnColor.withOpacity(0.3), blurRadius: 8, offset: const Offset(0, 4))] : null,
-                                    ),
-                                    child: Center(child: Text(state, style: TextStyle(color: textColor, fontWeight: FontWeight.bold, fontSize: 13))),
-                                  ),
-                                ),
-                              );
-                            }).toList(),
-                          ),
-                          const Padding(padding: EdgeInsets.symmetric(vertical: 16.0), child: Divider(height: 1, thickness: 1, color: Color(0xFFF1F5F9))),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: DropdownButtonFormField<String>(
-                                  value: _selectedMonth,
-                                  decoration: InputDecoration(labelText: 'Select Month', border: OutlineInputBorder(borderRadius: BorderRadius.circular(14))),
-                                  items: _months.map((m) => DropdownMenuItem(value: m, child: Text(m))).toList(),
-                                  onChanged: (val) {
-                                    setState(() {
-                                      _selectedMonth = val!;
-                                      _calculateBalances();
-                                    });
-                                  },
-                                ),
-                              ),
-                              const SizedBox(width: 14),
-                              Expanded(
-                                child: DropdownButtonFormField<String>(
-                                  value: _feeStatus,
-                                  decoration: InputDecoration(labelText: 'Fee Received?', border: OutlineInputBorder(borderRadius: BorderRadius.circular(14))),
-                                  items: const [
-                                    DropdownMenuItem(value: 'YES', child: Text('YES')),
-                                    DropdownMenuItem(value: 'NO', child: Text('NO')),
-                                  ],
-                                  onChanged: (val) {
-                                    setState(() {
-                                      _feeStatus = val!;
-                                      _calculateBalances();
-                                    });
-                                  },
-                                ),
-                              ),
-                            ],
-                          ),
-                          if (_feeStatus == 'YES') ...[
-                            const SizedBox(height: 18),
-                            TextField(
-                              controller: _amountController,
-                              keyboardType: TextInputType.number,
-                              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                              decoration: InputDecoration(
-                                labelText: 'Enter Received Amount (₹)',
-                                prefixIcon: Icon(Icons.currency_rupee_rounded, color: Colors.blue[800]),
-                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
-                              ),
-                              onChanged: (_) => _calculateBalances(),
-                            ),
-                          ],
-                          const SizedBox(height: 16),
-                          Container(
-                            padding: const EdgeInsets.all(14),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFF8FAFC),
-                              borderRadius: BorderRadius.circular(14),
-                              border: Border.all(color: const Color(0xFFE2E8F0)),
-                            ),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text('Paid: ₹${_paidAmount.toStringAsFixed(0)}', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.green)),
-                                Text('Pending Due: ₹${_remainingPending.toStringAsFixed(0)}', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.redAccent)),
+                                const Text('Total Paid', style: TextStyle(fontSize: 12, color: Color(0xFF64748B), fontWeight: FontWeight.w600)),
+                                const SizedBox(height: 2),
+                                Text('₹${_totalPaid.toStringAsFixed(0)}', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Color(0xFF10B981))),
+                                Text('($_paidMonthsCount Months)', style: const TextStyle(fontSize: 11, color: Color(0xFF64748B))),
                               ],
                             ),
                           ),
-                          const Padding(padding: EdgeInsets.symmetric(vertical: 16.0), child: Divider(height: 1, thickness: 1, color: Color(0xFFF1F5F9))),
-                          TextField(
-                            controller: _subjectController,
-                            decoration: InputDecoration(
-                              labelText: 'Subject',
-                              prefixIcon: Icon(Icons.book_outlined, color: Colors.blue[800], size: 20),
-                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
-                            ),
-                            onChanged: (_) => setState(() {}),
-                          ),
-                          const SizedBox(height: 18),
-                          TextField(
-                            controller: _topicController,
-                            decoration: InputDecoration(
-                              labelText: 'Topic Covered',
-                              prefixIcon: Icon(Icons.assignment_outlined, color: Colors.blue[800], size: 20),
-                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
-                            ),
-                          ),
-                          const SizedBox(height: 18),
-                          TextField(
-                            controller: _homeworkController,
-                            maxLines: 2,
-                            decoration: InputDecoration(
-                              labelText: 'Homework Assigned',
-                              prefixIcon: Icon(Icons.edit_note_outlined, color: Colors.blue[800], size: 22),
-                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
-                            ),
-                          ),
-                          const SizedBox(height: 18),
-                          Container(
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFF8FAFC),
-                              borderRadius: BorderRadius.circular(14),
-                              border: Border.all(color: const Color(0xFFE2E8F0)),
-                            ),
-                            padding: const EdgeInsets.all(4),
-                            child: TextField(
-                              controller: _noteController,
-                              maxLines: 2,
-                              decoration: InputDecoration(
-                                labelText: 'Private Note (Only Visible to Teacher)',
-                                labelStyle: const TextStyle(fontSize: 13),
-                                prefixIcon: Icon(Icons.lock_outline_rounded, color: Colors.amber[700], size: 20),
-                                border: InputBorder.none,
-                                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                          Container(width: 1, height: 40, color: const Color(0xFFCBD5E1)),
+                          Expanded(
+                            child: Padding(
+                              padding: const EdgeInsets.only(left: 14),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text('Pending Due', style: TextStyle(fontSize: 12, color: Color(0xFF64748B), fontWeight: FontWeight.w600)),
+                                  const SizedBox(height: 2),
+                                  Text('₹${_totalDue.toStringAsFixed(0)}', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Color(0xFFEF4444))),
+                                  Text('($_dueMonthsCount Months)', style: const TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+                                ],
                               ),
                             ),
                           ),
                         ],
                       ),
                     ),
-                    const SizedBox(height: 24),
-                    SizedBox(
-                      width: double.infinity,
-                      height: 54,
-                      child: ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF10B981),
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                          elevation: 2,
-                        ),
-                        onPressed: _isSaving || _subjectController.text.isEmpty ? null : _saveDiaryToFirebase,
-                        icon: _isSaving ? const SizedBox.shrink() : const Icon(Icons.save_rounded, size: 20),
-                        label: _isSaving 
-                            ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5))
-                            : const Text('SAVE DIARY ENTRY', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, letterSpacing: 0.5)),
-                      ),
-                    ),
                   ],
                 ),
               ),
+              const SizedBox(height: 22),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    '$_selectedYear Academic Months',
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+                  ),
+                  if (_isLoadingHistory)
+                    const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
+                ],
+              ),
+              const SizedBox(height: 12),
+              ..._months.map((m) => _buildMonthCard(m)),
+              const SizedBox(height: 14),
+              SizedBox(
+                width: double.infinity,
+                height: 54,
+                child: ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF10B981),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    elevation: 2,
+                  ),
+                  onPressed: _isSaving ? null : _saveFeeRecord,
+                  icon: _isSaving ? const SizedBox.shrink() : const Icon(Icons.check_circle_outline, size: 20),
+                  label: _isSaving
+                      ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5))
+                      : const Text('SAVE FEE RECORD', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, letterSpacing: 0.5)),
+                ),
+              ),
             ],
-            const SizedBox(height: 30),
+            const SizedBox(height: 28),
             GestureDetector(
               onTap: () {
                 Navigator.push(
