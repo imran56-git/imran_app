@@ -1,16 +1,17 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../widgets/success_toast.dart';
 
 class DiaryHistoryScreen extends StatefulWidget {
   final String currentUserId;
-  final String currentUserName; 
+  final String currentUserName;
 
   const DiaryHistoryScreen({
     super.key,
     required this.currentUserId,
-    required this.currentUserName, 
+    required this.currentUserName,
   });
 
   @override
@@ -23,7 +24,12 @@ class _DiaryHistoryScreenState extends State<DiaryHistoryScreen> {
 
   String _selectedFilter = 'All';
   String _searchQuery = '';
-  final List<String> _filters = ['All', 'Present', 'Absent', 'Fees Pending'];
+  final List<String> _filters = ['All', 'Pending Dues', 'Fully Paid'];
+
+  final List<String> _months = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+  ];
 
   @override
   void initState() {
@@ -41,124 +47,322 @@ class _DiaryHistoryScreenState extends State<DiaryHistoryScreen> {
     super.dispose();
   }
 
-  // ডাইনামিক এন্ট্রি আপডেট ডায়ালগ মেকানিজম
-  void _showUpdateDialog(Map<String, dynamic> diaryData) {
-    String localAttendance = diaryData['attendanceStatus'] ?? 'Present';
-    String localFeeStatus = diaryData['feeStatus'] ?? 'NO';
+  void _showEditStudentFeeSheet(DocumentSnapshot doc) {
+    final data = doc.data() as Map<String, dynamic>;
+    final String docId = doc.id;
+    final String studentId = data['studentId'] ?? '';
+    final String studentName = data['studentName'] ?? 'Student';
+    final int year = (data['year'] as num?)?.toInt() ?? 2026;
 
-    showGeneralDialog(
+    final TextEditingController subjectController =
+        TextEditingController(text: data['subject'] ?? '');
+    final TextEditingController feeController =
+        TextEditingController(text: ((data['monthlyFee'] as num?)?.toDouble() ?? 0.0).toStringAsFixed(0));
+
+    final Map<String, String> tempMonthStatuses = {};
+    final savedStatuses = data['monthStatuses'] as Map<String, dynamic>?;
+
+    for (var m in _months) {
+      tempMonthStatuses[m] = savedStatuses?[m]?.toString() ?? 'NOT_ENROLLED';
+    }
+
+    showModalBottomSheet(
       context: context,
-      barrierDismissible: true,
-      barrierLabel: '',
-      transitionDuration: const Duration(milliseconds: 250),
-      pageBuilder: (context, a1, a2) => const SizedBox(),
-      transitionBuilder: (context, anim, a2, child) {
-        return BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 4, sigmaY: 4),
-          child: ScaleTransition(
-            scale: Tween<double>(begin: 0.9, end: 1.0).animate(
-              CurvedAnimation(parent: anim, curve: Curves.easeOutBack),
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setSheetState) {
+          final double monthlyFee = double.tryParse(feeController.text.trim()) ?? 0.0;
+          final int paidCount = tempMonthStatuses.values.where((s) => s == 'PAID').length;
+          final int dueCount = tempMonthStatuses.values.where((s) => s == 'DUE').length;
+          final double totalPaid = paidCount * monthlyFee;
+          final double totalDue = dueCount * monthlyFee;
+
+          return Container(
+            height: MediaQuery.of(context).size.height * 0.88,
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
             ),
-            child: StatefulBuilder(
-              builder: (context, setDialogState) {
-                return AlertDialog(
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
-                  title: const Text(
-                    'Update Diary Entry',
-                    style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF1B1B1B), fontSize: 18),
-                  ),
-                  content: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text('Attendance', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.black54)),
-                      const SizedBox(height: 8),
-                      DropdownButtonFormField<String>(
-                        value: localAttendance,
-                        decoration: InputDecoration(
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                        ),
-                        items: ['Present', 'Absent', 'Late', 'Holiday'].map((val) => DropdownMenuItem(value: val, child: Text(val))).toList(),
-                        onChanged: (val) => setDialogState(() => localAttendance = val!),
-                      ),
-                      const SizedBox(height: 18),
-                      const Text('Fee Status (Selected Month)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.black54)),
-                      const SizedBox(height: 8),
-                      DropdownButtonFormField<String>(
-                        value: localFeeStatus,
-                        decoration: InputDecoration(
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                        ),
-                        items: const [
-                          DropdownMenuItem(value: 'YES', child: Text('YES')),
-                          DropdownMenuItem(value: 'NO', child: Text('NO')),
-                        ],
-                        onChanged: (val) => setDialogState(() => localFeeStatus = val!),
-                      ),
-                    ],
-                  ),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(context),
-                      child: Text('Cancel', style: TextStyle(color: Colors.grey[600], fontWeight: FontWeight.bold)),
+            padding: EdgeInsets.only(
+              bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+              left: 20,
+              right: 20,
+              top: 16,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 44,
+                    height: 5,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade300,
+                      borderRadius: BorderRadius.circular(10),
                     ),
-                    ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.blue[800],
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            studentName,
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Color(0xFF0F172A)),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          Text(
+                            'UID: $studentId  •  $year',
+                            style: TextStyle(fontSize: 12, color: Colors.grey[600], fontFamily: 'monospace'),
+                          ),
+                        ],
                       ),
-                      onPressed: () async {
-                        Navigator.pop(context);
-                        try {
-                          final String diaryId = diaryData['diaryId'];
-                          final String studentId = diaryData['studentId'];
-                          final String month = diaryData['month'] ?? 'January';
-
-                          final batch = _firestore.batch();
-
-                          // ১. ডায়েরি কালেকশন এন্ট্রি আপডেট
-                          batch.update(_firestore.collection('diary').doc(diaryId), {
-                            'attendanceStatus': localAttendance,
-                            'feeStatus': localFeeStatus,
-                          });
-
-                          // ২. লেজার ট্র্যাকিং পজিশন সিঙ্ক আপডেট
-                          batch.set(_firestore.collection('monthly_fee').doc(studentId), {
-                            'feeStatus12Months.$month': localFeeStatus,
-                            'lastUpdated': FieldValue.serverTimestamp(),
-                          }, SetOptions(merge: true));
-
-                          await batch.commit();
-                          if (mounted) {
-                            SuccessToast.show(context, 'Entry Updated Successfully');
-                          }
-                        } catch (e) {
-                          if (mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Failed to update data')),
-                            );
-                          }
-                        }
-                      },
-                      child: const Text('Save Changes', style: TextStyle(fontWeight: FontWeight.bold)),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close_rounded, color: Colors.grey),
+                      onPressed: () => Navigator.pop(ctx),
                     ),
                   ],
-                );
-              },
+                ),
+                const Divider(height: 20),
+                Expanded(
+                  child: ListView(
+                    physics: const BouncingScrollPhysics(),
+                    children: [
+                      TextField(
+                        controller: subjectController,
+                        decoration: InputDecoration(
+                          labelText: 'Subject Taught',
+                          prefixIcon: Icon(Icons.menu_book_rounded, color: Colors.blue[800], size: 20),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+                          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: Colors.blue.shade400, width: 1.5)),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      TextField(
+                        controller: feeController,
+                        keyboardType: TextInputType.number,
+                        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                        decoration: InputDecoration(
+                          labelText: 'Monthly Tuition Fee (₹)',
+                          prefixIcon: Icon(Icons.currency_rupee_rounded, color: Colors.blue[800], size: 20),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+                          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: Colors.blue.shade400, width: 1.5)),
+                        ),
+                        onChanged: (_) => setSheetState(() {}),
+                      ),
+                      const SizedBox(height: 14),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF8FAFC),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: const Color(0xFFE2E8F0)),
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text('Recalculated Paid', style: TextStyle(fontSize: 11, color: Color(0xFF64748B), fontWeight: FontWeight.w600)),
+                                  Text('₹${totalPaid.toStringAsFixed(0)}', style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Color(0xFF10B981))),
+                                ],
+                              ),
+                            ),
+                            Container(width: 1, height: 32, color: const Color(0xFFCBD5E1)),
+                            Expanded(
+                              child: Padding(
+                                padding: const EdgeInsets.only(left: 12),
+                                children: [
+                                  const Text('Recalculated Due', style: TextStyle(fontSize: 11, color: Color(0xFF64748B), fontWeight: FontWeight.w600)),
+                                  Text('₹${totalDue.toStringAsFixed(0)}', style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Color(0xFFEF4444))),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      Text(
+                        '$year Monthly Ledger',
+                        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                      ),
+                      const SizedBox(height: 10),
+                      ..._months.map((m) {
+                        final currentStatus = tempMonthStatuses[m] ?? 'NOT_ENROLLED';
+
+                        Color badgeColor = const Color(0xFF64748B);
+                        if (currentStatus == 'PAID') badgeColor = const Color(0xFF10B981);
+                        if (currentStatus == 'DUE') badgeColor = const Color(0xFFEF4444);
+
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 8),
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: const Color(0xFFE2E8F0)),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(m, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5)),
+                                  Text(
+                                    currentStatus == 'PAID'
+                                        ? 'PAID'
+                                        : (currentStatus == 'DUE' ? 'DUE' : 'NOT ENROLLED'),
+                                    style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: badgeColor),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 6),
+                              Row(
+                                children: [
+                                  _buildMiniChip(
+                                    label: 'Paid',
+                                    isSelected: currentStatus == 'PAID',
+                                    activeColor: const Color(0xFF10B981),
+                                    onTap: () {
+                                      HapticFeedback.selectionClick();
+                                      setSheetState(() => tempMonthStatuses[m] = 'PAID');
+                                    },
+                                  ),
+                                  _buildMiniChip(
+                                    label: 'Due',
+                                    isSelected: currentStatus == 'DUE',
+                                    activeColor: const Color(0xFFEF4444),
+                                    onTap: () {
+                                      HapticFeedback.selectionClick();
+                                      setSheetState(() => tempMonthStatuses[m] = 'DUE');
+                                    },
+                                  ),
+                                  _buildMiniChip(
+                                    label: 'Not Enrolled',
+                                    isSelected: currentStatus == 'NOT_ENROLLED',
+                                    activeColor: const Color(0xFF64748B),
+                                    onTap: () {
+                                      HapticFeedback.selectionClick();
+                                      setSheetState(() => tempMonthStatuses[m] = 'NOT_ENROLLED');
+                                    },
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        );
+                      }),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF10B981),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      elevation: 2,
+                    ),
+                    onPressed: () async {
+                      Navigator.pop(ctx);
+                      try {
+                        final batch = _firestore.batch();
+                        final docRef = _firestore.collection('student_fees').doc(docId);
+
+                        batch.update(docRef, {
+                          'subject': subjectController.text.trim(),
+                          'monthlyFee': monthlyFee,
+                          'monthStatuses': tempMonthStatuses,
+                          'paidMonthsCount': paidCount,
+                          'dueMonthsCount': dueCount,
+                          'totalPaid': totalPaid,
+                          'totalDue': totalDue,
+                          'lastUpdated': FieldValue.serverTimestamp(),
+                        });
+
+                        final monthlyRef = _firestore.collection('monthly_fee').doc(studentId);
+                        batch.set(monthlyRef, {
+                          'studentId': studentId,
+                          'studentName': studentName,
+                          'subject': subjectController.text.trim(),
+                          'teacherId': widget.currentUserId,
+                          'pendingAmount': totalDue,
+                          'totalPaid': totalPaid,
+                          'monthlyFee': monthlyFee,
+                          'lastUpdated': FieldValue.serverTimestamp(),
+                        }, SetOptions(merge: true));
+
+                        await batch.commit();
+
+                        if (mounted) {
+                          SuccessToast.show(context, 'Student Record Updated');
+                        }
+                      } catch (e) {
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Failed to update student fee record')),
+                          );
+                        }
+                      }
+                    },
+                    child: const Text('SAVE EDITED RECORD', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.white, letterSpacing: 0.5)),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildMiniChip({
+    required String label,
+    required bool isSelected,
+    required Color activeColor,
+    required VoidCallback onTap,
+  }) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          margin: const EdgeInsets.symmetric(horizontal: 2),
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          decoration: BoxDecoration(
+            color: isSelected ? activeColor : const Color(0xFFF1F5F9),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: isSelected ? activeColor : const Color(0xFFE2E8F0)),
+          ),
+          child: Center(
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+                color: isSelected ? Colors.white : const Color(0xFF64748B),
+              ),
             ),
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF7F9FC),
+      backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
         title: const Text('Diary History', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 19)),
         backgroundColor: Colors.blue[800],
@@ -174,7 +378,7 @@ class _DiaryHistoryScreenState extends State<DiaryHistoryScreen> {
         children: [
           Container(
             color: Colors.white,
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            padding: const EdgeInsets.fromLTRB(18, 14, 18, 14),
             child: Column(
               children: [
                 TextField(
@@ -183,6 +387,12 @@ class _DiaryHistoryScreenState extends State<DiaryHistoryScreen> {
                     hintText: 'Search by Student Name or UID...',
                     hintStyle: TextStyle(color: Colors.grey[400], fontSize: 14),
                     prefixIcon: const Icon(Icons.search_rounded, color: Colors.grey),
+                    suffixIcon: _searchQuery.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(Icons.clear, size: 18, color: Colors.grey),
+                            onPressed: () => _searchController.clear(),
+                          )
+                        : null,
                     filled: true,
                     fillColor: const Color(0xFFF8FAFC),
                     border: OutlineInputBorder(
@@ -200,9 +410,9 @@ class _DiaryHistoryScreenState extends State<DiaryHistoryScreen> {
                     contentPadding: const EdgeInsets.symmetric(vertical: 12),
                   ),
                 ),
-                const SizedBox(height: 14),
+                const SizedBox(height: 12),
                 SizedBox(
-                  height: 38,
+                  height: 36,
                   child: ListView.builder(
                     scrollDirection: Axis.horizontal,
                     physics: const BouncingScrollPhysics(),
@@ -213,8 +423,8 @@ class _DiaryHistoryScreenState extends State<DiaryHistoryScreen> {
                       return GestureDetector(
                         onTap: () => setState(() => _selectedFilter = filter),
                         child: Container(
-                          margin: const EdgeInsets.only(right: 10),
-                          padding: const EdgeInsets.symmetric(horizontal: 18),
+                          margin: const EdgeInsets.only(right: 8),
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
                           decoration: BoxDecoration(
                             color: isSelected ? Colors.blue[800] : const Color(0xFFF1F5F9),
                             borderRadius: BorderRadius.circular(20),
@@ -225,7 +435,7 @@ class _DiaryHistoryScreenState extends State<DiaryHistoryScreen> {
                               style: TextStyle(
                                 color: isSelected ? Colors.white : Colors.black87,
                                 fontWeight: FontWeight.bold,
-                                fontSize: 13,
+                                fontSize: 12.5,
                               ),
                             ),
                           ),
@@ -240,78 +450,82 @@ class _DiaryHistoryScreenState extends State<DiaryHistoryScreen> {
           Expanded(
             child: StreamBuilder<QuerySnapshot>(
               stream: _firestore
-                  .collection('diary')
+                  .collection('student_fees')
                   .where('teacherId', isEqualTo: widget.currentUserId)
                   .snapshots(),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
+                  return const Center(child: CircularProgressIndicator(color: Color(0xFF1E40AF)));
                 }
                 if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
                   return Center(
-                    child: Text('No diary entries found.', style: TextStyle(color: Colors.grey[500], fontSize: 14)),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.folder_open_rounded, size: 64, color: Colors.grey.shade400),
+                        const SizedBox(height: 14),
+                        const Text('No fee records created yet', style: TextStyle(color: Color(0xFF1E293B), fontWeight: FontWeight.bold, fontSize: 16)),
+                        const SizedBox(height: 4),
+                        Text('Add student fee records in My Diary to view history.', style: TextStyle(color: Colors.grey.shade600, fontSize: 13)),
+                      ],
+                    ),
                   );
                 }
 
-                // ক্লায়েন্ট-সাইড ফিল্টারিং এবং ক্র্যাশ সেফ সর্টিং মেকানিজম
                 final filteredDocs = snapshot.data!.docs.where((doc) {
                   final data = doc.data() as Map<String, dynamic>;
                   final studentName = (data['studentName'] ?? '').toString().toLowerCase();
                   final studentId = (data['studentId'] ?? '').toString().toLowerCase();
-                  final attendance = data['attendanceStatus'] ?? 'Present';
-                  final feeStatus = data['feeStatus'] ?? 'NO';
+                  final subject = (data['subject'] ?? '').toString().toLowerCase();
+                  final double due = (data['totalDue'] as num?)?.toDouble() ?? 0.0;
 
-                  final matchesSearch = studentName.contains(_searchQuery) || studentId.contains(_searchQuery);
+                  final matchesSearch = studentName.contains(_searchQuery) ||
+                      studentId.contains(_searchQuery) ||
+                      subject.contains(_searchQuery);
 
                   bool matchesFilter = true;
-                  if (_selectedFilter == 'Present') matchesFilter = attendance == 'Present';
-                  if (_selectedFilter == 'Absent') matchesFilter = attendance == 'Absent';
-                  if (_selectedFilter == 'Fees Pending') matchesFilter = feeStatus == 'NO';
+                  if (_selectedFilter == 'Pending Dues') matchesFilter = due > 0;
+                  if (_selectedFilter == 'Fully Paid') matchesFilter = due == 0;
 
                   return matchesSearch && matchesFilter;
                 }).toList();
 
-                // ডেট অনুযায়ী ডিসেন্ডিং অর্ডারে ম্যানুয়াল সর্টিং (যা ইন্ডেক্স এরর রিমুভ করে)
-                filteredDocs.sort((a, b) {
-                  final aTime = (a.data() as Map<String, dynamic>)['date'] as Timestamp?;
-                  final bTime = (b.data() as Map<String, dynamic>)['date'] as Timestamp?;
-                  if (aTime == null || bTime == null) return 0;
-                  return bTime.compareTo(aTime);
-                });
-
                 if (filteredDocs.isEmpty) {
                   return Center(
-                    child: Text('No matching records found.', style: TextStyle(color: Colors.grey[500], fontSize: 14)),
+                    child: Text('No matching student fee records found.', style: TextStyle(color: Colors.grey.shade600, fontSize: 14)),
                   );
                 }
 
                 return ListView.builder(
                   physics: const BouncingScrollPhysics(),
-                  padding: const EdgeInsets.all(20),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                   itemCount: filteredDocs.length,
                   itemBuilder: (context, index) {
-                    final data = filteredDocs[index].data() as Map<String, dynamic>;
-                    final attendance = data['attendanceStatus'] ?? 'Present';
-                    final feeStatus = data['feeStatus'] ?? 'NO';
-                    final dateTimestamp = data['date'] as Timestamp?;
+                    final doc = filteredDocs[index];
+                    final data = doc.data() as Map<String, dynamic>;
 
-                    String formattedDate = '';
-                    if (dateTimestamp != null) {
-                      final date = dateTimestamp.toDate();
-                      formattedDate = '${date.day}/${date.month}/${date.year}';
-                    }
-
-                    Color attendanceColor = Colors.green;
-                    if (attendance == 'Absent') attendanceColor = Colors.red;
-                    if (attendance == 'Late') attendanceColor = Colors.orange;
-                    if (attendance == 'Holiday') attendanceColor = Colors.blue;
+                    final String studentName = data['studentName'] ?? 'Student';
+                    final String studentId = data['studentId'] ?? '';
+                    final String subject = data['subject'] ?? 'Not Specified';
+                    final int year = (data['year'] as num?)?.toInt() ?? 2026;
+                    final double monthlyFee = (data['monthlyFee'] as num?)?.toDouble() ?? 0.0;
+                    final double totalPaid = (data['totalPaid'] as num?)?.toDouble() ?? 0.0;
+                    final double totalDue = (data['totalDue'] as num?)?.toDouble() ?? 0.0;
+                    final int dueMonths = (data['dueMonthsCount'] as num?)?.toInt() ?? 0;
 
                     return Container(
-                      margin: const EdgeInsets.only(bottom: 14),
+                      margin: const EdgeInsets.only(bottom: 12),
                       decoration: BoxDecoration(
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(18),
-                        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 10, offset: const Offset(0, 4))],
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.02),
+                            blurRadius: 8,
+                            offset: const Offset(0, 3),
+                          )
+                        ],
                       ),
                       padding: const EdgeInsets.all(16),
                       child: Column(
@@ -319,33 +533,83 @@ class _DiaryHistoryScreenState extends State<DiaryHistoryScreen> {
                         children: [
                           Row(
                             children: [
-                              Container(
-                                padding: const EdgeInsets.all(10),
-                                decoration: BoxDecoration(color: Colors.blue[50], borderRadius: BorderRadius.circular(14)),
-                                child: Icon(Icons.person_rounded, color: Colors.blue[800], size: 24),
+                              CircleAvatar(
+                                radius: 22,
+                                backgroundColor: Colors.blue.shade50,
+                                child: Text(
+                                  studentName.isNotEmpty ? studentName[0].toUpperCase() : 'S',
+                                  style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue[800], fontSize: 16),
+                                ),
                               ),
-                              const SizedBox(width: 14),
+                              const SizedBox(width: 12),
                               Expanded(
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
-                                      data['studentName'] ?? 'Student',
-                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Color(0xFF1B1B1B)),
+                                      studentName,
+                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Color(0xFF0F172A)),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
                                     ),
-                                    const SizedBox(height: 3),
+                                    const SizedBox(height: 2),
                                     Text(
-                                      data['studentId'] ?? 'No ID',
-                                      style: TextStyle(fontSize: 12, color: Colors.grey[500], fontFamily: 'monospace'),
+                                      studentId,
+                                      style: TextStyle(fontSize: 11.5, color: Colors.grey.shade500, fontFamily: 'monospace'),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
                                     ),
                                   ],
                                 ),
                               ),
-                              if (formattedDate.isNotEmpty)
-                                Text(
-                                  formattedDate,
-                                  style: TextStyle(fontSize: 12, color: Colors.grey[600], fontWeight: FontWeight.w600),
+                             Container(
+                                decoration: BoxDecoration(
+                                  color: Colors.blue.shade50,
+                                  borderRadius: BorderRadius.circular(10),
                                 ),
+                                child: IconButton(
+                                  icon: const Icon(Icons.edit_note_rounded, color: Color(0xFF1E40AF), size: 24),
+                                  tooltip: 'Edit Fee & Subject',
+                                  onPressed: () => _showEditStudentFeeSheet(doc),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFF1F5F9),
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.menu_book_rounded, size: 12, color: Colors.blue[800]),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      subject,
+                                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF334155)),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: Colors.amber.shade50,
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(color: Colors.amber.shade200),
+                                ),
+                                child: Text(
+                                  'Year $year',
+                                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.amber.shade900),
+                                ),
+                              ),
                             ],
                           ),
                           const Padding(
@@ -355,54 +619,35 @@ class _DiaryHistoryScreenState extends State<DiaryHistoryScreen> {
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              Expanded(
-                                child: Text(
-                                  'Subject: ${data['subject'] ?? 'N/A'}',
-                                  style: TextStyle(color: Colors.grey[700], fontSize: 13, fontWeight: FontWeight.w500),
-                                ),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text('Monthly Fee', style: TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+                                  Text('₹${monthlyFee.toStringAsFixed(0)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF0F172A))),
+                                ],
                               ),
-                              Text(
-                                'Status: $attendance',
-                                style: TextStyle(color: attendanceColor, fontWeight: FontWeight.bold, fontSize: 13),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text('Paid', style: TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+                                  Text('₹${totalPaid.toStringAsFixed(0)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF10B981))),
+                                ],
+                              ),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                children: [
+                                  Text('Due ($dueMonths Mo)', style: const TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+                                  Text(
+                                    '₹${totalDue.toStringAsFixed(0)}',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 14,
+                                      color: totalDue > 0 ? const Color(0xFFEF4444) : const Color(0xFF10B981),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ],
-                          ),
-                          const SizedBox(height: 6),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(
-                                'Month: ${data['month'] ?? 'N/A'}',
-                                style: TextStyle(color: Colors.grey[600], fontSize: 12),
-                              ),
-                              Text(
-                                'Fee: ${feeStatus == 'YES' ? 'Received' : 'Pending'}',
-                                style: TextStyle(
-                                  color: feeStatus == 'YES' ? Colors.green[700] : Colors.red[700],
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const Padding(
-                            padding: EdgeInsets.symmetric(vertical: 10.0),
-                            child: Divider(height: 1, thickness: 1, color: Color(0xFFF1F5F9)),
-                          ),
-                          SizedBox(
-                            width: double.infinity,
-                            height: 40,
-                            child: ElevatedButton.icon(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.blue[800],
-                                foregroundColor: Colors.white,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                elevation: 0,
-                              ),
-                              onPressed: () => _showUpdateDialog(data),
-                              icon: const Icon(Icons.update_rounded, size: 18),
-                              label: const Text('UPDATE ENTRY', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                            ),
                           ),
                         ],
                       ),
