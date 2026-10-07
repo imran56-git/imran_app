@@ -37,9 +37,14 @@ jobs:
 
       - name: Extract & Print SHA Fingerprints
         run: |
-          echo "=================== APK SIGNATURE CERTIFICATE ==================="
-          keytool -printcert -jarfile build/app/outputs/flutter-apk/app-release.apk
-          echo "================================================================="
+          echo "=================== APK SIGNATURE (APKSIGNER) ==================="
+          APKSIGNER_PATH=$(find $ANDROID_HOME/build-tools -name apksigner | sort | tail -n 1)
+          $APKSIGNER_PATH verify --print-certs build/app/outputs/flutter-apk/app-release.apk || true
+          echo "=================== GRADLE SIGNING REPORT ==================="
+          cd android
+          chmod +x gradlew
+          ./gradlew signingReport
+          echo "============================================================="
 
       - uses: actions/upload-artifact@v4
         with:
