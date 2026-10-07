@@ -1,14 +1,15 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; // ১. স্ট্যাটাস বার হাইড করার জন্য সিস্টেম সার্ভিস ইম্পোর্ট করা হলো
+import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:find_your_best_teacher_today/ratings_badges_system.dart';
 
-import 'firebase_options.dart'; 
-import 'routes/app_routes.dart'; 
+import 'firebase_options.dart';
+import 'routes/app_routes.dart';
 
+@pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp();
 }
@@ -16,14 +17,12 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // স্ট্যাটাস বার হাইড করার সেটিংস
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
 
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
-  // 🔴 FIX 1: Firestore Offline Persistence & Sync Settings (নতুন ফোনে মেসেজিং সিঙ্ক ফিক্সের জন্য)
   FirebaseFirestore.instance.settings = const Settings(
     persistenceEnabled: true,
     cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
@@ -56,7 +55,7 @@ class _FindYourBestTeacherTodayAppState extends State<FindYourBestTeacherTodayAp
 
   Future<void> _initializeAppData() async {
     await _setupNotifications();
-    await _setUserOnlineStatusAndToken(true); // 🔴 FIX 2: Token সিঙ্ক সহ কল
+    await _setUserOnlineStatusAndToken(true);
   }
 
   Future<void> _setupNotifications() async {
@@ -64,17 +63,21 @@ class _FindYourBestTeacherTodayAppState extends State<FindYourBestTeacherTodayAp
       alert: true,
       badge: true,
       sound: true,
+      provisional: false,
     );
 
-    // 🔴 FIX 3: অ্যাপ অপেন হওয়ার পর FCM Token পরিবর্তিত হলে সাথে সাথে সিঙ্ক করা
+    await _messaging.setForegroundNotificationPresentationOptions(
+      alert: true,
+      badge: true,
+      sound: true,
+    );
+
     _messaging.onTokenRefresh.listen((newToken) {
       _updateFcmTokenInFirestore(newToken);
     });
 
     FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-      if (message.notification != null) {
-        // Foreground message handling logic
-      }
+      if (message.notification != null) {}
     });
   }
 
@@ -93,7 +96,6 @@ class _FindYourBestTeacherTodayAppState extends State<FindYourBestTeacherTodayAp
     }
   }
 
-  // 🔴 FIX 4: নতুন ডিভাইসে লগইন করলেও FCM Token ও Role ভিত্তিক কালেকশন আপডেট
   Future<void> _setUserOnlineStatusAndToken(bool isOnline) async {
     final User? user = _auth.currentUser;
     if (user == null) return;
@@ -108,16 +110,12 @@ class _FindYourBestTeacherTodayAppState extends State<FindYourBestTeacherTodayAp
       };
 
       if (token != null) {
-        updateData['fcmToken'] = token; // ২য় ফোনের ডিভাইস টোকেন সিঙ্ক করবে
+        updateData['fcmToken'] = token;
       }
 
-      // ১. মূল 'users' কালেকশনে আপডেট
       await _firestore.collection('users').doc(user.uid).update(updateData).catchError((_) {});
-
-      // ২. টিচার বা স্টুডেন্ট যেই কালেকশনেই থাকুক সেখানেও আপডেট
       await _firestore.collection('teachers').doc(user.uid).update(updateData).catchError((_) {});
       await _firestore.collection('students').doc(user.uid).update(updateData).catchError((_) {});
-
     } catch (e) {
       debugPrint("Firestore Online/Token Update Error: $e");
     }
