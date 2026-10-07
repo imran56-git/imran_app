@@ -4,6 +4,71 @@ import '../models/diary_model.dart';
 class DiaryService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
+  Future<void> saveStudentFeeRecord({
+    required String teacherId,
+    required String teacherName,
+    required String studentId,
+    required String studentName,
+    required String subject,
+    required int year,
+    required double monthlyFee,
+    required Map<String, String> monthStatuses,
+    required int paidMonthsCount,
+    required int dueMonthsCount,
+    required double totalPaid,
+    required double totalDue,
+  }) async {
+    final String docId = '${teacherId.trim()}_${studentId.trim()}_$year';
+    final batch = _firestore.batch();
+
+    final feeDocRef = _firestore.collection('student_fees').doc(docId);
+    batch.set(feeDocRef, {
+      'teacherId': teacherId.trim(),
+      'teacherName': teacherName.trim(),
+      'studentId': studentId.trim(),
+      'studentName': studentName.trim(),
+      'subject': subject.trim(),
+      'year': year,
+      'monthlyFee': monthlyFee,
+      'monthStatuses': monthStatuses,
+      'paidMonthsCount': paidMonthsCount,
+      'dueMonthsCount': dueMonthsCount,
+      'totalPaid': totalPaid,
+      'totalDue': totalDue,
+      'lastUpdated': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+
+    final monthlyRef = _firestore.collection('monthly_fee').doc(studentId.trim());
+    batch.set(monthlyRef, {
+      'studentId': studentId.trim(),
+      'studentName': studentName.trim(),
+      'subject': subject.trim(),
+      'teacherId': teacherId.trim(),
+      'pendingAmount': totalDue,
+      'totalPaid': totalPaid,
+      'monthlyFee': monthlyFee,
+      'lastUpdated': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+
+    await batch.commit();
+  }
+
+  Stream<QuerySnapshot> getStudentFeesByTeacher(String teacherId) {
+    return _firestore
+        .collection('student_fees')
+        .where('teacherId', isEqualTo: teacherId.trim())
+        .snapshots();
+  }
+
+  Future<DocumentSnapshot> getStudentFeeRecord(String teacherId, String studentId, int year) {
+    final String docId = '${teacherId.trim()}_${studentId.trim()}_$year';
+    return _firestore.collection('student_fees').doc(docId).get();
+  }
+
+  Future<void> deleteStudentFeeRecord(String docId) async {
+    await _firestore.collection('student_fees').doc(docId).delete();
+  }
+
   Future<void> saveDiaryEntry(DiaryModel diary) async {
     await _firestore
         .collection('teacher_diary')
@@ -12,12 +77,9 @@ class DiaryService {
   }
 
   Stream<List<DiaryModel>> getDiaryEntriesByTeacher(String teacherId) {
-    final cleanTeacherId = teacherId.trim();
-    
     return _firestore
         .collection('teacher_diary')
-        .where('teacherId', isEqualTo: cleanTeacherId)
-        .orderBy('date', descending: true)
+        .where('teacherId', isEqualTo: teacherId.trim())
         .snapshots()
         .map((snapshot) {
       return snapshot.docs.map((doc) {
@@ -26,24 +88,15 @@ class DiaryService {
     });
   }
 
-  /// স্টুডেন্ট ডায়েরি সার্চের ফিক্সড মেথড
   Stream<List<DiaryModel>> getDiaryEntriesForStudent(String teacherId, String studentId) {
-    final cleanTeacherId = teacherId.trim();
-    final cleanStudentId = studentId.trim();
-
-    // টিপস: ফায়ারবেস কনসোলে এই কুয়েরিটির জন্য Composite Index ক্রিয়েট করা আছে কিনা নিশ্চিত হয়ে নাও।
-    // যদি ইনডেক্স না থাকে, তবে কোড রান করলে কনসোলে একটি লিঙ্ক আসবে, সেখানে ক্লিক করলেই ইনডেক্স তৈরি হয়ে যাবে।
     return _firestore
         .collection('teacher_diary')
-        .where('teacherId', isEqualTo: cleanTeacherId)
-        .where('studentId', isEqualTo: cleanStudentId)
-        .orderBy('date', descending: true)
+        .where('teacherId', isEqualTo: teacherId.trim())
+        .where('studentId', isEqualTo: studentId.trim())
         .snapshots()
         .map((snapshot) {
       return snapshot.docs.map((doc) {
-        // যদি মডেলের ভেতর কোনো কারণে আইডি মিসিং থাকে, সেটারও ব্যাকআপ হ্যান্ডেল করবে
-        final data = doc.data();
-        return DiaryModel.fromMap(data);
+        return DiaryModel.fromMap(doc.data());
       }).toList();
     });
   }
