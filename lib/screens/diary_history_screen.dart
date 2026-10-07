@@ -180,10 +180,13 @@ class _DiaryHistoryScreenState extends State<DiaryHistoryScreen> {
                             Expanded(
                               child: Padding(
                                 padding: const EdgeInsets.only(left: 12),
-                                children: [
-                                  const Text('Recalculated Due', style: TextStyle(fontSize: 11, color: Color(0xFF64748B), fontWeight: FontWeight.w600)),
-                                  Text('₹${totalDue.toStringAsFixed(0)}', style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Color(0xFFEF4444))),
-                                ],
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text('Recalculated Due', style: TextStyle(fontSize: 11, color: Color(0xFF64748B), fontWeight: FontWeight.w600)),
+                                    Text('₹${totalDue.toStringAsFixed(0)}', style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Color(0xFFEF4444))),
+                                  ],
+                                ),
                               ),
                             ),
                           ],
@@ -636,7 +639,7 @@ class _DiaryHistoryScreenState extends State<DiaryHistoryScreen> {
                               Column(
                                 crossAxisAlignment: CrossAxisAlignment.end,
                                 children: [
-                                  Text('Due ($dueMonths Mo)', style: const TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+                                  Text('Due ($dueMonths Mo)', style: TextStyle(fontSize: 11, color: Color(0xFF64748B))),
                                   Text(
                                     '₹${totalDue.toStringAsFixed(0)}',
                                     style: TextStyle(
