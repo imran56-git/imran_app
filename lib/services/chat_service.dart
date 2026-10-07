@@ -161,7 +161,7 @@ class ChatService {
         updateData['lastMessageContent'] = 'Chat initialized';
         updateData['lastMessageTime'] = FieldValue.serverTimestamp();
         updateData['unreadCount'] = 0;
-        updateData['unreadFor'] = ''; 
+        updateData['unreadFor'] = '';
         updateData['pinnedBy'] = [];
         updateData['blockedBy'] = [];
         updateData['createdAt'] = FieldValue.serverTimestamp();
@@ -243,6 +243,19 @@ class ChatService {
         'unreadCount_$receiverId': currentUnread + 1,
         'participants': [senderId, receiverId],
       }, SetOptions(merge: true));
+
+      final notificationRef = _firestore.collection('notifications').doc();
+      batch.set(notificationRef, {
+        'notificationId': notificationRef.id,
+        'senderId': senderId,
+        'receiverId': receiverId,
+        'chatId': correctChatId,
+        'title': 'New Message',
+        'body': previewText,
+        'type': 'chat',
+        'createdAt': FieldValue.serverTimestamp(),
+        'status': 'pending',
+      });
 
       await batch.commit();
     } catch (e) {
@@ -400,7 +413,7 @@ class ChatService {
         .doc(chatId)
         .collection('messages')
         .orderBy('timestamp', descending: true)
-        .snapshots(includeMetadataChanges: true) 
+        .snapshots(includeMetadataChanges: true)
         .map((snapshot) {
       return snapshot.docs.map((doc) {
         final data = doc.data();
@@ -570,6 +583,6 @@ class ChatService {
   }
 
   void _handleError(String methodName, dynamic error) {
-    log('🔴 [@ChatService] Error inside $methodName: $error');
+    log('[@ChatService] Error inside $methodName: $error');
   }
 }
