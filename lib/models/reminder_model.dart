@@ -1,3 +1,4 @@
+```dart
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class ReminderModel {
@@ -15,6 +16,9 @@ class ReminderModel {
   final int reminderHour;
   final int reminderMinute;
   final bool isRecurring;
+  final DateTime? scheduledFor;
+  final DateTime? lastSentAt;
+  final DateTime? createdAt;
 
   ReminderModel({
     required this.reminderId,
@@ -31,9 +35,13 @@ class ReminderModel {
     int? reminderHour,
     int? reminderMinute,
     this.isRecurring = true,
+    DateTime? scheduledFor,
+    this.lastSentAt,
+    this.createdAt,
   })  : dayOfMonth = dayOfMonth ?? dueDate.day,
         reminderHour = reminderHour ?? reminderTime.hour,
-        reminderMinute = reminderMinute ?? reminderTime.minute;
+        reminderMinute = reminderMinute ?? reminderTime.minute,
+        scheduledFor = scheduledFor ?? reminderTime;
 
   Map<String, dynamic> toMap() {
     return {
@@ -51,17 +59,42 @@ class ReminderModel {
       'reminderHour': reminderHour,
       'reminderMinute': reminderMinute,
       'isRecurring': isRecurring,
+      'scheduledFor': scheduledFor != null
+          ? Timestamp.fromDate(scheduledFor!)
+          : Timestamp.fromDate(reminderTime),
+      'lastSentAt': lastSentAt != null ? Timestamp.fromDate(lastSentAt!) : null,
+      'createdAt': createdAt != null
+          ? Timestamp.fromDate(createdAt!)
+          : FieldValue.serverTimestamp(),
     };
   }
 
   factory ReminderModel.fromMap(Map<String, dynamic> map) {
-    final dueDateParsed = map['dueDate'] is Timestamp
-        ? (map['dueDate'] as Timestamp).toDate()
-        : DateTime.now();
+    DateTime parseDate(dynamic value) {
+      if (value is Timestamp) return value.toDate();
+      if (value is String) return DateTime.tryParse(value) ?? DateTime.now();
+      return DateTime.now();
+    }
 
-    final reminderTimeParsed = map['reminderTime'] is Timestamp
-        ? (map['reminderTime'] as Timestamp).toDate()
-        : DateTime.now();
+    final dueDateParsed = parseDate(map['dueDate']);
+    final reminderTimeParsed = parseDate(map['reminderTime']);
+
+    DateTime? scheduledForParsed;
+    if (map['scheduledFor'] != null) {
+      scheduledForParsed = parseDate(map['scheduledFor']);
+    } else {
+      scheduledForParsed = reminderTimeParsed;
+    }
+
+    DateTime? lastSentAtParsed;
+    if (map['lastSentAt'] != null) {
+      lastSentAtParsed = parseDate(map['lastSentAt']);
+    }
+
+    DateTime? createdAtParsed;
+    if (map['createdAt'] != null) {
+      createdAtParsed = parseDate(map['createdAt']);
+    }
 
     return ReminderModel(
       reminderId: map['reminderId']?.toString() ?? '',
@@ -75,11 +108,15 @@ class ReminderModel {
       month: map['month']?.toString() ?? '',
       dueDate: dueDateParsed,
       reminderTime: reminderTimeParsed,
-      status: map['status']?.toString() ?? 'active',
+      status: map['status']?.toString() ?? 'scheduled',
       dayOfMonth: (map['dayOfMonth'] as num?)?.toInt() ?? dueDateParsed.day,
       reminderHour: (map['reminderHour'] as num?)?.toInt() ?? reminderTimeParsed.hour,
       reminderMinute: (map['reminderMinute'] as num?)?.toInt() ?? reminderTimeParsed.minute,
       isRecurring: map['isRecurring'] as bool? ?? true,
+      scheduledFor: scheduledForParsed,
+      lastSentAt: lastSentAtParsed,
+      createdAt: createdAtParsed,
     );
   }
 }
+```
