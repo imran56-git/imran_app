@@ -117,12 +117,12 @@ class _ReminderScreenState extends State<ReminderScreen> {
       if (student == null) {
         _showErrorPopup(
           'Student Not Found',
-          'No student registered with UID: $searchId\nPlease make sure the UID is correct and active.',
+          'No student registered with UID: $searchId\nPlease verify the student UID and try again.',
         );
       }
-    } catch (e) {
+    } catch (_) {
       setState(() => _isSearching = false);
-      _showErrorPopup('Query Error', 'Something went wrong while searching the database.');
+      _showErrorPopup('Query Error', 'Unable to retrieve student data. Please check network connection.');
     }
   }
 
@@ -288,7 +288,7 @@ class _ReminderScreenState extends State<ReminderScreen> {
 
   void _sendReminder() async {
     FocusScope.of(context).unfocus();
-    if (_foundStudent == null || _amountController.text.isEmpty) return;
+    if (_foundStudent == null || _amountController.text.trim().isEmpty) return;
 
     setState(() => _isSending = true);
 
@@ -309,12 +309,12 @@ class _ReminderScreenState extends State<ReminderScreen> {
         studentName: _foundStudent!['name'] ?? 'Student',
         studentId: _foundStudent!['uid'] ?? _searchController.text.trim(),
         teacherId: widget.currentUserId,
-        teacherName: widget.currentUserName,
+        teacherName: widget.currentUserName.isEmpty ? 'Teacher' : widget.currentUserName,
         amount: amount,
         month: _selectedMonth,
         dueDate: _selectedDueDate,
         reminderTime: scheduledTime,
-        status: 'sent',
+        status: 'scheduled',
       );
 
       await _reminderService.sendPaymentReminder(reminder);
@@ -328,9 +328,9 @@ class _ReminderScreenState extends State<ReminderScreen> {
           _isSending = false;
         });
       }
-    } catch (e) {
+    } catch (_) {
       setState(() => _isSending = false);
-      _showErrorPopup('Failed', 'Could not transmit the reminder request. Please try again.');
+      _showErrorPopup('Failed', 'Could not schedule the reminder. Please try again.');
     }
   }
 
@@ -451,14 +451,33 @@ class _ReminderScreenState extends State<ReminderScreen> {
                           ListTile(
                             contentPadding: EdgeInsets.zero,
                             leading: Container(
-                              padding: const EdgeInsets.all(10),
-                              decoration: BoxDecoration(color: Colors.blue[50], borderRadius: BorderRadius.circular(14)),
-                              child: Icon(Icons.person_rounded, color: Colors.blue[800], size: 26),
+                              width: 48,
+                              height: 48,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: Colors.blue.shade50,
+                              ),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(24),
+                                child: (_foundStudent!['profileImageUrl'] != null && _foundStudent!['profileImageUrl'].toString().isNotEmpty)
+                                    ? Image.network(
+                                        _foundStudent!['profileImageUrl'].toString(),
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (_, __, ___) => Icon(Icons.person_rounded, color: Colors.blue[800], size: 26),
+                                      )
+                                    : Icon(Icons.person_rounded, color: Colors.blue[800], size: 26),
+                              ),
                             ),
-                            title: Text(_foundStudent!['name'] ?? 'No Name', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17, color: Color(0xFF1B1B1B))),
+                            title: Text(
+                              _foundStudent!['name'] ?? 'Student',
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17, color: Color(0xFF1B1B1B)),
+                            ),
                             subtitle: Padding(
                               padding: const EdgeInsets.only(top: 4.0),
-                              child: Text(_foundStudent!['uid'] ?? 'No ID', style: TextStyle(fontSize: 13, color: Colors.grey[600])),
+                              child: Text(
+                                _foundStudent!['uid'] ?? 'No ID',
+                                style: TextStyle(fontSize: 12.5, color: Colors.grey[600], fontFamily: 'monospace'),
+                              ),
                             ),
                           ),
                           const Padding(
@@ -575,26 +594,86 @@ class _ReminderScreenState extends State<ReminderScreen> {
                       ),
                     ),
                     const SizedBox(height: 24),
-                    const Text('Message Preview', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF1B1B1B))),
+                    const Text('Official Channel Preview', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF1B1B1B))),
                     const SizedBox(height: 10),
                     Container(
                       width: double.infinity,
                       decoration: BoxDecoration(
-                        color: const Color(0xFFF1F5F9),
+                        color: Colors.white,
                         borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                        border: Border.all(color: const Color(0xFFBBF7D0), width: 1.2),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.02),
+                            blurRadius: 10,
+                            offset: const Offset(0, 4),
+                          )
+                        ],
                       ),
                       padding: const EdgeInsets.all(18),
-                      child: Text(
-                        "Hello ${_foundStudent!['name'] ?? 'Student'},\n\n"
-                        "This is a friendly reminder from ${widget.currentUserName}.\n"
-                        "Your tuition fee for $_selectedMonth is now due.\n\n"
-                        "Amount: ₹${_amountController.text.isEmpty ? '0' : _amountController.text}\n"
-                        "Due Date: ${_selectedDueDate.day}/${_selectedDueDate.month}/${_selectedDueDate.year}\n"
-                        "Scheduled Time: ${_formatHourMinute(_selectedTime)} ${isAm ? 'AM' : 'PM'}\n\n"
-                        "Please complete the payment at your earliest convenience.\n"
-                        "Thank you.",
-                        style: TextStyle(fontSize: 14, color: Colors.blueGrey[800], height: 1.4, fontFamily: 'monospace'),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(14),
+                                child: Image.asset(
+                                  'assets/images/app_logo.png',
+                                  width: 30,
+                                  height: 30,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, __, ___) => CircleAvatar(
+                                    radius: 15,
+                                    backgroundColor: Colors.teal.shade50,
+                                    child: const Icon(Icons.verified_rounded, color: Colors.teal, size: 18),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              const Text(
+                                'FYBTT official',
+                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF0F766E)),
+                              ),
+                              const SizedBox(width: 4),
+                              Image.asset(
+                                'assets/images/Verified_Batch.png',
+                                width: 14,
+                                height: 14,
+                                fit: BoxFit.contain,
+                                errorBuilder: (_, __, ___) => const Icon(Icons.verified_rounded, color: Color(0xFF0284C7), size: 14),
+                              ),
+                              const Spacer(),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFECFDF5),
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(color: const Color(0xFFA7F3D0)),
+                                ),
+                                child: const Text(
+                                  'Official Notice',
+                                  style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFF059669)),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 12.0),
+                            child: Divider(height: 1, thickness: 1, color: Color(0xFFF1F5F9)),
+                          ),
+                          Text(
+                            "Hello ${_foundStudent!['name'] ?? 'Student'},\n\n"
+                            "This is an official tuition fee reminder on behalf of ${widget.currentUserName.isEmpty ? 'Teacher' : widget.currentUserName}.\n"
+                            "Tuition fee for $_selectedMonth is due.\n\n"
+                            "Amount: ₹${_amountController.text.isEmpty ? '0' : _amountController.text}\n"
+                            "Due Date: ${_selectedDueDate.day}/${_selectedDueDate.month}/${_selectedDueDate.year}\n"
+                            "Scheduled Transmission: ${_formatHourMinute(_selectedTime)} ${isAm ? 'AM' : 'PM'}\n\n"
+                            "Please complete the payment promptly.\n"
+                            "Thank you,\nFYBTT Official Desk",
+                            style: TextStyle(fontSize: 13, color: Colors.grey.shade800, height: 1.45, fontFamily: 'monospace'),
+                          ),
+                        ],
                       ),
                     ),
                     const SizedBox(height: 28),
@@ -608,8 +687,8 @@ class _ReminderScreenState extends State<ReminderScreen> {
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                           elevation: 2,
                         ),
-                        onPressed: _isSending || _amountController.text.isEmpty ? null : _sendReminder,
-                        icon: _isSending ? const SizedBox.shrink() : const Icon(Icons.send_rounded, size: 20),
+                        onPressed: _isSending || _amountController.text.trim().isEmpty ? null : _sendReminder,
+                        icon: _isSending ? const SizedBox.shrink() : const Icon(Icons.calendar_month_rounded, size: 20),
                         label: _isSending
                             ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5))
                             : const Text('SCHEDULE REMINDER', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, letterSpacing: 0.5)),
@@ -671,14 +750,19 @@ class _ReminderScreenState extends State<ReminderScreen> {
                             stream: _firestore
                                 .collection('payment_reminders')
                                 .where('teacherId', isEqualTo: widget.currentUserId)
-                                .where('status', isEqualTo: 'sent')
                                 .snapshots(),
                             builder: (context, snapshot) {
-                              int activeCount = snapshot.hasData ? snapshot.data!.docs.length : 0;
+                              int activeCount = 0;
+                              if (snapshot.hasData) {
+                                activeCount = snapshot.data!.docs.where((d) {
+                                  final st = (d.data() as Map<String, dynamic>)['status'];
+                                  return st == 'scheduled' || st == 'active' || st == 'sent';
+                                }).length;
+                              }
                               return Text(
                                 activeCount > 0
                                     ? 'You have $activeCount pending active reminders'
-                                    : 'View and manage sent reminders',
+                                    : 'View and manage scheduled reminders',
                                 style: TextStyle(color: Colors.white.withOpacity(0.85), fontSize: 13, fontWeight: FontWeight.w500),
                               );
                             },
