@@ -1,6 +1,8 @@
 import 'dart:ui';
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../models/live_class_model.dart';
 import '../../services/live_class_service.dart';
 import '../../widgets/success_toast.dart';
@@ -24,10 +26,21 @@ class JoinLiveScreen extends StatefulWidget {
 
 class _JoinLiveScreenState extends State<JoinLiveScreen> {
   final LiveClassService _liveClassService = LiveClassService();
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+
   final TextEditingController _roomController = TextEditingController();
   final TextEditingController _titleController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
+
   bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.isTeacher) {
+      _generateUniqueRoomCode();
+    }
+  }
 
   @override
   void dispose() {
@@ -36,21 +49,36 @@ class _JoinLiveScreenState extends State<JoinLiveScreen> {
     super.dispose();
   }
 
-  void _handleLiveAction() async {
-    if (!_formKey.currentState!.validate()) return;
+  void _generateUniqueRoomCode() {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    final random = Random();
+    final code = List.generate(6, (index) => chars[random.nextInt(chars.length)]).join();
+    _roomController.text = 'FYBTT-$code';
+    setState(() {});
+  }
 
-    final roomId = _roomController.text.trim().toLowerCase();
-    final title = _titleController.text.trim();
+  String _sanitizeJitsiRoomId(String rawCode) {
+    final clean = rawCode.trim().replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_').toLowerCase();
+    return 'fybtt_secure_room_${clean}_edu';
+  }
+
+  void _handleLiveAction({String? existingRoomId, String? existingTitle}) async {
+    final rawCode = (existingRoomId ?? _roomController.text).trim();
+    final title = (existingTitle ?? _titleController.text).trim();
+
+    if (existingRoomId == null && !_formKey.currentState!.validate()) return;
+
+    final internalJitsiRoomId = _sanitizeJitsiRoomId(rawCode);
 
     setState(() => _isLoading = true);
 
     try {
       if (widget.isTeacher) {
         final liveClass = LiveClassModel(
-          roomId: roomId,
+          roomId: rawCode,
           title: title,
           teacherId: widget.currentUserId,
-          teacherName: widget.currentUserName,
+          teacherName: widget.currentUserName.isNotEmpty ? widget.currentUserName : 'Teacher',
           isLive: true,
           createdAt: DateTime.now(),
           isMicMuted: false,
@@ -62,28 +90,29 @@ class _JoinLiveScreenState extends State<JoinLiveScreen> {
 
         await _liveClassService.createLiveClass(liveClass);
         if (mounted) {
-          SuccessToast.show(context, 'Live Class Created Successfully');
+          SuccessToast.show(context, 'Live Classroom Ready');
         }
       } else {
-        final liveClassData = await _liveClassService.watchLiveClass(roomId).first;
+        final liveClassSnapshot = await _firestore.collection('live_classes').doc(rawCode).get();
 
-        if (liveClassData == null) {
+        if (!liveClassSnapshot.exists || liveClassSnapshot.data() == null) {
           if (mounted) {
-            _showErrorDialog('Invalid Room Code', 'No active live class found. Please check again.');
+            _showErrorDialog('Room Not Found', 'No active live session found with Room Code: $rawCode');
           }
           return;
         }
 
-        final bool isCurrentlyLive = liveClassData.isLive;
+        final data = liveClassSnapshot.data()!;
+        final bool isLive = data['isLive'] == true;
 
-        if (!isCurrentlyLive) {
+        if (!isLive) {
           if (mounted) {
-            _showErrorDialog('Class Ended', 'This session has already been ended.');
+            _showErrorDialog('Session Ended', 'This class has already been concluded by the teacher.');
           }
           return;
         }
 
-        await _liveClassService.joinParticipant(roomId, widget.currentUserId);
+        await _liveClassService.joinParticipant(rawCode, widget.currentUserId);
       }
 
       if (mounted) {
@@ -91,20 +120,18 @@ class _JoinLiveScreenState extends State<JoinLiveScreen> {
           context,
           MaterialPageRoute(
             builder: (context) => LiveClassScreen(
-              roomId: roomId,
+              roomId: internalJitsiRoomId,
               userId: widget.currentUserId,
-              userName: widget.currentUserName,
+              userName: widget.currentUserName.isNotEmpty ? widget.currentUserName : (widget.isTeacher ? 'Teacher' : 'Student'),
               isTeacher: widget.isTeacher,
-              subjectTitle: widget.isTeacher ? title : 'Live Class Session',
+              subjectTitle: title.isNotEmpty ? title : 'Live Class Session',
             ),
           ),
         );
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: ${e.toString()}'), backgroundColor: Colors.redAccent),
-        );
+        _showErrorDialog('Connection Error', 'Could not enter classroom. Please try again.');
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -132,20 +159,21 @@ class _JoinLiveScreenState extends State<JoinLiveScreen> {
                 backgroundColor: Colors.white,
                 title: Row(
                   children: [
-                    const Icon(Icons.error_outline_rounded, color: Colors.redAccent, size: 28),
-                    const SizedBox(width: 12),
-                    Text(title, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.redAccent, fontSize: 18)),
+                    const Icon(Icons.error_outline_rounded, color: Colors.redAccent, size: 26),
+                    const SizedBox(width: 10),
+                    Text(title, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.redAccent, fontSize: 17)),
                   ],
                 ),
                 content: Text(message, style: const TextStyle(color: Color(0xFF334155), fontSize: 14, height: 1.4)),
                 actions: [
-                  TextButton(
-                    style: TextButton.styleFrom(
-                      foregroundColor: Colors.blue[800],
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.blue[800],
+                      foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     ),
                     onPressed: () => Navigator.pop(context),
-                    child: const Text('OK', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                    child: const Text('OK', style: TextStyle(fontWeight: FontWeight.bold)),
                   ),
                 ],
               ),
@@ -156,229 +184,326 @@ class _JoinLiveScreenState extends State<JoinLiveScreen> {
     );
   }
 
+  Widget _buildTopBanner() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 18),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Colors.blue.shade900, const Color(0xFF1E3A8A)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.blue.shade900.withOpacity(0.22),
+            blurRadius: 18,
+            offset: const Offset(0, 6),
+          )
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 50,
+            height: 50,
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 8)
+              ],
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(25),
+              child: Image.asset(
+                'assets/images/app_logo.png',
+                fit: BoxFit.contain,
+                errorBuilder: (_, __, ___) => Icon(
+                  Icons.school_rounded,
+                  color: Colors.blue[900],
+                  size: 24,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 14),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'FYBTT DIGITAL',
+                  style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w900, letterSpacing: 1.0),
+                ),
+                SizedBox(height: 2),
+                Text(
+                  '1-Click Interactive Classroom',
+                  style: TextStyle(color: Colors.white70, fontSize: 11.5, fontWeight: FontWeight.w400),
+                ),
+              ],
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.18),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Text(
+              widget.isTeacher ? 'TEACHER' : 'STUDENT',
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 10.5, letterSpacing: 0.5),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStudentActiveClassesFeed() {
+    return StreamBuilder<QuerySnapshot>(
+      stream: _firestore.collection('live_classes').where('isLive', isEqualTo: true).snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: Padding(padding: EdgeInsets.all(20), child: CircularProgressIndicator()));
+        }
+
+        final liveDocs = snapshot.hasData ? snapshot.data!.docs : [];
+
+        if (liveDocs.isEmpty) {
+          return Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+            ),
+            child: Column(
+              children: [
+                Icon(Icons.tv_off_rounded, size: 44, color: Colors.grey.shade400),
+                const SizedBox(height: 10),
+                const Text(
+                  'No Teachers Live Right Now',
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF1E293B)),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'When your teacher starts a class, it will appear here for 1-click join.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                ),
+              ],
+            ),
+          );
+        }
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 8,
+                  height: 8,
+                  decoration: const BoxDecoration(color: Color(0xFF10B981), shape: BoxShape.circle),
+                ),
+                const SizedBox(width: 8),
+                const Text(
+                  'Live Classes Happening Now',
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            ...liveDocs.map((doc) {
+              final data = doc.data() as Map<String, dynamic>;
+              final String title = data['title'] ?? 'Live Class Session';
+              final String teacherName = data['teacherName'] ?? 'Teacher';
+              final String roomId = doc.id;
+
+              return Container(
+                margin: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: Colors.blue.shade100, width: 1.2),
+                  boxShadow: [
+                    BoxShadow(color: Colors.blue.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 4)),
+                  ],
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.red.shade50,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.sensors_rounded, color: Colors.red, size: 24),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            title,
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15.5, color: Color(0xFF0F172A)),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            'By $teacherName',
+                            style: TextStyle(fontSize: 12.5, color: Colors.grey.shade600),
+                          ),
+                        ],
+                      ),
+                    ),
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF10B981),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        elevation: 0,
+                      ),
+                      onPressed: _isLoading
+                          ? null
+                          : () => _handleLiveAction(existingRoomId: roomId, existingTitle: title),
+                      child: const Text('JOIN', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                    ),
+                  ],
+                ),
+              );
+            }),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final themeColor = widget.isTeacher ? Colors.redAccent : Colors.blue[800]!;
+    final themeColor = widget.isTeacher ? const Color(0xFFDC2626) : Colors.blue[800]!;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
         title: Text(
-          widget.isTeacher ? 'Host Live Room' : 'Join Live Room',
-          style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 18, letterSpacing: 0.3),
+          widget.isTeacher ? 'Host Classroom' : 'Live Classroom',
+          style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 18),
         ),
         backgroundColor: Colors.blue[900],
         foregroundColor: Colors.white,
         centerTitle: true,
         elevation: 0,
-        leading: Padding(
-          padding: const EdgeInsets.all(8.0),
-          child: IconButton(
-            icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18),
-            onPressed: () => Navigator.pop(context),
-          ),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18),
+          onPressed: () => Navigator.pop(context),
         ),
       ),
       body: SafeArea(
         child: SingleChildScrollView(
           physics: const BouncingScrollPhysics(),
-          padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 24),
+          padding: const EdgeInsets.symmetric(horizontal: 18.0, vertical: 20),
           child: Form(
             key: _formKey,
             child: Column(
               children: [
-                // প্রিমিয়াম টপ ব্যানার উইজেট (লোগো ইন্টিগ্রেশন সহ)
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(vertical: 22, horizontal: 20),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [Colors.blue.shade900, const Color(0xFF1E3A8A)],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
+                _buildTopBanner(),
+                const SizedBox(height: 22),
+
+                if (!widget.isTeacher) ...[
+                  _buildStudentActiveClassesFeed(),
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 20.0),
+                    child: Row(
+                      children: [
+                        Expanded(child: Divider(color: Color(0xFFE2E8F0))),
+                        Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 12),
+                          child: Text('OR JOIN VIA CODE', style: TextStyle(color: Color(0xFF94A3B8), fontSize: 11, fontWeight: FontWeight.bold)),
+                        ),
+                        Expanded(child: Divider(color: Color(0xFFE2E8F0))),
+                      ],
                     ),
-                    borderRadius: BorderRadius.circular(24),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.blue.shade900.withOpacity(0.25),
-                        blurRadius: 20,
-                        offset: const Offset(0, 8),
-                      )
-                    ],
                   ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Container(
-                        width: 50,
-                        height: 50,
-                        padding: const EdgeInsets.all(4),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          shape: BoxShape.circle,
-                          boxShadow: [
-                            BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 8)
-                          ]
-                        ),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(25),
-                          child: Image.asset(
-                            'assets/images/app_logo.png',
-                            fit: BoxFit.contain,
-                            errorBuilder: (context, error, stackTrace) => Icon(
-                              Icons.school_rounded,
-                              color: Colors.blue[900],
-                              size: 24,
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      const Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'FYBTT DIGITAL',
-                              // ফিক্সড: FontWeight.black পরিবর্তন করে ফ্ল্যাটার স্ট্যান্ডার্ড FontWeight.w900 করা হলো
-                              style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w900, letterSpacing: 1.2),
-                            ),
-                            SizedBox(height: 2),
-                            Text(
-                              'Virtual Classroom Network',
-                              style: TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.w400, letterSpacing: 0.5),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 24),
-                
-                // মূল ইনপুট প্যানেল কার্ড
+                ],
+
                 Container(
-                  padding: const EdgeInsets.all(24),
+                  padding: const EdgeInsets.all(22),
                   decoration: BoxDecoration(
                     color: Colors.white,
-                    borderRadius: BorderRadius.circular(28),
-                    border: Border.all(color: const Color(0xFFE2E8F0), width: 1),
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
                     boxShadow: [
                       BoxShadow(
-                        color: const Color(0xFF0F172A).withOpacity(0.04),
-                        blurRadius: 24,
-                        offset: const Offset(0, 12),
+                        color: Colors.black.withOpacity(0.02),
+                        blurRadius: 15,
+                        offset: const Offset(0, 6),
                       )
                     ],
                   ),
                   child: Column(
                     children: [
-                      Stack(
-                        alignment: Alignment.center,
-                        children: [
-                          Container(
-                            width: 84,
-                            height: 84,
-                            decoration: BoxDecoration(
-                              color: widget.isTeacher ? Colors.red.shade50 : Colors.blue.shade50,
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                          Icon(
-                            widget.isTeacher ? Icons.sensors_rounded : Icons.wifi_tethering_rounded,
-                            size: 40,
-                            color: themeColor,
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 28),
-                      
                       if (widget.isTeacher) ...[
-                        _buildCustomTextField(
+                        TextFormField(
                           controller: _titleController,
-                          label: 'Class Title',
-                          hint: 'e.g. Physics Quantum Mechanics',
-                          icon: Icons.title_rounded,
-                          accentColor: themeColor,
-                          validator: (val) => val == null || val.isEmpty ? 'Please enter a valid title' : null,
+                          decoration: InputDecoration(
+                            labelText: 'Class Title / Subject',
+                            hintText: 'e.g. Physics 1st Paper: Mechanics',
+                            prefixIcon: Icon(Icons.menu_book_rounded, color: themeColor, size: 20),
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+                          ),
+                          validator: (val) => (val == null || val.trim().isEmpty) ? 'Please enter a class topic' : null,
                         ),
                         const SizedBox(height: 16),
                       ],
-                      
-                      _buildCustomTextField(
+
+                      TextFormField(
                         controller: _roomController,
-                        label: 'Room Code',
-                        hint: 'Enter or generate unique code',
-                        icon: Icons.vpn_key_rounded,
-                        accentColor: themeColor,
-                        isCode: true,
-                        validator: (val) => (val == null || val.length < 4) ? 'Enter valid room code (min 4 chars)' : null,
-                      ),
-                      const SizedBox(height: 30),
-                      
-                      // প্রিমিয়াম গ্রেডিয়েন্ট অ্যাকশন বাটন
-                      Container(
-                        width: double.infinity,
-                        height: 54,
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(16),
-                          boxShadow: [
-                            BoxShadow(
-                              color: themeColor.withOpacity(0.3),
-                              blurRadius: 12,
-                              offset: const Offset(0, 6),
-                            )
-                          ],
+                        readOnly: widget.isTeacher,
+                        style: const TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.2),
+                        decoration: InputDecoration(
+                          labelText: 'Room Code',
+                          hintText: 'e.g. FYBTT-9482',
+                          prefixIcon: Icon(Icons.vpn_key_rounded, color: themeColor, size: 20),
+                          suffixIcon: widget.isTeacher
+                              ? IconButton(
+                                  icon: const Icon(Icons.refresh_rounded),
+                                  tooltip: 'Generate New Code',
+                                  onPressed: _generateUniqueRoomCode,
+                                )
+                              : null,
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
                         ),
-                        child: ElevatedButton(
+                        validator: (val) => (val == null || val.trim().length < 3) ? 'Enter valid room code' : null,
+                      ),
+                      const SizedBox(height: 24),
+
+                      SizedBox(
+                        width: double.infinity,
+                        height: 52,
+                        child: ElevatedButton.icon(
                           style: ElevatedButton.styleFrom(
-                            padding: EdgeInsets.zero,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                            elevation: 0,
-                            backgroundColor: Colors.transparent,
+                            backgroundColor: themeColor,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                            elevation: 1,
                           ),
-                          onPressed: _isLoading ? null : _handleLiveAction,
-                          child: Ink(
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                colors: widget.isTeacher
-                                    ? [const Color(0xFFEF4444), const Color(0xFFDC2626)]
-                                    : [const Color(0xFF2563EB), const Color(0xFF1D4ED8)],
-                                begin: Alignment.centerLeft,
-                                end: Alignment.centerRight,
-                              ),
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                            child: Container(
-                              alignment: Alignment.center,
-                              child: _isLoading
-                                  ? const SizedBox(
-                                      width: 22,
-                                      height: 22,
-                                      child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5),
-                                    )
-                                  : Row(
-                                      mainAxisAlignment: MainAxisAlignment.center,
-                                      children: [
-                                        Icon(
-                                          widget.isTeacher ? Icons.videocam_rounded : Icons.login_rounded,
-                                          color: Colors.white,
-                                          size: 20,
-                                        ),
-                                        const SizedBox(width: 10),
-                                        Text(
-                                          widget.isTeacher ? 'GO LIVE WITH FYBTT' : 'JOIN CLASS NOW',
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.bold,
-                                            fontSize: 14,
-                                            color: Colors.white,
-                                            letterSpacing: 0.5,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                            ),
-                          ),
+                          onPressed: _isLoading ? null : () => _handleLiveAction(),
+                          icon: _isLoading ? const SizedBox.shrink() : Icon(widget.isTeacher ? Icons.sensors_rounded : Icons.login_rounded, size: 22),
+                          label: _isLoading
+                              ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.2))
+                              : Text(
+                                  widget.isTeacher ? 'START LIVE CLASS' : 'JOIN ROOM',
+                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14.5, letterSpacing: 0.5),
+                                ),
                         ),
                       ),
                     ],
@@ -389,59 +514,6 @@ class _JoinLiveScreenState extends State<JoinLiveScreen> {
           ),
         ),
       ),
-    );
-  }
-
-  // মডার্ন ইনপুট ফিল্ড বিল্ডার উইজেট
-  Widget _buildCustomTextField({
-    required TextEditingController controller,
-    required String label,
-    required String hint,
-    required IconData icon,
-    required Color accentColor,
-    required String? Function(String?)? validator,
-    bool isCode = false,
-  }) {
-    return TextFormField(
-      controller: controller,
-      style: TextStyle(
-        fontSize: 14, 
-        fontWeight: isCode ? FontWeight.bold : FontWeight.w500,
-        color: const Color(0xFF1E293B),
-        letterSpacing: isCode ? 1.5 : 0.2
-      ),
-      inputFormatters: isCode ? [FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z0-9]'))] : null,
-      decoration: InputDecoration(
-        labelText: label,
-        labelStyle: const TextStyle(color: Color(0xFF64748B), fontSize: 13, fontWeight: FontWeight.w500),
-        hintText: hint,
-        hintStyle: const TextStyle(color: Color(0xFF94A3B8), fontSize: 13),
-        prefixIcon: Icon(icon, color: accentColor, size: 20),
-        filled: true,
-        fillColor: const Color(0xFFF8FAFC),
-        contentPadding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: BorderSide(color: accentColor, width: 1.5),
-        ),
-        errorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: Colors.redAccent, width: 1),
-        ),
-        focusedErrorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: Colors.redAccent, width: 1.5),
-        ),
-      ),
-      validator: validator,
     );
   }
 }
