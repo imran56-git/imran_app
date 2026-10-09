@@ -1,3 +1,4 @@
+```dart
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/reminder_model.dart';
 
@@ -157,6 +158,156 @@ class ReminderService {
     await batch.commit();
   }
 
+  Future<void> dispatchScheduledReminder(DocumentSnapshot reminderDoc) async {
+    final data = reminderDoc.data() as Map<String, dynamic>;
+    final String reminderId = reminderDoc.id;
+    final String teacherId = (data['teacherId'] ?? '').toString();
+    final String teacherName = (data['teacherName'] ?? 'Teacher').toString();
+    final String studentId = (data['studentId'] ?? '').toString();
+    final String studentName = (data['studentName'] ?? 'Student').toString();
+    final double amount = (data['amount'] as num?)?.toDouble() ?? 0.0;
+    final String month = (data['month'] ?? 'Current Month').toString();
+    final int day = (data['dayOfMonth'] as num?)?.toInt() ?? 10;
+
+    if (studentId.isEmpty || teacherId.isEmpty) return;
+
+    try {
+      final feeQuery = await _firestore
+          .collection('student_fees')
+          .where('teacherId', isEqualTo: teacherId)
+          .where('studentId', isEqualTo: studentId)
+          .limit(1)
+          .get();
+
+      final batch = _firestore.batch();
+
+      if (feeQuery.docs.isNotEmpty) {
+        final existingDoc = feeQuery.docs.first;
+        final feeData = existingDoc.data();
+        final Map<String, dynamic> statuses =
+            Map<String, dynamic>.from(feeData['monthStatuses'] ?? {});
+
+        final String currentMonthStatus = statuses[month]?.toString() ?? 'NOT_ENROLLED';
+
+        if (currentMonthStatus != 'DUE' && currentMonthStatus != 'PAID') {
+          statuses[month] = 'DUE';
+          final double currentTotalDue = (feeData['totalDue'] as num?)?.toDouble() ?? 0.0;
+          final int currentDueCount = (feeData['dueMonthsCount'] as num?)?.toInt() ?? 0;
+
+          final double newTotalDue = currentTotalDue + amount;
+          final int newDueCount = currentDueCount + 1;
+
+          batch.update(existingDoc.reference, {
+            'monthStatuses': statuses,
+            'totalDue': newTotalDue,
+            'dueMonthsCount': newDueCount,
+            'lastUpdated': FieldValue.serverTimestamp(),
+          });
+
+          final monthlyFeeRef = _firestore.collection('monthly_fee').doc(studentId);
+          batch.set(monthlyFeeRef, {
+            'studentId': studentId,
+            'studentName': studentName,
+            'teacherId': teacherId,
+            'pendingAmount': newTotalDue,
+            'lastUpdated': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true));
+        }
+      } else {
+        final newFeeRef = _firestore.collection('student_fees').doc();
+        batch.set(newFeeRef, {
+          'teacherId': teacherId,
+          'studentId': studentId,
+          'studentName': studentName,
+          'subject': 'Tuition',
+          'year': DateTime.now().year,
+          'monthlyFee': amount,
+          'monthStatuses': {month: 'DUE'},
+          'dueMonthsCount': 1,
+          'paidMonthsCount': 0,
+          'totalPaid': 0.0,
+          'totalDue': amount,
+          'createdAt': FieldValue.serverTimestamp(),
+          'lastUpdated': FieldValue.serverTimestamp(),
+        });
+
+        final monthlyFeeRef = _firestore.collection('monthly_fee').doc(studentId);
+        batch.set(monthlyFeeRef, {
+          'studentId': studentId,
+          'studentName': studentName,
+          'teacherId': teacherId,
+          'pendingAmount': amount,
+          'totalPaid': 0.0,
+          'monthlyFee': amount,
+          'lastUpdated': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      }
+
+      final reminderRef = _firestore.collection('payment_reminders').doc(reminderId);
+      batch.update(reminderRef, {
+        'status': 'sent',
+        'lastSentAt': FieldValue.serverTimestamp(),
+      });
+
+      await batch.commit();
+
+      final String noticeMessage = "Hello $studentName,\n\n"
+          "This is an official tuition fee notice on behalf of $teacherName.\n"
+          "Tuition fee for $month is now due.\n\n"
+          "Amount: ₹${amount.toStringAsFixed(0)}\n"
+          "Due Day: $day of this month\n\n"
+          "This fee has been recorded in your pending dues ledger.\nPlease clear your payment promptly.\n\n"
+          "Thank you,\nFYBTT Official Desk";
+
+      await sendOfficialNoticeToStudent(
+        studentId: studentId,
+        title: "Tuition Fee Due: ₹${amount.toStringAsFixed(0)} ($month)",
+        messageContent: noticeMessage,
+        category: 'tuition_fee',
+      );
+    } catch (_) {}
+  }
+
+  Future<int> checkAndProcessDueReminders({required String currentUserId}) async {
+    if (currentUserId.isEmpty) return 0;
+    final now = DateTime.now();
+    int processedCount = 0;
+
+    try {
+      final teacherReminders = await _firestore
+          .collection('payment_reminders')
+          .where('teacherId', isEqualTo: currentUserId)
+          .where('status', isEqualTo: 'scheduled')
+          .get();
+
+      for (var doc in teacherReminders.docs) {
+        final data = doc.data();
+        final Timestamp? scheduledFor = data['scheduledFor'] as Timestamp?;
+        if (scheduledFor != null && scheduledFor.toDate().isBefore(now)) {
+          await dispatchScheduledReminder(doc);
+          processedCount++;
+        }
+      }
+
+      final studentReminders = await _firestore
+          .collection('payment_reminders')
+          .where('studentId', isEqualTo: currentUserId)
+          .where('status', isEqualTo: 'scheduled')
+          .get();
+
+      for (var doc in studentReminders.docs) {
+        final data = doc.data();
+        final Timestamp? scheduledFor = data['scheduledFor'] as Timestamp?;
+        if (scheduledFor != null && scheduledFor.toDate().isBefore(now)) {
+          await dispatchScheduledReminder(doc);
+          processedCount++;
+        }
+      }
+    } catch (_) {}
+
+    return processedCount;
+  }
+
   Future<void> deleteReminder(String reminderId) async {
     await _firestore.collection('payment_reminders').doc(reminderId).delete();
   }
@@ -168,3 +319,4 @@ class ReminderService {
         .snapshots();
   }
 }
+```
