@@ -6,8 +6,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart'; 
 import 'package:image_picker/image_picker.dart';
-import 'package:shared_preferences/shared_preferences.dart'; 
-
+import 'package:shared_preferences/shared_preferences.dart';
 import '../animations/animation_constants.dart';
 import '../animations/screen_pull_controller.dart';
 import '../models/rating_model.dart';
