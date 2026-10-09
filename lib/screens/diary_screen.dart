@@ -33,7 +33,7 @@ class _DiaryScreenState extends State<DiaryScreen> {
   bool _isSaving = false;
   bool _isLoadingHistory = false;
 
-  int _selectedYear = 2026;
+  late int _selectedYear;
   final List<int> _availableYears = [2024, 2025, 2026, 2027, 2028, 2029];
 
   final List<String> _months = [
@@ -46,6 +46,11 @@ class _DiaryScreenState extends State<DiaryScreen> {
   @override
   void initState() {
     super.initState();
+    _selectedYear = DateTime.now().year;
+    if (!_availableYears.contains(_selectedYear)) {
+      _availableYears.add(_selectedYear);
+      _availableYears.sort();
+    }
     _resetMonthStatuses();
   }
 
@@ -83,7 +88,7 @@ class _DiaryScreenState extends State<DiaryScreen> {
 
         setState(() {
           _monthlyFeeController.text = (data['monthlyFee'] != null)
-              ? data['monthlyFee'].toString()
+              ? ((data['monthlyFee'] as num).toDouble()).toStringAsFixed(0)
               : '';
           _subjectController.text = (data['subject'] ?? '').toString();
           if (savedStatuses != null) {
@@ -98,8 +103,7 @@ class _DiaryScreenState extends State<DiaryScreen> {
           _subjectController.clear();
         });
       }
-    } catch (e) {
-      debugPrint("Error fetching student fee record: $e");
+    } catch (_) {
     } finally {
       if (mounted) setState(() => _isLoadingHistory = false);
     }
@@ -127,7 +131,7 @@ class _DiaryScreenState extends State<DiaryScreen> {
       } else {
         _showErrorPopup('Student Not Found', 'No student registered with UID: $searchId\nPlease verify the ID and try again.');
       }
-    } catch (e) {
+    } catch (_) {
       setState(() => _isSearching = false);
       _showErrorPopup('Error', 'Failed to retrieve student data from the database.');
     }
@@ -178,14 +182,18 @@ class _DiaryScreenState extends State<DiaryScreen> {
 
     setState(() => _isSaving = true);
     final studentId = _foundStudent!['uid'] ?? _searchController.text.trim();
+    final studentName = _foundStudent!['name'] ?? 'Student';
     final docId = '${widget.currentUserId}_${studentId}_$_selectedYear';
 
     try {
-      await _firestore.collection('student_fees').doc(docId).set({
+      final batch = _firestore.batch();
+
+      final docRef = _firestore.collection('student_fees').doc(docId);
+      batch.set(docRef, {
         'teacherId': widget.currentUserId,
-        'teacherName': widget.currentUserName,
+        'teacherName': widget.currentUserName.isNotEmpty ? widget.currentUserName : 'Teacher',
         'studentId': studentId,
-        'studentName': _foundStudent!['name'] ?? 'Student',
+        'studentName': studentName,
         'subject': _subjectController.text.trim(),
         'year': _selectedYear,
         'monthlyFee': _monthlyFee,
@@ -197,9 +205,10 @@ class _DiaryScreenState extends State<DiaryScreen> {
         'lastUpdated': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
 
-      await _firestore.collection('monthly_fee').doc(studentId).set({
+      final monthlyRef = _firestore.collection('monthly_fee').doc(studentId);
+      batch.set(monthlyRef, {
         'studentId': studentId,
-        'studentName': _foundStudent!['name'] ?? 'Student',
+        'studentName': studentName,
         'subject': _subjectController.text.trim(),
         'teacherId': widget.currentUserId,
         'pendingAmount': _totalDue,
@@ -208,16 +217,80 @@ class _DiaryScreenState extends State<DiaryScreen> {
         'lastUpdated': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
 
+      await batch.commit();
+
       if (mounted) {
-        SuccessToast.show(context, 'Fee Record Saved Successfully');
-        setState(() {
-          _isSaving = false;
-        });
+        SuccessToast.show(context, 'Fee Record Saved & Balanced');
+        setState(() => _isSaving = false);
       }
-    } catch (e) {
+    } catch (_) {
       setState(() => _isSaving = false);
       _showErrorPopup('Save Failed', 'Unable to write fee record to database. Please check connection.');
     }
+  }
+
+  Widget _buildStudentAvatar(String studentId, String studentName) {
+    String? imageUrl = _foundStudent?['profileImageUrl'] ?? _foundStudent?['profilePic'] ?? _foundStudent?['photoUrl'];
+
+    if (imageUrl != null && imageUrl.isNotEmpty) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(24),
+        child: Image.network(
+          imageUrl,
+          width: 48,
+          height: 48,
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => _fallbackAvatar(studentName),
+        ),
+      );
+    }
+
+    return FutureBuilder<DocumentSnapshot>(
+      future: _firestore.collection('students').doc(studentId).get(),
+      builder: (context, snapshot) {
+        String? remoteImg;
+        if (snapshot.hasData && snapshot.data!.exists) {
+          final data = snapshot.data!.data() as Map<String, dynamic>?;
+          remoteImg = data?['profileImageUrl'] ?? data?['profilePic'] ?? data?['imageUrl'];
+        }
+
+        if (remoteImg != null && remoteImg.isNotEmpty) {
+          return ClipRRect(
+            borderRadius: BorderRadius.circular(24),
+            child: Image.network(
+              remoteImg,
+              width: 48,
+              height: 48,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => _fallbackAvatar(studentName),
+            ),
+          );
+        }
+
+        return _fallbackAvatar(studentName);
+      },
+    );
+  }
+
+  Widget _fallbackAvatar(String name) {
+    return Container(
+      width: 48,
+      height: 48,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: LinearGradient(
+          colors: [Colors.blue.shade600, Colors.indigo.shade700],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+      ),
+      child: Center(
+        child: Text(
+          name.isNotEmpty ? name[0].toUpperCase() : 'S',
+          style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 18),
+        ),
+      ),
+    );
   }
 
   Widget _buildStatusChip(String month, String status, String label, Color activeBgColor) {
@@ -413,23 +486,38 @@ class _DiaryScreenState extends State<DiaryScreen> {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                          child: Row(
                             children: [
-                              Text(
-                                _foundStudent!['name'] ?? 'Student',
-                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Color(0xFF0F172A)),
-                              ),
-                              const SizedBox(height: 3),
-                              Text(
+                              _buildStudentAvatar(
                                 _foundStudent!['uid'] ?? '',
-                                style: TextStyle(fontSize: 12, color: Colors.grey[600], fontFamily: 'monospace'),
+                                _foundStudent!['name'] ?? 'Student',
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      _foundStudent!['name'] ?? 'Student',
+                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17, color: Color(0xFF0F172A)),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      _foundStudent!['uid'] ?? '',
+                                      style: TextStyle(fontSize: 11.5, color: Colors.grey[600], fontFamily: 'monospace'),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ],
+                                ),
                               ),
                             ],
                           ),
                         ),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                           decoration: BoxDecoration(
                             color: Colors.blue.shade50,
                             borderRadius: BorderRadius.circular(12),
@@ -444,7 +532,7 @@ class _DiaryScreenState extends State<DiaryScreen> {
                                   value: year,
                                   child: Text(
                                     year.toString(),
-                                    style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue[800], fontSize: 14),
+                                    style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue[800], fontSize: 13.5),
                                   ),
                                 );
                               }).toList(),
