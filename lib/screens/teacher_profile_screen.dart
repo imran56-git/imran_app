@@ -22,6 +22,7 @@ import 'live/join_live_screen.dart';
 import 'notification_screen.dart';
 import 'teacher_reviews_screen.dart';
 import 'teacher_follow_requests_screen.dart';
+import 'diary_history_screen.dart';
 
 class TeacherProfileScreen extends StatefulWidget {
   final String currentUserId;
@@ -121,7 +122,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
           isLoading = false;
         });
       }
-    } catch (e) {
+    } catch (_) {
       if (mounted) setState(() => isLoading = false);
     }
   }
@@ -184,8 +185,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
               'locations': teacherLocations,
             });
             if (mounted) SuccessToast.show(context, 'Teaching areas synchronized!');
-          } catch (e) {
-          }
+          } catch (_) {}
         }
       }
     }
@@ -219,7 +219,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
         setState(() => isEditing = false);
         fetchTeacherData();
       }
-    } catch (e) { 
+    } catch (_) { 
       if (mounted) setState(() => isLoading = false); 
     }
   }
@@ -382,6 +382,255 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
           end: Offset.zero,
         ).animate(itemAnimation),
         child: child,
+      ),
+    );
+  }
+
+  void _showPendingDuesSheet(double totalDue, List<Map<String, dynamic>> dueStudents) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        height: MediaQuery.of(context).size.height * 0.75,
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+        ),
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 44,
+                height: 5,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.red.shade50,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(Icons.account_balance_wallet_rounded, color: Colors.red, size: 22),
+                    ),
+                    const SizedBox(width: 12),
+                    const Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Pending Tuition Fees',
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Color(0xFF0F172A)),
+                        ),
+                        Text(
+                          'Student breakdown of unpaid dues',
+                          style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close_rounded, color: Colors.grey),
+                  onPressed: () => Navigator.pop(ctx),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [Colors.red.shade600, Colors.red.shade800],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(18),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.red.withOpacity(0.2),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  )
+                ],
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Total Outstanding',
+                        style: TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w600),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '₹${totalDue.toStringAsFixed(0)}',
+                        style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
+                      ),
+                    ],
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      '${dueStudents.length} Students',
+                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 18),
+            Text(
+              'Students with Due (${dueStudents.length})',
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF1E293B)),
+            ),
+            const SizedBox(height: 10),
+            Expanded(
+              child: dueStudents.isEmpty
+                  ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.check_circle_outline_rounded, size: 56, color: Colors.green.shade400),
+                          const SizedBox(height: 12),
+                          const Text(
+                            'All Dues Cleared!',
+                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Color(0xFF1E293B)),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'No pending payments from any enrolled student.',
+                            style: TextStyle(color: Colors.grey.shade500, fontSize: 13),
+                          ),
+                        ],
+                      ),
+                    )
+                  : ListView.builder(
+                      physics: const BouncingScrollPhysics(),
+                      itemCount: dueStudents.length,
+                      itemBuilder: (context, index) {
+                        final student = dueStudents[index];
+                        final String name = student['studentName'] ?? 'Student';
+                        final String uid = student['studentId'] ?? '';
+                        final String subject = student['subject'] ?? '';
+                        final double amount = (student['due'] as double?) ?? 0.0;
+
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 10),
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF8FAFC),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(color: const Color(0xFFE2E8F0)),
+                          ),
+                          child: Row(
+                            children: [
+                              CircleAvatar(
+                                radius: 18,
+                                backgroundColor: Colors.red.shade50,
+                                child: Text(
+                                  '#${index + 1}',
+                                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.red.shade700),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      name,
+                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14.5, color: Color(0xFF0F172A)),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      subject.isNotEmpty ? '$subject  •  $uid' : uid,
+                                      style: TextStyle(fontSize: 11, color: Colors.grey.shade600, fontFamily: 'monospace'),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                children: [
+                                  Text(
+                                    '₹${amount.toStringAsFixed(0)}',
+                                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xFFDC2626)),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                                    decoration: BoxDecoration(
+                                      color: Colors.red.shade50,
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Text(
+                                      'DUE',
+                                      style: TextStyle(fontSize: 9, fontWeight: FontWeight.w800, color: Colors.red.shade700),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF1E40AF),
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  elevation: 1,
+                ),
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => DiaryHistoryScreen(
+                        currentUserId: widget.currentUserId,
+                        currentUserName: _nameController.text.isEmpty ? 'Teacher' : _nameController.text,
+                      ),
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.history_edu_rounded, size: 20),
+                label: const Text(
+                  'MANAGE IN DIARY HISTORY',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, letterSpacing: 0.5),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -558,7 +807,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
       );
     }
 
-    menuItems.add(
+menuItems.add(
       GestureDetector(
         onTapDown: (details) {
           final Offset tapPos = details.globalPosition;
@@ -655,7 +904,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
           },
         ),
       ]);
-} else {
+    } else {
       menuItems.add(
         _buildGlassIconButton(
           icon: Icons.share_outlined,
@@ -987,7 +1236,7 @@ Widget _buildUidIdentityCard() {
     );
   }
 
-Widget _buildViewProfile() {
+  Widget _buildViewProfile() {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       _buildMaterial3Card("Tuition / Institute Name", _instituteController.text, Icons.domain_outlined, Colors.indigo),
       _buildMaterial3Card("Bio", _bioController.text, Icons.description_outlined, const Color(0xFF3B82F6)),
@@ -1070,19 +1319,65 @@ Widget _buildViewProfile() {
               },
             ),
             StreamBuilder<QuerySnapshot>(
-              stream: _firestore.collection('payment_reminders').where('teacherId', isEqualTo: widget.currentUserId).where('status', isEqualTo: 'pending').snapshots(),
+              stream: _firestore
+                  .collection('student_fees')
+                  .where('teacherId', isEqualTo: widget.currentUserId)
+                  .snapshots(),
               builder: (context, snapshot) {
                 double totalPending = 0;
+                List<Map<String, dynamic>> dueStudents = [];
+
                 if (snapshot.hasData) {
                   for (var doc in snapshot.data!.docs) {
                     final data = doc.data() as Map<String, dynamic>;
-                    totalPending += (double.tryParse(data['amount'].toString()) ?? 0);
+                    final double due = (data['totalDue'] as num?)?.toDouble() ?? 0.0;
+                    if (due > 0) {
+                      totalPending += due;
+                      dueStudents.add({
+                        'id': doc.id,
+                        'studentId': data['studentId'] ?? '',
+                        'studentName': data['studentName'] ?? 'Student',
+                        'due': due,
+                        'subject': data['subject'] ?? '',
+                        'monthlyFee': (data['monthlyFee'] as num?)?.toDouble() ?? 0.0,
+                      });
+                    }
                   }
                 }
-                return _buildDashboardCard("Pending Payments", "₹${totalPending.toStringAsFixed(0)}", Icons.account_balance_wallet_outlined, Colors.red);
+
+                dueStudents.sort((a, b) => (b['due'] as double).compareTo(a['due'] as double));
+
+                return _buildDashboardCard(
+                  "Pending Payments",
+                  "₹${totalPending.toStringAsFixed(0)}",
+                  Icons.account_balance_wallet_outlined,
+                  Colors.red,
+                  onTap: () => _showPendingDuesSheet(totalPending, dueStudents),
+                  actionWidget: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.red.shade50,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          dueStudents.isNotEmpty ? "${dueStudents.length}" : "0",
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.red.shade700,
+                          ),
+                        ),
+                        Icon(Icons.chevron_right_rounded, size: 12, color: Colors.red.shade700),
+                      ],
+                    ),
+                  ),
+                );
               },
             ),
-            StreamBuilder<QuerySnapshot>(
+StreamBuilder<QuerySnapshot>(
               stream: _firestore.collection('live_classes').where('teacherId', isEqualTo: widget.currentUserId).where('isLive', isEqualTo: true).snapshots(),
               builder: (context, snapshot) {
                 bool isLiveActive = snapshot.hasData && snapshot.data!.docs.isNotEmpty;
@@ -1095,39 +1390,57 @@ Widget _buildViewProfile() {
     );
   }
 
-  Widget _buildDashboardCard(String title, String value, IconData icon, Color color) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
+  Widget _buildDashboardCard(
+    String title, 
+    String value, 
+    IconData icon, 
+    Color color, {
+    VoidCallback? onTap,
+    Widget? actionWidget,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
         borderRadius: BorderRadius.circular(18),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.015), blurRadius: 8, offset: const Offset(0, 4))],
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(14.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(12)),
-              child: Icon(icon, color: color, size: 18),
-            ),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(value, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1B1B1B))),
-                const SizedBox(height: 2),
-                Text(title, style: TextStyle(fontSize: 12, color: Colors.grey.shade500, fontWeight: FontWeight.w500)),
-              ],
-            )
-          ],
+        child: Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(18),
+            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.015), blurRadius: 8, offset: const Offset(0, 4))],
+          ),
+          padding: const EdgeInsets.all(14.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(12)),
+                    child: Icon(icon, color: color, size: 18),
+                  ),
+                  if (actionWidget != null) actionWidget,
+                ],
+              ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(value, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1B1B1B))),
+                  const SizedBox(height: 2),
+                  Text(title, style: TextStyle(fontSize: 12, color: Colors.grey.shade500, fontWeight: FontWeight.w500)),
+                ],
+              )
+            ],
+          ),
         ),
       ),
     );
   }
 
-Widget _buildEditForm() {
+  Widget _buildEditForm() {
     final query = _subjectSearchController.text.trim();
     final list = _subjects.where((s) => s.toLowerCase().contains(query.toLowerCase())).toList();
 
@@ -1214,5 +1527,5 @@ class HeaderCurveClipper extends CustomClipper<Path> {
 }
 
 const List<String> _subjects = [
-  'Bengali', 'English', 'Mathematics', 'General Science', 'Social Studies', 'ICT (Information & Tech)', 'Class1-8 all subjects', 'Physics', 'Chemistry', 'Biology', 'Higher Mathematics', 'Accounting', 'Business Studies', 'Finance & Banking', 'Geography & Environment', 'History', 'Civics & Citizenship', 'Economics', 'Physics 1st/2nd Paper', 'Chemistry 1st/2nd Paper', 'Biology 1st/2nd Paper', 'Higher Math 1st/2nd Paper', 'Statistics', 'Management', 'Marketing', 'Computer Science', 'App Development (Flutter)', 'Graphic Design', 'Cyber Security', 'Robotics', 'Data Science', 'UI/UX Design', 'Fine Arts', 'Music', 'Photography', 'Agriculture', 'IELTS/GRE Preparation'
+  'Bengali', 'English', 'Mathematics', 'General Science', 'Social Studies', 'ICT (Information & Tech)', 'Class1-8 all subjects', 'Physics', 'Chemistry', 'Biology', 'Higher Mathematics', 'Accounting', 'Business Studies', 'Finance & Banking', 'Geography & Environment', 'History', 'Civics & Citizenship', 'Economics', 'Physics 1st/2nd Paper', 'Chemistry 1st/2nd Paper', 'Biology 1st/2nd Paper', 'Higher Math 1st/2nd Paper', 'Statistics', 'Management', 'Marketing', 'Computer Science', 'App Development (Flutter)', 'Graphic Design', 'Cyber Security', 'Robotics', 'Data Science', 'UI/UX Design', 'Fine Arts', 'Music', 'Photography',
 ];
