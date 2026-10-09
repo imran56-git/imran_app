@@ -1528,4 +1528,4 @@ class HeaderCurveClipper extends CustomClipper<Path> {
 
 const List<String> _subjects = [
   'Bengali', 'English', 'Mathematics', 'General Science', 'Social Studies', 'ICT (Information & Tech)', 'Class1-8 all subjects', 'Physics', 'Chemistry', 'Biology', 'Higher Mathematics', 'Accounting', 'Business Studies', 'Finance & Banking', 'Geography & Environment', 'History', 'Civics & Citizenship', 'Economics', 'Physics 1st/2nd Paper', 'Chemistry 1st/2nd Paper', 'Biology 1st/2nd Paper', 'Higher Math 1st/2nd Paper', 'Statistics', 'Management', 'Marketing', 'Computer Science', 'App Development (Flutter)', 'Graphic Design', 'Cyber Security', 'Robotics', 'Data Science', 'UI/UX Design', 'Fine Arts', 'Music', 'Photography',
-];
+]; 
