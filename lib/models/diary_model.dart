@@ -1,3 +1,4 @@
+```dart
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class DiaryModel {
@@ -19,6 +20,8 @@ class DiaryModel {
   final String topicCovered;
   final String homework;
   final String privateNote;
+  final DateTime? createdAt;
+  final DateTime? lastUpdated;
 
   DiaryModel({
     required this.diaryId,
@@ -39,6 +42,8 @@ class DiaryModel {
     this.topicCovered = '',
     this.homework = '',
     this.privateNote = '',
+    this.createdAt,
+    this.lastUpdated,
   })  : year = year ?? DateTime.now().year,
         monthlyFee = monthlyFee ?? 0.0,
         monthStatuses = monthStatuses ?? const {},
@@ -68,19 +73,49 @@ class DiaryModel {
       'topicCovered': topicCovered,
       'homework': homework,
       'privateNote': privateNote,
+      'createdAt': createdAt != null
+          ? Timestamp.fromDate(createdAt!)
+          : FieldValue.serverTimestamp(),
+      'lastUpdated': FieldValue.serverTimestamp(),
     };
   }
 
   factory DiaryModel.fromMap(Map<String, dynamic> map) {
-    final dateParsed = map['date'] is Timestamp
-        ? (map['date'] as Timestamp).toDate()
-        : DateTime.now();
+    DateTime parseDate(dynamic value) {
+      if (value is Timestamp) return value.toDate();
+      if (value is String) return DateTime.tryParse(value) ?? DateTime.now();
+      return DateTime.now();
+    }
+
+    final dateParsed = parseDate(map['date']);
+
+    DateTime? createdAtParsed;
+    if (map['createdAt'] != null) {
+      createdAtParsed = parseDate(map['createdAt']);
+    }
+
+    DateTime? lastUpdatedParsed;
+    if (map['lastUpdated'] != null) {
+      lastUpdatedParsed = parseDate(map['lastUpdated']);
+    }
 
     final Map<String, String> parsedStatuses = {};
     if (map['monthStatuses'] != null && map['monthStatuses'] is Map) {
       (map['monthStatuses'] as Map).forEach((key, value) {
         parsedStatuses[key.toString()] = value.toString();
       });
+    }
+
+    double parseDouble(dynamic value) {
+      if (value is num) return value.toDouble();
+      if (value is String) return double.tryParse(value) ?? 0.0;
+      return 0.0;
+    }
+
+    int parseInt(dynamic value, int fallback) {
+      if (value is num) return value.toInt();
+      if (value is String) return int.tryParse(value) ?? fallback;
+      return fallback;
     }
 
     return DiaryModel(
@@ -90,18 +125,21 @@ class DiaryModel {
       teacherId: map['teacherId']?.toString() ?? '',
       teacherName: map['teacherName']?.toString() ?? 'Teacher',
       subject: map['subject']?.toString() ?? '',
-      year: (map['year'] as num?)?.toInt() ?? DateTime.now().year,
-      monthlyFee: (map['monthlyFee'] as num?)?.toDouble() ?? 0.0,
+      year: parseInt(map['year'], DateTime.now().year),
+      monthlyFee: parseDouble(map['monthlyFee']),
       monthStatuses: parsedStatuses,
-      paidMonthsCount: (map['paidMonthsCount'] as num?)?.toInt() ?? 0,
-      dueMonthsCount: (map['dueMonthsCount'] as num?)?.toInt() ?? 0,
-      totalPaid: (map['totalPaid'] as num?)?.toDouble() ?? 0.0,
-      totalDue: (map['totalDue'] as num?)?.toDouble() ?? 0.0,
+      paidMonthsCount: parseInt(map['paidMonthsCount'], 0),
+      dueMonthsCount: parseInt(map['dueMonthsCount'], 0),
+      totalPaid: parseDouble(map['totalPaid']),
+      totalDue: parseDouble(map['totalDue']),
       month: map['month']?.toString() ?? '',
       date: dateParsed,
       topicCovered: map['topicCovered']?.toString() ?? '',
       homework: map['homework']?.toString() ?? '',
       privateNote: map['privateNote']?.toString() ?? '',
+      createdAt: createdAtParsed,
+      lastUpdated: lastUpdatedParsed,
     );
   }
 }
+```
