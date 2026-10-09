@@ -68,9 +68,7 @@ class _ChatListScreenState extends State<ChatListScreen>
               .toString();
         });
       }
-    } catch (e) {
-      debugPrint("Error loading profile: $e");
-    }
+    } catch (_) {}
   }
 
   @override
@@ -124,9 +122,7 @@ class _ChatListScreenState extends State<ChatListScreen>
                       .collection('chats')
                       .doc(docId)
                       .delete();
-                } catch (e) {
-                  debugPrint("Error deleting chat doc $docId: $e");
-                }
+                } catch (_) {}
               }
               _clearSelection();
             },
@@ -216,15 +212,13 @@ class _ChatListScreenState extends State<ChatListScreen>
         body: Column(
           children: [
             _buildTopHeader(),
-
             Expanded(
               child: StreamBuilder<QuerySnapshot>(
                 stream: _chatService.getUserChatsStream(widget.currentUserId),
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
                     return const Center(
-                      child:
-                          CircularProgressIndicator(color: Color(0xFF1E4C7A)),
+                      child: CircularProgressIndicator(color: Color(0xFF1E4C7A)),
                     );
                   }
                   if (snapshot.hasError) {
@@ -240,14 +234,17 @@ class _ChatListScreenState extends State<ChatListScreen>
                   }
 
                   final rawChatDocs = snapshot.data!.docs;
-
                   final Map<String, DocumentSnapshot> uniqueChatsMap = {};
 
                   for (var doc in rawChatDocs) {
                     final data = doc.data() as Map<String, dynamic>;
                     final bool isGroup = data['isGroup'] == true;
+                    final bool isOfficial = data['isOfficial'] == true ||
+                        doc.id.startsWith('official_desk_');
 
-                    if (isGroup) {
+                    if (isOfficial) {
+                      uniqueChatsMap['official_desk'] = doc;
+                    } else if (isGroup) {
                       uniqueChatsMap[doc.id] = doc;
                     } else {
                       final List<dynamic> participants = data['participants'] ?? [];
@@ -277,6 +274,13 @@ class _ChatListScreenState extends State<ChatListScreen>
                   chatDocs.sort((a, b) {
                     final aData = a.data() as Map<String, dynamic>;
                     final bData = b.data() as Map<String, dynamic>;
+
+                    final aIsOfficial = aData['isOfficial'] == true || a.id.startsWith('official_desk_');
+                    final bIsOfficial = bData['isOfficial'] == true || b.id.startsWith('official_desk_');
+
+                    if (aIsOfficial && !bIsOfficial) return -1;
+                    if (!aIsOfficial && bIsOfficial) return 1;
+
                     final aTime = aData['lastMessageTime'] as Timestamp?;
                     final bTime = bData['lastMessageTime'] as Timestamp?;
                     if (aTime == null && bTime == null) return 0;
@@ -297,6 +301,9 @@ class _ChatListScreenState extends State<ChatListScreen>
                       final doc = chatDocs[index];
                       final chatData = doc.data() as Map<String, dynamic>;
                       final bool isGroup = chatData['isGroup'] == true;
+                      final bool isOfficial = chatData['isOfficial'] == true ||
+                          doc.id.startsWith('official_desk_');
+
                       final String lastMessage =
                           (chatData['lastMessage'] ?? '').toString();
                       final Timestamp? lastTime =
@@ -304,7 +311,8 @@ class _ChatListScreenState extends State<ChatListScreen>
                       final bool isSelected =
                           _selectedChatDocIds.contains(doc.id);
 
-                      final String lastSenderId = (chatData['lastSenderId'] ?? chatData['senderId'] ?? '').toString();
+                      final String lastSenderId =
+                          (chatData['lastSenderId'] ?? chatData['senderId'] ?? '').toString();
                       int unreadCount = 0;
 
                       if (lastSenderId != widget.currentUserId) {
@@ -313,6 +321,40 @@ class _ChatListScreenState extends State<ChatListScreen>
                         } else {
                           unreadCount = chatData['unreadCount'] ?? 0;
                         }
+                      }
+
+                      if (isOfficial) {
+                        const String officialName = 'FYBTT official';
+                        if (!_matchesSearch(chatData, officialName)) {
+                          return const SizedBox.shrink();
+                        }
+
+                        return _ChatCard(
+                          name: officialName,
+                          lastMessage: lastMessage.isEmpty ? 'Official Communication Desk' : lastMessage,
+                          timeText: _formatTime(lastTime),
+                          unreadCount: unreadCount,
+                          imageUrl: '',
+                          isOnline: false,
+                          isGroup: false,
+                          isOfficial: true,
+                          isVerified: true,
+                          isSelected: isSelected,
+                          onLongPress: () => _toggleSelection(doc.id),
+                          onTap: () {
+                            if (_isSelectionMode) {
+                              _toggleSelection(doc.id);
+                            } else {
+                              _openChat(
+                                chatData: chatData,
+                                chatDocId: doc.id,
+                                receiverName: officialName,
+                                receiverId: 'OFFICIAL_FYBTT_DESK',
+                                receiverImage: 'assets/images/app_logo.png',
+                              );
+                            }
+                          },
+                        );
                       }
 
                       if (isGroup) {
@@ -333,6 +375,8 @@ class _ChatListScreenState extends State<ChatListScreen>
                           imageUrl: groupImageUrl,
                           isOnline: false,
                           isGroup: true,
+                          isOfficial: false,
+                          isVerified: false,
                           isSelected: isSelected,
                           onLongPress: () => _toggleSelection(doc.id),
                           onTap: () {
@@ -409,6 +453,8 @@ class _ChatListScreenState extends State<ChatListScreen>
                               imageUrl: finalImageUrl,
                               isOnline: isOnline,
                               isGroup: false,
+                              isOfficial: false,
+                              isVerified: false,
                               isSelected: isSelected,
                               onLongPress: () => _toggleSelection(doc.id),
                               onTap: () {
@@ -503,7 +549,7 @@ class _ChatListScreenState extends State<ChatListScreen>
                   Row(
                     children: [
                       Image.asset(
-                        'assets/logo.png',
+                        'assets/images/app_logo.png',
                         height: 30,
                         errorBuilder: (_, __, ___) => const Icon(
                           Icons.chat_bubble_rounded,
@@ -589,6 +635,8 @@ class _ChatCard extends StatelessWidget {
   final String imageUrl;
   final bool isOnline;
   final bool isGroup;
+  final bool isOfficial;
+  final bool isVerified;
   final bool isSelected;
   final VoidCallback onTap;
   final VoidCallback onLongPress;
@@ -601,6 +649,8 @@ class _ChatCard extends StatelessWidget {
     required this.imageUrl,
     required this.isOnline,
     required this.isGroup,
+    this.isOfficial = false,
+    this.isVerified = false,
     required this.isSelected,
     required this.onTap,
     required this.onLongPress,
@@ -614,10 +664,12 @@ class _ChatCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: isSelected
             ? const Color(0xFF1E4C7A).withOpacity(0.08)
-            : Colors.white,
+            : (isOfficial ? const Color(0xFFF0FDF4) : Colors.white),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: isSelected ? const Color(0xFF1E4C7A) : Colors.transparent,
+          color: isSelected
+              ? const Color(0xFF1E4C7A)
+              : (isOfficial ? const Color(0xFFBBF7D0) : Colors.transparent),
           width: 1.5,
         ),
         boxShadow: [
@@ -640,21 +692,36 @@ class _ChatCard extends StatelessWidget {
           leading: Stack(
             alignment: Alignment.center,
             children: [
-              CircleAvatar(
-                radius: 26,
-                backgroundColor: const Color(0xFF1E4C7A).withOpacity(0.1),
-                backgroundImage:
-                    imageUrl.isNotEmpty ? NetworkImage(imageUrl) : null,
-                child: imageUrl.isEmpty
-                    ? Icon(
-                        isGroup ? Icons.groups : Icons.person,
-                        size: 26,
-                        color: const Color(0xFF1E4C7A),
-                      )
-                    : null,
-              ),
-
-              if (isOnline && !isGroup && !isSelected)
+              if (isOfficial)
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(26),
+                  child: Image.asset(
+                    'assets/images/app_logo.png',
+                    width: 52,
+                    height: 52,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => CircleAvatar(
+                      radius: 26,
+                      backgroundColor: Colors.teal.shade100,
+                      child: const Icon(Icons.verified_rounded, color: Colors.teal, size: 28),
+                    ),
+                  ),
+                )
+              else
+                CircleAvatar(
+                  radius: 26,
+                  backgroundColor: const Color(0xFF1E4C7A).withOpacity(0.1),
+                  backgroundImage:
+                      imageUrl.isNotEmpty ? NetworkImage(imageUrl) : null,
+                  child: imageUrl.isEmpty
+                      ? Icon(
+                          isGroup ? Icons.groups : Icons.person,
+                          size: 26,
+                          color: const Color(0xFF1E4C7A),
+                        )
+                      : null,
+                ),
+              if (isOnline && !isGroup && !isOfficial && !isSelected)
                 Positioned(
                   right: 0,
                   bottom: 0,
@@ -668,7 +735,6 @@ class _ChatCard extends StatelessWidget {
                     ),
                   ),
                 ),
-
               AnimatedScale(
                 duration: const Duration(milliseconds: 200),
                 scale: isSelected ? 1.0 : 0.0,
@@ -689,15 +755,35 @@ class _ChatCard extends StatelessWidget {
               ),
             ],
           ),
-          title: Text(
-            name,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-              color: Colors.black87,
-            ),
+          title: Row(
+            children: [
+              Flexible(
+                child: Text(
+                  name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: isOfficial ? const Color(0xFF0F766E) : Colors.black87,
+                  ),
+                ),
+              ),
+              if (isVerified) ...[
+                const SizedBox(width: 5),
+                Image.asset(
+                  'assets/images/Verified_Batch.png',
+                  width: 16,
+                  height: 16,
+                  fit: BoxFit.contain,
+                  errorBuilder: (_, __, ___) => const Icon(
+                    Icons.verified_rounded,
+                    color: Color(0xFF0284C7),
+                    size: 16,
+                  ),
+                ),
+              ],
+            ],
           ),
           subtitle: Padding(
             padding: const EdgeInsets.only(top: 3.0),
@@ -705,7 +791,11 @@ class _ChatCard extends StatelessWidget {
               lastMessage,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+              style: TextStyle(
+                fontSize: 13,
+                color: isOfficial ? const Color(0xFF0D9488) : Colors.grey.shade600,
+                fontWeight: isOfficial ? FontWeight.w500 : FontWeight.normal,
+              ),
             ),
           ),
           trailing: Column(
@@ -730,7 +820,7 @@ class _ChatCard extends StatelessWidget {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF1E4C7A),
+                    color: isOfficial ? const Color(0xFF0F766E) : const Color(0xFF1E4C7A),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Text(
