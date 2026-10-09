@@ -1,3 +1,4 @@
+```dart
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/diary_model.dart';
 
@@ -18,14 +19,17 @@ class DiaryService {
     required double totalPaid,
     required double totalDue,
   }) async {
-    final String docId = '${teacherId.trim()}_${studentId.trim()}_$year';
+    final cleanTeacherId = teacherId.trim();
+    final cleanStudentId = studentId.trim();
+    final String docId = '${cleanTeacherId}_${cleanStudentId}_$year';
+
     final batch = _firestore.batch();
 
     final feeDocRef = _firestore.collection('student_fees').doc(docId);
     batch.set(feeDocRef, {
-      'teacherId': teacherId.trim(),
+      'teacherId': cleanTeacherId,
       'teacherName': teacherName.trim(),
-      'studentId': studentId.trim(),
+      'studentId': cleanStudentId,
       'studentName': studentName.trim(),
       'subject': subject.trim(),
       'year': year,
@@ -38,15 +42,64 @@ class DiaryService {
       'lastUpdated': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
 
-    final monthlyRef = _firestore.collection('monthly_fee').doc(studentId.trim());
+    final monthlyRef = _firestore.collection('monthly_fee').doc(cleanStudentId);
     batch.set(monthlyRef, {
-      'studentId': studentId.trim(),
+      'studentId': cleanStudentId,
       'studentName': studentName.trim(),
       'subject': subject.trim(),
-      'teacherId': teacherId.trim(),
+      'teacherId': cleanTeacherId,
       'pendingAmount': totalDue,
       'totalPaid': totalPaid,
       'monthlyFee': monthlyFee,
+      'lastUpdated': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+
+    await batch.commit();
+  }
+
+  Future<void> updateMonthStatus({
+    required String teacherId,
+    required String studentId,
+    required int year,
+    required String month,
+    required String newStatus,
+    required double monthlyFee,
+  }) async {
+    final cleanTeacherId = teacherId.trim();
+    final cleanStudentId = studentId.trim();
+    final String docId = '${cleanTeacherId}_${cleanStudentId}_$year';
+
+    final docRef = _firestore.collection('student_fees').doc(docId);
+    final snapshot = await docRef.get();
+
+    if (!snapshot.exists || snapshot.data() == null) return;
+
+    final data = snapshot.data()!;
+    final Map<String, dynamic> statuses =
+        Map<String, dynamic>.from(data['monthStatuses'] ?? {});
+
+    statuses[month] = newStatus;
+
+    final int paidCount = statuses.values.where((s) => s == 'PAID').length;
+    final int dueCount = statuses.values.where((s) => s == 'DUE').length;
+    final double totalPaid = paidCount * monthlyFee;
+    final double totalDue = dueCount * monthlyFee;
+
+    final batch = _firestore.batch();
+
+    batch.update(docRef, {
+      'monthStatuses': statuses,
+      'paidMonthsCount': paidCount,
+      'dueMonthsCount': dueCount,
+      'totalPaid': totalPaid,
+      'totalDue': totalDue,
+      'lastUpdated': FieldValue.serverTimestamp(),
+    });
+
+    final monthlyRef = _firestore.collection('monthly_fee').doc(cleanStudentId);
+    batch.set(monthlyRef, {
+      'pendingAmount': totalDue,
+      'totalPaid': totalPaid,
       'lastUpdated': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
 
@@ -60,13 +113,24 @@ class DiaryService {
         .snapshots();
   }
 
-  Future<DocumentSnapshot> getStudentFeeRecord(String teacherId, String studentId, int year) {
+  Future<DocumentSnapshot> getStudentFeeRecord(
+    String teacherId,
+    String studentId,
+    int year,
+  ) {
     final String docId = '${teacherId.trim()}_${studentId.trim()}_$year';
     return _firestore.collection('student_fees').doc(docId).get();
   }
 
-  Future<void> deleteStudentFeeRecord(String docId) async {
-    await _firestore.collection('student_fees').doc(docId).delete();
+  Future<void> deleteStudentFeeRecord(String docId, {String? studentId}) async {
+    final batch = _firestore.batch();
+    batch.delete(_firestore.collection('student_fees').doc(docId));
+
+    if (studentId != null && studentId.trim().isNotEmpty) {
+      batch.delete(_firestore.collection('monthly_fee').doc(studentId.trim()));
+    }
+
+    await batch.commit();
   }
 
   Future<void> saveDiaryEntry(DiaryModel diary) async {
@@ -88,7 +152,10 @@ class DiaryService {
     });
   }
 
-  Stream<List<DiaryModel>> getDiaryEntriesForStudent(String teacherId, String studentId) {
+  Stream<List<DiaryModel>> getDiaryEntriesForStudent(
+    String teacherId,
+    String studentId,
+  ) {
     return _firestore
         .collection('teacher_diary')
         .where('teacherId', isEqualTo: teacherId.trim())
@@ -101,3 +168,4 @@ class DiaryService {
     });
   }
 }
+```
