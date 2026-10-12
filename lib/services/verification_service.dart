@@ -80,11 +80,19 @@ class VerificationService {
         teacherId,
       );
 
+      Timestamp? createdAt = teacherData['createdAt'] as Timestamp?;
+      int yearsActive = 0;
+      if (createdAt != null) {
+        DateTime createdDate = createdAt.toDate();
+        yearsActive = DateTime.now().difference(createdDate).inDays ~/ 365;
+      }
+
       await _badgeService.evaluateAndAssignBadges(
         teacherId: teacherId,
         isAdminApproved: true,
         documentsApproved: true,
         ratingSummary: ratingSummary,
+        platformYearsActive: yearsActive,
       );
     } catch (e) {
       rethrow;
