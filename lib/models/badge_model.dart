@@ -1,11 +1,12 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:equatable/equatable.dart';
 
-/// Enum representing the priority levels and types of Teacher Badges
 enum BadgeType {
   verified,
   golden,
-  master;
+  master,
+  best,
+  king;
 
   String toMapValue() {
     return name;
@@ -13,6 +14,10 @@ enum BadgeType {
 
   static BadgeType fromMapValue(String? value) {
     switch (value?.toLowerCase()) {
+      case 'king':
+        return BadgeType.king;
+      case 'best':
+        return BadgeType.best;
       case 'master':
         return BadgeType.master;
       case 'golden':
@@ -23,9 +28,12 @@ enum BadgeType {
     }
   }
 
-  /// Priority score for sorting teachers in ranking system: Master (3) > Golden (2) > Verified (1)
   int get priority {
     switch (this) {
+      case BadgeType.king:
+        return 5;
+      case BadgeType.best:
+        return 4;
       case BadgeType.master:
         return 3;
       case BadgeType.golden:
@@ -37,28 +45,35 @@ enum BadgeType {
 
   String get displayName {
     switch (this) {
+      case BadgeType.king:
+        return 'King of the Subject';
+      case BadgeType.best:
+        return 'Best of the Subject';
       case BadgeType.master:
-        return 'Master Teacher';
+        return 'Master of the Subject';
       case BadgeType.golden:
         return 'Golden Teacher';
       case BadgeType.verified:
-        return 'Verified Teacher';
+        return 'Verified Badge';
     }
   }
 
   String get assetPath {
     switch (this) {
+      case BadgeType.king:
+        return 'assets/images/k_badge.png';
+      case BadgeType.best:
+        return 'assets/images/b_badge.png';
       case BadgeType.master:
-        return 'assets/badges/Master_Badge.png';
+        return 'assets/images/m_badge.png';
       case BadgeType.golden:
-        return 'assets/badges/Golden_Batch.png';
+        return 'assets/images/Golden_Batch.png';
       case BadgeType.verified:
-        return 'assets/badges/Verified_Batch.png';
+        return 'assets/images/Verified_Batch.png';
     }
   }
 }
 
-/// Class representing a badge assigned to a teacher along with unlock metadata.
 class BadgeModel extends Equatable {
   final String id;
   final String teacherId;
