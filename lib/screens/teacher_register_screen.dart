@@ -8,6 +8,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../services/location_service.dart';
 import '../utils/image_utils.dart';
+import '../services/document_verification_service.dart';
+import 'teacher_liveness_check_screen.dart';
 
 class TeacherRegistrationScreen extends StatefulWidget {
   const TeacherRegistrationScreen({super.key});
@@ -33,6 +35,7 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
   bool _isLoading = false;
   bool _isAccepted = false;
 
+  final DocumentVerificationService _docService = DocumentVerificationService();
   final String _policyUrl = "https://docs.google.com/document/d/1pLnjsGpdQwmbdytG7ZC5Nro7LHaOmgy8nSLCKGEgy0E/edit?usp=drivesdk";
 
   final List<String> _allSubjects = [
@@ -55,6 +58,7 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
     _locationController.dispose();
     _tuitionNameController.dispose();
     _experienceController.dispose();
+    _docService.dispose();
     super.dispose();
   }
 
@@ -72,7 +76,6 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
 
   Future<void> _getCurrentLocation() async {
     setState(() => _isLoading = true);
-
     try {
       final position = await LocationService.getCurrentLocation();
       _locationController.text = "${position.latitude}, ${position.longitude}";
@@ -98,20 +101,21 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Please fill all required fields correctly."),
-          backgroundColor: Colors.red,
-        ),
+        const SnackBar(content: Text("Please fill all required fields correctly."), backgroundColor: Colors.red),
       );
       return;
     }
 
     if (_selectedSubjects.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please select at least one subject.'),
-          backgroundColor: Colors.red,
-        ),
+        const SnackBar(content: Text('Please select at least one subject.'), backgroundColor: Colors.red),
+      );
+      return;
+    }
+
+    if (_qualificationCertificate == null || _idProofImage == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Qualification Certificate and ID Proof are mandatory for verification.'), backgroundColor: Colors.red),
       );
       return;
     }
@@ -119,13 +123,44 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
     setState(() => _isLoading = true);
 
     try {
+      final String extractedText = await _docService.extractTextFromDocument(_idProofImage!.path);
+      final bool isNameValid = _docService.verifyNameMatch(extractedText, _nameController.text.trim());
+
+      if (!isNameValid) {
+        setState(() => _isLoading = false);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text("Verification Failed: Name on ID Proof does not match Full Name."), backgroundColor: Colors.red),
+          );
+        }
+        return;
+      }
+
+      final bool? livenessPassed = await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => TeacherLivenessCheckScreen(
+            registrationData: {'name': _nameController.text.trim()},
+          ),
+        ),
+      );
+
+      if (livenessPassed != true) {
+        setState(() => _isLoading = false);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text("Face Liveness Verification failed or cancelled."), backgroundColor: Colors.red),
+          );
+        }
+        return;
+      }
+
       final UserCredential userCredential = await FirebaseAuth.instance
           .createUserWithEmailAndPassword(
               email: _emailController.text.trim(),
               password: _passwordController.text.trim());
 
       await userCredential.user!.sendEmailVerification();
-
       final String uid = userCredential.user!.uid;
 
       String profileUrl = "";
@@ -138,21 +173,17 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
       }
 
       String certUrl = "";
-      if (_qualificationCertificate != null) {
-        try {
-          certUrl = await _processAndUpload(_qualificationCertificate!, 'teachers/$uid/certificate.jpg');
-        } catch (e) {
-          debugPrint("Certificate upload failed: $e");
-        }
+      try {
+        certUrl = await _processAndUpload(_qualificationCertificate!, 'teachers/$uid/certificate.jpg');
+      } catch (e) {
+        debugPrint("Certificate upload failed: $e");
       }
 
       String idProofUrl = "";
-      if (_idProofImage != null) {
-        try {
-          idProofUrl = await _processAndUpload(_idProofImage!, 'teachers/$uid/id_proof.jpg');
-        } catch (e) {
-          debugPrint("ID Proof upload failed: $e");
-        }
+      try {
+        idProofUrl = await _processAndUpload(_idProofImage!, 'teachers/$uid/id_proof.jpg');
+      } catch (e) {
+        debugPrint("ID Proof upload failed: $e");
       }
 
       await FirebaseFirestore.instance.collection('teachers').doc(uid).set({
@@ -167,7 +198,8 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
         'profileUrl': profileUrl,
         'certUrl': certUrl,
         'idProofUrl': idProofUrl,
-        'status': 'pending',
+        'isVerified': true,
+        'status': 'approved',
         'role': 'teacher',
         'createdAt': FieldValue.serverTimestamp(),
       });
@@ -185,8 +217,8 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
           barrierDismissible: false,
           builder: (ctx) => AlertDialog(
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            title: const Text("Verify Your Email"),
-            content: const Text("A verification link has been sent to your email. Please check your inbox and verify to login."),
+            title: const Text("Verification Successful"),
+            content: const Text("Your documents and face liveness have been verified successfully. Please check your email to verify your account."),
             actions: [
               TextButton(
                 onPressed: () {
@@ -202,19 +234,13 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
     } on FirebaseAuthException catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(e.message ?? "Registration failed. Please try again."),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text(e.message ?? "Registration failed. Please try again."), backgroundColor: Colors.red),
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text("Error: ${e.toString()}"),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text("Error: ${e.toString()}"), backgroundColor: Colors.red),
         );
       }
     } finally {
@@ -223,40 +249,26 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
   }
 
   String? _validateEmail(String? val) {
-    if (val == null || val.trim().isEmpty) {
-      return "Email Address is required";
-    }
+    if (val == null || val.trim().isEmpty) return "Email Address is required";
     final emailRegExp = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
-    if (!emailRegExp.hasMatch(val.trim())) {
-      return "Please enter a valid email address";
-    }
+    if (!emailRegExp.hasMatch(val.trim())) return "Please enter a valid email address";
     return null;
   }
 
   String? _validatePassword(String? val) {
-    if (val == null || val.trim().isEmpty) {
-      return "Password is required";
-    }
-    if (val.trim().length < 6) {
-      return "Password must be at least 6 characters long";
-    }
+    if (val == null || val.trim().isEmpty) return "Password is required";
+    if (val.trim().length < 6) return "Password must be at least 6 characters long";
     return null;
   }
 
   String? _validatePhone(String? val) {
-    if (val == null || val.trim().isEmpty) {
-      return "Phone Number is required";
-    }
-    if (val.trim().length < 10) {
-      return "Please enter a valid phone number";
-    }
+    if (val == null || val.trim().isEmpty) return "Phone Number is required";
+    if (val.trim().length < 10) return "Please enter a valid phone number";
     return null;
   }
 
   String? _validateField(String? val, String fieldName) {
-    if (val == null || val.trim().isEmpty) {
-      return "$fieldName is required";
-    }
+    if (val == null || val.trim().isEmpty) return "$fieldName is required";
     return null;
   }
 
@@ -267,22 +279,10 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
       suffixIcon: suffix,
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: Colors.grey.shade300),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: Colors.blueAccent, width: 2),
-      ),
-      errorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: Colors.red, width: 1.5),
-      ),
-      focusedErrorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: Colors.red, width: 2),
-      ),
+      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)),
+      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Colors.blueAccent, width: 2)),
+      errorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Colors.red, width: 1.5)),
+      focusedErrorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Colors.red, width: 2)),
       filled: true,
       fillColor: Colors.grey.shade50,
     );
@@ -323,17 +323,15 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
                                     radius: 52,
                                     backgroundColor: Colors.blue.shade100,
                                     backgroundImage: _profileImage != null ? FileImage(_profileImage!) : null,
-                                    child: _profileImage == null
-                                        ? const Icon(Icons.person, size: 55, color: Colors.blueAccent)
-                                        : null,
+                                    child: _profileImage == null ? const Icon(Icons.person, size: 55, color: Colors.blueAccent) : null,
                                   ),
-                                  Positioned(
+                                  const Positioned(
                                     bottom: 0,
                                     right: 0,
                                     child: CircleAvatar(
                                       radius: 18,
                                       backgroundColor: Colors.blueAccent,
-                                      child: const Icon(Icons.camera_alt, size: 18, color: Colors.white),
+                                      child: Icon(Icons.camera_alt, size: 18, color: Colors.white),
                                     ),
                                   ),
                                 ],
@@ -395,7 +393,6 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
                       ),
                     ),
                     const SizedBox(height: 16),
-
                     Card(
                       elevation: 2,
                       shadowColor: Colors.black12,
@@ -408,20 +405,11 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                const Text(
-                                  "Select Subjects",
-                                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                                ),
+                                const Text("Select Subjects", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                                 Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                  decoration: BoxDecoration(
-                                    color: Colors.blue.shade50,
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: Text(
-                                    "${_selectedSubjects.length} Selected",
-                                    style: const TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold, fontSize: 12),
-                                  ),
+                                  decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(12)),
+                                  child: Text("${_selectedSubjects.length} Selected", style: const TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold, fontSize: 12)),
                                 ),
                               ],
                             ),
@@ -442,9 +430,7 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
                                   ),
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(8),
-                                    side: BorderSide(
-                                      color: isSelected ? Colors.blueAccent : Colors.grey.shade300,
-                                    ),
+                                    side: BorderSide(color: isSelected ? Colors.blueAccent : Colors.grey.shade300),
                                   ),
                                   onSelected: (val) => setState(() {
                                     val ? _selectedSubjects.add(s) : _selectedSubjects.remove(s);
@@ -457,7 +443,6 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
                       ),
                     ),
                     const SizedBox(height: 16),
-
                     Card(
                       elevation: 2,
                       shadowColor: Colors.black12,
@@ -468,7 +453,7 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
                           children: [
                             ListTile(
                               leading: const Icon(Icons.workspace_premium, color: Colors.blueAccent),
-                              title: const Text("Qualification Certificate (Optional)", style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+                              title: const Text("Qualification Certificate (Required)", style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
                               trailing: ElevatedButton.icon(
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: _qualificationCertificate != null ? Colors.green : Colors.blueAccent,
@@ -482,7 +467,7 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
                             const Divider(height: 1),
                             ListTile(
                               leading: const Icon(Icons.badge_outlined, color: Colors.blueAccent),
-                              title: const Text("ID Proof - NID/Passport/Aadhaar (Optional)", style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+                              title: const Text("ID Proof - NID/Passport/Aadhaar (Required)", style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
                               trailing: ElevatedButton.icon(
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: _idProofImage != null ? Colors.green : Colors.blueAccent,
@@ -498,7 +483,6 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
                       ),
                     ),
                     const SizedBox(height: 10),
-
                     Row(
                       children: [
                         Checkbox(
@@ -521,7 +505,6 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
                       ],
                     ),
                     const SizedBox(height: 10),
-
                     ElevatedButton(
                       onPressed: _isAccepted ? _submit : null,
                       style: ElevatedButton.styleFrom(
