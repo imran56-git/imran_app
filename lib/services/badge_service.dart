@@ -6,7 +6,6 @@ import '../models/rating_summary_model.dart';
 class BadgeService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  /// Stream of badges assigned to a specific teacher
   Stream<List<BadgeModel>> streamTeacherBadges(String teacherId) {
     return _firestore
         .collection('teacher_badges')
@@ -17,7 +16,6 @@ class BadgeService {
             snapshot.docs.map((doc) => BadgeModel.fromFirestore(doc)).toList());
   }
 
-  /// Get active badges for a teacher once
   Future<List<BadgeModel>> getTeacherBadges(String teacherId) async {
     try {
       final query = await _firestore
@@ -33,34 +31,31 @@ class BadgeService {
     }
   }
 
-  /// Automatically evaluate and assign badges based on system rules
   Future<BadgeType> evaluateAndAssignBadges({
     required String teacherId,
     required bool isAdminApproved,
     required bool documentsApproved,
     required RatingSummaryModel ratingSummary,
+    required int platformYearsActive,
   }) async {
     try {
-      BadgeType highestBadge = BadgeType.verified;
+      BadgeType assignedBadge = BadgeType.verified;
 
-      // 1. Check Master Badge Condition: Rating >= 4.9 & Reviews >= 500
-      if (ratingSummary.averageRating >= 4.9 &&
-          ratingSummary.totalReviews >= 500) {
-        highestBadge = BadgeType.master;
-      }
-      // 2. Check Golden Badge Condition: Rating >= 4.8 & Reviews >= 100
-      else if (ratingSummary.averageRating >= 4.8 &&
-          ratingSummary.totalReviews >= 100) {
-        highestBadge = BadgeType.golden;
-      }
-      // 3. Default Verified Badge Condition: Documents Approved & Admin Approved
-      else if (isAdminApproved && documentsApproved) {
-        highestBadge = BadgeType.verified;
+      if (ratingSummary.averageRating == 5.0 && ratingSummary.totalReviews >= 10) {
+        assignedBadge = BadgeType.king;
+      } else if (ratingSummary.averageRating >= 4.2) {
+        assignedBadge = BadgeType.best;
+      } else if (ratingSummary.averageRating >= 3.8) {
+        assignedBadge = BadgeType.master;
+      } else if (platformYearsActive >= 3) {
+        assignedBadge = BadgeType.golden;
+      } else if (isAdminApproved && documentsApproved) {
+        assignedBadge = BadgeType.verified;
       }
 
       final badgeRef = _firestore
           .collection('teacher_badges')
-          .doc('${teacherId}_${highestBadge.name}');
+          .doc('${teacherId}_${assignedBadge.name}');
 
       final existingBadge = await badgeRef.get();
 
@@ -68,39 +63,41 @@ class BadgeService {
         final newBadge = BadgeModel(
           id: badgeRef.id,
           teacherId: teacherId,
-          type: highestBadge,
+          type: assignedBadge,
           unlockedAt: DateTime.now(),
           isCurrentlyActive: true,
-          assignedReason: _getReasonForBadge(highestBadge),
+          assignedReason: _getReasonForBadge(assignedBadge),
         );
 
         await badgeRef.set(newBadge.toMap());
       }
 
-      // Sync highest badge priority status back to teacher core profile
       await _firestore.collection('teachers').doc(teacherId).update({
         'isVerified': isAdminApproved && documentsApproved,
-        'hasSpecialBadge': highestBadge != BadgeType.verified,
-        'highestBadgeType': highestBadge.toMapValue(),
-        'badgePriorityScore': highestBadge.priority,
+        'hasSpecialBadge': assignedBadge != BadgeType.verified,
+        'highestBadgeType': assignedBadge.toMapValue(),
+        'badgePriorityScore': assignedBadge.priority,
       });
 
-      return highestBadge;
+      return assignedBadge;
     } catch (e) {
       debugPrint("Error evaluating teacher badges: $e");
       return BadgeType.verified;
     }
   }
 
-  /// Helper to generate human readable assignment reason
   String _getReasonForBadge(BadgeType badge) {
     switch (badge) {
+      case BadgeType.king:
+        return 'Achieved a perfect 5.0-star rating under platform criteria.';
+      case BadgeType.best:
+        return 'Maintained a minimum 4.2-star rating.';
       case BadgeType.master:
-        return 'Achieved Rating >= 4.9 and over 500 verified student reviews.';
+        return 'Maintained a minimum 3.8-star rating over the defined period.';
       case BadgeType.golden:
-        return 'Achieved Rating >= 4.8 and over 100 verified student reviews.';
+        return 'Successfully completed 3 years on the platform.';
       case BadgeType.verified:
-        return 'Verified identity and credentials approved by administration.';
+        return 'Verified identity and credentials approved by system.';
     }
   }
 }
