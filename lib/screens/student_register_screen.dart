@@ -3,13 +3,11 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../services/location_service.dart';
 import '../utils/image_utils.dart';
-import 'package:geolocator/geolocator.dart';
 
 class StudentRegistrationScreen extends StatefulWidget {
   const StudentRegistrationScreen({super.key});
@@ -28,7 +26,6 @@ class _StudentRegistrationScreenState extends State<StudentRegistrationScreen> {
   final _classController = TextEditingController();
   final _schoolController = TextEditingController();
   final _collegeController = TextEditingController();
-final _usernameController = TextEditingController();
 
   File? _profileImage;
   String? _gender;
@@ -48,7 +45,6 @@ final _usernameController = TextEditingController();
     _classController.dispose();
     _schoolController.dispose();
     _collegeController.dispose();
-    _usernameController.dispose();
     super.dispose();
   }
 
@@ -65,91 +61,34 @@ final _usernameController = TextEditingController();
   }
 
   Future<void> _getCurrentLocation() async {
-  setState(() => _isLoading = true);
-
-  try {
-    final position = await LocationService.getCurrentLocation();
-
-    _homeLocationController.text =
-        "${position.latitude}, ${position.longitude}";
-
-  } catch (e) {
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text("Location error: $e"),
-      ),
-    );
-
-  } finally {
-
-    setState(() => _isLoading = false);
-
+    setState(() => _isLoading = true);
+    try {
+      final position = await LocationService.getCurrentLocation();
+      _homeLocationController.text = "${position.latitude}, ${position.longitude}";
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Location error: $e"), backgroundColor: Colors.red.shade600),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
-}
- 
-Future<bool> _checkUserIdExists(String userId) async {
-
-  try {
-
-    final result =
-        await FirebaseFirestore.instance
-            .collection("users")
-            .doc(userId)
-            .get();
-
-    return result.exists;
-
-  } on FirebaseException catch (e) {
-
-    debugPrint("Firestore Error : ${e.code}");
-
-    rethrow;
-
-  } catch (e) {
-
-    debugPrint(e.toString());
-
-    rethrow;
-
-  }
-
-}
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
 
- setState(() => _isLoading = true);
-
-try {
-
-  final userId =
-      _usernameController.text.trim().toLowerCase();
-
-  final exists =
-      await _checkUserIdExists(userId);
-
-  if (exists) {
-
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("User ID already exists"),
-          backgroundColor: Colors.red,
-        ),
-      );
-    }
-
-    return;
-  }
-
     if (_gender == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select gender')),
+        const SnackBar(content: Text('Please select gender'), backgroundColor: Colors.red),
       );
       return;
     }
 
+    setState(() => _isLoading = true);
+
+    try {
       final UserCredential userCredential = await FirebaseAuth.instance
           .createUserWithEmailAndPassword(
               email: _emailController.text.trim(),
@@ -160,22 +99,15 @@ try {
       final String uid = userCredential.user!.uid;
       String imageUrl = "";
 
-if (_profileImage != null) {
-  File? compressedFile =
-      await ImageHelper.compressImage(_profileImage!);
-
-  final ref = FirebaseStorage.instance
-      .ref()
-      .child("student_profiles/$uid.jpg");
-
-  await ref.putFile(compressedFile ?? _profileImage!);
-
-  imageUrl = await ref.getDownloadURL();
-}
+      if (_profileImage != null) {
+        File? compressedFile = await ImageHelper.compressImage(_profileImage!);
+        final ref = FirebaseStorage.instance.ref().child("student_profiles/$uid.jpg");
+        await ref.putFile(compressedFile ?? _profileImage!);
+        imageUrl = await ref.getDownloadURL();
+      }
 
       await FirebaseFirestore.instance.collection('students').doc(uid).set({
         'uid': uid,
-        'username': userId,
         'name': _nameController.text.trim(),
         'email': _emailController.text.trim(),
         'phone': _phoneController.text.trim(),
@@ -188,26 +120,19 @@ if (_profileImage != null) {
         'role': 'student',
         'createdAt': FieldValue.serverTimestamp(),
       });
-await FirebaseFirestore.instance
-    .collection('users')
-    .doc(userId)
-    .set({
 
-  'uid': uid,
-
-  'username': userId,
-
-  'role': 'student',
-
-  'createdAt': FieldValue.serverTimestamp(),
-
-});
+      await FirebaseFirestore.instance.collection('users').doc(uid).set({
+        'uid': uid,
+        'role': 'student',
+        'createdAt': FieldValue.serverTimestamp(),
+      });
 
       if (mounted) {
         showDialog(
           context: context, 
           barrierDismissible: false,
           builder: (ctx) => AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
             title: const Text("Verify Your Email"),
             content: const Text("A verification link has been sent to your email. Please check your inbox and verify to login."),
             actions: [
@@ -216,98 +141,79 @@ await FirebaseFirestore.instance
                   Navigator.pop(ctx);
                   Navigator.pop(context);
                 }, 
-                child: const Text("OK")
+                child: const Text("OK", style: TextStyle(fontWeight: FontWeight.bold))
               )
             ],
           ),
         );
       }
     } on FirebaseAuthException catch (e) {
-
-  String message = "";
-
-  switch (e.code) {
-
-    case "email-already-in-use":
-      message = "This email is already registered.";
-      break;
-
-    case "invalid-email":
-      message = "Invalid email address.";
-      break;
-
-    case "weak-password":
-      message = "Password must be at least 6 characters.";
-      break;
-
-    case "network-request-failed":
-      message = "No internet connection.";
-      break;
-
-    case "user-disabled":
-      message = "This account has been disabled.";
-      break;
-
-    case "too-many-requests":
-      message = "Too many requests. Please try again later.";
-      break;
-
-    default:
-      message = e.message ?? e.code;
+      String message = "";
+      switch (e.code) {
+        case "email-already-in-use":
+          message = "This email is already registered.";
+          break;
+        case "invalid-email":
+          message = "Invalid email address.";
+          break;
+        case "weak-password":
+          message = "Password must be at least 6 characters.";
+          break;
+        case "network-request-failed":
+          message = "No internet connection.";
+          break;
+        case "user-disabled":
+          message = "This account has been disabled.";
+          break;
+        case "too-many-requests":
+          message = "Too many requests. Please try again later.";
+          break;
+        default:
+          message = e.message ?? e.code;
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message), backgroundColor: Colors.red));
+      }
+    } on FirebaseException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Firebase Error: ${e.message}"), backgroundColor: Colors.red),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Unknown Error: $e"), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
-
-  if (mounted) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
-  }
-
-} on FirebaseException catch (e) {
-
-  if (mounted) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text("Firebase Error: ${e.message}"),
-      ),
-    );
-  }
-
-} catch (e) {
-
-  if (mounted) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text("Unknown Error: $e"),
-      ),
-    );
-  }
-
-} finally {
-
-  if (mounted) {
-    setState(() => _isLoading = false);
-  }
-
-}
-
-}
 
   Widget _buildField(TextEditingController controller, String label, IconData icon, {bool isPass = false, TextInputType type = TextInputType.text, bool isLocation = false, bool isOptional = false}) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 15),
+      padding: const EdgeInsets.only(bottom: 16),
       child: TextFormField(
         controller: controller,
         obscureText: isPass ? !_isPasswordVisible : false,
         keyboardType: type,
         decoration: InputDecoration(
           labelText: isOptional ? "$label (Optional)" : label,
-          prefixIcon: Icon(icon),
+          labelStyle: TextStyle(color: Colors.grey.shade600, fontSize: 14),
+          prefixIcon: Icon(icon, color: Colors.teal.shade600, size: 22),
           suffixIcon: isPass 
-              ? IconButton(icon: Icon(_isPasswordVisible ? Icons.visibility : Icons.visibility_off), onPressed: () => setState(() => _isPasswordVisible = !_isPasswordVisible)) 
+              ? IconButton(icon: Icon(_isPasswordVisible ? Icons.visibility : Icons.visibility_off, color: Colors.grey), onPressed: () => setState(() => _isPasswordVisible = !_isPasswordVisible)) 
               : isLocation 
-                  ? IconButton(icon: const Icon(Icons.my_location), onPressed: _getCurrentLocation)
+                  ? IconButton(icon: Icon(Icons.my_location, color: Colors.teal.shade600), onPressed: _getCurrentLocation)
                   : null,
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(15)),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
+          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: Colors.grey.shade200, width: 1)),
+          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: Colors.teal.shade600, width: 2)),
+          errorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Colors.red, width: 1.5)),
+          filled: true,
+          fillColor: Colors.grey.shade50,
           floatingLabelBehavior: FloatingLabelBehavior.auto,
         ),
         validator: (val) {
@@ -324,86 +230,104 @@ await FirebaseFirestore.instance
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("Student Registration")),
+      backgroundColor: const Color(0xFFF4F6F9),
+      appBar: AppBar(
+        title: const Text("Student Registration", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+        elevation: 0,
+        backgroundColor: Colors.white,
+        foregroundColor: Colors.black87,
+        centerTitle: true,
+      ),
       body: _isLoading 
-          ? const Center(child: CircularProgressIndicator()) 
+          ? Center(child: CircularProgressIndicator(color: Colors.teal.shade600)) 
           : SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(20),
               child: Form(
                 key: _formKey,
                 child: Column(
                   children: [
-                    Card(
-                      elevation: 4,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                      child: Padding(
-                        padding: const EdgeInsets.all(20),
-                        child: Column(
-                          children: [
-                            Stack(
-                              children: [
-                                GestureDetector(
-                                  onTap: _pickImage,
-                                  child: CircleAvatar(
-                                    radius: 50, 
-                                    backgroundImage: _profileImage != null ? FileImage(_profileImage!) : null, 
-                                    child: _profileImage == null ? const Icon(Icons.person, size: 50) : null
-                                  ),
+                    Container(
+                      padding: const EdgeInsets.all(24),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(20),
+                        boxShadow: [
+                          BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 15, offset: const Offset(0, 5)),
+                        ],
+                      ),
+                      child: Column(
+                        children: [
+                          Stack(
+                            children: [
+                              GestureDetector(
+                                onTap: _pickImage,
+                                child: CircleAvatar(
+                                  radius: 54, 
+                                  backgroundColor: Colors.teal.shade50,
+                                  backgroundImage: _profileImage != null ? FileImage(_profileImage!) : null, 
+                                  child: _profileImage == null ? Icon(Icons.person, size: 60, color: Colors.teal.shade400) : null
                                 ),
-                                Positioned(
-                                  bottom: 0,
-                                  right: 0,
-                                  child: CircleAvatar(
-                                    radius: 18,
-                                    backgroundColor: Colors.blue,
-                                    child: IconButton(
-                                      icon: const Icon(Icons.camera_alt, size: 16, color: Colors.white),
-                                      onPressed: _pickImage,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 20),
-                            _buildField(_nameController, "Full Name", Icons.person),
-
-_buildField(_usernameController, "User ID", Icons.account_circle),
-                            _buildField(_emailController, "Email Address", Icons.email, type: TextInputType.emailAddress),
-                            _buildField(_passwordController, "Password", Icons.lock, isPass: true),
-                            _buildField(_phoneController, "Phone Number", Icons.phone, type: TextInputType.phone),
-                            _buildField(_homeLocationController, "Home Area", Icons.home, isLocation: true),
-                            _buildField(_classController, "Class", Icons.class_, isOptional: true),
-                            _buildField(_schoolController, "School Name", Icons.school, isOptional: true),
-                            _buildField(_collegeController, "College Name", Icons.account_balance, isOptional: true),
-                            DropdownButtonFormField<String>(
-                              value: _gender,
-                              decoration: InputDecoration(
-                                labelText: 'Gender', 
-                                prefixIcon: const Icon(Icons.people), 
-                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(15))
                               ),
-                              items: ['Male', 'Female'].map((g) => DropdownMenuItem(value: g, child: Text(g))).toList(),
-                              onChanged: (v) => setState(() => _gender = v),
+                              Positioned(
+                                bottom: 0,
+                                right: 0,
+                                child: Container(
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    color: Colors.teal.shade600,
+                                    shape: BoxShape.circle,
+                                    border: Border.all(color: Colors.white, width: 2),
+                                  ),
+                                  child: const Icon(Icons.camera_alt, size: 16, color: Colors.white),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 24),
+                          _buildField(_nameController, "Full Name", Icons.person_outline),
+                          _buildField(_emailController, "Email Address", Icons.email_outlined, type: TextInputType.emailAddress),
+                          _buildField(_passwordController, "Password", Icons.lock_outline, isPass: true),
+                          _buildField(_phoneController, "Phone Number", Icons.phone_outlined, type: TextInputType.phone),
+                          _buildField(_homeLocationController, "Home Area", Icons.location_on_outlined, isLocation: true),
+                          _buildField(_classController, "Class", Icons.book_outlined, isOptional: true),
+                          _buildField(_schoolController, "School Name", Icons.school_outlined, isOptional: true),
+                          _buildField(_collegeController, "College Name", Icons.account_balance_outlined, isOptional: true),
+                          DropdownButtonFormField<String>(
+                            value: _gender,
+                            decoration: InputDecoration(
+                              labelText: 'Gender',
+                              labelStyle: TextStyle(color: Colors.grey.shade600, fontSize: 14),
+                              prefixIcon: Icon(Icons.people_outline, color: Colors.teal.shade600, size: 22),
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
+                              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: Colors.grey.shade200, width: 1)),
+                              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: Colors.teal.shade600, width: 2)),
+                              filled: true,
+                              fillColor: Colors.grey.shade50,
                             ),
-                          ],
-                        ),
+                            items: ['Male', 'Female'].map((g) => DropdownMenuItem(value: g, child: Text(g))).toList(),
+                            onChanged: (v) => setState(() => _gender = v),
+                          ),
+                        ],
                       ),
                     ),
+                    const SizedBox(height: 20),
                     Row(
                       children: [
                         Checkbox(
                           value: _isAccepted,
+                          activeColor: Colors.teal.shade600,
                           onChanged: (v) => setState(() => _isAccepted = v!),
                         ),
                         Expanded(
                           child: RichText(
                             text: TextSpan(
-                              style: const TextStyle(color: Colors.black), 
+                              style: const TextStyle(color: Colors.black87, fontSize: 13), 
                               children: [
                                 const TextSpan(text: "I agree to "),
                                 TextSpan(
                                   text: "Terms & Conditions", 
-                                  style: const TextStyle(color: Colors.blue, fontWeight: FontWeight.bold), 
+                                  style: TextStyle(color: Colors.teal.shade600, fontWeight: FontWeight.bold), 
                                   recognizer: TapGestureRecognizer()..onTap = _launchUrl
                                 ),
                               ]
@@ -412,10 +336,19 @@ _buildField(_usernameController, "User ID", Icons.account_circle),
                         ),
                       ],
                     ),
+                    const SizedBox(height: 16),
                     ElevatedButton(
                       onPressed: _isAccepted ? _submit : null,
-                      style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 50), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15))),
-                      child: const Text("REGISTER"),
+                      style: ElevatedButton.styleFrom(
+                        minimumSize: const Size(double.infinity, 54),
+                        backgroundColor: _isAccepted ? Colors.teal.shade600 : Colors.grey.shade300,
+                        elevation: _isAccepted ? 4 : 0,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      ),
+                      child: const Text(
+                        "REGISTER",
+                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16, letterSpacing: 0.5),
+                      ),
                     ),
                   ],
                 ),
