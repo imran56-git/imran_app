@@ -48,14 +48,17 @@ dependencies:
   jitsi_meet_flutter_sdk: ^11.6.0
 
   camera: ^0.11.0+2
-  google_mlkit_face_detection: ^0.12.0
-  google_mlkit_text_recognition: ^0.15.1
+  google_mlkit_face_detection: ^0.13.1
+  google_mlkit_text_recognition: ^0.15.0
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_launcher_icons: ^0.14.4
   flutter_lints: ^4.0.0
+
+dependency_overrides:
+  google_mlkit_commons: ^0.11.0
 
 flutter_launcher_icons:
   android: true
