@@ -34,11 +34,6 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
   final String _backgroundImage = 'assets/images/chat_bg.png';
 
   @override
-  void initState() {
-    super.initState();
-  }
-
-  @override
   void dispose() {
     _scrollController.dispose();
     super.dispose();
@@ -55,36 +50,32 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
     }
   }
 
-  void _scrollToBottom() {
-    if (_scrollController.hasClients) {
-      _scrollController.animateTo(
-        0.0,
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeOut,
-      );
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final bgProvider = _buildBackgroundProvider();
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF4F6F9),
+      backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
-        backgroundColor: const Color(0xFF1E4C7A),
+        backgroundColor: const Color(0xFF0F172A),
         elevation: 0,
         titleSpacing: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
           onPressed: () => Navigator.pop(context),
         ),
         title: Row(
           children: [
-            const CircleAvatar(
-              radius: 18,
-              backgroundColor: Colors.white24,
-              child: Icon(Icons.groups_rounded, color: Colors.white, size: 20),
+            Container(
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.blueAccent.withOpacity(0.5), width: 1.5),
+              ),
+              child: const CircleAvatar(
+                radius: 20,
+                backgroundColor: Color(0xFF1E293B),
+                child: Icon(Icons.groups_rounded, color: Colors.blueAccent, size: 22),
+              ),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -98,15 +89,29 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
                       color: Colors.white,
-                      letterSpacing: 0.2,
+                      letterSpacing: 0.3,
                     ),
                   ),
-                  Text(
-                    'Group Chat',
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: Colors.white.withOpacity(0.75),
-                    ),
+                  Row(
+                    children: [
+                      Container(
+                        width: 7,
+                        height: 7,
+                        decoration: const BoxDecoration(
+                          color: Colors.greenAccent,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 5),
+                      Text(
+                        'Secure Teacher Batch',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Colors.white.withOpacity(0.7),
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -115,19 +120,23 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.more_vert_rounded, color: Colors.white),
+            icon: const Icon(Icons.videocam_rounded, color: Colors.white, size: 22),
+            onPressed: () {},
+          ),
+          IconButton(
+            icon: const Icon(Icons.more_vert_rounded, color: Colors.white, size: 20),
             onPressed: () {},
           ),
         ],
       ),
       body: Container(
         decoration: BoxDecoration(
-          color: const Color(0xFFF4F6F9),
+          color: const Color(0xFFF8FAFC),
           image: bgProvider != null
               ? DecorationImage(
                   image: bgProvider,
                   fit: BoxFit.cover,
-                  opacity: 0.04,
+                  opacity: 0.03,
                   onError: (_, __) {},
                 )
               : null,
@@ -142,14 +151,14 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
                     return const Center(
                       child: Text(
                         'Failed to load group messages.',
-                        style: TextStyle(color: Colors.red),
+                        style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.w500),
                       ),
                     );
                   }
 
                   if (snapshot.connectionState == ConnectionState.waiting) {
                     return const Center(
-                      child: CircularProgressIndicator(color: Color(0xFF1E4C7A)),
+                      child: CircularProgressIndicator(color: Colors.blueAccent),
                     );
                   }
 
@@ -158,15 +167,15 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
                   if (messages == null || messages.isEmpty) {
                     return Center(
                       child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 8),
+                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                         decoration: BoxDecoration(
-                          color: Colors.black.withOpacity(0.05),
-                          borderRadius: BorderRadius.circular(12),
+                          color: Colors.blue.shade50,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: Colors.blue.shade100),
                         ),
                         child: const Text(
-                          'Welcome to Group Chat',
-                          style: TextStyle(color: Colors.black54, fontSize: 13),
+                          'Welcome to FYBTT Secure Group Chat',
+                          style: TextStyle(color: Colors.blueAccent, fontSize: 13, fontWeight: FontWeight.w600),
                         ),
                       ),
                     );
@@ -175,13 +184,11 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
                   return ListView.builder(
                     controller: _scrollController,
                     reverse: true,
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 14, vertical: 10),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                     itemCount: messages.length,
                     itemBuilder: (context, index) {
                       final message = messages[index];
-                      final bool isMe =
-                          message.senderId == widget.currentUserId;
+                      final bool isMe = message.senderId == widget.currentUserId;
 
                       return MessageBubble(
                         message: message,
@@ -207,9 +214,9 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
                 color: Colors.white,
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.03),
-                    blurRadius: 10,
-                    offset: const Offset(0, -3),
+                    color: Colors.black.withOpacity(0.05),
+                    blurRadius: 15,
+                    offset: const Offset(0, -4),
                   ),
                 ],
               ),
