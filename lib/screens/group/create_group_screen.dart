@@ -2,9 +2,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
 
-// Ensure your GroupModel path is correct
-// import '../../models/group_model.dart'; 
-
 class CreateGroupScreen extends StatefulWidget {
   final String teacherId;
   const CreateGroupScreen({super.key, required this.teacherId});
@@ -15,7 +12,7 @@ class CreateGroupScreen extends StatefulWidget {
 
 class _CreateGroupScreenState extends State<CreateGroupScreen> {
   final TextEditingController _groupNameController = TextEditingController();
-  List<Map<String, dynamic>> selectedStudents = []; // Stores full student map
+  List<Map<String, dynamic>> selectedStudents = [];
   List<Map<String, dynamic>> allStudents = [];
   bool isLoading = true;
 
@@ -27,17 +24,16 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
 
   Future<void> fetchStudents() async {
     try {
-      // Fetching only students. Make sure your Firestore field name is 'type' or 'role'
       final snapshot = await FirebaseFirestore.instance
           .collection('users')
-          .where('type', isEqualTo: 'student') 
+          .where('role', isEqualTo: 'student')
           .get();
 
       setState(() {
         allStudents = snapshot.docs.map((doc) => {
           'id': doc.id,
-          'name': doc['name'] ?? 'Unnamed Student',
-          'photoUrl': doc['photoUrl'] ?? '',
+          'name': doc.data()['name'] ?? 'Unnamed Student',
+          'photoUrl': doc.data()['photoUrl'] ?? '',
         }).toList();
         isLoading = false;
       });
@@ -63,7 +59,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
 
   Future<void> createGroup() async {
     String groupName = _groupNameController.text.trim();
-    
+
     if (groupName.isEmpty) {
       _showSnackBar("Please enter a group name");
       return;
@@ -77,20 +73,18 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
     final String groupId = const Uuid().v4();
 
     try {
-      // 1. Create Group Document
       await FirebaseFirestore.instance.collection('groups').doc(groupId).set({
         'id': groupId,
         'name': groupName,
         'createdBy': widget.teacherId,
-        'members': [widget.teacherId], // Initial member is only the teacher
+        'members': [widget.teacherId],
         'admins': [widget.teacherId],
         'createdAt': FieldValue.serverTimestamp(),
         'lastMessage': 'Group Created',
         'lastMessageTime': FieldValue.serverTimestamp(),
-        'groupImageUrl': '', 
+        'imageUrl': '',
       });
 
-      // 2. Batch Invite Operations
       WriteBatch batch = FirebaseFirestore.instance.batch();
       for (var student in selectedStudents) {
         var inviteRef = FirebaseFirestore.instance
@@ -98,7 +92,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
             .doc(student['id'])
             .collection('group_invites')
             .doc(groupId);
-        
+
         batch.set(inviteRef, {
           'groupId': groupId,
           'groupName': groupName,
@@ -131,10 +125,9 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
         iconTheme: const IconThemeData(color: Colors.black),
       ),
       body: isLoading && allStudents.isEmpty
-          ? const Center(child: CircularProgressIndicator(color: Color(0xFF128C7E)))
+          ? const Center(child: CircularProgressIndicator(color: Colors.blueAccent))
           : Column(
               children: [
-                // Group Name Section
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
                   color: Colors.white,
@@ -159,8 +152,6 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
                     ],
                   ),
                 ),
-                
-                // Selected Students Horizontal Preview
                 if (selectedStudents.isNotEmpty)
                   Container(
                     height: 80,
@@ -196,9 +187,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
                       },
                     ),
                   ),
-
                 const Divider(height: 1),
-                
                 const Padding(
                   padding: EdgeInsets.all(12.0),
                   child: Align(
@@ -209,18 +198,16 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
                     ),
                   ),
                 ),
-
-                // Student List
                 Expanded(
                   child: ListView.builder(
                     itemCount: allStudents.length,
                     itemBuilder: (context, index) {
                       final student = allStudents[index];
                       final isSelected = selectedStudents.any((s) => s['id'] == student['id']);
-                      
+
                       return ListTile(
                         leading: CircleAvatar(
-                          backgroundColor: isSelected ? const Color(0xFF128C7E) : Colors.grey[300],
+                          backgroundColor: isSelected ? Colors.blueAccent : Colors.grey[300],
                           child: Text(
                             student['name'][0],
                             style: const TextStyle(color: Colors.white),
@@ -228,7 +215,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
                         ),
                         title: Text(student['name'], style: const TextStyle(fontWeight: FontWeight.w500)),
                         trailing: isSelected 
-                            ? const Icon(Icons.check_circle, color: Color(0xFF128C7E))
+                            ? const Icon(Icons.check_circle, color: Colors.blueAccent)
                             : const Icon(Icons.circle_outlined, color: Colors.grey),
                         onTap: () => _toggleSelection(student),
                       );
@@ -238,7 +225,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
               ],
             ),
       floatingActionButton: FloatingActionButton(
-        backgroundColor: const Color(0xFF128C7E),
+        backgroundColor: Colors.blueAccent,
         onPressed: isLoading ? null : createGroup,
         child: isLoading 
             ? const CircularProgressIndicator(color: Colors.white) 
