@@ -27,6 +27,7 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
   final _locationController = TextEditingController();
   final _tuitionNameController = TextEditingController();
   final _experienceController = TextEditingController();
+  final _subjectInputController = TextEditingController();
 
   List<String> _selectedSubjects = [];
   File? _profileImage;
@@ -34,20 +35,11 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
   File? _idProofImage;
   bool _isLoading = false;
   bool _isAccepted = false;
+  bool _isLivenessVerified = false;
+  bool _obscurePassword = true;
 
   final DocumentVerificationService _docService = DocumentVerificationService();
   final String _policyUrl = "https://docs.google.com/document/d/1pLnjsGpdQwmbdytG7ZC5Nro7LHaOmgy8nSLCKGEgy0E/edit?usp=drivesdk";
-
-  final List<String> _allSubjects = [
-    'Mathematics', 'General Science', 'Social Science', 'English', 'Bengali', 'Hindi', 'Environmental Studies', 'Computer Applications', 'History', 'Geography',
-    'Physics', 'Chemistry', 'Biology', 'Economics', 'Political Science', 'Sociology', 'Philosophy', 'Psychology', 'Accountancy', 'Business Studies', 'Computer Science',
-    'Statistics', 'Engineering Drawing', 'Physical Education', 'Electrician', 'Fitter', 'Welder', 'COPA', 'Electronics Mechanic', 'Civil Draftsman', 'Plumber',
-    'Refrigeration & Air Conditioning', 'Turner', 'Machinist', 'Law', 'Fine Arts', 'Music', 'Nutrition', 'Home Science', 'Management', 'Mass Communication',
-    'Sanskrit', 'Arabic', 'Urdu', 'French', 'German', 'Information Technology', 'Biotechnology', 'Marine Engineering', 'Agriculture', 'Horticulture', 'Geology',
-    'Astronomy', 'Robotics', 'Graphic Design', 'Web Development', 'Digital Marketing', 'Fashion Technology', 'Interior Designing', 'Hotel Management', 'Tourism',
-    'Event Management', 'Public Administration', 'Anthropology', 'Social Work', 'Criminology', 'Library Science', 'Data Science', 'Artificial Intelligence',
-    'Cyber Security', 'Yoga', 'Vedic Mathematics', 'Spoken English', 'Calligraphy', 'Photography', 'Film Editing', 'Animation', 'Aerospace Engineering'
-  ];
 
   @override
   void dispose() {
@@ -58,6 +50,7 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
     _locationController.dispose();
     _tuitionNameController.dispose();
     _experienceController.dispose();
+    _subjectInputController.dispose();
     _docService.dispose();
     super.dispose();
   }
@@ -82,7 +75,7 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Location error: $e"), backgroundColor: Colors.red),
+          SnackBar(content: Text("Location error: $e"), backgroundColor: Colors.red.shade600),
         );
       }
     } finally {
@@ -98,6 +91,38 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
     return await ref.getDownloadURL();
   }
 
+  void _addSubject() {
+    final subject = _subjectInputController.text.trim();
+    if (subject.isNotEmpty && !_selectedSubjects.contains(subject)) {
+      setState(() {
+        _selectedSubjects.add(subject);
+        _subjectInputController.clear();
+      });
+    }
+  }
+
+  Future<void> _startFaceLivenessCheck() async {
+    final bool? livenessPassed = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => TeacherLivenessCheckScreen(
+          registrationData: {'name': _nameController.text.trim()},
+        ),
+      ),
+    );
+
+    if (livenessPassed == true) {
+      setState(() {
+        _isLivenessVerified = true;
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Face Liveness Verified Successfully!"), backgroundColor: Colors.green),
+        );
+      }
+    }
+  }
+
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -108,14 +133,21 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
 
     if (_selectedSubjects.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select at least one subject.'), backgroundColor: Colors.red),
+        const SnackBar(content: Text('Please add at least one subject.'), backgroundColor: Colors.red),
       );
       return;
     }
 
     if (_qualificationCertificate == null || _idProofImage == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Qualification Certificate and ID Proof are mandatory for verification.'), backgroundColor: Colors.red),
+        const SnackBar(content: Text('Qualification Certificate and ID Proof are mandatory.'), backgroundColor: Colors.red),
+      );
+      return;
+    }
+
+    if (!_isLivenessVerified) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please complete the Face Liveness Verification.'), backgroundColor: Colors.red),
       );
       return;
     }
@@ -131,25 +163,6 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text("Verification Failed: Name on ID Proof does not match Full Name."), backgroundColor: Colors.red),
-          );
-        }
-        return;
-      }
-
-      final bool? livenessPassed = await Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => TeacherLivenessCheckScreen(
-            registrationData: {'name': _nameController.text.trim()},
-          ),
-        ),
-      );
-
-      if (livenessPassed != true) {
-        setState(() => _isLoading = false);
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text("Face Liveness Verification failed or cancelled."), backgroundColor: Colors.red),
           );
         }
         return;
@@ -217,7 +230,7 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
           barrierDismissible: false,
           builder: (ctx) => AlertDialog(
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            title: const Text("Verification Successful"),
+            title: const Text("Registration Successful"),
             content: const Text("Your documents and face liveness have been verified successfully. Please check your email to verify your account."),
             actions: [
               TextButton(
@@ -234,7 +247,7 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
     } on FirebaseAuthException catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.message ?? "Registration failed. Please try again."), backgroundColor: Colors.red),
+          SnackBar(content: Text(e.message ?? "Registration failed."), backgroundColor: Colors.red),
         );
       }
     } catch (e) {
@@ -248,43 +261,20 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
     }
   }
 
-  String? _validateEmail(String? val) {
-    if (val == null || val.trim().isEmpty) return "Email Address is required";
-    final emailRegExp = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
-    if (!emailRegExp.hasMatch(val.trim())) return "Please enter a valid email address";
-    return null;
-  }
-
-  String? _validatePassword(String? val) {
-    if (val == null || val.trim().isEmpty) return "Password is required";
-    if (val.trim().length < 6) return "Password must be at least 6 characters long";
-    return null;
-  }
-
-  String? _validatePhone(String? val) {
-    if (val == null || val.trim().isEmpty) return "Phone Number is required";
-    if (val.trim().length < 10) return "Please enter a valid phone number";
-    return null;
-  }
-
-  String? _validateField(String? val, String fieldName) {
-    if (val == null || val.trim().isEmpty) return "$fieldName is required";
-    return null;
-  }
-
   InputDecoration _buildInputDecoration(String label, IconData icon, {Widget? suffix}) {
     return InputDecoration(
       labelText: label,
-      prefixIcon: Icon(icon, color: Colors.blueAccent),
+      labelStyle: TextStyle(color: Colors.grey.shade600, fontSize: 14),
+      prefixIcon: Icon(icon, color: Colors.blueAccent, size: 22),
       suffixIcon: suffix,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)),
-      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Colors.blueAccent, width: 2)),
-      errorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Colors.red, width: 1.5)),
-      focusedErrorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Colors.red, width: 2)),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
+      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: Colors.grey.shade200, width: 1)),
+      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Colors.blueAccent, width: 2)),
+      errorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Colors.red, width: 1.5)),
       filled: true,
       fillColor: Colors.grey.shade50,
+      floatingLabelBehavior: FloatingLabelBehavior.auto,
     );
   }
 
@@ -293,196 +283,252 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFF4F6F9),
       appBar: AppBar(
-        title: const Text("Teacher Registration", style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text("Teacher Registration", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
         elevation: 0,
         backgroundColor: Colors.white,
         foregroundColor: Colors.black87,
+        centerTitle: true,
       ),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
+          ? const Center(child: CircularProgressIndicator(color: Colors.blueAccent))
           : SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(20),
               child: Form(
                 key: _formKey,
-                autovalidateMode: AutovalidateMode.onUserInteraction,
                 child: Column(
                   children: [
-                    Card(
-                      elevation: 2,
-                      shadowColor: Colors.black12,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                      child: Padding(
-                        padding: const EdgeInsets.all(20.0),
-                        child: Column(
-                          children: [
-                            GestureDetector(
-                              onTap: () => _pickImage((f) => setState(() => _profileImage = f)),
-                              child: Stack(
-                                children: [
-                                  CircleAvatar(
-                                    radius: 52,
-                                    backgroundColor: Colors.blue.shade100,
-                                    backgroundImage: _profileImage != null ? FileImage(_profileImage!) : null,
-                                    child: _profileImage == null ? const Icon(Icons.person, size: 55, color: Colors.blueAccent) : null,
-                                  ),
-                                  const Positioned(
-                                    bottom: 0,
-                                    right: 0,
-                                    child: CircleAvatar(
-                                      radius: 18,
-                                      backgroundColor: Colors.blueAccent,
-                                      child: Icon(Icons.camera_alt, size: 18, color: Colors.white),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(height: 20),
-                            TextFormField(
-                              controller: _nameController,
-                              decoration: _buildInputDecoration('Full Name', Icons.person_outline),
-                              validator: (val) => _validateField(val, "Full Name"),
-                            ),
-                            const SizedBox(height: 14),
-                            TextFormField(
-                              controller: _emailController,
-                              keyboardType: TextInputType.emailAddress,
-                              decoration: _buildInputDecoration('Email Address', Icons.email_outlined),
-                              validator: _validateEmail,
-                            ),
-                            const SizedBox(height: 14),
-                            TextFormField(
-                              controller: _passwordController,
-                              obscureText: true,
-                              decoration: _buildInputDecoration('Password', Icons.lock_outline),
-                              validator: _validatePassword,
-                            ),
-                            const SizedBox(height: 14),
-                            TextFormField(
-                              controller: _phoneController,
-                              keyboardType: TextInputType.phone,
-                              decoration: _buildInputDecoration('Phone Number', Icons.phone_outlined),
-                              validator: _validatePhone,
-                            ),
-                            const SizedBox(height: 14),
-                            TextFormField(
-                              controller: _tuitionNameController,
-                              decoration: _buildInputDecoration('Tuition / Institute Name', Icons.school_outlined),
-                            ),
-                            const SizedBox(height: 14),
-                            TextFormField(
-                              controller: _experienceController,
-                              keyboardType: TextInputType.number,
-                              decoration: _buildInputDecoration('Teaching Experience (in Years)', Icons.work_outline),
-                            ),
-                            const SizedBox(height: 14),
-                            TextFormField(
-                              controller: _locationController,
-                              decoration: _buildInputDecoration(
-                                'Teaching Location',
-                                Icons.location_on_outlined,
-                                suffix: IconButton(
-                                  icon: const Icon(Icons.my_location, color: Colors.blueAccent),
-                                  onPressed: _getCurrentLocation,
-                                ),
-                              ),
-                              validator: (val) => _validateField(val, "Teaching Location"),
-                            ),
-                          ],
-                        ),
+                    Container(
+                      padding: const EdgeInsets.all(24),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(20),
+                        boxShadow: [
+                          BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 15, offset: const Offset(0, 5)),
+                        ],
                       ),
-                    ),
-                    const SizedBox(height: 16),
-                    Card(
-                      elevation: 2,
-                      shadowColor: Colors.black12,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                      child: Padding(
-                        padding: const EdgeInsets.all(16.0),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      child: Column(
+                        children: [
+                          GestureDetector(
+                            onTap: () => _pickImage((f) => setState(() => _profileImage = f)),
+                            child: Stack(
                               children: [
-                                const Text("Select Subjects", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                  decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(12)),
-                                  child: Text("${_selectedSubjects.length} Selected", style: const TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold, fontSize: 12)),
+                                CircleAvatar(
+                                  radius: 54,
+                                  backgroundColor: Colors.blue.shade50,
+                                  backgroundImage: _profileImage != null ? FileImage(_profileImage!) : null,
+                                  child: _profileImage == null ? const Icon(Icons.person, size: 60, color: Colors.blueAccent) : null,
+                                ),
+                                Positioned(
+                                  bottom: 0,
+                                  right: 0,
+                                  child: Container(
+                                    padding: const EdgeInsets.all(8),
+                                    decoration: BoxDecoration(
+                                      color: Colors.blueAccent,
+                                      shape: BoxShape.circle,
+                                      border: Border.all(color: Colors.white, width: 2),
+                                    ),
+                                    child: const Icon(Icons.camera_alt, size: 16, color: Colors.white),
+                                  ),
                                 ),
                               ],
                             ),
-                            const SizedBox(height: 12),
-                            Wrap(
-                              spacing: 8,
-                              runSpacing: 4,
-                              children: _allSubjects.map((s) {
-                                final isSelected = _selectedSubjects.contains(s);
-                                return FilterChip(
-                                  label: Text(s),
-                                  selected: isSelected,
-                                  selectedColor: Colors.blueAccent.withOpacity(0.2),
-                                  checkmarkColor: Colors.blueAccent,
-                                  labelStyle: TextStyle(
-                                    color: isSelected ? Colors.blueAccent : Colors.black87,
-                                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                                  ),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(8),
-                                    side: BorderSide(color: isSelected ? Colors.blueAccent : Colors.grey.shade300),
-                                  ),
-                                  onSelected: (val) => setState(() {
-                                    val ? _selectedSubjects.add(s) : _selectedSubjects.remove(s);
-                                  }),
-                                );
-                              }).toList(),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    Card(
-                      elevation: 2,
-                      shadowColor: Colors.black12,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 8),
-                        child: Column(
-                          children: [
-                            ListTile(
-                              leading: const Icon(Icons.workspace_premium, color: Colors.blueAccent),
-                              title: const Text("Qualification Certificate (Required)", style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
-                              trailing: ElevatedButton.icon(
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: _qualificationCertificate != null ? Colors.green : Colors.blueAccent,
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                ),
-                                icon: Icon(_qualificationCertificate != null ? Icons.check : Icons.upload_file, size: 16, color: Colors.white),
-                                label: Text(_qualificationCertificate != null ? "Selected" : "Upload", style: const TextStyle(color: Colors.white, fontSize: 12)),
-                                onPressed: () => _pickImage((f) => setState(() => _qualificationCertificate = f)),
+                          ),
+                          const SizedBox(height: 24),
+                          TextFormField(
+                            controller: _nameController,
+                            decoration: _buildInputDecoration('Full Name', Icons.person_outline),
+                            validator: (val) => val == null || val.trim().isEmpty ? "Full Name is required" : null,
+                          ),
+                          const SizedBox(height: 16),
+                          TextFormField(
+                            controller: _emailController,
+                            keyboardType: TextInputType.emailAddress,
+                            decoration: _buildInputDecoration('Email Address', Icons.email_outlined),
+                            validator: (val) {
+                              if (val == null || val.trim().isEmpty) return "Email is required";
+                              if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(val.trim())) return "Enter valid email";
+                              return null;
+                            },
+                          ),
+                          const SizedBox(height: 16),
+                          TextFormField(
+                            controller: _passwordController,
+                            obscureText: _obscurePassword,
+                            decoration: _buildInputDecoration(
+                              'Password',
+                              Icons.lock_outline,
+                              suffix: IconButton(
+                                icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility, color: Colors.grey),
+                                onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
                               ),
                             ),
-                            const Divider(height: 1),
-                            ListTile(
-                              leading: const Icon(Icons.badge_outlined, color: Colors.blueAccent),
-                              title: const Text("ID Proof - NID/Passport/Aadhaar (Required)", style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
-                              trailing: ElevatedButton.icon(
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: _idProofImage != null ? Colors.green : Colors.blueAccent,
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                ),
-                                icon: Icon(_idProofImage != null ? Icons.check : Icons.upload_file, size: 16, color: Colors.white),
-                                label: Text(_idProofImage != null ? "Selected" : "Upload", style: const TextStyle(color: Colors.white, fontSize: 12)),
-                                onPressed: () => _pickImage((f) => setState(() => _idProofImage = f)),
+                            validator: (val) {
+                              if (val == null || val.trim().isEmpty) return "Password is required";
+                              if (val.trim().length < 6) return "Password must be at least 6 chars";
+                              return null;
+                            },
+                          ),
+                          const SizedBox(height: 16),
+                          TextFormField(
+                            controller: _phoneController,
+                            keyboardType: TextInputType.phone,
+                            decoration: _buildInputDecoration('Phone Number', Icons.phone_outlined),
+                            validator: (val) => val == null || val.trim().length < 10 ? "Enter valid phone" : null,
+                          ),
+                          const SizedBox(height: 16),
+                          TextFormField(
+                            controller: _tuitionNameController,
+                            decoration: _buildInputDecoration('Tuition / Institute Name', Icons.school_outlined),
+                          ),
+                          const SizedBox(height: 16),
+                          TextFormField(
+                            controller: _experienceController,
+                            keyboardType: TextInputType.number,
+                            decoration: _buildInputDecoration('Teaching Experience (in Years)', Icons.work_outline),
+                          ),
+                          const SizedBox(height: 16),
+                          TextFormField(
+                            controller: _locationController,
+                            decoration: _buildInputDecoration(
+                              'Teaching Location',
+                              Icons.location_on_outlined,
+                              suffix: IconButton(
+                                icon: const Icon(Icons.my_location, color: Colors.blueAccent),
+                                onPressed: _getCurrentLocation,
                               ),
                             ),
-                          ],
-                        ),
+                            validator: (val) => val == null || val.trim().isEmpty ? "Location is required" : null,
+                          ),
+                        ],
                       ),
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 20),
+
+                    Container(
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(20),
+                        boxShadow: [
+                          BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 15, offset: const Offset(0, 5)),
+                        ],
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text("Subjects & Expertise", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                          const SizedBox(height: 14),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: TextFormField(
+                                  controller: _subjectInputController,
+                                  decoration: _buildInputDecoration('Add Subject (e.g. Physics)', Icons.book_outlined),
+                                  onFieldSubmitted: (_) => _addSubject(),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              ElevatedButton(
+                                onPressed: _addSubject,
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.blueAccent,
+                                  minimumSize: const Size(54, 54),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                                ),
+                                child: const Icon(Icons.add, color: Colors.white),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 14),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: _selectedSubjects.map((subject) {
+                              return Chip(
+                                label: Text(subject, style: const TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold)),
+                                backgroundColor: Colors.blue.shade50,
+                                deleteIcon: const Icon(Icons.close, size: 16, color: Colors.blueAccent),
+                                onDeleted: () {
+                                  setState(() {
+                                    _selectedSubjects.remove(subject);
+                                  });
+                                },
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                  side: BorderSide(color: Colors.blue.shade200),
+                                ),
+                              );
+                            }).toList(),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+
+                    Container(
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(20),
+                        boxShadow: [
+                          BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 15, offset: const Offset(0, 5)),
+                        ],
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text("AI Verification & Documents", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                          const SizedBox(height: 16),
+                          ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            leading: const Icon(Icons.workspace_premium, color: Colors.blueAccent),
+                            title: const Text("Qualification Certificate (Required)", style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+                            trailing: ElevatedButton.icon(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: _qualificationCertificate != null ? Colors.green : Colors.blueAccent,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              ),
+                              icon: Icon(_qualificationCertificate != null ? Icons.check : Icons.upload_file, size: 16, color: Colors.white),
+                              label: Text(_qualificationCertificate != null ? "Selected" : "Upload", style: const TextStyle(color: Colors.white, fontSize: 12)),
+                              onPressed: () => _pickImage((f) => setState(() => _qualificationCertificate = f)),
+                            ),
+                          ),
+                          const Divider(height: 24),
+                          ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            leading: const Icon(Icons.badge_outlined, color: Colors.blueAccent),
+                            title: const Text("ID Proof - NID/Aadhaar (Required)", style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+                            trailing: ElevatedButton.icon(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: _idProofImage != null ? Colors.green : Colors.blueAccent,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              ),
+                              icon: Icon(_idProofImage != null ? Icons.check : Icons.upload_file, size: 16, color: Colors.white),
+                              label: Text(_idProofImage != null ? "Selected" : "Upload", style: const TextStyle(color: Colors.white, fontSize: 12)),
+                              onPressed: () => _pickImage((f) => setState(() => _idProofImage = f)),
+                            ),
+                          ),
+                          const Divider(height: 24),
+                          ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            leading: const Icon(Icons.face, color: Colors.blueAccent),
+                            title: const Text("Face Liveness Verification", style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+                            trailing: ElevatedButton.icon(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: _isLivenessVerified ? Colors.green : Colors.blueAccent,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              ),
+                              icon: Icon(_isLivenessVerified ? Icons.check_circle : Icons.camera_front, size: 16, color: Colors.white),
+                              label: Text(_isLivenessVerified ? "Verified" : "Verify Face", style: const TextStyle(color: Colors.white, fontSize: 12)),
+                              onPressed: _startFaceLivenessCheck,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+
                     Row(
                       children: [
                         Checkbox(
@@ -504,21 +550,22 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 20),
+
                     ElevatedButton(
                       onPressed: _isAccepted ? _submit : null,
                       style: ElevatedButton.styleFrom(
-                        minimumSize: const Size(double.infinity, 52),
-                        backgroundColor: _isAccepted ? Colors.blueAccent : Colors.grey.shade400,
-                        elevation: _isAccepted ? 3 : 0,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        minimumSize: const Size(double.infinity, 54),
+                        backgroundColor: _isAccepted ? Colors.blueAccent : Colors.grey.shade300,
+                        elevation: _isAccepted ? 4 : 0,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                       ),
                       child: const Text(
                         "REGISTER AS TEACHER",
-                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16, letterSpacing: 0.5),
                       ),
                     ),
-                    const SizedBox(height: 20),
+                    const SizedBox(height: 30),
                   ],
                 ),
               ),
