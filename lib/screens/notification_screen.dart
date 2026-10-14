@@ -20,7 +20,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
 
   bool isTeacher = false;
   bool isLoading = true;
-  String _selectedFilter = 'all'; // 'all', 'follow', 'group'
+  String _selectedFilter = 'all';
 
   static const Set<String> _allowedActivityTypes = {
     'follow_request',
@@ -90,17 +90,9 @@ class _NotificationScreenState extends State<NotificationScreen> {
         .trim()
         .toLowerCase();
 
-    if (_blockedChatTypes.contains(type)) {
-      return true;
-    }
-
-    if (data.containsKey('chatRoomId') || data.containsKey('chatId')) {
-      return true;
-    }
-
-    if (_allowedActivityTypes.contains(type)) {
-      return false;
-    }
+    if (_blockedChatTypes.contains(type)) return true;
+    if (data.containsKey('chatRoomId') || data.containsKey('chatId')) return true;
+    if (_allowedActivityTypes.contains(type)) return false;
 
     final String combinedText =
         '${data['message'] ?? ''} ${data['body'] ?? ''} ${data['title'] ?? ''}'
@@ -134,12 +126,8 @@ class _NotificationScreenState extends State<NotificationScreen> {
         type.contains('invite') ||
         text.contains('group');
 
-    if (_selectedFilter == 'group') {
-      return isGroupEvent;
-    }
-    if (_selectedFilter == 'follow') {
-      return !isGroupEvent;
-    }
+    if (_selectedFilter == 'group') return isGroupEvent;
+    if (_selectedFilter == 'follow') return !isGroupEvent;
     return true;
   }
 
@@ -258,12 +246,20 @@ class _NotificationScreenState extends State<NotificationScreen> {
         tagLabel: 'Connected',
       );
     }
-    if (t == 'follow_request' || t == 'follow' || t == 'new_follower') {
+    if (t == 'follow_request') {
       return const _NotificationBadgeStyle(
         icon: Icons.person_add_alt_1_rounded,
         color: Color(0xFF0284C7),
         bgColor: Color(0xFFE0F2FE),
-        tagLabel: t == 'follow_request' ? 'Follow Request' : 'New Follower',
+        tagLabel: 'Follow Request',
+      );
+    }
+    if (t == 'follow' || t == 'new_follower') {
+      return const _NotificationBadgeStyle(
+        icon: Icons.person_add_alt_1_rounded,
+        color: Color(0xFF0284C7),
+        bgColor: Color(0xFFE0F2FE),
+        tagLabel: 'New Follower',
       );
     }
     if (t.contains('mute')) {
@@ -569,7 +565,6 @@ class _NotificationScreenState extends State<NotificationScreen> {
 
                       final allDocs = snapshot.data?.docs ?? const [];
 
-                      // Strictly exclude all chat message notifications
                       final activityDocs = allDocs.where((doc) {
                         final data = doc.data() as Map<String, dynamic>;
                         if (_isChatMessageNotification(data)) return false;
