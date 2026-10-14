@@ -1,13 +1,14 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
-import 'gemini_service.dart';
-import 'fallback_ai_service.dart';
 import '../utils/ai_cooldown_manager.dart';
+import 'fallback_ai_service.dart';
+import 'gemini_service.dart';
 
 enum AppLanguage { en, bn, hi }
 
 class AiCoordinatorService {
-  static final AiCoordinatorService _instance = AiCoordinatorService._internal();
+  static final AiCoordinatorService _instance =
+      AiCoordinatorService._internal();
   factory AiCoordinatorService() => _instance;
   AiCoordinatorService._internal();
 
@@ -91,41 +92,83 @@ class AiCoordinatorService {
     }
 
     bool geminiEmittedAny = false;
+    Object? primaryErr;
+
     try {
       final stream = _geminiService.generateContentStream(
         prompt,
         systemPrompt: systemPrompt,
       );
       await for (final chunk in stream) {
-        geminiEmittedAny = true;
-        yield chunk;
+        if (chunk.isNotEmpty) {
+          geminiEmittedAny = true;
+          yield chunk;
+        }
       }
-      return;
+      if (geminiEmittedAny) {
+        return;
+      }
     } catch (geminiError) {
-      debugPrint("Primary Gemini failed: $geminiError");
+      primaryErr = geminiError;
+      debugPrint("Primary Gemini stream failed: $geminiError");
       if (geminiEmittedAny) return;
+    }
 
-      onFallbackStatus?.call(true);
+    onFallbackStatus?.call(true);
+    bool fallbackEmittedAny = false;
 
+    try {
+      final fallbackStream = _fallbackService.generateContentStream(
+        prompt,
+        systemPrompt: systemPrompt,
+      );
+      await for (final chunk in fallbackStream) {
+        if (chunk.isNotEmpty) {
+          fallbackEmittedAny = true;
+          onFallbackStatus?.call(false);
+          yield chunk;
+        }
+      }
+      if (fallbackEmittedAny) {
+        onFallbackStatus?.call(false);
+        return;
+      }
+    } catch (fallbackError) {
+      debugPrint("FallbackAiService stream failed: $fallbackError");
+      if (fallbackEmittedAny) {
+        onFallbackStatus?.call(false);
+        return;
+      }
+
+      // Layer 3: Direct non-streaming HTTP rescue via Gemini/Groq multi-model chain
       try {
-        final fallbackStream = _fallbackService.generateContentStream(
+        final String rescueText = await _geminiService.generateContent(
           prompt,
           systemPrompt: systemPrompt,
         );
-        await for (final chunk in fallbackStream) {
-          yield chunk;
+        if (rescueText.trim().isNotEmpty) {
+          onFallbackStatus?.call(false);
+          yield rescueText.trim();
+          return;
         }
-      } catch (fallbackError) {
-        debugPrint("Fallback Groq also failed: $fallbackError");
-        if (_isQuotaError(fallbackError) || _isQuotaError(geminiError)) {
-          await _cooldownManager.setShortCooldown(seconds: 20);
-          yield _getQuotaExceededMessage(lang, _cooldownManager.formattedRemainingTime);
-        } else {
-          yield _getGeneralErrorMessage(lang);
-        }
-      } finally {
-        onFallbackStatus?.call(false);
+      } catch (rescueErr) {
+        debugPrint("Layer 3 rescue also failed: $rescueErr");
       }
+
+      onFallbackStatus?.call(false);
+      if (_isQuotaError(fallbackError) ||
+          (primaryErr != null && _isQuotaError(primaryErr))) {
+        await _cooldownManager.setShortCooldown(seconds: 12);
+        yield _getQuotaExceededMessage(
+          lang,
+          _cooldownManager.formattedRemainingTime,
+        );
+      } else {
+        yield _getGeneralErrorMessage(lang);
+      }
+      return;
+    } finally {
+      onFallbackStatus?.call(false);
     }
   }
 
@@ -138,21 +181,31 @@ class AiCoordinatorService {
     }
 
     try {
-      return await _geminiService.generateContentStream(prompt, systemPrompt: systemPrompt).join();
+      final res = await _geminiService.generateContent(
+        prompt,
+        systemPrompt: systemPrompt,
+      );
+      if (res.trim().isNotEmpty) return res.trim();
     } catch (e) {
-      try {
-        return await _fallbackService.generateContent(
-          prompt,
-          systemPrompt: systemPrompt,
+      debugPrint("Primary sendMessage failed: $e");
+    }
+
+    try {
+      final fallbackRes = await _fallbackService.generateContent(
+        prompt,
+        systemPrompt: systemPrompt,
+      );
+      if (fallbackRes.trim().isNotEmpty) return fallbackRes.trim();
+    } catch (fallbackError) {
+      if (_isQuotaError(fallbackError)) {
+        await _cooldownManager.setShortCooldown(seconds: 12);
+        return _getQuotaExceededMessage(
+          lang,
+          _cooldownManager.formattedRemainingTime,
         );
-      } catch (fallbackError) {
-        if (_isQuotaError(fallbackError) || _isQuotaError(e)) {
-          await _cooldownManager.setShortCooldown(seconds: 20);
-          return _getQuotaExceededMessage(lang, _cooldownManager.formattedRemainingTime);
-        } else {
-          return _getGeneralErrorMessage(lang);
-        }
       }
     }
+
+    return _getGeneralErrorMessage(lang);
   }
 }
