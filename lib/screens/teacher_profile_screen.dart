@@ -1,10 +1,11 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:ui';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; 
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../animations/animation_constants.dart';
@@ -15,19 +16,19 @@ import '../services/follow_service.dart';
 import '../utils/image_utils.dart';
 import '../widgets/follow_button.dart';
 import '../widgets/success_toast.dart';
-import 'location_picker_screen.dart';
-import 'tuition_management_screen.dart';
-import 'live/join_live_screen.dart';
-import 'notification_screen.dart';
-import 'teacher_reviews_screen.dart';
-import 'teacher_follow_requests_screen.dart';
 import 'diary_history_screen.dart';
+import 'live/join_live_screen.dart';
+import 'location_picker_screen.dart';
+import 'notification_screen.dart';
+import 'teacher_follow_requests_screen.dart';
+import 'teacher_reviews_screen.dart';
+import 'tuition_management_screen.dart';
 
 class TeacherProfileScreen extends StatefulWidget {
   final String currentUserId;
 
   const TeacherProfileScreen({
-    super.key, 
+    super.key,
     required this.currentUserId,
   });
 
@@ -35,7 +36,8 @@ class TeacherProfileScreen extends StatefulWidget {
   State<TeacherProfileScreen> createState() => _TeacherProfileScreenState();
 }
 
-class _TeacherProfileScreenState extends State<TeacherProfileScreen> with TickerProviderStateMixin, AutomaticKeepAliveClientMixin {
+class _TeacherProfileScreenState extends State<TeacherProfileScreen>
+    with TickerProviderStateMixin, AutomaticKeepAliveClientMixin {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseStorage _storage = FirebaseStorage.instance;
@@ -46,6 +48,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
   late Animation<double> _glowAnimation;
 
   late AnimationController _menuMenuAnimController;
+  StreamSubscription<QuerySnapshot>? _notifSubscription;
   bool _isMenuExpanded = false;
 
   Map<String, dynamic>? teacherData;
@@ -56,7 +59,8 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
   final TextEditingController _phoneController = TextEditingController();
   final TextEditingController _classController = TextEditingController();
   final TextEditingController _bioController = TextEditingController();
-  final TextEditingController _subjectSearchController = TextEditingController();
+  final TextEditingController _subjectSearchController =
+      TextEditingController();
   final TextEditingController _instituteController = TextEditingController();
 
   String? gender;
@@ -64,7 +68,8 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
   List<dynamic> teacherLocations = [];
   bool hasUnreadNotifications = false;
 
-  bool get isOwnProfile => widget.currentUserId == (_auth.currentUser?.uid ?? "");
+  bool get isOwnProfile =>
+      widget.currentUserId == (_auth.currentUser?.uid ?? "");
 
   @override
   bool get wantKeepAlive => true;
@@ -86,12 +91,13 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
 
     _menuMenuAnimController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 400),
+      duration: const Duration(milliseconds: 340),
     );
   }
 
   @override
   void dispose() {
+    _notifSubscription?.cancel();
     _glowController.dispose();
     _menuMenuAnimController.dispose();
     _nameController.dispose();
@@ -106,7 +112,10 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
   Future<void> fetchTeacherData() async {
     if (widget.currentUserId.isEmpty) return;
     try {
-      final doc = await _firestore.collection('teachers').doc(widget.currentUserId).get();
+      final doc = await _firestore
+          .collection('teachers')
+          .doc(widget.currentUserId)
+          .get();
       if (doc.exists && mounted) {
         setState(() {
           teacherData = doc.data();
@@ -126,25 +135,34 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
     }
   }
 
-  void checkUnreadNotifications() async {
+  void checkUnreadNotifications() {
     final currentUID = _auth.currentUser?.uid;
     if (currentUID == null) return;
 
-    _firestore.collection('notifications')
-      .where('receiverId', isEqualTo: currentUID)
-      .where('isRead', isEqualTo: false)
-      .snapshots().listen((snap) {
-        if (mounted) {
-          setState(() => hasUnreadNotifications = snap.docs.isNotEmpty);
-        }
+    _notifSubscription?.cancel();
+    _notifSubscription = _firestore
+        .collection('notifications')
+        .where('receiverId', isEqualTo: currentUID)
+        .snapshots()
+        .listen((snap) {
+      if (!mounted) return;
+      final bool hasNonChatUnread = snap.docs.any((doc) {
+        final data = doc.data();
+        final String type = (data['type'] ?? '').toString().toLowerCase();
+        if (type == 'chat' || type == 'group_message') return false;
+        final bool isRead = data['isRead'] == true || data['status'] == 'read';
+        return !isRead;
       });
+      setState(() => hasUnreadNotifications = hasNonChatUnread);
+    });
   }
 
   Future<void> _clearLocalSessionAndNavigate() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.clear();
     if (mounted) {
-      Navigator.of(context, rootNavigator: true).pushNamedAndRemoveUntil('/login', (route) => false);
+      Navigator.of(context, rootNavigator: true)
+          .pushNamedAndRemoveUntil('/login', (route) => false);
     }
   }
 
@@ -160,7 +178,10 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Account deletion failed: ${e.toString()} (Re-authentication required)")),
+          SnackBar(
+            content: Text(
+                "Account deletion failed: ${e.toString()} (Re-authentication required)"),
+          ),
         );
       }
     }
@@ -168,7 +189,8 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
 
   void _openMapPicker() async {
     final List<Map<String, dynamic>>? results = await Navigator.push(
-      context, MaterialPageRoute(builder: (context) => const LocationPickerScreen()),
+      context,
+      MaterialPageRoute(builder: (context) => const LocationPickerScreen()),
     );
 
     if (results != null && results.isNotEmpty) {
@@ -183,7 +205,9 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
             await _firestore.collection('teachers').doc(uid).update({
               'locations': teacherLocations,
             });
-            if (mounted) SuccessToast.show(context, 'Teaching areas synchronized!');
+            if (mounted) {
+              SuccessToast.show(context, 'Teaching areas synchronized!');
+            }
           } catch (_) {}
         }
       }
@@ -197,7 +221,8 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
     try {
       String? imageUrl = teacherData?['profileImageUrl'];
       if (_selectedImage != null) {
-        File? compressedFile = await ImageHelper.compressImage(_selectedImage!);
+        File? compressedFile =
+            await ImageHelper.compressImage(_selectedImage!);
         final ref = _storage.ref().child('teachers/$uid/profile.jpg');
         await ref.putFile(compressedFile ?? _selectedImage!);
         imageUrl = await ref.getDownloadURL();
@@ -218,8 +243,8 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
         setState(() => isEditing = false);
         fetchTeacherData();
       }
-    } catch (_) { 
-      if (mounted) setState(() => isLoading = false); 
+    } catch (_) {
+      if (mounted) setState(() => isLoading = false);
     }
   }
 
@@ -272,29 +297,45 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
         return BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
           child: ScaleTransition(
-            scale: Tween<double>(begin: 0.85, end: 1.0).animate(CurvedAnimation(parent: anim, curve: Curves.easeOutBack)),
+            scale: Tween<double>(begin: 0.85, end: 1.0).animate(
+              CurvedAnimation(parent: anim, curve: Curves.easeOutBack),
+            ),
             child: FadeTransition(
               opacity: anim,
               child: AlertDialog(
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 20)),
-                content: Text(message, style: const TextStyle(fontSize: 15, color: Colors.black87)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20)),
+                title: Text(title,
+                    style: const TextStyle(
+                        fontWeight: FontWeight.bold, fontSize: 20)),
+                content: Text(message,
+                    style:
+                        const TextStyle(fontSize: 15, color: Colors.black87)),
                 actions: [
                   TextButton(
                     onPressed: () => Navigator.pop(dialogContext),
-                    child: const Text('Cancel', style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold, fontSize: 15)),
+                    child: const Text('Cancel',
+                        style: TextStyle(
+                            color: Colors.grey,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 15)),
                   ),
                   ElevatedButton(
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: isDelete ? Colors.redAccent : const Color(0xFF1565C0),
+                      backgroundColor: isDelete
+                          ? Colors.redAccent
+                          : const Color(0xFF1565C0),
                       foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10)),
                     ),
                     onPressed: () async {
                       Navigator.pop(dialogContext);
                       await onConfirm();
                     },
-                    child: Text(confirmText, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                    child: Text(confirmText,
+                        style: const TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 15)),
                   ),
                 ],
               ),
@@ -316,29 +357,42 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
         return BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
           child: ScaleTransition(
-            scale: Tween<double>(begin: 0.85, end: 1.0).animate(CurvedAnimation(parent: anim, curve: Curves.easeOutBack)),
+            scale: Tween<double>(begin: 0.85, end: 1.0).animate(
+              CurvedAnimation(parent: anim, curve: Curves.easeOutBack),
+            ),
             child: FadeTransition(
               opacity: anim,
               child: AlertDialog(
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                title: const Text("Exit App", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20)),
-                content: const Text("Are you sure you want to exit?", style: TextStyle(fontSize: 15, color: Colors.black87)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20)),
+                title: const Text("Exit App",
+                    style:
+                        TextStyle(fontWeight: FontWeight.bold, fontSize: 20)),
+                content: const Text("Are you sure you want to exit?",
+                    style: TextStyle(fontSize: 15, color: Colors.black87)),
                 actions: [
                   TextButton(
                     onPressed: () => Navigator.pop(dialogContext),
-                    child: const Text('Cancel', style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold, fontSize: 15)),
+                    child: const Text('Cancel',
+                        style: TextStyle(
+                            color: Colors.grey,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 15)),
                   ),
                   ElevatedButton(
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.redAccent,
                       foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10)),
                     ),
                     onPressed: () {
                       Navigator.pop(dialogContext);
                       SystemNavigator.pop();
                     },
-                    child: const Text('Exit', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                    child: const Text('Exit',
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 15)),
                   ),
                 ],
               ),
@@ -349,13 +403,17 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
     );
   }
 
-  void _toggleMenu() {
-    setState(() {
-      _isMenuExpanded = !_isMenuExpanded;
-      if (_isMenuExpanded) {
-        _menuMenuAnimController.forward();
-      } else {
-        _menuMenuAnimController.reverse();
+  void _openMenu() {
+    if (_isMenuExpanded) return;
+    setState(() => _isMenuExpanded = true);
+    _menuMenuAnimController.forward();
+  }
+
+  void _closeMenu() {
+    if (!_isMenuExpanded) return;
+    _menuMenuAnimController.reverse().then((_) {
+      if (mounted) {
+        setState(() => _isMenuExpanded = false);
       }
     });
   }
@@ -385,7 +443,8 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
     );
   }
 
-  void _showPendingDuesSheet(double totalDue, List<Map<String, dynamic>> dueStudents) {
+  void _showPendingDuesSheet(
+      double totalDue, List<Map<String, dynamic>> dueStudents) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -422,7 +481,10 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
                         color: Colors.red.shade50,
                         borderRadius: BorderRadius.circular(10),
                       ),
-                      child: const Icon(Icons.account_balance_wallet_rounded, color: Colors.red, size: 22),
+                      child: const Icon(
+                          Icons.account_balance_wallet_rounded,
+                          color: Colors.red,
+                          size: 22),
                     ),
                     const SizedBox(width: 12),
                     const Column(
@@ -430,11 +492,15 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
                       children: [
                         Text(
                           'Pending Tuition Fees',
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Color(0xFF0F172A)),
+                          style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 18,
+                              color: Color(0xFF0F172A)),
                         ),
                         Text(
                           'Student breakdown of unpaid dues',
-                          style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                          style:
+                              TextStyle(fontSize: 12, color: Color(0xFF64748B)),
                         ),
                       ],
                     ),
@@ -473,24 +539,34 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
                     children: [
                       const Text(
                         'Total Outstanding',
-                        style: TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w600),
+                        style: TextStyle(
+                            color: Colors.white70,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600),
                       ),
                       const SizedBox(height: 4),
                       Text(
                         '₹${totalDue.toStringAsFixed(0)}',
-                        style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold),
                       ),
                     ],
                   ),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
                       color: Colors.white.withOpacity(0.2),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Text(
                       '${dueStudents.length} Students',
-                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12),
                     ),
                   ),
                 ],
@@ -499,7 +575,10 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
             const SizedBox(height: 18),
             Text(
               'Students with Due (${dueStudents.length})',
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF1E293B)),
+              style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                  color: Color(0xFF1E293B)),
             ),
             const SizedBox(height: 10),
             Expanded(
@@ -508,16 +587,21 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(Icons.check_circle_outline_rounded, size: 56, color: Colors.green.shade400),
+                          Icon(Icons.check_circle_outline_rounded,
+                              size: 56, color: Colors.green.shade400),
                           const SizedBox(height: 12),
                           const Text(
                             'All Dues Cleared!',
-                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Color(0xFF1E293B)),
+                            style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                                color: Color(0xFF1E293B)),
                           ),
                           const SizedBox(height: 4),
                           Text(
                             'No pending payments from any enrolled student.',
-                            style: TextStyle(color: Colors.grey.shade500, fontSize: 13),
+                            style: TextStyle(
+                                color: Colors.grey.shade500, fontSize: 13),
                           ),
                         ],
                       ),
@@ -530,7 +614,8 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
                         final String name = student['studentName'] ?? 'Student';
                         final String uid = student['studentId'] ?? '';
                         final String subject = student['subject'] ?? '';
-                        final double amount = (student['due'] as double?) ?? 0.0;
+                        final double amount =
+                            (student['due'] as double?) ?? 0.0;
 
                         return Container(
                           margin: const EdgeInsets.only(bottom: 10),
@@ -547,7 +632,10 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
                                 backgroundColor: Colors.red.shade50,
                                 child: Text(
                                   '#${index + 1}',
-                                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.red.shade700),
+                                  style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.red.shade700),
                                 ),
                               ),
                               const SizedBox(width: 12),
@@ -557,14 +645,22 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
                                   children: [
                                     Text(
                                       name,
-                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14.5, color: Color(0xFF0F172A)),
+                                      style: const TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 14.5,
+                                          color: Color(0xFF0F172A)),
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                     ),
                                     const SizedBox(height: 2),
                                     Text(
-                                      subject.isNotEmpty ? '$subject  •  $uid' : uid,
-                                      style: TextStyle(fontSize: 11, color: Colors.grey.shade600, fontFamily: 'monospace'),
+                                      subject.isNotEmpty
+                                          ? '$subject  •  $uid'
+                                          : uid,
+                                      style: TextStyle(
+                                          fontSize: 11,
+                                          color: Colors.grey.shade600,
+                                          fontFamily: 'monospace'),
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                     ),
@@ -576,18 +672,25 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
                                 children: [
                                   Text(
                                     '₹${amount.toStringAsFixed(0)}',
-                                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xFFDC2626)),
+                                    style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 15,
+                                        color: Color(0xFFDC2626)),
                                   ),
                                   const SizedBox(height: 2),
                                   Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 6, vertical: 1),
                                     decoration: BoxDecoration(
                                       color: Colors.red.shade50,
                                       borderRadius: BorderRadius.circular(4),
                                     ),
                                     child: Text(
                                       'DUE',
-                                      style: TextStyle(fontSize: 9, fontWeight: FontWeight.w800, color: Colors.red.shade700),
+                                      style: TextStyle(
+                                          fontSize: 9,
+                                          fontWeight: FontWeight.w800,
+                                          color: Colors.red.shade700),
                                     ),
                                   ),
                                 ],
@@ -606,7 +709,8 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF1E40AF),
                   foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14)),
                   elevation: 1,
                 ),
                 onPressed: () {
@@ -616,7 +720,9 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
                     MaterialPageRoute(
                       builder: (_) => DiaryHistoryScreen(
                         currentUserId: widget.currentUserId,
-                        currentUserName: _nameController.text.isEmpty ? 'Teacher' : _nameController.text,
+                        currentUserName: _nameController.text.isEmpty
+                            ? 'Teacher'
+                            : _nameController.text,
                       ),
                     ),
                   );
@@ -624,7 +730,10 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
                 icon: const Icon(Icons.history_edu_rounded, size: 20),
                 label: const Text(
                   'MANAGE IN DIARY HISTORY',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, letterSpacing: 0.5),
+                  style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                      letterSpacing: 0.5),
                 ),
               ),
             ),
@@ -637,114 +746,156 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
   @override
   Widget build(BuildContext context) {
     super.build(context);
-    double headerHeight = 170.0;
-    double profileRadius = 56.0;
-    bool canPopScreen = Navigator.canPop(context) && !isOwnProfile;
+    final double topInset = MediaQuery.of(context).padding.top;
+    final double headerHeight = 165.0 + topInset;
+    const double profileRadius = 56.0;
+    final bool canPopScreen = Navigator.canPop(context) && !isOwnProfile;
 
     return PopScope(
-      canPop: canPopScreen,
-      onPopInvoked: (didPop) async {
+      canPop: canPopScreen && !_isMenuExpanded,
+      onPopInvokedWithResult: (didPop, result) async {
         if (didPop) return;
+        if (_isMenuExpanded) {
+          _closeMenu();
+          return;
+        }
         _showExitAnimatedPopup();
       },
       child: Scaffold(
         backgroundColor: const Color(0xFFF7F9FC),
         body: isLoading
             ? const Center(child: CircularProgressIndicator())
-            : SafeArea(
-                top: false,
-                child: SingleChildScrollView(
-                  physics: const BouncingScrollPhysics(),
-                  child: Column(
-                    children: [
-                      Stack(
-                        clipBehavior: Clip.none,
-                        alignment: Alignment.center,
-                        children: [
-                          AnimatedBuilder(
-                            animation: _glowAnimation,
-                            builder: (context, child) {
-                              return ClipPath(
-                                clipper: HeaderCurveClipper(),
-                                child: Container(
-                                  height: headerHeight,
-                                  decoration: BoxDecoration(
-                                    gradient: LinearGradient(
-                                      colors: [Colors.blue[900]!, Colors.blue[700]!],
-                                      begin: Alignment.topLeft,
-                                      end: Alignment.bottomRight,
+            : GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onTap: () {
+                  if (_isMenuExpanded) _closeMenu();
+                },
+                child: NotificationListener<ScrollNotification>(
+                  onNotification: (notification) {
+                    if (_isMenuExpanded &&
+                        notification is ScrollStartNotification) {
+                      _closeMenu();
+                    }
+                    return false;
+                  },
+                  child: SingleChildScrollView(
+                    physics: const ClampingScrollPhysics(),
+                    child: Column(
+                      children: [
+                        Stack(
+                          clipBehavior: Clip.none,
+                          alignment: Alignment.center,
+                          children: [
+                            AnimatedBuilder(
+                              animation: _glowAnimation,
+                              builder: (context, child) {
+                                return ClipPath(
+                                  clipper: HeaderCurveClipper(),
+                                  child: Container(
+                                    height: headerHeight,
+                                    width: double.infinity,
+                                    decoration: BoxDecoration(
+                                      gradient: LinearGradient(
+                                        colors: [
+                                          Colors.blue[900]!,
+                                          Colors.blue[700]!
+                                        ],
+                                        begin: Alignment.topLeft,
+                                        end: Alignment.bottomRight,
+                                      ),
+                                    ),
+                                    child: Stack(
+                                      children: [
+                                        Positioned(
+                                          top: topInset + 12,
+                                          left: 12,
+                                          right: 12,
+                                          child: Row(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.spaceBetween,
+                                            children: [
+                                              Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  if (canPopScreen)
+                                                    IconButton(
+                                                      icon: const Icon(
+                                                        Icons
+                                                            .arrow_back_ios_new_rounded,
+                                                        color: Colors.white,
+                                                        size: 20,
+                                                      ),
+                                                      onPressed: () =>
+                                                          Navigator.pop(
+                                                              context),
+                                                    )
+                                                  else
+                                                    const SizedBox(width: 8),
+                                                  const Text(
+                                                    'My Profile',
+                                                    style: TextStyle(
+                                                      fontWeight:
+                                                          FontWeight.bold,
+                                                      color: Colors.white,
+                                                      fontSize: 22,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                              Flexible(
+                                                child: Align(
+                                                  alignment:
+                                                      Alignment.centerRight,
+                                                  child:
+                                                      _buildActionHeaderBar(),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ),
-                                  child: Stack(
-                                    children: [
-                                      Positioned(
-                                        top: 40,
-                                        left: 12,
-                                        right: 12,
-                                        child: Row(
-                                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                          children: [
-                                            Row(
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
-                                                if (canPopScreen)
-                                                  IconButton(
-                                                    icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
-                                                    onPressed: () => Navigator.pop(context),
-                                                  )
-                                                else
-                                                  const SizedBox(width: 8),
-                                                const Text(
-                                                  'My Profile',
-                                                  style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 20),
-                                                ),
-                                              ],
-                                            ),
-                                            _buildActionHeaderBar(),
-                                          ],
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
-                          Positioned(
-                            top: headerHeight - profileRadius - 10,
-                            child: _buildProfileImage(profileRadius),
-                          ),
-                        ],
-                      ),
-                      SizedBox(height: profileRadius + 12),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: Column(
-                          children: [
-                            _buildNameWithBadge(),
-                            const SizedBox(height: 8),
-
-                            _buildUidIdentityCard(),
-                            const SizedBox(height: 12),
-
-                            _buildRatingSummaryCard(),
-                            const SizedBox(height: 12),
-
-                            if (!isEditing) _buildFollowStats(),
-                            if (!isOwnProfile) const SizedBox(height: 10),
-                            if (!isOwnProfile) _buildFollowButtonWidget(),
-                            if (!isOwnProfile) _buildStudentRatingActionButton(),
-
-                            const SizedBox(height: 20),
-                            isEditing ? _buildEditForm() : _buildViewProfile(),
-                            if (isOwnProfile && !isEditing) _buildDashboardSection(),
-                            if (isOwnProfile && !isEditing) _buildToolsAndPayment(),
-                            if (isEditing) _buildSaveCancelButtons(),
+                                );
+                              },
+                            ),
+                            Positioned(
+                              top: headerHeight - profileRadius - 10,
+                              child: _buildProfileImage(profileRadius),
+                            ),
                           ],
                         ),
-                      ),
-                      const SizedBox(height: 24),
-                    ],
+                        const SizedBox(height: profileRadius + 12),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          child: Column(
+                            children: [
+                              _buildNameWithBadge(),
+                              const SizedBox(height: 8),
+                              _buildUidIdentityCard(),
+                              const SizedBox(height: 12),
+                              _buildRatingSummaryCard(),
+                              const SizedBox(height: 12),
+                              if (!isEditing) _buildFollowStats(),
+                              if (!isOwnProfile) const SizedBox(height: 10),
+                              if (!isOwnProfile) _buildFollowButtonWidget(),
+                              if (!isOwnProfile)
+                                _buildStudentRatingActionButton(),
+                              const SizedBox(height: 20),
+                              isEditing
+                                  ? _buildEditForm()
+                                  : _buildViewProfile(),
+                              if (isOwnProfile && !isEditing)
+                                _buildDashboardSection(),
+                              if (isOwnProfile && !isEditing)
+                                _buildToolsAndPayment(),
+                              if (isEditing) _buildSaveCancelButtons(),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -753,7 +904,19 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
   }
 
   Widget _buildActionHeaderBar() {
-    List<Widget> menuItems = [];
+    if (!_isMenuExpanded) {
+      return IconButton(
+        icon: const Icon(
+          Icons.more_vert_rounded,
+          color: Colors.white,
+          size: 24,
+        ),
+        tooltip: 'Menu',
+        onPressed: _openMenu,
+      );
+    }
+
+    final List<Widget> menuItems = [];
 
     if (isOwnProfile) {
       menuItems.add(
@@ -764,35 +927,50 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
               .where('status', isEqualTo: 'pending')
               .snapshots(),
           builder: (context, snapshot) {
-            int pendingCount = snapshot.hasData ? snapshot.data!.docs.length : 0;
+            final int pendingCount =
+                snapshot.hasData ? snapshot.data!.docs.length : 0;
             return GestureDetector(
               onTapDown: (details) {
-                _toggleMenu();
+                _closeMenu();
                 Navigator.push(
                   context,
                   _createGenieRoute(
-                    TeacherFollowRequestsScreen(teacherId: widget.currentUserId),
+                    TeacherFollowRequestsScreen(
+                        teacherId: widget.currentUserId),
                     details.globalPosition,
                   ),
                 );
               },
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 child: Stack(
                   clipBehavior: Clip.none,
                   children: [
-                    const Icon(Icons.person_add_alt_1_rounded, color: Colors.white, size: 20),
+                    const Icon(
+                      Icons.person_add_alt_1_rounded,
+                      color: Colors.white,
+                      size: 20,
+                    ),
                     if (pendingCount > 0)
                       Positioned(
                         right: -4,
                         top: -3,
                         child: Container(
                           padding: const EdgeInsets.all(3),
-                          decoration: const BoxDecoration(color: Colors.orangeAccent, shape: BoxShape.circle),
-                          constraints: const BoxConstraints(minWidth: 15, minHeight: 15),
+                          decoration: const BoxDecoration(
+                            color: Colors.orangeAccent,
+                            shape: BoxShape.circle,
+                          ),
+                          constraints: const BoxConstraints(
+                              minWidth: 15, minHeight: 15),
                           child: Text(
                             '$pendingCount',
-                            style: const TextStyle(color: Colors.black, fontSize: 9, fontWeight: FontWeight.bold),
+                            style: const TextStyle(
+                              color: Colors.black,
+                              fontSize: 9,
+                              fontWeight: FontWeight.bold,
+                            ),
                             textAlign: TextAlign.center,
                           ),
                         ),
@@ -806,11 +984,11 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen> with Ticker
       );
     }
 
-menuItems.add(
+    menuItems.add(
       GestureDetector(
         onTapDown: (details) {
           final Offset tapPos = details.globalPosition;
-          _toggleMenu();
+          _closeMenu();
           ScreenPullController.executeSafeNavigation(
             context: context,
             navigationAction: () async {
@@ -828,11 +1006,15 @@ menuItems.add(
           );
         },
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           child: Stack(
             clipBehavior: Clip.none,
             children: [
-              const Icon(Icons.notifications_none_rounded, color: Colors.white, size: 20),
+              const Icon(
+                Icons.notifications_none_rounded,
+                color: Colors.white,
+                size: 20,
+              ),
               if (hasUnreadNotifications)
                 Positioned(
                   right: 0,
@@ -840,9 +1022,12 @@ menuItems.add(
                   child: Container(
                     width: 8,
                     height: 8,
-                    decoration: const BoxDecoration(color: Colors.redAccent, shape: BoxShape.circle),
+                    decoration: const BoxDecoration(
+                      color: Colors.redAccent,
+                      shape: BoxShape.circle,
+                    ),
                   ),
-                )
+                ),
             ],
           ),
         ),
@@ -855,7 +1040,7 @@ menuItems.add(
           icon: Icons.edit_outlined,
           tooltip: 'Edit Profile',
           onTap: () {
-            _toggleMenu();
+            _closeMenu();
             setState(() => isEditing = true);
           },
         ),
@@ -863,8 +1048,13 @@ menuItems.add(
           icon: Icons.share_outlined,
           tooltip: 'Share Profile',
           onTap: () {
-            _toggleMenu();
-            Clipboard.setData(ClipboardData(text: "Check out this teacher profile on FYBTT. UID: ${widget.currentUserId}"));
+            _closeMenu();
+            Clipboard.setData(
+              ClipboardData(
+                text:
+                    "Check out this teacher profile on FYBTT. UID: ${widget.currentUserId}",
+              ),
+            );
             SuccessToast.show(context, 'Profile link copied!');
           },
         ),
@@ -873,15 +1063,15 @@ menuItems.add(
           iconColor: Colors.orangeAccent,
           tooltip: 'Sign Out',
           onTap: () {
-            _toggleMenu();
+            _closeMenu();
             _showAnimatedPopup(
-              title: 'Sign Out', 
-              message: 'Are you sure you want to sign out?', 
-              confirmText: 'Confirm', 
+              title: 'Sign Out',
+              message: 'Are you sure you want to sign out?',
+              confirmText: 'Confirm',
               onConfirm: () async {
                 await _auth.signOut();
                 await _clearLocalSessionAndNavigate();
-              }
+              },
             );
           },
         ),
@@ -890,15 +1080,16 @@ menuItems.add(
           iconColor: Colors.redAccent,
           tooltip: 'Delete Account',
           onTap: () {
-            _toggleMenu();
+            _closeMenu();
             _showAnimatedPopup(
-              title: 'Delete Account', 
-              message: 'This will permanently delete your account. Are you sure?', 
-              confirmText: 'Delete', 
+              title: 'Delete Account',
+              message:
+                  'This will permanently delete your account. Are you sure?',
+              confirmText: 'Delete',
               isDelete: true,
               onConfirm: () async {
                 await _deleteAccount();
-              }
+              },
             );
           },
         ),
@@ -909,55 +1100,49 @@ menuItems.add(
           icon: Icons.share_outlined,
           tooltip: 'Share Profile',
           onTap: () {
-            _toggleMenu();
-            Clipboard.setData(ClipboardData(text: "Check out this teacher profile on FYBTT. UID: ${widget.currentUserId}"));
+            _closeMenu();
+            Clipboard.setData(
+              ClipboardData(
+                text:
+                    "Check out this teacher profile on FYBTT. UID: ${widget.currentUserId}",
+              ),
+            );
             SuccessToast.show(context, 'Profile link copied!');
           },
         ),
       );
     }
 
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (_isMenuExpanded)
-          ClipRRect(
-            borderRadius: BorderRadius.circular(25),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.18),
-                  borderRadius: BorderRadius.circular(25),
-                  border: Border.all(color: Colors.white.withOpacity(0.32), width: 1.2),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: List.generate(
-                    menuItems.length,
-                    (index) => _buildStaggeredMenuItem(
-                      index: index,
-                      totalItems: menuItems.length,
-                      child: menuItems[index],
-                    ),
-                  ),
+    return GestureDetector(
+      onTap: () {},
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(28),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.18),
+              borderRadius: BorderRadius.circular(28),
+              border: Border.all(
+                color: Colors.white.withOpacity(0.35),
+                width: 1.2,
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: List.generate(
+                menuItems.length,
+                (index) => _buildStaggeredMenuItem(
+                  index: index,
+                  totalItems: menuItems.length,
+                  child: menuItems[index],
                 ),
               ),
             ),
           ),
-        IconButton(
-          icon: AnimatedSwitcher(
-            duration: const Duration(milliseconds: 250),
-            child: Icon(
-              _isMenuExpanded ? Icons.close_rounded : Icons.more_vert_rounded,
-              key: ValueKey<bool>(_isMenuExpanded),
-              color: Colors.white,
-            ),
-          ),
-          onPressed: _toggleMenu,
         ),
-      ],
+      ),
     );
   }
 
@@ -971,16 +1156,19 @@ menuItems.add(
       icon: Icon(icon, color: iconColor, size: 20),
       tooltip: tooltip,
       onPressed: onTap,
-      padding: const EdgeInsets.symmetric(horizontal: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       constraints: const BoxConstraints(),
     );
   }
 
   Widget _buildRatingSummaryCard() {
-    double avgRating = (teacherData?['averageRating'] as num?)?.toDouble() ?? 0.0;
-    double allTimeRating = (teacherData?['allTimeRating'] as num?)?.toDouble() ?? 0.0;
+    double avgRating =
+        (teacherData?['averageRating'] as num?)?.toDouble() ?? 0.0;
+    double allTimeRating =
+        (teacherData?['allTimeRating'] as num?)?.toDouble() ?? 0.0;
     int reviewCount = (teacherData?['reviewCount'] as num?)?.toInt() ?? 0;
-    String currentSeason = teacherData?['currentSeason'] ?? RatingModel.getCurrentSeason();
+    String currentSeason =
+        teacherData?['currentSeason'] ?? RatingModel.getCurrentSeason();
 
     return Container(
       padding: const EdgeInsets.all(14),
@@ -988,7 +1176,9 @@ menuItems.add(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: Colors.blue.shade100),
-        boxShadow: [BoxShadow(color: Colors.blue.withOpacity(0.03), blurRadius: 10)],
+        boxShadow: [
+          BoxShadow(color: Colors.blue.withOpacity(0.03), blurRadius: 10)
+        ],
       ),
       child: Column(
         children: [
@@ -1000,19 +1190,27 @@ menuItems.add(
                 children: [
                   Row(
                     children: [
-                      const Icon(Icons.star_rounded, color: Colors.amber, size: 24),
+                      const Icon(Icons.star_rounded,
+                          color: Colors.amber, size: 24),
                       const SizedBox(width: 4),
                       Text(
                         avgRating.toStringAsFixed(1),
-                        style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                        style: const TextStyle(
+                            fontSize: 20, fontWeight: FontWeight.bold),
                       ),
                       const SizedBox(width: 8),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                        decoration: BoxDecoration(color: Colors.blue[50], borderRadius: BorderRadius.circular(10)),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                            color: Colors.blue[50],
+                            borderRadius: BorderRadius.circular(10)),
                         child: Text(
                           "$currentSeason Rating",
-                          style: TextStyle(color: Colors.blue[900], fontSize: 11, fontWeight: FontWeight.bold),
+                          style: TextStyle(
+                              color: Colors.blue[900],
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold),
                         ),
                       ),
                     ],
@@ -1020,15 +1218,20 @@ menuItems.add(
                   const SizedBox(height: 4),
                   Text(
                     "All-Time: ★ $allTimeRating ($reviewCount Reviews)",
-                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600, fontWeight: FontWeight.w500),
+                    style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey.shade600,
+                        fontWeight: FontWeight.w500),
                   ),
                 ],
               ),
               OutlinedButton.icon(
                 style: OutlinedButton.styleFrom(
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10)),
                   side: BorderSide(color: Colors.blue.shade300),
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 ),
                 onPressed: () {
                   Navigator.push(
@@ -1036,7 +1239,9 @@ menuItems.add(
                     MaterialPageRoute(
                       builder: (_) => TeacherReviewsScreen(
                         teacherId: widget.currentUserId,
-                        teacherName: _nameController.text.isEmpty ? "Teacher" : _nameController.text,
+                        teacherName: _nameController.text.isEmpty
+                            ? "Teacher"
+                            : _nameController.text,
                         teacherProfileUrl: teacherData?['profileImageUrl'],
                         currentStudentId: _auth.currentUser?.uid ?? "",
                       ),
@@ -1044,7 +1249,9 @@ menuItems.add(
                   );
                 },
                 icon: const Icon(Icons.rate_review_outlined, size: 16),
-                label: const Text("View Reviews", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                label: const Text("View Reviews",
+                    style:
+                        TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
               ),
             ],
           ),
@@ -1058,7 +1265,10 @@ menuItems.add(
     if (currentUID.isEmpty) return const SizedBox();
 
     return FutureBuilder<DocumentSnapshot>(
-      future: _firestore.collection('ratings').doc('${widget.currentUserId}_$currentUID').get(),
+      future: _firestore
+          .collection('ratings')
+          .doc('${widget.currentUserId}_$currentUID')
+          .get(),
       builder: (context, snapshot) {
         bool hasRated = snapshot.hasData && snapshot.data!.exists;
 
@@ -1069,7 +1279,8 @@ menuItems.add(
               backgroundColor: hasRated ? Colors.amber[800] : Colors.amber[700],
               foregroundColor: Colors.white,
               minimumSize: const Size(180, 42),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
             ),
             icon: Icon(hasRated ? Icons.edit_note : Icons.star, size: 18),
             label: Text(hasRated ? "Edit Rating" : "Give Rating"),
@@ -1079,7 +1290,9 @@ menuItems.add(
                 MaterialPageRoute(
                   builder: (_) => TeacherReviewsScreen(
                     teacherId: widget.currentUserId,
-                    teacherName: _nameController.text.isEmpty ? "Teacher" : _nameController.text,
+                    teacherName: _nameController.text.isEmpty
+                        ? "Teacher"
+                        : _nameController.text,
                     teacherProfileUrl: teacherData?['profileImageUrl'],
                     currentStudentId: currentUID,
                   ),
@@ -1092,7 +1305,7 @@ menuItems.add(
     );
   }
 
-Widget _buildUidIdentityCard() {
+  Widget _buildUidIdentityCard() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       constraints: const BoxConstraints(maxWidth: 320),
@@ -1100,7 +1313,9 @@ Widget _buildUidIdentityCard() {
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: Colors.grey.shade200),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 4)],
+        boxShadow: [
+          BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 4)
+        ],
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1109,11 +1324,22 @@ Widget _buildUidIdentityCard() {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text("TEACHER UID", style: TextStyle(color: Colors.grey.shade500, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 0.5)),
+                Text(
+                  "TEACHER UID",
+                  style: TextStyle(
+                      color: Colors.grey.shade500,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 0.5),
+                ),
                 const SizedBox(height: 2),
                 Text(
                   widget.currentUserId,
-                  style: const TextStyle(color: Colors.black87, fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 0.2),
+                  style: const TextStyle(
+                      color: Colors.black87,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.2),
                   overflow: TextOverflow.ellipsis,
                 ),
               ],
@@ -1127,8 +1353,11 @@ Widget _buildUidIdentityCard() {
             borderRadius: BorderRadius.circular(8),
             child: Container(
               padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(8)),
-              child: Icon(Icons.copy_all_rounded, color: Colors.blue.shade800, size: 18),
+              decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  borderRadius: BorderRadius.circular(8)),
+              child: Icon(Icons.copy_all_rounded,
+                  color: Colors.blue.shade800, size: 18),
             ),
           )
         ],
@@ -1139,30 +1368,64 @@ Widget _buildUidIdentityCard() {
   Widget _buildProfileImage(double radius) {
     final url = teacherData?['profileImageUrl'];
     return GestureDetector(
-      onTap: isEditing ? () async {
-        final picked = await _picker.pickImage(source: ImageSource.gallery, imageQuality: 80);
-        if (picked != null) setState(() => _selectedImage = File(picked.path));
-      } : null,
+      onTap: isEditing
+          ? () async {
+              final picked = await _picker.pickImage(
+                  source: ImageSource.gallery, imageQuality: 80);
+              if (picked != null) {
+                setState(() => _selectedImage = File(picked.path));
+              }
+            }
+          : null,
       child: Stack(children: [
         Container(
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             border: Border.all(color: Colors.white, width: 4),
             boxShadow: [
-              BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 12, offset: const Offset(0, 6)),
+              BoxShadow(
+                  color: Colors.black.withOpacity(0.08),
+                  blurRadius: 12,
+                  offset: const Offset(0, 6)),
             ],
           ),
-          child: CircleAvatar(radius: radius, backgroundColor: Colors.blue[50], backgroundImage: _selectedImage != null ? FileImage(_selectedImage!) : (url != null ? NetworkImage(url) : null) as ImageProvider?),
+          child: CircleAvatar(
+            radius: radius,
+            backgroundColor: Colors.blue[50],
+            backgroundImage: _selectedImage != null
+                ? FileImage(_selectedImage!)
+                : (url != null ? NetworkImage(url) : null) as ImageProvider?,
+          ),
         ),
-        if (isEditing) Positioned(bottom: 0, right: 0, child: CircleAvatar(backgroundColor: Colors.blue[800], radius: 18, child: const Icon(Icons.camera_alt_rounded, color: Colors.white, size: 16))),
+        if (isEditing)
+          Positioned(
+            bottom: 0,
+            right: 0,
+            child: CircleAvatar(
+              backgroundColor: Colors.blue[800],
+              radius: 18,
+              child: const Icon(Icons.camera_alt_rounded,
+                  color: Colors.white, size: 16),
+            ),
+          ),
       ]),
     );
   }
 
   Widget _buildNameWithBadge() {
     return Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-      Text(_nameController.text.isEmpty ? "No Name" : _nameController.text, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Color(0xFF1B1B1B))),
-      if (teacherData?['isVerified'] ?? false) const Padding(padding: EdgeInsets.only(left: 6), child: Icon(Icons.verified, color: Colors.blue, size: 20)),
+      Text(
+        _nameController.text.isEmpty ? "No Name" : _nameController.text,
+        style: const TextStyle(
+            fontSize: 22,
+            fontWeight: FontWeight.bold,
+            color: Color(0xFF1B1B1B)),
+      ),
+      if (teacherData?['isVerified'] ?? false)
+        const Padding(
+          padding: EdgeInsets.only(left: 6),
+          child: Icon(Icons.verified, color: Colors.blue, size: 20),
+        ),
     ]);
   }
 
@@ -1173,10 +1436,14 @@ Widget _buildUidIdentityCard() {
         int count = snapshot.data ?? 0;
         return Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-          decoration: BoxDecoration(color: Colors.blue[50], borderRadius: BorderRadius.circular(20)),
+          decoration: BoxDecoration(
+              color: Colors.blue[50], borderRadius: BorderRadius.circular(20)),
           child: Text(
             'Followers: $count',
-            style: TextStyle(color: Colors.blue[800], fontWeight: FontWeight.bold, fontSize: 13),
+            style: TextStyle(
+                color: Colors.blue[800],
+                fontWeight: FontWeight.bold,
+                fontSize: 13),
           ),
         );
       },
@@ -1197,17 +1464,23 @@ Widget _buildUidIdentityCard() {
           );
         }
 
-        bool isStudent = studentSnapshot.hasData && studentSnapshot.data!.exists;
+        bool isStudent =
+            studentSnapshot.hasData && studentSnapshot.data!.exists;
 
         if (isStudent) {
-          final studentData = studentSnapshot.data!.data() as Map<String, dynamic>? ?? {};
-          final studentName = studentData['name'] ?? studentData['fullName'] ?? 'Student';
-          final studentPhoto = studentData['photoUrl'] ?? studentData['profileImageUrl'] ?? '';
+          final studentData =
+              studentSnapshot.data!.data() as Map<String, dynamic>? ?? {};
+          final studentName =
+              studentData['name'] ?? studentData['fullName'] ?? 'Student';
+          final studentPhoto = studentData['photoUrl'] ??
+              studentData['profileImageUrl'] ??
+              '';
 
           return FollowButton(
             teacherId: widget.currentUserId,
             studentId: currentUID,
-            teacherName: _nameController.text.isEmpty ? 'Teacher' : _nameController.text,
+            teacherName:
+                _nameController.text.isEmpty ? 'Teacher' : _nameController.text,
             studentName: studentName,
             teacherPhoto: teacherData?['profileImageUrl'] ?? '',
             studentPhoto: studentPhoto,
@@ -1216,14 +1489,17 @@ Widget _buildUidIdentityCard() {
           return FutureBuilder<DocumentSnapshot>(
             future: _firestore.collection('teachers').doc(currentUID).get(),
             builder: (context, teacherSnapshot) {
-              final tData = teacherSnapshot.data?.data() as Map<String, dynamic>? ?? {};
+              final tData =
+                  teacherSnapshot.data?.data() as Map<String, dynamic>? ?? {};
               final currentUserName = tData['name'] ?? 'User';
               final currentUserPhoto = tData['profileImageUrl'] ?? '';
 
               return FollowButton(
                 teacherId: widget.currentUserId,
                 studentId: currentUID,
-                teacherName: _nameController.text.isEmpty ? 'Teacher' : _nameController.text,
+                teacherName: _nameController.text.isEmpty
+                    ? 'Teacher'
+                    : _nameController.text,
                 studentName: currentUserName,
                 teacherPhoto: teacherData?['profileImageUrl'] ?? '',
                 studentPhoto: currentUserPhoto,
@@ -1237,55 +1513,105 @@ Widget _buildUidIdentityCard() {
 
   Widget _buildViewProfile() {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      _buildMaterial3Card("Tuition / Institute Name", _instituteController.text, Icons.domain_outlined, Colors.indigo),
-      _buildMaterial3Card("Bio", _bioController.text, Icons.description_outlined, const Color(0xFF3B82F6)),
-      _buildMaterial3Card("Phone Number", isOwnProfile ? _phoneController.text : "Hidden for Privacy", Icons.phone_outlined, Colors.deepPurple),
-      _buildMaterial3Card("Teaching Class", _classController.text, Icons.school_outlined, const Color(0xFF10B981)),
-      _buildMaterial3Card("Gender", isOwnProfile ? (gender ?? "Not set") : "Hidden for Privacy", Icons.wc_outlined, const Color(0xFFF59E0B)),
-
+      _buildMaterial3Card("Tuition / Institute Name", _instituteController.text,
+          Icons.domain_outlined, Colors.indigo),
+      _buildMaterial3Card("Bio", _bioController.text,
+          Icons.description_outlined, const Color(0xFF3B82F6)),
+      _buildMaterial3Card(
+          "Phone Number",
+          isOwnProfile ? _phoneController.text : "Hidden for Privacy",
+          Icons.phone_outlined,
+          Colors.deepPurple),
+      _buildMaterial3Card("Teaching Class", _classController.text,
+          Icons.school_outlined, const Color(0xFF10B981)),
+      _buildMaterial3Card(
+          "Gender",
+          isOwnProfile ? (gender ?? "Not set") : "Hidden for Privacy",
+          Icons.wc_outlined,
+          const Color(0xFFF59E0B)),
       const SizedBox(height: 18),
-      const Text("Teaching Areas (Locations)", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xFF1B1B1B))),
+      const Text("Teaching Areas (Locations)",
+          style: TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 15,
+              color: Color(0xFF1B1B1B))),
       const SizedBox(height: 8),
       Wrap(
-        spacing: 8, 
-        children: teacherLocations.map((l) => Chip(
-          label: Text((l is Map) ? (l['address'] ?? "Unknown") : l.toString()), 
-          avatar: const Icon(Icons.location_on, size: 14, color: Colors.red), 
-          backgroundColor: Colors.white, 
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), 
-          side: BorderSide(color: Colors.grey.shade200)
-        )).toList()
+        spacing: 8,
+        children: teacherLocations
+            .map((l) => Chip(
+                  label: Text(
+                      (l is Map) ? (l['address'] ?? "Unknown") : l.toString()),
+                  avatar:
+                      const Icon(Icons.location_on, size: 14, color: Colors.red),
+                  backgroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                  side: BorderSide(color: Colors.grey.shade200),
+                ))
+            .toList(),
       ),
       const SizedBox(height: 18),
-      const Text("Subjects", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xFF1B1B1B))),
+      const Text("Subjects",
+          style: TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 15,
+              color: Color(0xFF1B1B1B))),
       const SizedBox(height: 8),
-      Wrap(spacing: 8, children: selectedSubjects.map((s) => Chip(label: Text(s), backgroundColor: Colors.blue[50], side: BorderSide.none, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)))).toList()),
+      Wrap(
+        spacing: 8,
+        children: selectedSubjects
+            .map((s) => Chip(
+                  label: Text(s),
+                  backgroundColor: Colors.blue[50],
+                  side: BorderSide.none,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                ))
+            .toList(),
+      ),
     ]);
   }
 
-  Widget _buildMaterial3Card(String title, String value, IconData icon, Color accentColor) {
+  Widget _buildMaterial3Card(
+      String title, String value, IconData icon, Color accentColor) {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 8, offset: const Offset(0, 4))],
+        boxShadow: [
+          BoxShadow(
+              color: Colors.black.withOpacity(0.02),
+              blurRadius: 8,
+              offset: const Offset(0, 4))
+        ],
       ),
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
         leading: Container(
           padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(color: accentColor.withOpacity(0.1), borderRadius: BorderRadius.circular(12)),
+          decoration: BoxDecoration(
+              color: accentColor.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(12)),
           child: Icon(icon, color: accentColor, size: 22),
         ),
-        title: Text(title, style: TextStyle(fontSize: 11, color: Colors.grey.shade500, fontWeight: FontWeight.bold)),
+        title: Text(title,
+            style: TextStyle(
+                fontSize: 11,
+                color: Colors.grey.shade500,
+                fontWeight: FontWeight.bold)),
         subtitle: Padding(
           padding: const EdgeInsets.only(top: 2.0),
-          child: Text(value.isEmpty ? "Not set" : value, style: const TextStyle(fontSize: 15, color: Color(0xFF1B1B1B), fontWeight: FontWeight.w600)),
+          child: Text(value.isEmpty ? "Not set" : value,
+              style: const TextStyle(
+                  fontSize: 15,
+                  color: Color(0xFF1B1B1B),
+                  fontWeight: FontWeight.w600)),
         ),
       ),
     );
-  }               
+  }
 
   Widget _buildDashboardSection() {
     return Column(
@@ -1293,7 +1619,11 @@ Widget _buildUidIdentityCard() {
       children: [
         const Padding(
           padding: EdgeInsets.symmetric(vertical: 18),
-          child: Text("Teacher Dashboard", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Color(0xFF1B1B1B))),
+          child: Text("Teacher Dashboard",
+              style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                  color: Color(0xFF1B1B1B))),
         ),
         GridView.count(
           crossAxisCount: 2,
@@ -1304,17 +1634,27 @@ Widget _buildUidIdentityCard() {
           childAspectRatio: 1.4,
           children: [
             StreamBuilder<QuerySnapshot>(
-              stream: _firestore.collection('follow_requests').where('teacherId', isEqualTo: widget.currentUserId).where('status', isEqualTo: 'accepted').snapshots(),
+              stream: _firestore
+                  .collection('follow_requests')
+                  .where('teacherId', isEqualTo: widget.currentUserId)
+                  .where('status', isEqualTo: 'accepted')
+                  .snapshots(),
               builder: (context, snapshot) {
                 int count = snapshot.hasData ? snapshot.data!.docs.length : 0;
-                return _buildDashboardCard("Total Students", "$count", Icons.people_alt_outlined, Colors.purple);
+                return _buildDashboardCard("Total Students", "$count",
+                    Icons.people_alt_outlined, Colors.purple);
               },
             ),
             StreamBuilder<QuerySnapshot>(
-              stream: _firestore.collection('live_classes').where('teacherId', isEqualTo: widget.currentUserId).snapshots(),
+              stream: _firestore
+                  .collection('live_classes')
+                  .where('teacherId', isEqualTo: widget.currentUserId)
+                  .snapshots(),
               builder: (context, snapshot) {
-                int classCount = snapshot.hasData ? snapshot.data!.docs.length : 0;
-                return _buildDashboardCard("Today's Classes", "$classCount", Icons.calendar_today_outlined, Colors.orange);
+                int classCount =
+                    snapshot.hasData ? snapshot.data!.docs.length : 0;
+                return _buildDashboardCard("Today's Classes", "$classCount",
+                    Icons.calendar_today_outlined, Colors.orange);
               },
             ),
             StreamBuilder<QuerySnapshot>(
@@ -1329,7 +1669,8 @@ Widget _buildUidIdentityCard() {
                 if (snapshot.hasData) {
                   for (var doc in snapshot.data!.docs) {
                     final data = doc.data() as Map<String, dynamic>;
-                    final double due = (data['totalDue'] as num?)?.toDouble() ?? 0.0;
+                    final double due =
+                        (data['totalDue'] as num?)?.toDouble() ?? 0.0;
                     if (due > 0) {
                       totalPending += due;
                       dueStudents.add({
@@ -1338,13 +1679,15 @@ Widget _buildUidIdentityCard() {
                         'studentName': data['studentName'] ?? 'Student',
                         'due': due,
                         'subject': data['subject'] ?? '',
-                        'monthlyFee': (data['monthlyFee'] as num?)?.toDouble() ?? 0.0,
+                        'monthlyFee':
+                            (data['monthlyFee'] as num?)?.toDouble() ?? 0.0,
                       });
                     }
                   }
                 }
 
-                dueStudents.sort((a, b) => (b['due'] as double).compareTo(a['due'] as double));
+                dueStudents.sort(
+                    (a, b) => (b['due'] as double).compareTo(a['due'] as double));
 
                 return _buildDashboardCard(
                   "Pending Payments",
@@ -1353,7 +1696,8 @@ Widget _buildUidIdentityCard() {
                   Colors.red,
                   onTap: () => _showPendingDuesSheet(totalPending, dueStudents),
                   actionWidget: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                     decoration: BoxDecoration(
                       color: Colors.red.shade50,
                       borderRadius: BorderRadius.circular(6),
@@ -1362,25 +1706,37 @@ Widget _buildUidIdentityCard() {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
-                          dueStudents.isNotEmpty ? "${dueStudents.length}" : "0",
+                          dueStudents.isNotEmpty
+                              ? "${dueStudents.length}"
+                              : "0",
                           style: TextStyle(
                             fontSize: 10,
                             fontWeight: FontWeight.bold,
                             color: Colors.red.shade700,
                           ),
                         ),
-                        Icon(Icons.chevron_right_rounded, size: 12, color: Colors.red.shade700),
+                        Icon(Icons.chevron_right_rounded,
+                            size: 12, color: Colors.red.shade700),
                       ],
                     ),
                   ),
                 );
               },
             ),
-StreamBuilder<QuerySnapshot>(
-              stream: _firestore.collection('live_classes').where('teacherId', isEqualTo: widget.currentUserId).where('isLive', isEqualTo: true).snapshots(),
+            StreamBuilder<QuerySnapshot>(
+              stream: _firestore
+                  .collection('live_classes')
+                  .where('teacherId', isEqualTo: widget.currentUserId)
+                  .where('isLive', isEqualTo: true)
+                  .snapshots(),
               builder: (context, snapshot) {
-                bool isLiveActive = snapshot.hasData && snapshot.data!.docs.isNotEmpty;
-                return _buildDashboardCard("Live Classes", isLiveActive ? "Active" : "Inactive", Icons.sensors_outlined, isLiveActive ? Colors.green : Colors.grey);
+                bool isLiveActive =
+                    snapshot.hasData && snapshot.data!.docs.isNotEmpty;
+                return _buildDashboardCard(
+                    "Live Classes",
+                    isLiveActive ? "Active" : "Inactive",
+                    Icons.sensors_outlined,
+                    isLiveActive ? Colors.green : Colors.grey);
               },
             ),
           ],
@@ -1390,9 +1746,9 @@ StreamBuilder<QuerySnapshot>(
   }
 
   Widget _buildDashboardCard(
-    String title, 
-    String value, 
-    IconData icon, 
+    String title,
+    String value,
+    IconData icon,
     Color color, {
     VoidCallback? onTap,
     Widget? actionWidget,
@@ -1406,7 +1762,12 @@ StreamBuilder<QuerySnapshot>(
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(18),
-            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.015), blurRadius: 8, offset: const Offset(0, 4))],
+            boxShadow: [
+              BoxShadow(
+                  color: Colors.black.withOpacity(0.015),
+                  blurRadius: 8,
+                  offset: const Offset(0, 4))
+            ],
           ),
           padding: const EdgeInsets.all(14.0),
           child: Column(
@@ -1418,7 +1779,9 @@ StreamBuilder<QuerySnapshot>(
                 children: [
                   Container(
                     padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(12)),
+                    decoration: BoxDecoration(
+                        color: color.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12)),
                     child: Icon(icon, color: color, size: 18),
                   ),
                   if (actionWidget != null) actionWidget,
@@ -1427,9 +1790,17 @@ StreamBuilder<QuerySnapshot>(
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(value, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1B1B1B))),
+                  Text(value,
+                      style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF1B1B1B))),
                   const SizedBox(height: 2),
-                  Text(title, style: TextStyle(fontSize: 12, color: Colors.grey.shade500, fontWeight: FontWeight.w500)),
+                  Text(title,
+                      style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey.shade500,
+                          fontWeight: FontWeight.w500)),
                 ],
               )
             ],
@@ -1441,43 +1812,93 @@ StreamBuilder<QuerySnapshot>(
 
   Widget _buildEditForm() {
     final query = _subjectSearchController.text.trim();
-    final list = _subjects.where((s) => s.toLowerCase().contains(query.toLowerCase())).toList();
+    final list = _subjects
+        .where((s) => s.toLowerCase().contains(query.toLowerCase()))
+        .toList();
 
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       _editField("Full Name", _nameController, Icons.person),
-      _editField("Mobile Number", _phoneController, Icons.phone, keyboardType: TextInputType.phone),
-      _editField("Tuition / Institute Name", _instituteController, Icons.domain_outlined),
+      _editField("Mobile Number", _phoneController, Icons.phone,
+          keyboardType: TextInputType.phone),
+      _editField("Tuition / Institute Name", _instituteController,
+          Icons.domain_outlined),
       _editField("Bio", _bioController, Icons.info, maxLines: 3),
       _editField("Teaching Class", _classController, Icons.book),
-      const Text("Gender", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+      const Text("Gender",
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
       const SizedBox(height: 6),
       Row(children: [
-        Radio<String>(value: 'Male', groupValue: gender, activeColor: Colors.blue[800], onChanged: (val) => setState(() => gender = val)),
+        Radio<String>(
+            value: 'Male',
+            groupValue: gender,
+            activeColor: Colors.blue[800],
+            onChanged: (val) => setState(() => gender = val)),
         const Text('Male', style: TextStyle(fontSize: 15)),
         const SizedBox(width: 15),
-        Radio<String>(value: 'Female', groupValue: gender, activeColor: Colors.blue[800], onChanged: (val) => setState(() => gender = val)),
+        Radio<String>(
+            value: 'Female',
+            groupValue: gender,
+            activeColor: Colors.blue[800],
+            onChanged: (val) => setState(() => gender = val)),
         const Text('Female', style: TextStyle(fontSize: 15)),
       ]),
       const SizedBox(height: 15),
-      const Text("Add Teaching Areas", style: TextStyle(fontWeight: FontWeight.bold)),
-      Wrap(spacing: 8, children: teacherLocations.map((loc) => Chip(label: Text((loc is Map) ? (loc['address'] ?? "Unknown") : loc.toString()), onDeleted: () => setState(() => teacherLocations.remove(loc)))).toList()),
-      TextButton.icon(onPressed: _openMapPicker, icon: const Icon(Icons.map_outlined), label: const Text("Pick Locations")),
+      const Text("Add Teaching Areas",
+          style: TextStyle(fontWeight: FontWeight.bold)),
+      Wrap(
+        spacing: 8,
+        children: teacherLocations
+            .map((loc) => Chip(
+                  label: Text((loc is Map)
+                      ? (loc['address'] ?? "Unknown")
+                      : loc.toString()),
+                  onDeleted: () => setState(() => teacherLocations.remove(loc)),
+                ))
+            .toList(),
+      ),
+      TextButton.icon(
+          onPressed: _openMapPicker,
+          icon: const Icon(Icons.map_outlined),
+          label: const Text("Pick Locations")),
       const Divider(),
-      const Text("Select Subjects", style: TextStyle(fontWeight: FontWeight.bold)),
+      const Text("Select Subjects",
+          style: TextStyle(fontWeight: FontWeight.bold)),
       const SizedBox(height: 10),
       TextField(
         controller: _subjectSearchController,
         decoration: InputDecoration(
-          hintText: "Search subjects...", prefixIcon: const Icon(Icons.search),
-          suffixIcon: (query.isNotEmpty && list.isEmpty) ? IconButton(icon: const Icon(Icons.add, color: Colors.green), onPressed: () {
-            if (!selectedSubjects.contains(query)) { setState(() { selectedSubjects.add(query); _subjectSearchController.clear(); }); }
-          }) : null,
-          border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12)))
-        ),
+            hintText: "Search subjects...",
+            prefixIcon: const Icon(Icons.search),
+            suffixIcon: (query.isNotEmpty && list.isEmpty)
+                ? IconButton(
+                    icon: const Icon(Icons.add, color: Colors.green),
+                    onPressed: () {
+                      if (!selectedSubjects.contains(query)) {
+                        setState(() {
+                          selectedSubjects.add(query);
+                          _subjectSearchController.clear();
+                        });
+                      }
+                    })
+                : null,
+            border: const OutlineInputBorder(
+                borderRadius: BorderRadius.all(Radius.circular(12)))),
         onChanged: (_) => setState(() {}),
       ),
       const SizedBox(height: 10),
-      SizedBox(height: 200, child: ListView(children: list.map((s) => CheckboxListTile(title: Text(s), value: selectedSubjects.contains(s), onChanged: (v) => setState(() => v! ? selectedSubjects.add(s) : selectedSubjects.remove(s)))).toList())),
+      SizedBox(
+        height: 200,
+        child: ListView(
+          children: list
+              .map((s) => CheckboxListTile(
+                    title: Text(s),
+                    value: selectedSubjects.contains(s),
+                    onChanged: (v) => setState(() =>
+                        v! ? selectedSubjects.add(s) : selectedSubjects.remove(s)),
+                  ))
+              .toList(),
+        ),
+      ),
     ]);
   }
 
@@ -1485,9 +1906,32 @@ StreamBuilder<QuerySnapshot>(
     return Padding(
       padding: const EdgeInsets.only(top: 20),
       child: Row(children: [
-        Expanded(child: OutlinedButton(style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 15), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))), onPressed: () => setState(() => isEditing = false), child: const Text("CANCEL", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey)))),
+        Expanded(
+          child: OutlinedButton(
+            style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 15),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12))),
+            onPressed: () => setState(() => isEditing = false),
+            child: const Text("CANCEL",
+                style:
+                    TextStyle(fontWeight: FontWeight.bold, color: Colors.grey)),
+          ),
+        ),
         const SizedBox(width: 10),
-        Expanded(child: ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: Colors.blue[800], foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), padding: const EdgeInsets.symmetric(vertical: 15)), onPressed: updateTeacherProfile, child: const Text("SAVE CHANGES", style: TextStyle(fontWeight: FontWeight.bold)))),
+        Expanded(
+          child: ElevatedButton(
+            style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.blue[800],
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+                padding: const EdgeInsets.symmetric(vertical: 15)),
+            onPressed: updateTeacherProfile,
+            child: const Text("SAVE CHANGES",
+                style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ),
       ]),
     );
   }
@@ -1495,17 +1939,81 @@ StreamBuilder<QuerySnapshot>(
   Widget _buildToolsAndPayment() {
     return Column(children: [
       const SizedBox(height: 16),
-      Card(elevation: 0, color: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: const BorderSide(color: Color(0xFFF1F5F9))), child: ListTile(leading: const Icon(Icons.videocam_rounded, color: Colors.red), title: const Text("Go Live", style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)), trailing: const Icon(Icons.chevron_right_rounded), onTap: () {
-        Navigator.push(context, MaterialPageRoute(builder: (context) => JoinLiveScreen(currentUserId: _auth.currentUser?.uid ?? '', currentUserName: _nameController.text.isEmpty ? 'Teacher' : _nameController.text, isTeacher: true)));
-      })),
+      Card(
+        elevation: 0,
+        color: Colors.white,
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: const BorderSide(color: Color(0xFFF1F5F9))),
+        child: ListTile(
+          leading: const Icon(Icons.videocam_rounded, color: Colors.red),
+          title: const Text("Go Live",
+              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+          trailing: const Icon(Icons.chevron_right_rounded),
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => JoinLiveScreen(
+                  currentUserId: _auth.currentUser?.uid ?? '',
+                  currentUserName: _nameController.text.isEmpty
+                      ? 'Teacher'
+                      : _nameController.text,
+                  isTeacher: true,
+                ),
+              ),
+            );
+          },
+        ),
+      ),
       const SizedBox(height: 4),
-      Card(elevation: 0, color: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: const BorderSide(color: Color(0xFFF1F5F9))), child: ListTile(leading: const Icon(Icons.assignment_turned_in_rounded, color: Colors.teal), title: const Text("Tuition Management", style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)), trailing: const Icon(Icons.chevron_right_rounded), onTap: () {
-        Navigator.push(context, MaterialPageRoute(builder: (context) => TuitionManagementScreen(currentUserId: _auth.currentUser?.uid ?? '', currentUserName: _nameController.text.isEmpty ? 'Teacher' : _nameController.text)));
-      })),
+      Card(
+        elevation: 0,
+        color: Colors.white,
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: const BorderSide(color: Color(0xFFF1F5F9))),
+        child: ListTile(
+          leading:
+              const Icon(Icons.assignment_turned_in_rounded, color: Colors.teal),
+          title: const Text("Tuition Management",
+              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+          trailing: const Icon(Icons.chevron_right_rounded),
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => TuitionManagementScreen(
+                  currentUserId: _auth.currentUser?.uid ?? '',
+                  currentUserName: _nameController.text.isEmpty
+                      ? 'Teacher'
+                      : _nameController.text,
+                ),
+              ),
+            );
+          },
+        ),
+      ),
     ]);
   }
 
-  Widget _editField(String l, TextEditingController c, IconData i, {int maxLines = 1, TextInputType keyboardType = TextInputType.text}) => Padding(padding: const EdgeInsets.only(bottom: 15), child: TextField(controller: c, maxLines: maxLines, keyboardType: keyboardType, decoration: InputDecoration(labelText: l, prefixIcon: Icon(i), border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))))));
+  Widget _editField(String l, TextEditingController c, IconData i,
+          {int maxLines = 1,
+          TextInputType keyboardType = TextInputType.text}) =>
+      Padding(
+        padding: const EdgeInsets.only(bottom: 15),
+        child: TextField(
+          controller: c,
+          maxLines: maxLines,
+          keyboardType: keyboardType,
+          decoration: InputDecoration(
+            labelText: l,
+            prefixIcon: Icon(i),
+            border: const OutlineInputBorder(
+                borderRadius: BorderRadius.all(Radius.circular(12))),
+          ),
+        ),
+      );
 }
 
 class HeaderCurveClipper extends CustomClipper<Path> {
@@ -1515,7 +2023,8 @@ class HeaderCurveClipper extends CustomClipper<Path> {
     path.lineTo(0, size.height - 35);
     Offset controlPoint = Offset(size.width / 2, size.height + 15);
     Offset endPoint = Offset(size.width, size.height - 35);
-    path.quadraticBezierTo(controlPoint.dx, controlPoint.dy, endPoint.dx, endPoint.dy);
+    path.quadraticBezierTo(
+        controlPoint.dx, controlPoint.dy, endPoint.dx, endPoint.dy);
     path.lineTo(size.width, 0);
     path.close();
     return path;
@@ -1526,5 +2035,39 @@ class HeaderCurveClipper extends CustomClipper<Path> {
 }
 
 const List<String> _subjects = [
-  'Bengali', 'English', 'Mathematics', 'General Science', 'Social Studies', 'ICT (Information & Tech)', 'Class1-8 all subjects', 'Physics', 'Chemistry', 'Biology', 'Higher Mathematics', 'Accounting', 'Business Studies', 'Finance & Banking', 'Geography & Environment', 'History', 'Civics & Citizenship', 'Economics', 'Physics 1st/2nd Paper', 'Chemistry 1st/2nd Paper', 'Biology 1st/2nd Paper', 'Higher Math 1st/2nd Paper', 'Statistics', 'Management', 'Marketing', 'Computer Science', 'App Development (Flutter)', 'Graphic Design', 'Cyber Security', 'Robotics', 'Data Science', 'UI/UX Design', 'Fine Arts', 'Music', 'Photography',
-]; 
+  'Bengali',
+  'English',
+  'Mathematics',
+  'General Science',
+  'Social Studies',
+  'ICT (Information & Tech)',
+  'Class1-8 all subjects',
+  'Physics',
+  'Chemistry',
+  'Biology',
+  'Higher Mathematics',
+  'Accounting',
+  'Business Studies',
+  'Finance & Banking',
+  'Geography & Environment',
+  'History',
+  'Civics & Citizenship',
+  'Economics',
+  'Physics 1st/2nd Paper',
+  'Chemistry 1st/2nd Paper',
+  'Biology 1st/2nd Paper',
+  'Higher Math 1st/2nd Paper',
+  'Statistics',
+  'Management',
+  'Marketing',
+  'Computer Science',
+  'App Development (Flutter)',
+  'Graphic Design',
+  'Cyber Security',
+  'Robotics',
+  'Data Science',
+  'UI/UX Design',
+  'Fine Arts',
+  'Music',
+  'Photography',
+];
