@@ -5,6 +5,7 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:url_launcher/url_launcher.dart';
 import '../services/ai_coordinator_service.dart';
+import '../services/gemini_service.dart';
 import '../services/tts_voice_service.dart';
 import '../utils/ai_cooldown_manager.dart';
 
@@ -34,6 +35,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen>
   final TextEditingController _controller = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final AiCoordinatorService _coordinatorService = AiCoordinatorService();
+  final GeminiService _geminiService = GeminiService();
   final TtsVoiceService _ttsVoiceService = TtsVoiceService();
   final AiCooldownManager _cooldownManager = AiCooldownManager();
   final List<ChatMessage> _messages = [];
@@ -55,6 +57,12 @@ class _AiAssistantScreenState extends State<AiAssistantScreen>
   static const Color accentBlue = Color(0xFF2563EB);
   static const Color userBubbleColor = Color(0xFF1D4ED8);
   static const Color scaffoldBg = Color(0xFFF1F5F9);
+
+  static const List<String> _quickPrompts = [
+    'Find best teachers near me',
+    'Explain Newton\'s Laws simply',
+    'How to prepare for board exams?',
+  ];
 
   @override
   void initState() {
@@ -114,13 +122,55 @@ class _AiAssistantScreenState extends State<AiAssistantScreen>
     });
   }
 
-  void _sendMessage() async {
-    final text = _controller.text.trim();
+  bool _looksLikeServerFailureText(String text) {
+    final lower = text.trim().toLowerCase();
+    return lower.contains('unable to connect to servers') ||
+        lower.contains('connection error. please try again');
+  }
+
+  Future<void> _attemptDirectRescue(
+      String prompt, ChatMessage aiMessage) async {
+    if (!mounted) return;
+    setState(() {
+      _isFallbackActive = true;
+      aiMessage.text = '';
+    });
+
+    try {
+      final rescueReply = await _geminiService.generateContent(prompt);
+      if (!mounted) return;
+      if (rescueReply.trim().isNotEmpty) {
+        setState(() {
+          _isFallbackActive = false;
+          aiMessage.text = rescueReply.trim();
+          _isLoading = false;
+        });
+        _scrollToBottom();
+        return;
+      }
+    } catch (_) {}
+
+    if (mounted) {
+      setState(() {
+        _isFallbackActive = false;
+        aiMessage.text =
+            '⚠️ Unable to connect to servers.\nPlease try again in a moment.';
+        _isLoading = false;
+      });
+      _scrollToBottom();
+    }
+  }
+
+  void _sendMessage([String? presetText]) async {
+    final text = (presetText ?? _controller.text).trim();
     if (text.isEmpty || _isLoading || _cooldownManager.isInCooldown) return;
 
     if (_isListening) _stopListening();
 
-    _controller.clear();
+    if (presetText == null) {
+      _controller.clear();
+    }
+
     setState(() {
       _messages.add(ChatMessage(
         text: text,
@@ -154,6 +204,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen>
         },
       );
 
+      await _streamSubscription?.cancel();
       _streamSubscription = stream.listen(
         (chunk) {
           if (mounted) {
@@ -164,19 +215,15 @@ class _AiAssistantScreenState extends State<AiAssistantScreen>
             _scrollToBottom();
           }
         },
-        onError: (_) {
-          if (mounted) {
-            setState(() {
-              _isFallbackActive = false;
-              if (aiMessage.text.isEmpty) {
-                aiMessage.text = '⚠️ Connection error. Please try again.';
-              }
-              _isLoading = false;
-            });
-          }
+        onError: (_) async {
+          await _attemptDirectRescue(text, aiMessage);
         },
-        onDone: () {
-          if (mounted) {
+        onDone: () async {
+          if (!mounted) return;
+          if (aiMessage.text.trim().isEmpty ||
+              _looksLikeServerFailureText(aiMessage.text)) {
+            await _attemptDirectRescue(text, aiMessage);
+          } else {
             setState(() {
               _isLoading = false;
               _isFallbackActive = false;
@@ -186,13 +233,27 @@ class _AiAssistantScreenState extends State<AiAssistantScreen>
         cancelOnError: true,
       );
     } catch (_) {
-      if (mounted) {
-        setState(() {
-          _isFallbackActive = false;
-          aiMessage.text = '⚠️ Unable to connect to servers.';
-          _isLoading = false;
-        });
+      await _attemptDirectRescue(text, aiMessage);
+    }
+  }
+
+  void _retryLastQueryForAiIndex(int aiIndex) {
+    if (_isLoading) return;
+    String? userPrompt;
+    for (int i = aiIndex - 1; i >= 0; i--) {
+      if (_messages[i].isUser) {
+        userPrompt = _messages[i].text;
+        break;
       }
+    }
+    if (userPrompt != null && userPrompt.trim().isNotEmpty) {
+      setState(() {
+        _messages.removeAt(aiIndex);
+        if (aiIndex - 1 >= 0 && _messages[aiIndex - 1].isUser) {
+          _messages.removeAt(aiIndex - 1);
+        }
+      });
+      _sendMessage(userPrompt);
     }
   }
 
@@ -332,11 +393,13 @@ class _AiAssistantScreenState extends State<AiAssistantScreen>
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.red.shade600,
               elevation: 0,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8)),
             ),
             onPressed: () {
               Navigator.pop(context);
               _ttsVoiceService.stop();
+              _geminiService.resetChat();
               setState(() {
                 _messages.clear();
                 _selectedIndices.clear();
@@ -355,8 +418,9 @@ class _AiAssistantScreenState extends State<AiAssistantScreen>
     required IconData icon,
     required Color color,
     required VoidCallback onTap,
+    String? tooltip,
   }) {
-    return InkWell(
+    final btn = InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(6),
       child: Padding(
@@ -364,34 +428,48 @@ class _AiAssistantScreenState extends State<AiAssistantScreen>
         child: Icon(icon, size: 18, color: color),
       ),
     );
+    return tooltip != null ? Tooltip(message: tooltip, child: btn) : btn;
   }
 
   Widget _buildInteractionBar(int index, ChatMessage message, bool isSpeaking) {
+    final bool isErrorMsg = _looksLikeServerFailureText(message.text);
     return Padding(
       padding: const EdgeInsets.only(left: 4),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           _buildActionButton(
-            icon: isSpeaking ? Icons.volume_up_rounded : Icons.volume_mute_rounded,
+            icon: isSpeaking
+                ? Icons.volume_up_rounded
+                : Icons.volume_mute_rounded,
             color: isSpeaking ? accentBlue : const Color(0xFF94A3B8),
+            tooltip: 'Listen',
             onTap: () => _toggleSpeak(index, message.text),
           ),
           const SizedBox(width: 14),
           _buildActionButton(
             icon: Icons.copy_rounded,
             color: const Color(0xFF94A3B8),
+            tooltip: 'Copy',
             onTap: () => _copyToClipboard(message.text),
+          ),
+          const SizedBox(width: 14),
+          _buildActionButton(
+            icon: Icons.refresh_rounded,
+            color: isErrorMsg ? Colors.orange.shade700 : const Color(0xFF94A3B8),
+            tooltip: 'Retry',
+            onTap: () => _retryLastQueryForAiIndex(index),
           ),
           const SizedBox(width: 14),
           _buildActionButton(
             icon: message.isLiked == true
                 ? Icons.thumb_up_rounded
                 : Icons.thumb_up_outlined,
-            color: message.isLiked == true ? accentBlue : const Color(0xFF94A3B8),
+            color:
+                message.isLiked == true ? accentBlue : const Color(0xFF94A3B8),
             onTap: () {
-              setState(() =>
-                  message.isLiked = message.isLiked == true ? null : true);
+              setState(
+                  () => message.isLiked = message.isLiked == true ? null : true);
             },
           ),
           const SizedBox(width: 14),
@@ -438,8 +516,8 @@ class _AiAssistantScreenState extends State<AiAssistantScreen>
 
   Widget _buildEmptyState() {
     return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 28),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 20),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
@@ -462,17 +540,45 @@ class _AiAssistantScreenState extends State<AiAssistantScreen>
             const Text(
               'Ask FYBTT AI Assistant',
               style: TextStyle(
-                  fontSize: 18,
-                  color: Color(0xFF0F172A),
-                  fontWeight: FontWeight.bold),
+                fontSize: 18,
+                color: Color(0xFF0F172A),
+                fontWeight: FontWeight.bold,
+              ),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 8),
             Text(
               'Find qualified teachers, ask academic questions, or get immediate support.',
               style: TextStyle(
-                  fontSize: 13, color: Colors.grey.shade600, height: 1.4),
+                fontSize: 13,
+                color: Colors.grey.shade600,
+                height: 1.4,
+              ),
               textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 20),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              alignment: WrapAlignment.center,
+              children: _quickPrompts.map((prompt) {
+                return ActionChip(
+                  backgroundColor: Colors.white,
+                  side: const BorderSide(color: Color(0xFFE2E8F0)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  label: Text(
+                    prompt,
+                    style: const TextStyle(
+                      fontSize: 12.5,
+                      color: Color(0xFF1E3A8A),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  onPressed: () => _sendMessage(prompt),
+                );
+              }).toList(),
             ),
           ],
         ),
@@ -599,8 +705,9 @@ class _AiAssistantScreenState extends State<AiAssistantScreen>
                                       ? 'Listening...'
                                       : 'Type your question...')),
                           hintStyle: TextStyle(
-                            color:
-                                _isListening ? Colors.red : const Color(0xFF94A3B8),
+                            color: _isListening
+                                ? Colors.red
+                                : const Color(0xFF94A3B8),
                             fontSize: 14,
                           ),
                           border: InputBorder.none,
@@ -614,8 +721,9 @@ class _AiAssistantScreenState extends State<AiAssistantScreen>
                     IconButton(
                       icon: Icon(
                         _isListening ? Icons.mic : Icons.mic_none_rounded,
-                        color:
-                            _isListening ? Colors.red : const Color(0xFF64748B),
+                        color: _isListening
+                            ? Colors.red
+                            : const Color(0xFF64748B),
                         size: 22,
                       ),
                       onPressed: isBlocked ? null : _toggleListening,
@@ -645,7 +753,9 @@ class _AiAssistantScreenState extends State<AiAssistantScreen>
                 ),
                 onPressed: _isLoading
                     ? _stopGenerating
-                    : (_cooldownManager.isInCooldown ? null : _sendMessage),
+                    : (_cooldownManager.isInCooldown
+                        ? null
+                        : () => _sendMessage()),
                 splashRadius: 22,
               ),
             ),
@@ -663,11 +773,14 @@ class _AiAssistantScreenState extends State<AiAssistantScreen>
         backgroundColor: Colors.white,
         elevation: 0.5,
         title: _isSelectionMode
-            ? Text('${_selectedIndices.length} selected',
+            ? Text(
+                '${_selectedIndices.length} selected',
                 style: const TextStyle(
-                    color: primaryNavy,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 17))
+                  color: primaryNavy,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 17,
+                ),
+              )
             : Row(
                 children: [
                   Container(
@@ -696,9 +809,10 @@ class _AiAssistantScreenState extends State<AiAssistantScreen>
                       Text(
                         'Online Support',
                         style: TextStyle(
-                            color: Colors.green,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w500),
+                          color: Colors.green,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
                     ],
                   ),
@@ -775,7 +889,8 @@ class _AiAssistantScreenState extends State<AiAssistantScreen>
                                   onChanged: (_) => _toggleSelection(index),
                                   activeColor: accentBlue,
                                   shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(4)),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
                                 ),
                               ],
                               if (!message.isUser) ...[
@@ -790,13 +905,15 @@ class _AiAssistantScreenState extends State<AiAssistantScreen>
                                   children: [
                                     AnimatedOpacity(
                                       opacity: message.text.isEmpty ? 0.0 : 1.0,
-                                      duration: const Duration(milliseconds: 250),
+                                      duration:
+                                          const Duration(milliseconds: 250),
                                       curve: Curves.easeIn,
                                       child: Container(
                                         constraints: BoxConstraints(
-                                          maxWidth:
-                                              MediaQuery.of(context).size.width *
-                                                  0.76,
+                                          maxWidth: MediaQuery.of(context)
+                                                  .size
+                                                  .width *
+                                              0.76,
                                         ),
                                         padding: const EdgeInsets.symmetric(
                                             horizontal: 16, vertical: 12),
@@ -815,8 +932,10 @@ class _AiAssistantScreenState extends State<AiAssistantScreen>
                                           border: message.isUser
                                               ? null
                                               : Border.all(
-                                                  color: const Color(0xFFE2E8F0),
-                                                  width: 1),
+                                                  color:
+                                                      const Color(0xFFE2E8F0),
+                                                  width: 1,
+                                                ),
                                         ),
                                         child: message.isUser
                                             ? Text(
@@ -830,10 +949,11 @@ class _AiAssistantScreenState extends State<AiAssistantScreen>
                                             : MarkdownBody(
                                                 data: message.text,
                                                 selectable: true,
-                                                onTapLink: (text, href, title) =>
-                                                    _handleLinkTap(href, text),
-                                                styleSheet:
-                                                    MarkdownStyleSheet(
+                                                onTapLink:
+                                                    (text, href, title) =>
+                                                        _handleLinkTap(
+                                                            href, text),
+                                                styleSheet: MarkdownStyleSheet(
                                                   p: const TextStyle(
                                                     color: Color(0xFF1E293B),
                                                     fontSize: 14.5,
@@ -841,22 +961,25 @@ class _AiAssistantScreenState extends State<AiAssistantScreen>
                                                   ),
                                                   a: const TextStyle(
                                                     color: Color(0xFF2563EB),
-                                                    decoration:
-                                                        TextDecoration.underline,
+                                                    decoration: TextDecoration
+                                                        .underline,
                                                     fontWeight: FontWeight.bold,
                                                   ),
                                                   h1: const TextStyle(
-                                                      color: primaryNavy,
-                                                      fontWeight: FontWeight.bold,
-                                                      fontSize: 18),
+                                                    color: primaryNavy,
+                                                    fontWeight: FontWeight.bold,
+                                                    fontSize: 18,
+                                                  ),
                                                   h2: const TextStyle(
-                                                      color: primaryNavy,
-                                                      fontWeight: FontWeight.bold,
-                                                      fontSize: 16),
+                                                    color: primaryNavy,
+                                                    fontWeight: FontWeight.bold,
+                                                    fontSize: 16,
+                                                  ),
                                                   h3: const TextStyle(
-                                                      color: primaryNavy,
-                                                      fontWeight: FontWeight.w600,
-                                                      fontSize: 15),
+                                                    color: primaryNavy,
+                                                    fontWeight: FontWeight.w600,
+                                                    fontSize: 15,
+                                                  ),
                                                 ),
                                               ),
                                       ),
@@ -882,7 +1005,9 @@ class _AiAssistantScreenState extends State<AiAssistantScreen>
                   ),
           ),
           _buildPulsingFallbackIndicator(),
-          if (_isLoading && !_isFallbackActive && (_messages.isEmpty || _messages.last.text.isEmpty))
+          if (_isLoading &&
+              !_isFallbackActive &&
+              (_messages.isEmpty || _messages.last.text.isEmpty))
             const _ModernThinkingIndicator(),
           _buildInputBar(),
         ],
@@ -922,8 +1047,7 @@ class _ModernThinkingIndicatorState extends State<_ModernThinkingIndicator>
     _stepTimer = Timer.periodic(const Duration(milliseconds: 1500), (timer) {
       if (mounted) {
         setState(() {
-          _currentStepIndex =
-              (_currentStepIndex + 1) % _thinkingSteps.length;
+          _currentStepIndex = (_currentStepIndex + 1) % _thinkingSteps.length;
         });
       }
     });
