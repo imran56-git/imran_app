@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -9,8 +10,12 @@ import '../../models/message_model.dart';
 import '../../services/chat_service.dart';
 import '../../services/group_service.dart';
 import '../../services/media_service.dart';
+import '../../widgets/academic_composer_sheet.dart';
 import '../../widgets/chat_input_bar.dart';
 import '../../widgets/message_bubble.dart';
+import 'ai_study_assistant_sheet.dart';
+import 'group_info_screen.dart';
+import 'media_docs_links_screen.dart';
 
 class GroupChatScreen extends StatefulWidget {
   final String groupName;
@@ -30,7 +35,8 @@ class GroupChatScreen extends StatefulWidget {
   State<GroupChatScreen> createState() => _GroupChatScreenState();
 }
 
-class _GroupChatScreenState extends State<GroupChatScreen> {
+class _GroupChatScreenState extends State<GroupChatScreen>
+    with SingleTickerProviderStateMixin {
   final ChatService _chatService = ChatService();
   final GroupService _groupService = GroupService();
   final MediaService _mediaService = MediaService();
@@ -39,6 +45,7 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
 
   StreamSubscription<GroupModel?>? _groupSubscription;
   GroupModel? _currentGroup;
+  List<MessageModel> _latestMessages = [];
 
   String? _replyToMessageId;
   String? _replyToText;
@@ -49,6 +56,20 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
   bool _exitDialogShown = false;
   int _initialUnreadCount = 0;
   bool _capturedInitialUnread = false;
+
+  bool _isDraggingMessage = false;
+  bool _isDragHoveringInput = false;
+  bool _didDropOnTarget = false;
+  String? _hoveredTopAction;
+  MessageModel? _draggedMessage;
+
+  final Set<String> _selectedMessageIds = {};
+
+  bool get _isSelectionMode => _selectedMessageIds.isNotEmpty;
+  bool get _showTopActionBar => _isDraggingMessage || _isSelectionMode;
+
+  late AnimationController _bounceController;
+  late Animation<double> _bounceAnimation;
 
   final String _backgroundImage = 'assets/images/chat_bg.png';
 
@@ -83,6 +104,19 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
   @override
   void initState() {
     super.initState();
+    _bounceController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 550),
+    );
+    _bounceAnimation = TweenSequence<double>([
+      TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.12), weight: 35),
+      TweenSequenceItem(tween: Tween(begin: 1.12, end: 0.96), weight: 30),
+      TweenSequenceItem(tween: Tween(begin: 0.96, end: 1.03), weight: 20),
+      TweenSequenceItem(tween: Tween(begin: 1.03, end: 1.0), weight: 15),
+    ]).animate(
+      CurvedAnimation(parent: _bounceController, curve: Curves.easeOut),
+    );
+
     _scrollController.addListener(_onScrollChanged);
     _listenToGroupRealtimeState();
     _chatService.markGroupMessagesAsSeen(widget.groupId, widget.currentUserId);
@@ -249,6 +283,7 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
   @override
   void dispose() {
     _groupSubscription?.cancel();
+    _bounceController.dispose();
     _scrollController.removeListener(_onScrollChanged);
     _scrollController.dispose();
     _searchController.dispose();
@@ -288,6 +323,453 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
   bool get _isPostingRestrictedToAdmin {
     if (_isViewerTeacher) return false;
     return _currentGroup?.onlyAdminCanPost ?? false;
+  }
+
+  bool get _canCurrentUserReply {
+    if (_currentGroup != null && _currentGroup!.isDismissed) return false;
+    if (_isStudentMuted || _isPostingRestrictedToAdmin) return false;
+    return true;
+  }
+
+  bool _canEditSingleMessage(MessageModel msg) {
+    if (msg.senderId != widget.currentUserId) return false;
+    if (msg.type.toLowerCase() != 'text') return false;
+    if (msg.isDeletedForEveryone) return false;
+    if (msg.timestamp == null) return false;
+    final diff = DateTime.now().difference(msg.timestamp!);
+    return diff.inMinutes < 5;
+  }
+
+  MessageModel? get _activeSingleTargetMessage {
+    if (_isDraggingMessage && _draggedMessage != null) {
+      return _draggedMessage;
+    }
+    if (_selectedMessageIds.length == 1) {
+      final id = _selectedMessageIds.first;
+      for (final m in _latestMessages) {
+        if (m.messageId == id) return m;
+      }
+    }
+    return null;
+  }
+
+  List<MessageModel> _getTargetMessages([MessageModel? droppedMessage]) {
+    if (_selectedMessageIds.isNotEmpty) {
+      return _latestMessages
+          .where((m) => _selectedMessageIds.contains(m.messageId))
+          .toList();
+    }
+    if (droppedMessage != null) {
+      return [droppedMessage];
+    }
+    if (_draggedMessage != null) {
+      return [_draggedMessage!];
+    }
+    return [];
+  }
+
+  void _toggleMessageSelection(MessageModel message) {
+    HapticFeedback.selectionClick();
+    setState(() {
+      if (_selectedMessageIds.contains(message.messageId)) {
+        _selectedMessageIds.remove(message.messageId);
+      } else {
+        _selectedMessageIds.add(message.messageId);
+      }
+    });
+  }
+
+  void _clearMessageSelection() {
+    setState(() {
+      _selectedMessageIds.clear();
+      _isDraggingMessage = false;
+      _draggedMessage = null;
+      _hoveredTopAction = null;
+      _isDragHoveringInput = false;
+    });
+  }
+
+  String _formatReplyPreviewText(MessageModel message) {
+    final t = message.type.toLowerCase();
+    if (t == 'text') return message.content;
+    if (t == 'image') return '📷 Photo';
+    if (t == 'video') return '🎥 Video';
+    if (t == 'audio' || t == 'voice') return '🎵 Voice message';
+    if (t == 'document' || t == 'file') {
+      return '📄 ${message.mediaMetaData?['fileName'] ?? 'Document'}';
+    }
+    if (t == 'poll') return '📊 Poll: ${message.content}';
+    if (t == 'quiz') return '📝 Quiz: ${message.content}';
+    if (t == 'location') return '📍 Shared Location';
+    return message.content.isNotEmpty ? message.content : 'Attachment';
+  }
+
+  MessageModel _resolveMessageWithReplyText(MessageModel message) {
+    if (message.replyToMessageId == null ||
+        message.replyToMessageId!.trim().isEmpty) {
+      return message;
+    }
+    if (message.replyText != null && message.replyText!.trim().isNotEmpty) {
+      return message;
+    }
+
+    for (final m in _latestMessages) {
+      if (m.messageId == message.replyToMessageId) {
+        return message.copyWith(replyText: _formatReplyPreviewText(m));
+      }
+    }
+    return message.copyWith(replyText: 'Original message');
+  }
+
+  void _scrollToOriginalMessage(String? replyToId) {
+    if (replyToId == null || replyToId.isEmpty) return;
+    final index =
+        _latestMessages.indexWhere((m) => m.messageId == replyToId);
+    if (index != -1 && _scrollController.hasClients) {
+      final targetOffset = (index * 78.0).clamp(
+        0.0,
+        _scrollController.position.maxScrollExtent,
+      );
+      _scrollController.animateTo(
+        targetOffset,
+        duration: const Duration(milliseconds: 350),
+        curve: Curves.easeOutCubic,
+      );
+    }
+  }
+
+  void _triggerReply(MessageModel message) {
+    if (!_canCurrentUserReply || message.isDeletedForEveryone) return;
+    HapticFeedback.mediumImpact();
+    _bounceController.forward(from: 0.0);
+    setState(() {
+      _selectedMessageIds.clear();
+      _isDraggingMessage = false;
+      _draggedMessage = null;
+      _isDragHoveringInput = false;
+      _replyToMessageId = message.messageId;
+      _replyToText = _formatReplyPreviewText(message);
+    });
+  }
+
+  void _showEditMessageDialog(MessageModel msg) {
+    if (!_canEditSingleMessage(msg)) return;
+    final TextEditingController editCtrl =
+        TextEditingController(text: msg.content);
+
+    showDialog(
+      context: context,
+      builder: (dialogCtx) {
+        return AlertDialog(
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text(
+            'Edit Message',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+          content: TextField(
+            controller: editCtrl,
+            maxLines: null,
+            autofocus: true,
+            decoration: const InputDecoration(
+              hintText: 'Edit your message...',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogCtx),
+              child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF0F172A),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8)),
+              ),
+              onPressed: () async {
+                final newText = editCtrl.text.trim();
+                Navigator.pop(dialogCtx);
+                _clearMessageSelection();
+                if (newText.isNotEmpty && newText != msg.content) {
+                  await _chatService.editMessage(
+                    widget.groupId,
+                    msg.messageId,
+                    newText,
+                    isGroup: true,
+                  );
+                  _showSnackBar('Message edited');
+                }
+              },
+              child: const Text('Save', style: TextStyle(color: Colors.white)),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _executeCopyMessages([MessageModel? droppedMsg]) async {
+    final targets = _getTargetMessages(droppedMsg)
+        .where((m) => !m.isDeletedForEveryone && m.content.trim().isNotEmpty)
+        .toList();
+    _clearMessageSelection();
+    if (targets.isEmpty) return;
+
+    final combinedText = targets.map((m) => m.content).join('\n');
+    await Clipboard.setData(ClipboardData(text: combinedText));
+    _showSnackBar(
+      targets.length > 1
+          ? '${targets.length} messages copied'
+          : 'Copied to clipboard',
+    );
+  }
+
+  Future<void> _executeDeleteForMe([MessageModel? droppedMsg]) async {
+    final targets = _getTargetMessages(droppedMsg);
+    _clearMessageSelection();
+    if (targets.isEmpty) return;
+
+    for (final msg in targets) {
+      await _chatService.deleteMessageForMe(
+        widget.groupId,
+        msg.messageId,
+        widget.currentUserId,
+        isGroup: true,
+      );
+    }
+  }
+
+  Future<void> _executeDeleteForEveryone([MessageModel? droppedMsg]) async {
+    final targets = _getTargetMessages(droppedMsg)
+        .where((m) =>
+            (m.senderId == widget.currentUserId || _isViewerTeacher) &&
+            !m.isDeletedForEveryone)
+        .toList();
+    _clearMessageSelection();
+    if (targets.isEmpty) return;
+
+    for (final msg in targets) {
+      await _chatService.deleteMessageForEveryone(
+        widget.groupId,
+        msg.messageId,
+        isGroup: true,
+      );
+    }
+  }
+
+  Future<void> _executeTogglePin([MessageModel? droppedMsg]) async {
+    if (!_isViewerTeacher) return;
+    final msg = droppedMsg ?? _activeSingleTargetMessage;
+    _clearMessageSelection();
+    if (msg == null) return;
+
+    await _groupService.togglePinMessage(
+      groupId: widget.groupId,
+      teacherId: widget.currentUserId,
+      messageId: msg.messageId,
+      pin: !msg.isPinned,
+    );
+    _showSnackBar(msg.isPinned ? 'Message unpinned' : 'Message pinned');
+  }
+
+  Widget _buildTopActionIcon({
+    required String actionKey,
+    required IconData icon,
+    required String tooltip,
+    required Color color,
+    required Function(MessageModel?) onExecute,
+  }) {
+    final bool isHovered = _hoveredTopAction == actionKey;
+
+    return DragTarget<MessageModel>(
+      onWillAcceptWithDetails: (details) {
+        HapticFeedback.selectionClick();
+        setState(() {
+          _hoveredTopAction = actionKey;
+        });
+        return true;
+      },
+      onLeave: (_) {
+        setState(() {
+          if (_hoveredTopAction == actionKey) _hoveredTopAction = null;
+        });
+      },
+      onAcceptWithDetails: (details) {
+        _didDropOnTarget = true;
+        HapticFeedback.heavyImpact();
+        setState(() {
+          _hoveredTopAction = null;
+          _isDraggingMessage = false;
+        });
+        onExecute(details.data);
+      },
+      builder: (context, candidateData, rejectedData) {
+        return GestureDetector(
+          onTap: () {
+            HapticFeedback.lightImpact();
+            onExecute(null);
+          },
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeOutBack,
+            transform: Matrix4.translationValues(0, isHovered ? -10.0 : 0.0, 0),
+            child: AnimatedScale(
+              scale: isHovered ? 1.5 : 1.0,
+              duration: const Duration(milliseconds: 220),
+              curve: Curves.easeOutBack,
+              child: Tooltip(
+                message: tooltip,
+                child: Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: isHovered
+                        ? color.withOpacity(0.28)
+                        : Colors.white.withOpacity(0.08),
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: isHovered
+                          ? color
+                          : Colors.white.withOpacity(0.22),
+                      width: isHovered ? 1.8 : 1.0,
+                    ),
+                  ),
+                  child: Icon(
+                    icon,
+                    color: isHovered ? color : Colors.white,
+                    size: 22,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildTopActionToolbar() {
+    final singleTarget = _activeSingleTargetMessage;
+    final bool canEdit =
+        singleTarget != null && _canEditSingleMessage(singleTarget);
+    final targets = _getTargetMessages();
+    final bool canDeleteForEveryone = targets.isNotEmpty &&
+        targets.every((m) =>
+            (m.senderId == widget.currentUserId || _isViewerTeacher) &&
+            !m.isDeletedForEveryone);
+
+    return Positioned(
+      top: 52,
+      left: 16,
+      right: 16,
+      child: Material(
+        color: Colors.transparent,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(32),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 220),
+              height: 58,
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              decoration: BoxDecoration(
+                color: const Color(0xFF0F172A).withOpacity(0.78),
+                borderRadius: BorderRadius.circular(32),
+                border: Border.all(
+                  color: Colors.white.withOpacity(0.35),
+                  width: 1.2,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.2),
+                    blurRadius: 14,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  if (_isSelectionMode)
+                    GestureDetector(
+                      onTap: _clearMessageSelection,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.close_rounded,
+                                color: Colors.white, size: 17),
+                            const SizedBox(width: 4),
+                            Text(
+                              '${_selectedMessageIds.length}',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13.5,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  _buildTopActionIcon(
+                    actionKey: 'copy',
+                    icon: Icons.copy_rounded,
+                    tooltip: 'Copy',
+                    color: Colors.cyanAccent,
+                    onExecute: _executeCopyMessages,
+                  ),
+                  if (canEdit)
+                    _buildTopActionIcon(
+                      actionKey: 'edit',
+                      icon: Icons.edit_rounded,
+                      tooltip: 'Edit (within 5 mins)',
+                      color: Colors.lightBlueAccent,
+                      onExecute: (dropped) {
+                        final msgToEdit = dropped ?? singleTarget;
+                        if (msgToEdit != null) {
+                          _showEditMessageDialog(msgToEdit);
+                        }
+                      },
+                    ),
+                  if (_isViewerTeacher && singleTarget != null)
+                    _buildTopActionIcon(
+                      actionKey: 'pin',
+                      icon: singleTarget.isPinned
+                          ? Icons.push_pin_outlined
+                          : Icons.push_pin_rounded,
+                      tooltip: singleTarget.isPinned ? 'Unpin' : 'Pin Message',
+                      color: Colors.amberAccent,
+                      onExecute: _executeTogglePin,
+                    ),
+                  _buildTopActionIcon(
+                    actionKey: 'delete_me',
+                    icon: Icons.delete_outline_rounded,
+                    tooltip: 'Delete for Me',
+                    color: Colors.orangeAccent,
+                    onExecute: _executeDeleteForMe,
+                  ),
+                  if (canDeleteForEveryone)
+                    _buildTopActionIcon(
+                      actionKey: 'delete_all',
+                      icon: Icons.delete_forever_rounded,
+                      tooltip: 'Delete for Everyone',
+                      color: Colors.redAccent,
+                      onExecute: _executeDeleteForEveryone,
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   String _formatDateHeader(DateTime? date) {
@@ -507,725 +989,49 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
   }
 
   void _openAcademicComposerSheet() {
-    final TextEditingController textCtrl = TextEditingController();
-    String selectedCat = _isViewerTeacher ? 'announcement' : 'doubt';
-    bool isScheduled = false;
-    DateTime? scheduledDateTime;
+    AcademicComposerSheet.show(
+      context,
+      groupId: widget.groupId,
+      currentUserId: widget.currentUserId,
+      isTeacher: _isViewerTeacher,
+    );
+  }
 
-    final List<Map<String, String>> availableCategories = _isViewerTeacher
-        ? [
-            {'key': 'announcement', 'label': 'Announcement'},
-            {'key': 'homework', 'label': 'Homework'},
-            {'key': 'assignment', 'label': 'Assignment'},
-            {'key': 'study_material', 'label': 'Study Material'},
-            {'key': 'exam_notice', 'label': 'Exam Notification'},
-            {'key': 'class_update', 'label': 'Class Update'},
-          ]
-        : [
-            {'key': 'doubt', 'label': 'Academic Doubt / Question'},
-          ];
+  void _openAiStudyAssistantSheet() {
+    AiStudyAssistantSheet.show(
+      context,
+      groupId: widget.groupId,
+      groupName: _currentGroup?.name ?? widget.groupName,
+      currentUserId: widget.currentUserId,
+      isTeacher: _isViewerTeacher,
+      subjectName: _currentGroup?.subjectName ?? '',
+    );
+  }
 
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+  void _openGroupInfoPage() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => GroupInfoScreen(
+          groupId: widget.groupId,
+          currentUserId: widget.currentUserId,
+          currentUserName: widget.currentUserName,
+          onOpenMediaDocsLinks: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => MediaDocsLinksScreen(
+                  chatOrGroupId: widget.groupId,
+                  title: _currentGroup?.name ?? widget.groupName,
+                  currentUserId: widget.currentUserId,
+                  isGroup: true,
+                  isViewerTeacherOfGroup: _isViewerTeacher,
+                ),
+              ),
+            );
+          },
+        ),
       ),
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (context, setSheetState) {
-            return Padding(
-              padding: EdgeInsets.only(
-                left: 16,
-                right: 16,
-                top: 16,
-                bottom: MediaQuery.of(ctx).viewInsets.bottom + 16,
-              ),
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          _isViewerTeacher
-                              ? "Academic & Batch Tools"
-                              : "Ask an Academic Doubt",
-                          style: const TextStyle(
-                            fontSize: 17,
-                            fontWeight: FontWeight.bold,
-                            color: Color(0xFF0F172A),
-                          ),
-                        ),
-                        if (_isViewerTeacher)
-                          Row(
-                            children: [
-                              TextButton.icon(
-                                onPressed: () {
-                                  Navigator.pop(ctx);
-                                  _openPollCreatorDialog();
-                                },
-                                icon: const Icon(Icons.poll_outlined, size: 18),
-                                label: const Text("Create Poll"),
-                              ),
-                              TextButton.icon(
-                                onPressed: () {
-                                  Navigator.pop(ctx);
-                                  _openQuizCreatorDialog();
-                                },
-                                icon: const Icon(Icons.quiz_outlined, size: 18),
-                                label: const Text("Create Quiz"),
-                              ),
-                            ],
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 6,
-                      children: availableCategories.map((cat) {
-                        final bool isSel = selectedCat == cat['key'];
-                        return ChoiceChip(
-                          label: Text(cat['label']!),
-                          selected: isSel,
-                          selectedColor: Colors.blueAccent.withOpacity(0.18),
-                          labelStyle: TextStyle(
-                            color: isSel ? Colors.blueAccent : Colors.black87,
-                            fontWeight:
-                                isSel ? FontWeight.bold : FontWeight.normal,
-                            fontSize: 12.5,
-                          ),
-                          onSelected: (_) {
-                            setSheetState(() => selectedCat = cat['key']!);
-                          },
-                        );
-                      }).toList(),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: textCtrl,
-                      maxLines: 4,
-                      decoration: InputDecoration(
-                        hintText: _isViewerTeacher
-                            ? "Write your notice, homework instructions or study update..."
-                            : "Write your academic question clearly for the teacher...",
-                        filled: true,
-                        fillColor: const Color(0xFFF1F5F9),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(14),
-                          borderSide: BorderSide.none,
-                        ),
-                      ),
-                    ),
-                    if (_isViewerTeacher) ...[
-                      const SizedBox(height: 10),
-                      Row(
-                        children: [
-                          Switch(
-                            value: isScheduled,
-                            activeColor: Colors.blueAccent,
-                            onChanged: (val) async {
-                              if (val) {
-                                final now = DateTime.now();
-                                final pickedDate = await showDatePicker(
-                                  context: context,
-                                  initialDate:
-                                      now.add(const Duration(minutes: 15)),
-                                  firstDate: now,
-                                  lastDate: now.add(const Duration(days: 60)),
-                                );
-                                if (pickedDate != null && context.mounted) {
-                                  final pickedTime = await showTimePicker(
-                                    context: context,
-                                    initialTime: TimeOfDay.fromDateTime(
-                                        now.add(const Duration(minutes: 15))),
-                                  );
-                                  if (pickedTime != null) {
-                                    setSheetState(() {
-                                      isScheduled = true;
-                                      scheduledDateTime = DateTime(
-                                        pickedDate.year,
-                                        pickedDate.month,
-                                        pickedDate.day,
-                                        pickedTime.hour,
-                                        pickedTime.minute,
-                                      );
-                                    });
-                                  }
-                                }
-                              } else {
-                                setSheetState(() {
-                                  isScheduled = false;
-                                  scheduledDateTime = null;
-                                });
-                              }
-                            },
-                          ),
-                          Expanded(
-                            child: Text(
-                              isScheduled && scheduledDateTime != null
-                                  ? "Scheduled: ${DateFormat('dd MMM, hh:mm a').format(scheduledDateTime!)}"
-                                  : "Schedule Message for Later",
-                              style: const TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                    const SizedBox(height: 12),
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.blueAccent,
-                          padding: const EdgeInsets.symmetric(vertical: 13),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        onPressed: () async {
-                          final text = textCtrl.text.trim();
-                          if (text.isEmpty) return;
-                          Navigator.pop(ctx);
-                          try {
-                            await _chatService.sendGroupMessage(
-                              groupId: widget.groupId,
-                              senderId: widget.currentUserId,
-                              message: text,
-                              type: 'text',
-                              messageCategory: selectedCat,
-                              isScheduled: isScheduled,
-                              scheduledAt: scheduledDateTime,
-                            );
-                          } catch (e) {
-                            _showSnackBar("Failed: $e");
-                          }
-                        },
-                        icon: const Icon(Icons.send_rounded,
-                            color: Colors.white, size: 18),
-                        label: Text(
-                          isScheduled ? "Schedule Post" : "Publish to Group",
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
-  void _openPollCreatorDialog() {
-    final TextEditingController questionCtrl = TextEditingController();
-    final List<TextEditingController> optionCtrls = [
-      TextEditingController(),
-      TextEditingController(),
-    ];
-
-    showDialog(
-      context: context,
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            return AlertDialog(
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(18)),
-              title: const Text(
-                "Create Class Poll",
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
-              ),
-              content: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    TextField(
-                      controller: questionCtrl,
-                      decoration: const InputDecoration(
-                        labelText: "Poll Question",
-                        hintText: "Ask a question...",
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    ...List.generate(optionCtrls.length, (i) {
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: TextField(
-                          controller: optionCtrls[i],
-                          decoration: InputDecoration(
-                            labelText: "Option ${i + 1}",
-                            isDense: true,
-                          ),
-                        ),
-                      );
-                    }),
-                    if (optionCtrls.length < 5)
-                      TextButton.icon(
-                        onPressed: () {
-                          setDialogState(() {
-                            optionCtrls.add(TextEditingController());
-                          });
-                        },
-                        icon: const Icon(Icons.add),
-                        label: const Text("Add Option"),
-                      ),
-                  ],
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  child: const Text("Cancel"),
-                ),
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.blueAccent),
-                  onPressed: () async {
-                    final q = questionCtrl.text.trim();
-                    final opts = optionCtrls
-                        .map((c) => c.text.trim())
-                        .where((t) => t.isNotEmpty)
-                        .toList();
-                    if (q.isEmpty || opts.length < 2) {
-                      _showSnackBar("Enter a question and at least 2 options.");
-                      return;
-                    }
-                    Navigator.pop(ctx);
-                    await _chatService.sendGroupMessage(
-                      groupId: widget.groupId,
-                      senderId: widget.currentUserId,
-                      message: q,
-                      type: 'poll',
-                      messageCategory: 'poll',
-                      pollData: {
-                        'question': q,
-                        'options': opts,
-                        'votes': <String, int>{},
-                      },
-                    );
-                  },
-                  child: const Text("Post Poll",
-                      style: TextStyle(color: Colors.white)),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-  }
-
-  void _openQuizCreatorDialog() {
-    final TextEditingController questionCtrl = TextEditingController();
-    final List<TextEditingController> optionCtrls = [
-      TextEditingController(),
-      TextEditingController(),
-      TextEditingController(),
-      TextEditingController(),
-    ];
-    int correctIndex = 0;
-
-    showDialog(
-      context: context,
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            return AlertDialog(
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(18)),
-              title: const Text(
-                "Create MCQ Quiz",
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
-              ),
-              content: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    TextField(
-                      controller: questionCtrl,
-                      decoration: const InputDecoration(
-                        labelText: "Quiz Question",
-                        hintText: "Enter MCQ question...",
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    ...List.generate(optionCtrls.length, (i) {
-                      return Row(
-                        children: [
-                          Radio<int>(
-                            value: i,
-                            groupValue: correctIndex,
-                            activeColor: Colors.green,
-                            onChanged: (val) {
-                              if (val != null) {
-                                setDialogState(() => correctIndex = val);
-                              }
-                            },
-                          ),
-                          Expanded(
-                            child: TextField(
-                              controller: optionCtrls[i],
-                              decoration: InputDecoration(
-                                labelText:
-                                    "Option ${i + 1}${correctIndex == i ? ' (Correct)' : ''}",
-                                isDense: true,
-                              ),
-                            ),
-                          ),
-                        ],
-                      );
-                    }),
-                  ],
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  child: const Text("Cancel"),
-                ),
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.blueAccent),
-                  onPressed: () async {
-                    final q = questionCtrl.text.trim();
-                    final opts = optionCtrls
-                        .map((c) => c.text.trim())
-                        .where((t) => t.isNotEmpty)
-                        .toList();
-                    if (q.isEmpty || opts.length < 2) {
-                      _showSnackBar("Enter a question and options.");
-                      return;
-                    }
-                    Navigator.pop(ctx);
-                    await _chatService.sendGroupMessage(
-                      groupId: widget.groupId,
-                      senderId: widget.currentUserId,
-                      message: q,
-                      type: 'quiz',
-                      messageCategory: 'quiz',
-                      quizData: {
-                        'question': q,
-                        'options': opts,
-                        'correctIndex':
-                            correctIndex.clamp(0, opts.length - 1),
-                        'submissions': <String, int>{},
-                      },
-                    );
-                  },
-                  child: const Text("Post Quiz",
-                      style: TextStyle(color: Colors.white)),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-  }
-
-  void _openGroupDetailsAndAdminSheet() {
-    final group = _currentGroup;
-    if (group == null) return;
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
-      ),
-      builder: (ctx) {
-        return DraggableScrollableSheet(
-          expand: false,
-          initialChildSize: 0.72,
-          maxChildSize: 0.92,
-          minChildSize: 0.45,
-          builder: (context, scrollCtrl) {
-            return FutureBuilder<Map<String, dynamic>>(
-              future: _groupService.getGroupMembersWithPrivacy(
-                groupId: widget.groupId,
-                viewerId: widget.currentUserId,
-              ),
-              builder: (context, snapshot) {
-                final memberData = snapshot.data;
-                final List<Map<String, dynamic>> students =
-                    (memberData?['students'] as List<Map<String, dynamic>>?) ??
-                        const [];
-
-                return ListView(
-                  controller: scrollCtrl,
-                  padding: const EdgeInsets.all(16),
-                  children: [
-                    Center(
-                      child: Container(
-                        width: 42,
-                        height: 4,
-                        decoration: BoxDecoration(
-                          color: Colors.grey.shade300,
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    Row(
-                      children: [
-                        CircleAvatar(
-                          radius: 28,
-                          backgroundColor: Colors.blue.shade50,
-                          backgroundImage: group.imageUrl.isNotEmpty
-                              ? NetworkImage(group.imageUrl)
-                              : null,
-                          child: group.imageUrl.isEmpty
-                              ? const Icon(Icons.groups_rounded,
-                                  color: Colors.blueAccent, size: 30)
-                              : null,
-                        ),
-                        const SizedBox(width: 14),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Flexible(
-                                    child: Text(
-                                      group.name,
-                                      style: const TextStyle(
-                                        fontSize: 18,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ),
-                                  if (group.isTeacherVerified) ...[
-                                    const SizedBox(width: 4),
-                                    const Icon(Icons.verified,
-                                        color: Colors.blueAccent, size: 17),
-                                  ],
-                                  if (group.hasGoldenBadge) ...[
-                                    const SizedBox(width: 4),
-                                    const Icon(Icons.workspace_premium,
-                                        color: Colors.amber, size: 18),
-                                  ],
-                                ],
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                "Created by ${group.teacherName.isNotEmpty ? group.teacherName : 'Teacher'} • ${group.studentCount} Students",
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  color: Colors.grey.shade600,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                    if (group.description.isNotEmpty) ...[
-                      const SizedBox(height: 12),
-                      Text(
-                        group.description,
-                        style: const TextStyle(
-                            fontSize: 13.5, color: Colors.black87),
-                      ),
-                    ],
-                    if (group.groupRules.isNotEmpty) ...[
-                      const SizedBox(height: 12),
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: Colors.amber.shade50,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.amber.shade200),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              "Group Rules",
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 13,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              group.groupRules,
-                              style: const TextStyle(fontSize: 12.5),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                    const Divider(height: 24),
-                    if (_isViewerTeacher) ...[
-                      const Text(
-                        "Single Admin Controls (Teacher Only)",
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 14,
-                          color: Color(0xFF0F172A),
-                        ),
-                      ),
-                      SwitchListTile(
-                        contentPadding: EdgeInsets.zero,
-                        title: const Text(
-                          "Admin-Only Announcement Mode",
-                          style: TextStyle(
-                              fontSize: 14, fontWeight: FontWeight.w500),
-                        ),
-                        subtitle: const Text(
-                          "When enabled, only you (Teacher) can send messages.",
-                          style: TextStyle(fontSize: 12),
-                        ),
-                        value: group.onlyAdminCanPost,
-                        activeColor: Colors.blueAccent,
-                        onChanged: (val) async {
-                          await _groupService.setAdminOnlyPostingMode(
-                            groupId: widget.groupId,
-                            teacherId: widget.currentUserId,
-                            onlyAdminCanPost: val,
-                          );
-                          if (ctx.mounted) Navigator.pop(ctx);
-                        },
-                      ),
-                      const Divider(),
-                      Text(
-                        "Connected Students in Group (${students.length})",
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 14,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      ...students.map((s) {
-                        final String sId = (s['uid'] ?? '').toString();
-                        final String sName =
-                            (s['name'] ?? 'Student').toString();
-                        final bool isMuted = s['isMuted'] == true;
-                        return ListTile(
-                          contentPadding: EdgeInsets.zero,
-                          leading: CircleAvatar(
-                            backgroundColor: Colors.blue.shade50,
-                            child: Text(
-                              sName.isNotEmpty ? sName[0].toUpperCase() : 'S',
-                              style: const TextStyle(
-                                color: Colors.blueAccent,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                          title: Text(
-                            sName,
-                            style: const TextStyle(
-                                fontWeight: FontWeight.w600, fontSize: 14),
-                          ),
-                          subtitle: Text(
-                            isMuted ? "Status: Muted by you" : "UID: $sId",
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: isMuted ? Colors.redAccent : Colors.grey,
-                            ),
-                          ),
-                          trailing: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              IconButton(
-                                tooltip: isMuted ? "Unmute" : "Mute",
-                                icon: Icon(
-                                  isMuted
-                                      ? Icons.mic_off_rounded
-                                      : Icons.mic_none_rounded,
-                                  color: isMuted ? Colors.red : Colors.blueGrey,
-                                ),
-                                onPressed: () async {
-                                  await _groupService.setStudentMuteStatus(
-                                    groupId: widget.groupId,
-                                    teacherId: widget.currentUserId,
-                                    studentId: sId,
-                                    mute: !isMuted,
-                                  );
-                                  if (ctx.mounted) Navigator.pop(ctx);
-                                },
-                              ),
-                              IconButton(
-                                tooltip: "Remove Student",
-                                icon: const Icon(
-                                  Icons.person_remove_alt_1_outlined,
-                                  color: Colors.redAccent,
-                                ),
-                                onPressed: () {
-                                  Navigator.pop(ctx);
-                                  _confirmRemoveStudent(sId, sName);
-                                },
-                              ),
-                            ],
-                          ),
-                        );
-                      }),
-                      const SizedBox(height: 16),
-                      ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.red.shade50,
-                          foregroundColor: Colors.red.shade700,
-                          elevation: 0,
-                          padding: const EdgeInsets.symmetric(vertical: 13),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            side: BorderSide(color: Colors.red.shade200),
-                          ),
-                        ),
-                        onPressed: () {
-                          Navigator.pop(ctx);
-                          _confirmDismissGroup();
-                        },
-                        icon: const Icon(Icons.cancel_outlined),
-                        label: const Text(
-                          "Dismiss Group Permanently",
-                          style: TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                      ),
-                    ] else ...[
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF1F5F9),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: const Row(
-                          children: [
-                            Icon(Icons.shield_outlined,
-                                color: Colors.blueAccent),
-                            SizedBox(width: 10),
-                            Expanded(
-                              child: Text(
-                                "Student Identity Privacy Active: Your personal name, phone number and UID are hidden from other students in this group.",
-                                style: TextStyle(
-                                    fontSize: 12.5, color: Colors.black87),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ],
-                );
-              },
-            );
-          },
-        );
-      },
     );
   }
 
@@ -1288,53 +1094,57 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
     if (pinnedList.isEmpty) return const SizedBox.shrink();
     final latestPinned = pinnedList.first;
 
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-      decoration: BoxDecoration(
-        color: Colors.amber.shade50,
-        border: Border(
-          bottom: BorderSide(color: Colors.amber.shade200),
-        ),
-      ),
-      child: Row(
-        children: [
-          const Icon(Icons.push_pin_rounded, color: Colors.amber, size: 18),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  "Pinned Announcement",
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.brown,
-                  ),
-                ),
-                Text(
-                  latestPinned.content,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 12.5, color: Colors.black87),
-                ),
-              ],
-            ),
+    return GestureDetector(
+      onTap: () => _scrollToOriginalMessage(latestPinned.messageId),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: Colors.amber.shade50,
+          border: Border(
+            bottom: BorderSide(color: Colors.amber.shade200),
           ),
-          if (_isViewerTeacher)
-            IconButton(
-              icon: const Icon(Icons.close, size: 16, color: Colors.brown),
-              onPressed: () {
-                _groupService.togglePinMessage(
-                  groupId: widget.groupId,
-                  teacherId: widget.currentUserId,
-                  messageId: latestPinned.messageId,
-                  pin: false,
-                );
-              },
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.push_pin_rounded, color: Colors.amber, size: 18),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    "Pinned Announcement",
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.brown,
+                    ),
+                  ),
+                  Text(
+                    latestPinned.content,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style:
+                        const TextStyle(fontSize: 12.5, color: Colors.black87),
+                  ),
+                ],
+              ),
             ),
-        ],
+            if (_isViewerTeacher)
+              IconButton(
+                icon: const Icon(Icons.close, size: 16, color: Colors.brown),
+                onPressed: () {
+                  _groupService.togglePinMessage(
+                    groupId: widget.groupId,
+                    teacherId: widget.currentUserId,
+                    messageId: latestPinned.messageId,
+                    pin: false,
+                  );
+                },
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -1810,83 +1620,182 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
       );
     }
 
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 15,
-            offset: const Offset(0, -4),
-          ),
-        ],
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
-            child: Row(
-              children: [
-                InkWell(
-                  borderRadius: BorderRadius.circular(16),
-                  onTap: _openAcademicComposerSheet,
-                  child: Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                    decoration: BoxDecoration(
-                      color: Colors.blue.shade50,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: Colors.blue.shade100),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
+    return DragTarget<MessageModel>(
+      onWillAcceptWithDetails: (details) {
+        HapticFeedback.selectionClick();
+        setState(() => _isDragHoveringInput = true);
+        return true;
+      },
+      onLeave: (_) {
+        setState(() => _isDragHoveringInput = false);
+      },
+      onAcceptWithDetails: (details) {
+        _didDropOnTarget = true;
+        setState(() => _isDragHoveringInput = false);
+        _triggerReply(details.data);
+      },
+      builder: (context, candidateData, rejectedData) {
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              height: _isDragHoveringInput ? 34 : 0,
+              width: double.infinity,
+              color: const Color(0xFF0F172A),
+              alignment: Alignment.center,
+              child: _isDragHoveringInput
+                  ? const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        const Icon(
-                          Icons.school_rounded,
-                          size: 15,
-                          color: Colors.blueAccent,
-                        ),
-                        const SizedBox(width: 5),
+                        Icon(Icons.reply_rounded,
+                            color: Colors.white, size: 17),
+                        SizedBox(width: 6),
                         Text(
-                          _isViewerTeacher
-                              ? "Post Homework / Poll / Quiz / Notice"
-                              : "Ask Academic Doubt",
-                          style: const TextStyle(
-                            fontSize: 11.5,
+                          'Release here to Reply',
+                          style: TextStyle(
+                            color: Colors.white,
                             fontWeight: FontWeight.bold,
-                            color: Colors.blueAccent,
+                            fontSize: 12.5,
                           ),
                         ),
                       ],
-                    ),
+                    )
+                  : null,
+            ),
+            AnimatedScale(
+              scale: _isDragHoveringInput ? 1.04 : 1.0,
+              duration: const Duration(milliseconds: 220),
+              curve: Curves.elasticOut,
+              child: ScaleTransition(
+                scale: _bounceAnimation,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    border: _isDragHoveringInput
+                        ? Border.all(color: Colors.blueAccent, width: 2.2)
+                        : null,
+                    boxShadow: [
+                      BoxShadow(
+                        color: _isDragHoveringInput
+                            ? Colors.blueAccent.withOpacity(0.28)
+                            : Colors.black.withOpacity(0.05),
+                        blurRadius: _isDragHoveringInput ? 18 : 15,
+                        offset: const Offset(0, -4),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
+                        child: SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: Row(
+                            children: [
+                              InkWell(
+                                borderRadius: BorderRadius.circular(16),
+                                onTap: _openAcademicComposerSheet,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 10, vertical: 5),
+                                  decoration: BoxDecoration(
+                                    color: Colors.blue.shade50,
+                                    borderRadius: BorderRadius.circular(16),
+                                    border:
+                                        Border.all(color: Colors.blue.shade100),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Icon(
+                                        Icons.school_rounded,
+                                        size: 15,
+                                        color: Colors.blueAccent,
+                                      ),
+                                      const SizedBox(width: 5),
+                                      Text(
+                                        _isViewerTeacher
+                                            ? "Post Homework / Poll / Quiz / Notice"
+                                            : "Ask Academic Doubt",
+                                        style: const TextStyle(
+                                          fontSize: 11.5,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.blueAccent,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              InkWell(
+                                borderRadius: BorderRadius.circular(16),
+                                onTap: _openAiStudyAssistantSheet,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 10, vertical: 5),
+                                  decoration: BoxDecoration(
+                                    color: Colors.amber.shade50,
+                                    borderRadius: BorderRadius.circular(16),
+                                    border: Border.all(
+                                        color: Colors.amber.shade200),
+                                  ),
+                                  child: const Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        Icons.auto_awesome_rounded,
+                                        size: 14,
+                                        color: Colors.amber,
+                                      ),
+                                      SizedBox(width: 5),
+                                      Text(
+                                        "AI Study Assistant",
+                                        style: TextStyle(
+                                          fontSize: 11.5,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.brown,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      ChatInputBar(
+                        chatRoomId: widget.groupId,
+                        senderId: widget.currentUserId,
+                        receiverId: 'group',
+                        replyToMessageId: _replyToMessageId,
+                        replyToText: _replyToText,
+                        onCancelReply: () {
+                          setState(() {
+                            _replyToMessageId = null;
+                            _replyToText = null;
+                          });
+                        },
+                        onTypingChanged: (isTyping) {
+                          _chatService.updateTypingStatus(
+                            widget.groupId,
+                            widget.currentUserId,
+                            isTyping,
+                          );
+                        },
+                      ),
+                    ],
                   ),
                 ),
-              ],
+              ),
             ),
-          ),
-          ChatInputBar(
-            chatRoomId: widget.groupId,
-            senderId: widget.currentUserId,
-            receiverId: 'group',
-            replyToMessageId: _replyToMessageId,
-            replyToText: _replyToText,
-            onCancelReply: () {
-              setState(() {
-                _replyToMessageId = null;
-                _replyToText = null;
-              });
-            },
-            onTypingChanged: (isTyping) {
-              _chatService.updateTypingStatus(
-                widget.groupId,
-                widget.currentUserId,
-                isTyping,
-              );
-            },
-          ),
-        ],
-      ),
+          ],
+        );
+      },
     );
   }
 
@@ -1894,381 +1803,610 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
   Widget build(BuildContext context) {
     final bgProvider = _buildBackgroundProvider();
     final group = _currentGroup;
-    final String displayGroupName = group?.name.isNotEmpty == true
-        ? group!.name
-        : widget.groupName;
+    final String displayGroupName =
+        group?.name.isNotEmpty == true ? group!.name : widget.groupName;
     final int studentCount = group?.studentCount ?? 0;
 
-    return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC),
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF0F172A),
-        elevation: 0,
-        titleSpacing: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded,
-              color: Colors.white, size: 20),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: _isSearching
-            ? TextField(
-                controller: _searchController,
-                autofocus: true,
-                style: const TextStyle(color: Colors.white, fontSize: 15),
-                onChanged: (val) =>
-                    setState(() => _searchQuery = val.trim().toLowerCase()),
-                decoration: const InputDecoration(
-                  hintText: "Search messages in group...",
-                  hintStyle: TextStyle(color: Colors.white54),
-                  border: InputBorder.none,
-                ),
-              )
-            : InkWell(
-                onTap: _openGroupDetailsAndAdminSheet,
-                child: Row(
-                  children: [
-                    Container(
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: Colors.blueAccent.withOpacity(0.5),
-                          width: 1.5,
-                        ),
-                      ),
-                      child: CircleAvatar(
-                        radius: 19,
-                        backgroundColor: const Color(0xFF1E293B),
-                        backgroundImage:
-                            (group != null && group.imageUrl.isNotEmpty)
-                                ? NetworkImage(group.imageUrl)
-                                : null,
-                        child: (group == null || group.imageUrl.isEmpty)
-                            ? const Icon(Icons.groups_rounded,
-                                color: Colors.blueAccent, size: 22)
-                            : null,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Flexible(
-                                child: Text(
-                                  displayGroupName,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    fontSize: 15.5,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                              ),
-                              if (group?.isTeacherVerified == true) ...[
-                                const SizedBox(width: 4),
-                                const Icon(Icons.verified,
-                                    color: Colors.blueAccent, size: 15),
-                              ],
-                              if (group?.hasGoldenBadge == true) ...[
-                                const SizedBox(width: 4),
-                                const Icon(Icons.workspace_premium,
-                                    color: Colors.amber, size: 16),
-                              ],
-                            ],
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            '$studentCount Students • Tap for Group Info',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: Colors.white.withOpacity(0.72),
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-        actions: [
-          IconButton(
-            icon: Icon(
-              _isSearching ? Icons.close_rounded : Icons.search_rounded,
-              color: Colors.white,
-              size: 21,
-            ),
-            onPressed: () {
-              setState(() {
-                _isSearching = !_isSearching;
-                if (!_isSearching) {
-                  _searchController.clear();
-                  _searchQuery = '';
-                }
-              });
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.info_outline_rounded,
-                color: Colors.white, size: 21),
-            tooltip: "Group Info & Admin Controls",
-            onPressed: _openGroupDetailsAndAdminSheet,
-          ),
-          PopupMenuButton<String>(
-            icon: const Icon(Icons.more_vert_rounded,
+    return PopScope(
+      canPop: !_isSelectionMode,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop && _isSelectionMode) {
+          _clearMessageSelection();
+        }
+      },
+      child: Scaffold(
+        backgroundColor: const Color(0xFFF8FAFC),
+        appBar: AppBar(
+          backgroundColor: const Color(0xFF0F172A),
+          elevation: 0,
+          titleSpacing: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_ios_new_rounded,
                 color: Colors.white, size: 20),
-            onSelected: (value) async {
-              if (value == 'info') {
-                _openGroupDetailsAndAdminSheet();
-              } else if (value == 'academic') {
-                _openAcademicComposerSheet();
-              } else if (value == 'export') {
-                final transcript = await _chatService.exportChatTranscript(
-                  chatOrGroupId: widget.groupId,
-                  isGroup: true,
-                  currentUserId: widget.currentUserId,
-                  isViewerTeacherOfGroup: _isViewerTeacher,
-                );
-                if (transcript.isNotEmpty) {
-                  await Clipboard.setData(ClipboardData(text: transcript));
-                  _showSnackBar("Chat transcript copied to clipboard!");
-                }
-              } else if (value == 'dismiss') {
-                _confirmDismissGroup();
+            onPressed: () {
+              if (_isSelectionMode) {
+                _clearMessageSelection();
+              } else {
+                Navigator.pop(context);
               }
             },
-            itemBuilder: (context) => [
-              const PopupMenuItem(
-                value: 'info',
-                child: Text('Group Information'),
+          ),
+          title: _isSearching
+              ? TextField(
+                  controller: _searchController,
+                  autofocus: true,
+                  style: const TextStyle(color: Colors.white, fontSize: 15),
+                  onChanged: (val) =>
+                      setState(() => _searchQuery = val.trim().toLowerCase()),
+                  decoration: const InputDecoration(
+                    hintText: "Search messages in group...",
+                    hintStyle: TextStyle(color: Colors.white54),
+                    border: InputBorder.none,
+                  ),
+                )
+              : InkWell(
+                  onTap: _openGroupInfoPage,
+                  child: Row(
+                    children: [
+                      Container(
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: Colors.blueAccent.withOpacity(0.5),
+                            width: 1.5,
+                          ),
+                        ),
+                        child: CircleAvatar(
+                          radius: 19,
+                          backgroundColor: const Color(0xFF1E293B),
+                          backgroundImage:
+                              (group != null && group.imageUrl.isNotEmpty)
+                                  ? NetworkImage(group.imageUrl)
+                                  : null,
+                          child: (group == null || group.imageUrl.isEmpty)
+                              ? const Icon(Icons.groups_rounded,
+                                  color: Colors.blueAccent, size: 22)
+                              : null,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Flexible(
+                                  child: Text(
+                                    displayGroupName,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontSize: 15.5,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                                if (group?.isTeacherVerified == true) ...[
+                                  const SizedBox(width: 4),
+                                  const Icon(Icons.verified,
+                                      color: Colors.blueAccent, size: 15),
+                                ],
+                                if (group?.hasGoldenBadge == true) ...[
+                                  const SizedBox(width: 4),
+                                  const Icon(Icons.workspace_premium,
+                                      color: Colors.amber, size: 16),
+                                ],
+                              ],
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              '$studentCount Students • Tap for Group Info',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.white.withOpacity(0.72),
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.auto_awesome_rounded,
+                  color: Colors.amber, size: 21),
+              tooltip: "AI Study Assistant",
+              onPressed: _openAiStudyAssistantSheet,
+            ),
+            IconButton(
+              icon: Icon(
+                _isSearching ? Icons.close_rounded : Icons.search_rounded,
+                color: Colors.white,
+                size: 21,
               ),
-              PopupMenuItem(
-                value: 'academic',
-                child: Text(_isViewerTeacher
-                    ? 'Academic Tools (Homework/Poll/Quiz)'
-                    : 'Ask a Doubt'),
-              ),
-              const PopupMenuItem(
-                value: 'export',
-                child: Text('Export Chat Copy'),
-              ),
-              if (_isViewerTeacher)
+              onPressed: () {
+                setState(() {
+                  _isSearching = !_isSearching;
+                  if (!_isSearching) {
+                    _searchController.clear();
+                    _searchQuery = '';
+                  }
+                });
+              },
+            ),
+            PopupMenuButton<String>(
+              icon: const Icon(Icons.more_vert_rounded,
+                  color: Colors.white, size: 20),
+              onSelected: (value) async {
+                if (value == 'info') {
+                  _openGroupInfoPage();
+                } else if (value == 'media') {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => MediaDocsLinksScreen(
+                        chatOrGroupId: widget.groupId,
+                        title: displayGroupName,
+                        currentUserId: widget.currentUserId,
+                        isGroup: true,
+                        isViewerTeacherOfGroup: _isViewerTeacher,
+                      ),
+                    ),
+                  );
+                } else if (value == 'academic') {
+                  _openAcademicComposerSheet();
+                } else if (value == 'ai') {
+                  _openAiStudyAssistantSheet();
+                } else if (value == 'export') {
+                  final transcript = await _chatService.exportChatTranscript(
+                    chatOrGroupId: widget.groupId,
+                    isGroup: true,
+                    currentUserId: widget.currentUserId,
+                    isViewerTeacherOfGroup: _isViewerTeacher,
+                  );
+                  if (transcript.isNotEmpty) {
+                    await Clipboard.setData(ClipboardData(text: transcript));
+                    _showSnackBar("Chat transcript copied to clipboard!");
+                  }
+                } else if (value == 'dismiss') {
+                  _confirmDismissGroup();
+                }
+              },
+              itemBuilder: (context) => [
                 const PopupMenuItem(
-                  value: 'dismiss',
-                  child: Text(
-                    'Dismiss Group Permanently',
-                    style: TextStyle(
-                        color: Colors.redAccent, fontWeight: FontWeight.bold),
+                  value: 'info',
+                  child: Text('Group Information & Admin'),
+                ),
+                const PopupMenuItem(
+                  value: 'media',
+                  child: Text('Media, Study Docs & Links'),
+                ),
+                PopupMenuItem(
+                  value: 'academic',
+                  child: Text(_isViewerTeacher
+                      ? 'Academic Studio (Homework/Poll/Quiz)'
+                      : 'Ask an Academic Doubt'),
+                ),
+                const PopupMenuItem(
+                  value: 'ai',
+                  child: Text('AI Study Assistant & Summary'),
+                ),
+                const PopupMenuItem(
+                  value: 'export',
+                  child: Text('Export Chat Copy'),
+                ),
+                if (_isViewerTeacher)
+                  const PopupMenuItem(
+                    value: 'dismiss',
+                    child: Text(
+                      'Dismiss Group Permanently',
+                      style: TextStyle(
+                          color: Colors.redAccent, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+              ],
+            ),
+          ],
+        ),
+        body: Container(
+          decoration: BoxDecoration(
+            color: const Color(0xFFF8FAFC),
+            image: bgProvider != null
+                ? DecorationImage(
+                    image: bgProvider,
+                    fit: BoxFit.cover,
+                    opacity: 0.03,
+                    onError: (_, __) {},
+                  )
+                : null,
+          ),
+          child: Stack(
+            children: [
+              Column(
+                children: [
+                  _buildCategoryFilterBar(),
+                  Expanded(
+                    child: StreamBuilder<List<MessageModel>>(
+                      stream: _chatService.getGroupMessagesStream(
+                        widget.groupId,
+                        categoryFilter: _selectedCategory,
+                      ),
+                      builder: (context, snapshot) {
+                        if (snapshot.hasError) {
+                          return const Center(
+                            child: Text(
+                              'Failed to load group messages.',
+                              style: TextStyle(
+                                  color: Colors.redAccent,
+                                  fontWeight: FontWeight.w500),
+                            ),
+                          );
+                        }
+
+                        if (snapshot.connectionState ==
+                            ConnectionState.waiting) {
+                          return const Center(
+                            child: CircularProgressIndicator(
+                                color: Colors.blueAccent),
+                          );
+                        }
+
+                        final rawMessages = (snapshot.data ?? const [])
+                            .where((m) => !m.deletedForUsers
+                                .contains(widget.currentUserId))
+                            .toList();
+                        _latestMessages = rawMessages;
+
+                        final messages = _searchQuery.isEmpty
+                            ? rawMessages
+                            : rawMessages
+                                .where((m) => m.content
+                                    .toLowerCase()
+                                    .contains(_searchQuery))
+                                .toList();
+
+                        if (messages.isEmpty) {
+                          return Center(
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 20, vertical: 12),
+                              decoration: BoxDecoration(
+                                color: Colors.blue.shade50,
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(color: Colors.blue.shade100),
+                              ),
+                              child: Text(
+                                _selectedCategory == 'all'
+                                    ? 'Welcome to FYBTT Secure Group Chat'
+                                    : 'No messages in this category yet',
+                                style: const TextStyle(
+                                  color: Colors.blueAccent,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          );
+                        }
+
+                        return Column(
+                          children: [
+                            _buildPinnedMessageBanner(rawMessages),
+                            Expanded(
+                              child: ListView.builder(
+                                controller: _scrollController,
+                                reverse: true,
+                                physics: const BouncingScrollPhysics(),
+                                padding: EdgeInsets.only(
+                                  left: 14,
+                                  right: 14,
+                                  top: _showTopActionBar ? 68 : 12,
+                                  bottom: 12,
+                                ),
+                                itemCount: messages.length,
+                                itemBuilder: (context, index) {
+                                  final rawMsg = messages[index];
+                                  final message =
+                                      _resolveMessageWithReplyText(rawMsg);
+                                  final bool isMe =
+                                      message.senderId == widget.currentUserId;
+                                  final bool isSelected = _selectedMessageIds
+                                      .contains(message.messageId);
+
+                                  final bool showDateHeader =
+                                      index == messages.length - 1 ||
+                                          !_isSameCalendarDay(
+                                            message.timestamp,
+                                            messages[index + 1].timestamp,
+                                          );
+
+                                  final bool showUnreadBanner =
+                                      _initialUnreadCount > 0 &&
+                                          index == _initialUnreadCount - 1;
+
+                                  return Column(
+                                    crossAxisAlignment: isMe
+                                        ? CrossAxisAlignment.end
+                                        : CrossAxisAlignment.start,
+                                    children: [
+                                      if (showDateHeader)
+                                        Center(
+                                          child: Container(
+                                            margin: const EdgeInsets.symmetric(
+                                                vertical: 10),
+                                            padding: const EdgeInsets.symmetric(
+                                                horizontal: 12, vertical: 4),
+                                            decoration: BoxDecoration(
+                                              color: Colors.blueGrey
+                                                  .withOpacity(0.1),
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
+                                            ),
+                                            child: Text(
+                                              _formatDateHeader(
+                                                  message.timestamp),
+                                              style: const TextStyle(
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.bold,
+                                                color: Colors.blueGrey,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      if (showUnreadBanner)
+                                        Container(
+                                          width: double.infinity,
+                                          margin: const EdgeInsets.symmetric(
+                                              vertical: 8),
+                                          padding: const EdgeInsets.symmetric(
+                                              vertical: 5),
+                                          decoration: BoxDecoration(
+                                            color: Colors.blue.shade50,
+                                            borderRadius:
+                                                BorderRadius.circular(8),
+                                          ),
+                                          child: Text(
+                                            "$_initialUnreadCount Unread Messages",
+                                            textAlign: TextAlign.center,
+                                            style: const TextStyle(
+                                              fontSize: 11.5,
+                                              fontWeight: FontWeight.bold,
+                                              color: Colors.blueAccent,
+                                            ),
+                                          ),
+                                        ),
+                                      _buildPrivacySafeMessageHeader(
+                                          message, isMe),
+                                      if (message.type == 'poll' ||
+                                          message.type == 'quiz')
+                                        _buildInteractivePollOrQuizCard(
+                                            message, isMe)
+                                      else
+                                        GestureDetector(
+                                          behavior: HitTestBehavior.translucent,
+                                          onTap: _isSelectionMode
+                                              ? () => _toggleMessageSelection(
+                                                  message)
+                                              : null,
+                                          child: AnimatedContainer(
+                                            duration: const Duration(
+                                                milliseconds: 180),
+                                            margin: const EdgeInsets.symmetric(
+                                                vertical: 2),
+                                            decoration: BoxDecoration(
+                                              color: isSelected
+                                                  ? Colors.blueAccent
+                                                      .withOpacity(0.14)
+                                                  : Colors.transparent,
+                                              borderRadius:
+                                                  BorderRadius.circular(14),
+                                            ),
+                                            child: Row(
+                                              children: [
+                                                if (_isSelectionMode)
+                                                  Padding(
+                                                    padding:
+                                                        const EdgeInsets.only(
+                                                            left: 6, right: 2),
+                                                    child: Icon(
+                                                      isSelected
+                                                          ? Icons
+                                                              .check_circle_rounded
+                                                          : Icons
+                                                              .radio_button_unchecked_rounded,
+                                                      color: isSelected
+                                                          ? Colors.blueAccent
+                                                          : Colors
+                                                              .grey.shade400,
+                                                      size: 20,
+                                                    ),
+                                                  ),
+                                                Expanded(
+                                                  child: LongPressDraggable<
+                                                      MessageModel>(
+                                                    delay: const Duration(
+                                                        milliseconds: 500),
+                                                    data: message,
+                                                    onDragStarted: () {
+                                                      HapticFeedback
+                                                          .mediumImpact();
+                                                      setState(() {
+                                                        _didDropOnTarget =
+                                                            false;
+                                                        _isDraggingMessage =
+                                                            true;
+                                                        _draggedMessage =
+                                                            message;
+                                                      });
+                                                    },
+                                                    onDragUpdate: (details) {
+                                                      if (!_canCurrentUserReply) {
+                                                        return;
+                                                      }
+                                                      final screenH =
+                                                          MediaQuery.of(context)
+                                                              .size
+                                                              .height;
+                                                      final bottomInset =
+                                                          MediaQuery.of(context)
+                                                              .viewInsets
+                                                              .bottom;
+                                                      final replyTriggerLine =
+                                                          screenH -
+                                                              bottomInset -
+                                                              150;
+                                                      final nearInput = details
+                                                              .globalPosition
+                                                              .dy >=
+                                                          replyTriggerLine;
+                                                      if (nearInput !=
+                                                          _isDragHoveringInput) {
+                                                        HapticFeedback
+                                                            .selectionClick();
+                                                        setState(() {
+                                                          _isDragHoveringInput =
+                                                              nearInput;
+                                                        });
+                                                      }
+                                                    },
+                                                    onDragEnd: (details) {
+                                                      if (_isDragHoveringInput &&
+                                                          !_didDropOnTarget &&
+                                                          _draggedMessage !=
+                                                              null) {
+                                                        _didDropOnTarget = true;
+                                                        _triggerReply(
+                                                            _draggedMessage!);
+                                                        return;
+                                                      }
+
+                                                      setState(() {
+                                                        _isDraggingMessage =
+                                                            false;
+                                                        if (!_didDropOnTarget) {
+                                                          _selectedMessageIds
+                                                              .add(message
+                                                                  .messageId);
+                                                        }
+                                                        _draggedMessage = null;
+                                                        _hoveredTopAction =
+                                                            null;
+                                                        _isDragHoveringInput =
+                                                            false;
+                                                      });
+                                                    },
+                                                    feedback: Material(
+                                                      color: Colors.transparent,
+                                                      child: Transform.scale(
+                                                        scale: 1.06,
+                                                        child: Container(
+                                                          width: MediaQuery.of(
+                                                                      context)
+                                                                  .size
+                                                                  .width *
+                                                              0.85,
+                                                          decoration:
+                                                              BoxDecoration(
+                                                            boxShadow: [
+                                                              BoxShadow(
+                                                                color: const Color(
+                                                                        0xFF0F172A)
+                                                                    .withOpacity(
+                                                                        0.26),
+                                                                blurRadius: 20,
+                                                                spreadRadius: 2,
+                                                                offset:
+                                                                    const Offset(
+                                                                        0, 8),
+                                                              ),
+                                                            ],
+                                                          ),
+                                                          child: IgnorePointer(
+                                                            child:
+                                                                MessageBubble(
+                                                              message: message,
+                                                              isMe: isMe,
+                                                              chatRoomId: widget
+                                                                  .groupId,
+                                                              currentUserId: widget
+                                                                  .currentUserId,
+                                                              onReplyPressed:
+                                                                  (_) {},
+                                                            ),
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    ),
+                                                    childWhenDragging: Opacity(
+                                                      opacity: 0.25,
+                                                      child: IgnorePointer(
+                                                        child: MessageBubble(
+                                                          message: message,
+                                                          isMe: isMe,
+                                                          chatRoomId:
+                                                              widget.groupId,
+                                                          currentUserId: widget
+                                                              .currentUserId,
+                                                          onReplyPressed:
+                                                              (_) {},
+                                                        ),
+                                                      ),
+                                                    ),
+                                                    child: MessageBubble(
+                                                      message: message,
+                                                      isMe: isMe,
+                                                      chatRoomId:
+                                                          widget.groupId,
+                                                      currentUserId:
+                                                          widget.currentUserId,
+                                                      onReplyPressed:
+                                                          (repliedMsg) {
+                                                        _triggerReply(
+                                                            repliedMsg);
+                                                      },
+                                                      onReplyPreviewTap: () =>
+                                                          _scrollToOriginalMessage(
+                                                              message
+                                                                  .replyToMessageId),
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                    ],
+                                  );
+                                },
+                              ),
+                            ),
+                          ],
+                        );
+                      },
+                    ),
+                  ),
+                  _buildBottomComposerOrRestrictionBar(),
+                ],
+              ),
+              if (_showTopActionBar) _buildTopActionToolbar(),
+              if (_showScrollToBottomBtn)
+                Positioned(
+                  right: 16,
+                  bottom: 86,
+                  child: FloatingActionButton.small(
+                    backgroundColor: const Color(0xFF0F172A),
+                    onPressed: _scrollToBottom,
+                    child: const Icon(Icons.keyboard_arrow_down_rounded,
+                        color: Colors.white),
                   ),
                 ),
             ],
           ),
-        ],
-      ),
-      body: Container(
-        decoration: BoxDecoration(
-          color: const Color(0xFFF8FAFC),
-          image: bgProvider != null
-              ? DecorationImage(
-                  image: bgProvider,
-                  fit: BoxFit.cover,
-                  opacity: 0.03,
-                  onError: (_, __) {},
-                )
-              : null,
-        ),
-        child: Stack(
-          children: [
-            Column(
-              children: [
-                _buildCategoryFilterBar(),
-                Expanded(
-                  child: StreamBuilder<List<MessageModel>>(
-                    stream: _chatService.getGroupMessagesStream(
-                      widget.groupId,
-                      categoryFilter: _selectedCategory,
-                    ),
-                    builder: (context, snapshot) {
-                      if (snapshot.hasError) {
-                        return const Center(
-                          child: Text(
-                            'Failed to load group messages.',
-                            style: TextStyle(
-                                color: Colors.redAccent,
-                                fontWeight: FontWeight.w500),
-                          ),
-                        );
-                      }
-
-                      if (snapshot.connectionState == ConnectionState.waiting) {
-                        return const Center(
-                          child: CircularProgressIndicator(
-                              color: Colors.blueAccent),
-                        );
-                      }
-
-                      final rawMessages = snapshot.data ?? const [];
-                      final messages = _searchQuery.isEmpty
-                          ? rawMessages
-                          : rawMessages
-                              .where((m) => m.content
-                                  .toLowerCase()
-                                  .contains(_searchQuery))
-                              .toList();
-
-                      if (messages.isEmpty) {
-                        return Center(
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 20, vertical: 12),
-                            decoration: BoxDecoration(
-                              color: Colors.blue.shade50,
-                              borderRadius: BorderRadius.circular(16),
-                              border: Border.all(color: Colors.blue.shade100),
-                            ),
-                            child: Text(
-                              _selectedCategory == 'all'
-                                  ? 'Welcome to FYBTT Secure Group Chat'
-                                  : 'No messages in this category yet',
-                              style: const TextStyle(
-                                color: Colors.blueAccent,
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                        );
-                      }
-
-                      return Column(
-                        children: [
-                          _buildPinnedMessageBanner(rawMessages),
-                          Expanded(
-                            child: ListView.builder(
-                              controller: _scrollController,
-                              reverse: true,
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 14, vertical: 12),
-                              itemCount: messages.length,
-                              itemBuilder: (context, index) {
-                                final message = messages[index];
-                                final bool isMe =
-                                    message.senderId == widget.currentUserId;
-
-                                final bool showDateHeader =
-                                    index == messages.length - 1 ||
-                                        !_isSameCalendarDay(
-                                          message.timestamp,
-                                          messages[index + 1].timestamp,
-                                        );
-
-                                final bool showUnreadBanner =
-                                    _initialUnreadCount > 0 &&
-                                        index == _initialUnreadCount - 1;
-
-                                return Column(
-                                  crossAxisAlignment: isMe
-                                      ? CrossAxisAlignment.end
-                                      : CrossAxisAlignment.start,
-                                  children: [
-                                    if (showDateHeader)
-                                      Center(
-                                        child: Container(
-                                          margin: const EdgeInsets.symmetric(
-                                              vertical: 10),
-                                          padding: const EdgeInsets.symmetric(
-                                              horizontal: 12, vertical: 4),
-                                          decoration: BoxDecoration(
-                                            color:
-                                                Colors.blueGrey.withOpacity(0.1),
-                                            borderRadius:
-                                                BorderRadius.circular(12),
-                                          ),
-                                          child: Text(
-                                            _formatDateHeader(
-                                                message.timestamp),
-                                            style: const TextStyle(
-                                              fontSize: 11,
-                                              fontWeight: FontWeight.bold,
-                                              color: Colors.blueGrey,
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    if (showUnreadBanner)
-                                      Container(
-                                        width: double.infinity,
-                                        margin: const EdgeInsets.symmetric(
-                                            vertical: 8),
-                                        padding: const EdgeInsets.symmetric(
-                                            vertical: 5),
-                                        decoration: BoxDecoration(
-                                          color: Colors.blue.shade50,
-                                          borderRadius:
-                                              BorderRadius.circular(8),
-                                        ),
-                                        child: Text(
-                                          "$_initialUnreadCount Unread Messages",
-                                          textAlign: TextAlign.center,
-                                          style: const TextStyle(
-                                            fontSize: 11.5,
-                                            fontWeight: FontWeight.bold,
-                                            color: Colors.blueAccent,
-                                          ),
-                                        ),
-                                      ),
-                                    _buildPrivacySafeMessageHeader(
-                                        message, isMe),
-                                    if (message.type == 'poll' ||
-                                        message.type == 'quiz')
-                                      _buildInteractivePollOrQuizCard(
-                                          message, isMe)
-                                    else
-                                      MessageBubble(
-                                        message: message,
-                                        isMe: isMe,
-                                        chatRoomId: widget.groupId,
-                                        currentUserId: widget.currentUserId,
-                                        onReplyPressed: (repliedMsg) {
-                                          setState(() {
-                                            _replyToMessageId =
-                                                repliedMsg.messageId;
-                                            _replyToText =
-                                                repliedMsg.type == 'text'
-                                                    ? repliedMsg.content
-                                                    : 'Attachment';
-                                          });
-                                        },
-                                      ),
-                                  ],
-                                );
-                              },
-                            ),
-                          ),
-                        ],
-                      );
-                    },
-                  ),
-                ),
-                _buildBottomComposerOrRestrictionBar(),
-              ],
-            ),
-            if (_showScrollToBottomBtn)
-              Positioned(
-                right: 16,
-                bottom: 86,
-                child: FloatingActionButton.small(
-                  backgroundColor: const Color(0xFF0F172A),
-                  onPressed: _scrollToBottom,
-                  child: const Icon(Icons.keyboard_arrow_down_rounded,
-                      color: Colors.white),
-                ),
-              ),
-          ],
         ),
       ),
     );
