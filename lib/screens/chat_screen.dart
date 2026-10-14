@@ -1,22 +1,23 @@
-import 'dart:io';
 import 'dart:async';
 import 'dart:developer';
+import 'dart:io';
+import 'dart:ui';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:find_your_best_teacher_today/services/chat_service.dart';
-import 'package:find_your_best_teacher_today/services/chat_menu_service.dart';
 import 'package:find_your_best_teacher_today/models/message_model.dart';
-import 'package:find_your_best_teacher_today/widgets/chat_input_bar.dart';
-import 'package:find_your_best_teacher_today/widgets/message_bubble.dart';
-import 'package:find_your_best_teacher_today/widgets/chat_popup_menu.dart';
+import 'package:find_your_best_teacher_today/services/chat_menu_service.dart';
+import 'package:find_your_best_teacher_today/services/chat_service.dart';
+import 'package:find_your_best_teacher_today/utils/popup_menu_actions.dart';
 import 'package:find_your_best_teacher_today/widgets/block_dialog.dart';
-import 'package:find_your_best_teacher_today/widgets/report_dialog.dart';
+import 'package:find_your_best_teacher_today/widgets/chat_input_bar.dart';
+import 'package:find_your_best_teacher_today/widgets/chat_popup_menu.dart';
 import 'package:find_your_best_teacher_today/widgets/clear_chat_dialog.dart';
 import 'package:find_your_best_teacher_today/widgets/delete_chat_dialog.dart';
-import 'package:find_your_best_teacher_today/utils/popup_menu_actions.dart';
+import 'package:find_your_best_teacher_today/widgets/message_bubble.dart';
+import 'package:find_your_best_teacher_today/widgets/report_dialog.dart';
 
 class ChatScreen extends StatefulWidget {
   final String chatRoomId;
@@ -48,6 +49,7 @@ class _ChatScreenState extends State<ChatScreen>
 
   late String _activeChatRoomId;
   Stream<List<MessageModel>>? _messageStream;
+  List<MessageModel> _latestMessages = [];
 
   String? _replyToMessageId;
   String? _replyToText;
@@ -57,8 +59,14 @@ class _ChatScreenState extends State<ChatScreen>
 
   bool _isDraggingMessage = false;
   bool _isDragHoveringInput = false;
+  bool _didDropOnTarget = false;
   String? _hoveredTopAction;
   MessageModel? _draggedMessage;
+
+  final Set<String> _selectedMessageIds = {};
+
+  bool get _isSelectionMode => _selectedMessageIds.isNotEmpty;
+  bool get _showTopActionBar => _isDraggingMessage || _isSelectionMode;
 
   late AnimationController _bounceController;
   late Animation<double> _bounceAnimation;
@@ -75,10 +83,15 @@ class _ChatScreenState extends State<ChatScreen>
 
     _bounceController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 400),
+      duration: const Duration(milliseconds: 550),
     );
-    _bounceAnimation = Tween<double>(begin: 1.0, end: 1.08).animate(
-      CurvedAnimation(parent: _bounceController, curve: Curves.elasticOut),
+    _bounceAnimation = TweenSequence<double>([
+      TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.12), weight: 35),
+      TweenSequenceItem(tween: Tween(begin: 1.12, end: 0.96), weight: 30),
+      TweenSequenceItem(tween: Tween(begin: 0.96, end: 1.03), weight: 20),
+      TweenSequenceItem(tween: Tween(begin: 1.03, end: 1.0), weight: 15),
+    ]).animate(
+      CurvedAnimation(parent: _bounceController, curve: Curves.easeOut),
     );
 
     _setupChatRoom();
@@ -90,7 +103,8 @@ class _ChatScreenState extends State<ChatScreen>
     WidgetsBinding.instance.removeObserver(this);
     _bounceController.dispose();
     if (!_isOfficialChannel) {
-      _chatService.updateTypingStatus(_activeChatRoomId, widget.currentUserId, false);
+      _chatService.updateTypingStatus(
+          _activeChatRoomId, widget.currentUserId, false);
     }
     _markMessagesAsReadSafe();
     _scrollController.dispose();
@@ -101,9 +115,11 @@ class _ChatScreenState extends State<ChatScreen>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       _markMessagesAsReadSafe();
-    } else if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
+    } else if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive) {
       if (!_isOfficialChannel) {
-        _chatService.updateTypingStatus(_activeChatRoomId, widget.currentUserId, false);
+        _chatService.updateTypingStatus(
+            _activeChatRoomId, widget.currentUserId, false);
       }
     }
   }
@@ -121,8 +137,10 @@ class _ChatScreenState extends State<ChatScreen>
     }
 
     try {
-      String teacherId = widget.isTeacher ? widget.currentUserId : widget.receiverId;
-      String studentId = widget.isTeacher ? widget.receiverId : widget.currentUserId;
+      final String teacherId =
+          widget.isTeacher ? widget.currentUserId : widget.receiverId;
+      final String studentId =
+          widget.isTeacher ? widget.receiverId : widget.currentUserId;
 
       await _chatService.createOrInitializeChat(
         teacherId: teacherId,
@@ -138,7 +156,8 @@ class _ChatScreenState extends State<ChatScreen>
           _messageStream = _chatService.getMessages(_activeChatRoomId);
           _isInitializing = false;
         });
-        _chatService.updateTypingStatus(_activeChatRoomId, widget.currentUserId, false);
+        _chatService.updateTypingStatus(
+            _activeChatRoomId, widget.currentUserId, false);
         _markMessagesAsReadSafe();
       }
     } catch (e) {
@@ -193,13 +212,287 @@ class _ChatScreenState extends State<ChatScreen>
     }
   }
 
-  void _triggerReply(MessageModel message) {
-    if (_isOfficialChannel) return;
-    _bounceController.forward(from: 0.0).then((_) => _bounceController.reverse());
+  bool _canEditSingleMessage(MessageModel msg) {
+    if (msg.senderId != widget.currentUserId) return false;
+    if (msg.type.toLowerCase() != 'text') return false;
+    if (msg.isDeletedForEveryone) return false;
+    if (msg.timestamp == null) return false;
+    final diff = DateTime.now().difference(msg.timestamp!);
+    return diff.inMinutes < 5;
+  }
+
+  MessageModel? get _activeSingleTargetMessage {
+    if (_isDraggingMessage && _draggedMessage != null) {
+      return _draggedMessage;
+    }
+    if (_selectedMessageIds.length == 1) {
+      final id = _selectedMessageIds.first;
+      for (final m in _latestMessages) {
+        if (m.messageId == id) return m;
+      }
+    }
+    return null;
+  }
+
+  List<MessageModel> _getTargetMessages([MessageModel? droppedMessage]) {
+    if (_selectedMessageIds.isNotEmpty) {
+      return _latestMessages
+          .where((m) => _selectedMessageIds.contains(m.messageId))
+          .toList();
+    }
+    if (droppedMessage != null) {
+      return [droppedMessage];
+    }
+    if (_draggedMessage != null) {
+      return [_draggedMessage!];
+    }
+    return [];
+  }
+
+  void _toggleMessageSelection(MessageModel message) {
+    HapticFeedback.selectionClick();
     setState(() {
-      _replyToMessageId = message.messageId;
-      _replyToText = message.type == 'text' ? message.content : 'Attachment';
+      if (_selectedMessageIds.contains(message.messageId)) {
+        _selectedMessageIds.remove(message.messageId);
+      } else {
+        _selectedMessageIds.add(message.messageId);
+      }
     });
+  }
+
+  void _clearMessageSelection() {
+    setState(() {
+      _selectedMessageIds.clear();
+      _isDraggingMessage = false;
+      _draggedMessage = null;
+      _hoveredTopAction = null;
+      _isDragHoveringInput = false;
+    });
+  }
+
+  void _triggerReply(MessageModel message) {
+    if (_isOfficialChannel || message.isDeletedForEveryone) return;
+    HapticFeedback.mediumImpact();
+    _bounceController.forward(from: 0.0);
+    setState(() {
+      _selectedMessageIds.clear();
+      _isDraggingMessage = false;
+      _draggedMessage = null;
+      _isDragHoveringInput = false;
+      _replyToMessageId = message.messageId;
+      _replyToText = _formatReplyPreviewText(message);
+    });
+  }
+
+  String _formatReplyPreviewText(MessageModel message) {
+    final t = message.type.toLowerCase();
+    if (t == 'text') return message.content;
+    if (t == 'image') return '📷 Photo';
+    if (t == 'video') return '🎥 Video';
+    if (t == 'audio' || t == 'voice') return '🎵 Voice message';
+    if (t == 'document' || t == 'file') {
+      return '📄 ${message.mediaMetaData?['fileName'] ?? 'Document'}';
+    }
+    if (t == 'location') return '📍 Shared Location';
+    return message.content.isNotEmpty ? message.content : 'Attachment';
+  }
+
+  MessageModel _resolveMessageWithReplyText(MessageModel message) {
+    if (message.replyToMessageId == null ||
+        message.replyToMessageId!.trim().isEmpty) {
+      return message;
+    }
+    if (message.replyText != null && message.replyText!.trim().isNotEmpty) {
+      return message;
+    }
+
+    for (final m in _latestMessages) {
+      if (m.messageId == message.replyToMessageId) {
+        return message.copyWith(replyText: _formatReplyPreviewText(m));
+      }
+    }
+    return message.copyWith(replyText: 'Original message');
+  }
+
+  void _scrollToOriginalMessage(String? replyToId) {
+    if (replyToId == null || replyToId.isEmpty) return;
+    final index =
+        _latestMessages.indexWhere((m) => m.messageId == replyToId);
+    if (index != -1 && _scrollController.hasClients) {
+      final targetOffset = (index * 72.0).clamp(
+        0.0,
+        _scrollController.position.maxScrollExtent,
+      );
+      _scrollController.animateTo(
+        targetOffset,
+        duration: const Duration(milliseconds: 350),
+        curve: Curves.easeOutCubic,
+      );
+    }
+  }
+
+  void _showEditMessageDialog(MessageModel msg) {
+    if (!_canEditSingleMessage(msg)) return;
+    final TextEditingController editCtrl =
+        TextEditingController(text: msg.content);
+
+    showDialog(
+      context: context,
+      builder: (dialogCtx) {
+        return AlertDialog(
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text(
+            'Edit Message',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+          content: TextField(
+            controller: editCtrl,
+            maxLines: null,
+            autofocus: true,
+            decoration: const InputDecoration(
+              hintText: 'Edit your message...',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogCtx),
+              child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF1E4C7A),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8)),
+              ),
+              onPressed: () async {
+                final newText = editCtrl.text.trim();
+                Navigator.pop(dialogCtx);
+                _clearMessageSelection();
+                if (newText.isNotEmpty && newText != msg.content) {
+                  await _chatService.editMessage(
+                    _activeChatRoomId,
+                    msg.messageId,
+                    newText,
+                    isGroup: false,
+                  );
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Message edited')),
+                    );
+                  }
+                }
+              },
+              child: const Text('Save', style: TextStyle(color: Colors.white)),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _executeCopyMessages([MessageModel? droppedMsg]) async {
+    final targets = _getTargetMessages(droppedMsg)
+        .where((m) => !m.isDeletedForEveryone && m.content.trim().isNotEmpty)
+        .toList();
+    _clearMessageSelection();
+    if (targets.isEmpty) return;
+
+    final combinedText = targets.map((m) => m.content).join('\n');
+    await Clipboard.setData(ClipboardData(text: combinedText));
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            targets.length > 1
+                ? '${targets.length} messages copied'
+                : 'Copied to clipboard',
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<void> _executeDeleteForMe([MessageModel? droppedMsg]) async {
+    final targets = _getTargetMessages(droppedMsg);
+    _clearMessageSelection();
+    if (targets.isEmpty) return;
+
+    for (final msg in targets) {
+      try {
+        await _chatService.deleteMessageForMe(
+          _activeChatRoomId,
+          msg.messageId,
+          widget.currentUserId,
+          isGroup: false,
+        );
+      } catch (e) {
+        log("Delete for me error: $e");
+      }
+    }
+  }
+
+  Future<void> _executeDeleteForEveryone([MessageModel? droppedMsg]) async {
+    final targets = _getTargetMessages(droppedMsg)
+        .where((m) =>
+            m.senderId == widget.currentUserId && !m.isDeletedForEveryone)
+        .toList();
+    _clearMessageSelection();
+    if (targets.isEmpty) return;
+
+    for (final msg in targets) {
+      try {
+        await _chatService.deleteMessageForEveryone(
+          _activeChatRoomId,
+          msg.messageId,
+          isGroup: false,
+        );
+      } catch (e) {
+        log("Delete for everyone error: $e");
+      }
+    }
+  }
+
+  Future<void> _clearChatSafe() async {
+    final chatRef =
+        FirebaseFirestore.instance.collection('chats').doc(_activeChatRoomId);
+    final messagesSnap = await chatRef.collection('messages').get();
+
+    const int chunkSize = 200;
+    for (int i = 0; i < messagesSnap.docs.length; i += chunkSize) {
+      final chunk = messagesSnap.docs.skip(i).take(chunkSize);
+      final batch = FirebaseFirestore.instance.batch();
+      for (final doc in chunk) {
+        batch.set(
+          doc.reference,
+          {
+            'deletedForUsers': FieldValue.arrayUnion([widget.currentUserId]),
+          },
+          SetOptions(merge: true),
+        );
+      }
+      await batch.commit();
+    }
+
+    await chatRef.set({
+      'lastMessage': '',
+      'lastMessageContent': '',
+      'unreadCount_${widget.currentUserId}': 0,
+    }, SetOptions(merge: true));
+  }
+
+  Future<void> _deleteConversationSafe() async {
+    await _clearChatSafe();
+    final chatRef =
+        FirebaseFirestore.instance.collection('chats').doc(_activeChatRoomId);
+    try {
+      await chatRef.delete();
+    } catch (_) {
+      await chatRef.set({
+        'deletedBy': FieldValue.arrayUnion([widget.currentUserId]),
+      }, SetOptions(merge: true));
+    }
   }
 
   void _handleMenuAction(ChatMenuAction action) {
@@ -216,7 +509,8 @@ class _ChatScreenState extends State<ChatScreen>
           builder: (context) => BlockDialog(
             userName: widget.receiverName,
             onConfirm: () async {
-              await _chatMenuService.blockUser(widget.currentUserId, widget.receiverId);
+              await _chatMenuService.blockUser(
+                  widget.currentUserId, widget.receiverId);
               if (mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('User blocked successfully')),
@@ -233,7 +527,8 @@ class _ChatScreenState extends State<ChatScreen>
           builder: (context) => ReportDialog(
             userName: widget.receiverName,
             onConfirm: (reason) async {
-              await _chatMenuService.reportUser(widget.currentUserId, widget.receiverId, reason);
+              await _chatMenuService.reportUser(
+                  widget.currentUserId, widget.receiverId, reason);
               if (mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('User reported successfully')),
@@ -249,11 +544,19 @@ class _ChatScreenState extends State<ChatScreen>
           context: context,
           builder: (context) => ClearChatDialog(
             onConfirm: () async {
-              await _chatMenuService.clearChat(_activeChatRoomId);
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Chat cleared successfully')),
-                );
+              try {
+                await _clearChatSafe();
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Chat cleared successfully')),
+                  );
+                }
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Failed to clear chat: $e')),
+                  );
+                }
               }
             },
           ),
@@ -265,9 +568,18 @@ class _ChatScreenState extends State<ChatScreen>
           context: context,
           builder: (context) => DeleteChatDialog(
             onConfirm: () async {
-              await _chatMenuService.deleteConversation(_activeChatRoomId);
-              if (mounted) {
-                Navigator.pop(context);
+              try {
+                await _deleteConversationSafe();
+                if (mounted) {
+                  Navigator.pop(context);
+                }
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                        content: Text('Failed to delete conversation: $e')),
+                  );
+                }
               }
             },
           ),
@@ -279,8 +591,9 @@ class _ChatScreenState extends State<ChatScreen>
   Widget _buildTopActionIcon({
     required String actionKey,
     required IconData icon,
+    required String tooltip,
     required Color color,
-    required Function(MessageModel) onAccept,
+    required Function(MessageModel?) onExecute,
   }) {
     final bool isHovered = _hoveredTopAction == actionKey;
 
@@ -298,26 +611,51 @@ class _ChatScreenState extends State<ChatScreen>
         });
       },
       onAcceptWithDetails: (details) {
+        _didDropOnTarget = true;
+        HapticFeedback.heavyImpact();
         setState(() {
           _hoveredTopAction = null;
+          _isDraggingMessage = false;
         });
-        onAccept(details.data);
+        onExecute(details.data);
       },
       builder: (context, candidateData, rejectedData) {
-        return AnimatedScale(
-          scale: isHovered ? 1.45 : 1.0,
-          duration: const Duration(milliseconds: 200),
-          curve: Curves.easeOutBack,
-          child: Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: isHovered ? color.withOpacity(0.25) : Colors.transparent,
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              icon,
-              color: isHovered ? color : Colors.white,
-              size: 22,
+        return GestureDetector(
+          onTap: () {
+            HapticFeedback.lightImpact();
+            onExecute(null);
+          },
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeOutBack,
+            transform: Matrix4.translationValues(0, isHovered ? -10.0 : 0.0, 0),
+            child: AnimatedScale(
+              scale: isHovered ? 1.5 : 1.0,
+              duration: const Duration(milliseconds: 220),
+              curve: Curves.easeOutBack,
+              child: Tooltip(
+                message: tooltip,
+                child: Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: isHovered
+                        ? color.withOpacity(0.28)
+                        : Colors.white.withOpacity(0.08),
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: isHovered
+                          ? color
+                          : Colors.white.withOpacity(0.22),
+                      width: isHovered ? 1.8 : 1.0,
+                    ),
+                  ),
+                  child: Icon(
+                    icon,
+                    color: isHovered ? color : Colors.white,
+                    size: 22,
+                  ),
+                ),
+              ),
             ),
           ),
         );
@@ -326,73 +664,112 @@ class _ChatScreenState extends State<ChatScreen>
   }
 
   Widget _buildTopActionToolbar() {
+    final singleTarget = _activeSingleTargetMessage;
+    final bool canEdit =
+        singleTarget != null && _canEditSingleMessage(singleTarget);
+    final targets = _getTargetMessages();
+    final bool canDeleteForEveryone = !_isOfficialChannel &&
+        targets.isNotEmpty &&
+        targets.every((m) =>
+            m.senderId == widget.currentUserId && !m.isDeletedForEveryone);
+
     return Positioned(
-      top: 10,
-      left: 20,
-      right: 20,
+      top: 12,
+      left: 16,
+      right: 16,
       child: Material(
         color: Colors.transparent,
-        child: AnimatedOpacity(
-          duration: const Duration(milliseconds: 250),
-          opacity: _isDraggingMessage ? 1.0 : 0.0,
-          child: Container(
-            height: 52,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            decoration: BoxDecoration(
-              color: const Color(0xFF1E3A5F).withOpacity(0.92),
-              borderRadius: BorderRadius.circular(30),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.3),
-                  blurRadius: 12,
-                  offset: const Offset(0, 4),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(32),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 220),
+              height: 58,
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1E4C7A).withOpacity(0.76),
+                borderRadius: BorderRadius.circular(32),
+                border: Border.all(
+                  color: Colors.white.withOpacity(0.35),
+                  width: 1.2,
                 ),
-              ],
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                _buildTopActionIcon(
-                  actionKey: 'copy',
-                  icon: Icons.copy_rounded,
-                  color: Colors.white,
-                  onAccept: (msg) async {
-                    await Clipboard.setData(ClipboardData(text: msg.content));
-                    if (mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Copied to clipboard')),
-                      );
-                    }
-                  },
-                ),
-                _buildTopActionIcon(
-                  actionKey: 'delete_me',
-                  icon: Icons.delete_outline_rounded,
-                  color: Colors.orangeAccent,
-                  onAccept: (msg) async {
-                    try {
-                      await _chatService.deleteMessageForMe(
-                          _activeChatRoomId, msg.messageId, widget.currentUserId);
-                    } catch (e) {
-                      log("Delete for me error: $e");
-                    }
-                  },
-                ),
-                if (!_isOfficialChannel)
-                  _buildTopActionIcon(
-                    actionKey: 'delete_all',
-                    icon: Icons.delete_forever_rounded,
-                    color: Colors.redAccent,
-                    onAccept: (msg) async {
-                      try {
-                        await _chatService.deleteMessageForEveryone(
-                            _activeChatRoomId, msg.messageId);
-                      } catch (e) {
-                        log("Delete for everyone error: $e");
-                      }
-                    },
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.18),
+                    blurRadius: 14,
+                    offset: const Offset(0, 4),
                   ),
-              ],
+                ],
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  if (_isSelectionMode)
+                    GestureDetector(
+                      onTap: _clearMessageSelection,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.close_rounded,
+                                color: Colors.white, size: 17),
+                            const SizedBox(width: 4),
+                            Text(
+                              '${_selectedMessageIds.length}',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13.5,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  _buildTopActionIcon(
+                    actionKey: 'copy',
+                    icon: Icons.copy_rounded,
+                    tooltip: 'Copy',
+                    color: Colors.cyanAccent,
+                    onExecute: _executeCopyMessages,
+                  ),
+                  if (canEdit)
+                    _buildTopActionIcon(
+                      actionKey: 'edit',
+                      icon: Icons.edit_rounded,
+                      tooltip: 'Edit (within 5 mins)',
+                      color: Colors.lightBlueAccent,
+                      onExecute: (dropped) {
+                        final msgToEdit = dropped ?? singleTarget;
+                        if (msgToEdit != null) {
+                          _showEditMessageDialog(msgToEdit);
+                        }
+                      },
+                    ),
+                  _buildTopActionIcon(
+                    actionKey: 'delete_me',
+                    icon: Icons.delete_outline_rounded,
+                    tooltip: 'Delete for Me',
+                    color: Colors.orangeAccent,
+                    onExecute: _executeDeleteForMe,
+                  ),
+                  if (canDeleteForEveryone)
+                    _buildTopActionIcon(
+                      actionKey: 'delete_all',
+                      icon: Icons.delete_forever_rounded,
+                      tooltip: 'Delete for Everyone',
+                      color: Colors.redAccent,
+                      onExecute: _executeDeleteForEveryone,
+                    ),
+                ],
+              ),
             ),
           ),
         ),
@@ -420,7 +797,8 @@ class _ChatScreenState extends State<ChatScreen>
             errorBuilder: (_, __, ___) => const CircleAvatar(
               radius: 18,
               backgroundColor: Colors.white24,
-              child: Icon(Icons.verified_rounded, color: Colors.tealAccent, size: 20),
+              child: Icon(Icons.verified_rounded,
+                  color: Colors.tealAccent, size: 20),
             ),
           ),
         ),
@@ -490,7 +868,8 @@ class _ChatScreenState extends State<ChatScreen>
           final data = statusSnapshot.data!;
           isOnline = data['isOnline'] == true;
 
-          if (data['fullName'] != null && data['fullName'].toString().isNotEmpty) {
+          if (data['fullName'] != null &&
+              data['fullName'].toString().isNotEmpty) {
             displayName = data['fullName'].toString();
           }
           if (data['profileImageUrl'] != null &&
@@ -500,7 +879,8 @@ class _ChatScreenState extends State<ChatScreen>
         }
 
         if (displayName.isEmpty || displayName == 'User') {
-          displayName = widget.receiverName.isNotEmpty ? widget.receiverName : 'User';
+          displayName =
+              widget.receiverName.isNotEmpty ? widget.receiverName : 'User';
         }
 
         return Row(
@@ -520,7 +900,8 @@ class _ChatScreenState extends State<ChatScreen>
               backgroundImage:
                   displayPic.isNotEmpty ? NetworkImage(displayPic) : null,
               child: displayPic.isEmpty
-                  ? const Icon(Icons.person_rounded, color: Colors.white, size: 20)
+                  ? const Icon(Icons.person_rounded,
+                      color: Colors.white, size: 20)
                   : null,
             ),
             const SizedBox(width: 10),
@@ -545,12 +926,14 @@ class _ChatScreenState extends State<ChatScreen>
                         .collection('typing')
                         .doc(_activeChatRoomId)
                         .snapshots()
-                        .handleError((error) => log('Typing Stream Error: $error')),
+                        .handleError(
+                            (error) => log('Typing Stream Error: $error')),
                     builder: (context, typingSnapshot) {
                       bool isTyping = false;
-                      if (typingSnapshot.hasData && typingSnapshot.data!.exists) {
-                        var data =
-                            typingSnapshot.data!.data() as Map<String, dynamic>?;
+                      if (typingSnapshot.hasData &&
+                          typingSnapshot.data!.exists) {
+                        var data = typingSnapshot.data!.data()
+                            as Map<String, dynamic>?;
                         isTyping = data?[widget.receiverId] ?? false;
                       }
 
@@ -570,8 +953,9 @@ class _ChatScreenState extends State<ChatScreen>
                         style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w500,
-                          color:
-                              isOnline ? const Color(0xFF22C55E) : Colors.white70,
+                          color: isOnline
+                              ? const Color(0xFF22C55E)
+                              : Colors.white70,
                         ),
                       );
                     },
@@ -591,8 +975,13 @@ class _ChatScreenState extends State<ChatScreen>
       canPop: false,
       onPopInvokedWithResult: (didPop, result) async {
         if (didPop) return;
+        if (_isSelectionMode) {
+          _clearMessageSelection();
+          return;
+        }
         if (!_isOfficialChannel) {
-          _chatService.updateTypingStatus(_activeChatRoomId, widget.currentUserId, false);
+          _chatService.updateTypingStatus(
+              _activeChatRoomId, widget.currentUserId, false);
         }
         await _markMessagesAsReadSafe();
         if (context.mounted) {
@@ -612,7 +1001,8 @@ class _ChatScreenState extends State<ChatScreen>
               : _buildStandardAppBarTitle(),
           actions: [
             IconButton(
-              icon: const Icon(Icons.wallpaper_rounded, color: Colors.white, size: 22),
+              icon: const Icon(Icons.wallpaper_rounded,
+                  color: Colors.white, size: 22),
               tooltip: 'Change Chat Theme',
               onPressed: _changeChatThemeFromGallery,
             ),
@@ -654,15 +1044,21 @@ class _ChatScreenState extends State<ChatScreen>
                                 );
                               }
 
-                              if (snapshot.connectionState == ConnectionState.waiting) {
+                              if (snapshot.connectionState ==
+                                  ConnectionState.waiting) {
                                 return const Center(
                                     child: CircularProgressIndicator(
-                                        color: Color(0xFF1E4C7A), strokeWidth: 3));
+                                        color: Color(0xFF1E4C7A),
+                                        strokeWidth: 3));
                               }
 
-                              final messages = snapshot.data ?? [];
+                              final rawMessages = snapshot.data ?? [];
+                              _latestMessages = rawMessages
+                                  .where((m) => !m.deletedForUsers
+                                      .contains(widget.currentUserId))
+                                  .toList();
 
-                              if (messages.isEmpty) {
+                              if (_latestMessages.isEmpty) {
                                 return Center(
                                   child: Container(
                                     padding: const EdgeInsets.symmetric(
@@ -704,74 +1100,190 @@ class _ChatScreenState extends State<ChatScreen>
                                 controller: _scrollController,
                                 reverse: true,
                                 physics: const BouncingScrollPhysics(),
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 16, vertical: 12),
-                                itemCount: messages.length,
+                                padding: EdgeInsets.only(
+                                  left: 12,
+                                  right: 12,
+                                  top: _showTopActionBar ? 74 : 12,
+                                  bottom: 12,
+                                ),
+                                itemCount: _latestMessages.length,
                                 itemBuilder: (context, index) {
-                                  final message = messages[index];
+                                  final rawMsg = _latestMessages[index];
+                                  final message =
+                                      _resolveMessageWithReplyText(rawMsg);
                                   final bool isMe =
                                       message.senderId == widget.currentUserId;
+                                  final bool isSelected = _selectedMessageIds
+                                      .contains(message.messageId);
 
-                                  return LongPressDraggable<MessageModel>(
-                                    delay: const Duration(milliseconds: 500),
-                                    data: message,
-                                    onDragStarted: () {
-                                      HapticFeedback.mediumImpact();
-                                      setState(() {
-                                        _isDraggingMessage = true;
-                                        _draggedMessage = message;
-                                      });
-                                    },
-                                    onDragEnd: (_) {
-                                      setState(() {
-                                        _isDraggingMessage = false;
-                                        _draggedMessage = null;
-                                        _hoveredTopAction = null;
-                                        _isDragHoveringInput = false;
-                                      });
-                                    },
-                                    onDraggableCanceled: (_, __) {
-                                      setState(() {
-                                        _isDraggingMessage = false;
-                                        _draggedMessage = null;
-                                        _hoveredTopAction = null;
-                                        _isDragHoveringInput = false;
-                                      });
-                                    },
-                                    feedback: Material(
-                                      color: Colors.transparent,
-                                      child: Opacity(
-                                        opacity: 0.85,
-                                        child: Transform.scale(
-                                          scale: 1.05,
-                                          child: MessageBubble(
-                                            message: message,
-                                            isMe: isMe,
-                                            chatRoomId: _activeChatRoomId,
-                                            currentUserId: widget.currentUserId,
-                                            onReplyPressed: (_) {},
+                                  return GestureDetector(
+                                    behavior: HitTestBehavior.translucent,
+                                    onTap: _isSelectionMode
+                                        ? () =>
+                                            _toggleMessageSelection(message)
+                                        : null,
+                                    child: AnimatedContainer(
+                                      duration:
+                                          const Duration(milliseconds: 180),
+                                      margin: const EdgeInsets.symmetric(
+                                          vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: isSelected
+                                            ? const Color(0xFF1E4C7A)
+                                                .withOpacity(0.14)
+                                            : Colors.transparent,
+                                        borderRadius: BorderRadius.circular(14),
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          if (_isSelectionMode)
+                                            Padding(
+                                              padding: const EdgeInsets.only(
+                                                  left: 6, right: 2),
+                                              child: Icon(
+                                                isSelected
+                                                    ? Icons.check_circle_rounded
+                                                    : Icons
+                                                        .radio_button_unchecked_rounded,
+                                                color: isSelected
+                                                    ? const Color(0xFF1E4C7A)
+                                                    : Colors.grey.shade400,
+                                                size: 20,
+                                              ),
+                                            ),
+                                          Expanded(
+                                            child:
+                                                LongPressDraggable<MessageModel>(
+                                              delay: const Duration(
+                                                  milliseconds: 500),
+                                              data: message,
+                                              onDragStarted: () {
+                                                HapticFeedback.mediumImpact();
+                                                setState(() {
+                                                  _didDropOnTarget = false;
+                                                  _isDraggingMessage = true;
+                                                  _draggedMessage = message;
+                                                });
+                                              },
+                                              onDragUpdate: (details) {
+                                                if (_isOfficialChannel) return;
+                                                final screenH =
+                                                    MediaQuery.of(context)
+                                                        .size
+                                                        .height;
+                                                final bottomInset =
+                                                    MediaQuery.of(context)
+                                                        .viewInsets
+                                                        .bottom;
+                                                final replyTriggerLine =
+                                                    screenH -
+                                                        bottomInset -
+                                                        140;
+                                                final nearInput = details
+                                                        .globalPosition.dy >=
+                                                    replyTriggerLine;
+                                                if (nearInput !=
+                                                    _isDragHoveringInput) {
+                                                  HapticFeedback
+                                                      .selectionClick();
+                                                  setState(() {
+                                                    _isDragHoveringInput =
+                                                        nearInput;
+                                                  });
+                                                }
+                                              },
+                                              onDragEnd: (details) {
+                                                if (_isDragHoveringInput &&
+                                                    !_didDropOnTarget &&
+                                                    _draggedMessage != null) {
+                                                  _didDropOnTarget = true;
+                                                  _triggerReply(
+                                                      _draggedMessage!);
+                                                  return;
+                                                }
+
+                                                setState(() {
+                                                  _isDraggingMessage = false;
+                                                  if (!_didDropOnTarget) {
+                                                    _selectedMessageIds.add(
+                                                        message.messageId);
+                                                  }
+                                                  _draggedMessage = null;
+                                                  _hoveredTopAction = null;
+                                                  _isDragHoveringInput = false;
+                                                });
+                                              },
+                                              feedback: Material(
+                                                color: Colors.transparent,
+                                                child: Transform.scale(
+                                                  scale: 1.06,
+                                                  child: Container(
+                                                    width: MediaQuery.of(
+                                                                context)
+                                                            .size
+                                                            .width *
+                                                        0.85,
+                                                    decoration: BoxDecoration(
+                                                      boxShadow: [
+                                                        BoxShadow(
+                                                          color: const Color(
+                                                                  0xFF1E4C7A)
+                                                              .withOpacity(
+                                                                  0.26),
+                                                          blurRadius: 20,
+                                                          spreadRadius: 2,
+                                                          offset: const Offset(
+                                                              0, 8),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                    child: IgnorePointer(
+                                                      child: MessageBubble(
+                                                        message: message,
+                                                        isMe: isMe,
+                                                        chatRoomId:
+                                                            _activeChatRoomId,
+                                                        currentUserId: widget
+                                                            .currentUserId,
+                                                        onReplyPressed: (_) {},
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                              childWhenDragging: Opacity(
+                                                opacity: 0.25,
+                                                child: IgnorePointer(
+                                                  child: MessageBubble(
+                                                    message: message,
+                                                    isMe: isMe,
+                                                    chatRoomId:
+                                                        _activeChatRoomId,
+                                                    currentUserId:
+                                                        widget.currentUserId,
+                                                    onReplyPressed: (_) {},
+                                                  ),
+                                                ),
+                                              ),
+                                              child: MessageBubble(
+                                                message: message,
+                                                isMe: isMe,
+                                                chatRoomId: _activeChatRoomId,
+                                                currentUserId:
+                                                    widget.currentUserId,
+                                                onReplyPressed:
+                                                    (repliedMessage) {
+                                                  _triggerReply(repliedMessage);
+                                                },
+                                                onReplyPreviewTap: () =>
+                                                    _scrollToOriginalMessage(
+                                                        message
+                                                            .replyToMessageId),
+                                              ),
+                                            ),
                                           ),
-                                        ),
+                                        ],
                                       ),
-                                    ),
-                                    childWhenDragging: Opacity(
-                                      opacity: 0.3,
-                                      child: MessageBubble(
-                                        message: message,
-                                        isMe: isMe,
-                                        chatRoomId: _activeChatRoomId,
-                                        currentUserId: widget.currentUserId,
-                                        onReplyPressed: (_) {},
-                                      ),
-                                    ),
-                                    child: MessageBubble(
-                                      message: message,
-                                      isMe: isMe,
-                                      chatRoomId: _activeChatRoomId,
-                                      currentUserId: widget.currentUserId,
-                                      onReplyPressed: (repliedMessage) {
-                                        _triggerReply(repliedMessage);
-                                      },
                                     ),
                                   );
                                 },
@@ -826,59 +1338,96 @@ class _ChatScreenState extends State<ChatScreen>
                         setState(() => _isDragHoveringInput = false);
                       },
                       onAcceptWithDetails: (details) {
+                        _didDropOnTarget = true;
                         setState(() => _isDragHoveringInput = false);
                         _triggerReply(details.data);
                       },
                       builder: (context, candidateData, rejectedData) {
-                        return AnimatedScale(
-                          scale: _isDragHoveringInput ? 1.03 : 1.0,
-                          duration: const Duration(milliseconds: 200),
-                          curve: Curves.elasticOut,
-                          child: ScaleTransition(
-                            scale: _bounceAnimation,
-                            child: AnimatedContainer(
-                              duration: const Duration(milliseconds: 200),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                border: _isDragHoveringInput
-                                    ? Border.all(
-                                        color: const Color(0xFF1E4C7A), width: 2)
-                                    : null,
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: _isDragHoveringInput
-                                        ? const Color(0xFF1E4C7A).withOpacity(0.2)
-                                        : Colors.black.withOpacity(0.03),
-                                    blurRadius: _isDragHoveringInput ? 15 : 10,
-                                    offset: const Offset(0, -3),
+                        return Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            AnimatedContainer(
+                              duration: const Duration(milliseconds: 180),
+                              height: _isDragHoveringInput ? 34 : 0,
+                              width: double.infinity,
+                              color: const Color(0xFF1E4C7A),
+                              alignment: Alignment.center,
+                              child: _isDragHoveringInput
+                                  ? const Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      children: [
+                                        Icon(Icons.reply_rounded,
+                                            color: Colors.white, size: 17),
+                                        SizedBox(width: 6),
+                                        Text(
+                                          'Release here to Reply',
+                                          style: TextStyle(
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 12.5,
+                                          ),
+                                        ),
+                                      ],
+                                    )
+                                  : null,
+                            ),
+                            AnimatedScale(
+                              scale: _isDragHoveringInput ? 1.04 : 1.0,
+                              duration: const Duration(milliseconds: 220),
+                              curve: Curves.elasticOut,
+                              child: ScaleTransition(
+                                scale: _bounceAnimation,
+                                child: AnimatedContainer(
+                                  duration: const Duration(milliseconds: 200),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    border: _isDragHoveringInput
+                                        ? Border.all(
+                                            color: const Color(0xFF1E4C7A),
+                                            width: 2.2)
+                                        : null,
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: _isDragHoveringInput
+                                            ? const Color(0xFF1E4C7A)
+                                                .withOpacity(0.28)
+                                            : Colors.black.withOpacity(0.03),
+                                        blurRadius:
+                                            _isDragHoveringInput ? 18 : 10,
+                                        offset: const Offset(0, -3),
+                                      ),
+                                    ],
                                   ),
-                                ],
-                              ),
-                              child: ChatInputBar(
-                                chatRoomId: _activeChatRoomId,
-                                senderId: widget.currentUserId,
-                                receiverId: widget.receiverId,
-                                replyToMessageId: _replyToMessageId,
-                                replyToText: _replyToText,
-                                onCancelReply: () {
-                                  setState(() {
-                                    _replyToMessageId = null;
-                                    _replyToText = null;
-                                  });
-                                },
-                                onTypingChanged: (isTyping) {
-                                  _chatService.updateTypingStatus(
-                                      _activeChatRoomId, widget.currentUserId, isTyping);
-                                },
+                                  child: ChatInputBar(
+                                    chatRoomId: _activeChatRoomId,
+                                    senderId: widget.currentUserId,
+                                    receiverId: widget.receiverId,
+                                    replyToMessageId: _replyToMessageId,
+                                    replyToText: _replyToText,
+                                    onCancelReply: () {
+                                      setState(() {
+                                        _replyToMessageId = null;
+                                        _replyToText = null;
+                                      });
+                                    },
+                                    onTypingChanged: (isTyping) {
+                                      _chatService.updateTypingStatus(
+                                          _activeChatRoomId,
+                                          widget.currentUserId,
+                                          isTyping);
+                                    },
+                                  ),
+                                ),
                               ),
                             ),
-                          ),
+                          ],
                         );
                       },
                     ),
                 ],
               ),
-              if (_isDraggingMessage) _buildTopActionToolbar(),
+              if (_showTopActionBar) _buildTopActionToolbar(),
             ],
           ),
         ),
