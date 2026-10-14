@@ -1,11 +1,13 @@
 import 'dart:ui';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'ai_assistant_screen.dart';
 import 'chat_list_screen.dart';
+import 'notification_screen.dart';
 import 'search_teacher_screen.dart';
 import 'student_profile_screen.dart';
 import 'student_teachers_screen.dart';
-import 'notification_screen.dart';
-import 'ai_assistant_screen.dart';
 
 class StudentHomeScreen extends StatefulWidget {
   final String currentUserId;
@@ -22,28 +24,67 @@ class StudentHomeScreen extends StatefulWidget {
 class _StudentHomeScreenState extends State<StudentHomeScreen> {
   int _selectedIndex = 0;
   late final List<Widget> _screens;
+  late final Stream<QuerySnapshot> _unreadNotificationsStream;
+
+  static const Color _primaryNavy = Color(0xFF0F172A);
+  static const Color _brandBlue = Color(0xFF1E4C7A);
+  static const Color _accentBlue = Color(0xFF2563EB);
+  static const Color _scaffoldBg = Color(0xFFF8FAFC);
+
+  static const List<String> _tabSubtitles = [
+    'Chats & Study Groups',
+    'Connected Educators',
+    'Discover Verified Tutors',
+    'AI Study Companion',
+    'Academic Profile',
+  ];
 
   @override
   void initState() {
     super.initState();
+    // Keep each screen isolated in memory so tab switches never trigger reloads
     _screens = [
-      ChatListScreen(
-        currentUserId: widget.currentUserId,
-        isTeacher: false,
+      RepaintBoundary(
+        key: const PageStorageKey<String>('student_tab_chats'),
+        child: ChatListScreen(
+          currentUserId: widget.currentUserId,
+          isTeacher: false,
+        ),
       ),
-      const StudentTeachersScreen(),
-      const TeacherSearchScreen(),
-      const AiAssistantScreen(),
-      StudentProfileScreen(currentUserId: widget.currentUserId),
+      const RepaintBoundary(
+        key: PageStorageKey<String>('student_tab_teachers'),
+        child: StudentTeachersScreen(),
+      ),
+      const RepaintBoundary(
+        key: PageStorageKey<String>('student_tab_search'),
+        child: TeacherSearchScreen(),
+      ),
+      const RepaintBoundary(
+        key: PageStorageKey<String>('student_tab_ai'),
+        child: AiAssistantScreen(),
+      ),
+      RepaintBoundary(
+        key: const PageStorageKey<String>('student_tab_profile'),
+        child: StudentProfileScreen(currentUserId: widget.currentUserId),
+      ),
     ];
+
+    // Cached stream in initState so switching tabs never recreates the listener
+    _unreadNotificationsStream = FirebaseFirestore.instance
+        .collection('notifications')
+        .where('receiverId', isEqualTo: widget.currentUserId)
+        .where('isRead', isEqualTo: false)
+        .snapshots();
   }
 
   void _onTabTapped(int index) {
     if (_selectedIndex == index) return;
+    HapticFeedback.selectionClick();
     setState(() => _selectedIndex = index);
   }
 
   void _handleFabPressed() {
+    HapticFeedback.lightImpact();
     if (_selectedIndex == 0) {
       setState(() => _selectedIndex = 2);
     } else if (_selectedIndex == 2) {
@@ -54,58 +95,212 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
   void _showFilterBottomSheet() {
     showModalBottomSheet(
       context: context,
-      backgroundColor: Colors.white,
+      backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-      ),
       builder: (context) {
-        return Padding(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  margin: const EdgeInsets.only(bottom: 20),
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade300,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                ),
-              ),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text(
-                    'Filter Teachers',
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF1A1C1E),
+        return Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+          ),
+          padding: const EdgeInsets.fromLTRB(24, 14, 24, 28),
+          child: SafeArea(
+            top: false,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 44,
+                    height: 4.5,
+                    margin: const EdgeInsets.only(bottom: 20),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE2E8F0),
+                      borderRadius: BorderRadius.circular(10),
                     ),
                   ),
-                  IconButton(
-                    icon: const Icon(Icons.close_rounded),
-                    onPressed: () => Navigator.pop(context),
-                  )
-                ],
-              ),
-              const SizedBox(height: 20),
-              const Center(
-                child: Padding(
-                  padding: EdgeInsets.symmetric(vertical: 30),
-                  child: Text(
-                    'Advanced filters will appear here',
-                    style: TextStyle(color: Colors.grey, fontSize: 15, fontWeight: FontWeight.w500),
+                ),
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: _accentBlue.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(
+                        Icons.tune_rounded,
+                        color: _accentBlue,
+                        size: 20,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Filter Teachers',
+                            style: TextStyle(
+                              fontSize: 19,
+                              fontWeight: FontWeight.w800,
+                              color: _primaryNavy,
+                            ),
+                          ),
+                          SizedBox(height: 2),
+                          Text(
+                            'Use the search & subject chips on the screen to refine tutors',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFF64748B),
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(
+                        Icons.close_rounded,
+                        color: Color(0xFF64748B),
+                      ),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(18),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(
+                        Icons.verified_user_rounded,
+                        color: _brandBlue,
+                        size: 22,
+                      ),
+                      SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          'Advanced filters are active directly inside the Search tab (by Subject, Class, Location & Rating).',
+                          style: TextStyle(
+                            color: Color(0xFF334155),
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w600,
+                            height: 1.4,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
+                const SizedBox(height: 18),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _brandBlue,
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text(
+                      'Done',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14.5,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildNotificationActionButton() {
+    return StreamBuilder<QuerySnapshot>(
+      stream: _unreadNotificationsStream,
+      builder: (context, snapshot) {
+        final docs = snapshot.data?.docs ?? const [];
+        final int unreadCount = docs.where((d) {
+          final data = d.data() as Map<String, dynamic>;
+          final type = (data['type'] ?? '').toString().toLowerCase();
+          return type != 'chat' &&
+              type != 'message' &&
+              type != 'group_message' &&
+              !data.containsKey('chatRoomId');
+        }).length;
+
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(14),
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const NotificationScreen()),
+              );
+            },
+            child: Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: const Color(0xFFF1F5F9),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
               ),
-              const SizedBox(height: 10),
-            ],
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  const Icon(
+                    Icons.notifications_none_rounded,
+                    color: _primaryNavy,
+                    size: 22,
+                  ),
+                  if (unreadCount > 0)
+                    Positioned(
+                      top: 6,
+                      right: 6,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 4.5, vertical: 1),
+                        constraints: const BoxConstraints(
+                          minWidth: 16,
+                          minHeight: 16,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFEF4444),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: Colors.white, width: 1.5),
+                        ),
+                        child: Text(
+                          unreadCount > 9 ? '9+' : '$unreadCount',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 9,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
           ),
         );
       },
@@ -114,70 +309,227 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
 
   List<Widget> _buildAppBarActions() {
     return [
-      IconButton(
-        tooltip: 'Notifications',
-        icon: const Icon(Icons.notifications_none_rounded, color: Color(0xFF1E4C7A), size: 24),
-        onPressed: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const NotificationScreen()),
-          );
-        },
-      ),
-      if (_selectedIndex == 0) ...[
-        IconButton(
-          tooltip: 'Mark all as read',
-          icon: const Icon(Icons.mark_chat_read_outlined, color: Color(0xFF1E4C7A), size: 22),
-          onPressed: () {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: const Text('All messages marked as read'),
-                behavior: SnackBarBehavior.floating,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      if (_selectedIndex == 0)
+        Padding(
+          padding: const EdgeInsets.only(right: 4),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: () {
+              HapticFeedback.lightImpact();
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: const Row(
+                    children: [
+                      Icon(Icons.check_circle_rounded,
+                          color: Colors.white, size: 18),
+                      SizedBox(width: 8),
+                      Text('All messages marked as read'),
+                    ],
+                  ),
+                  behavior: SnackBarBehavior.floating,
+                  backgroundColor: _primaryNavy,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                ),
+              );
+            },
+            child: Tooltip(
+              message: 'Mark all as read',
+              child: Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF1F5F9),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                ),
+                child: const Icon(
+                  Icons.mark_chat_read_outlined,
+                  color: _brandBlue,
+                  size: 20,
+                ),
               ),
-            );
-          },
+            ),
+          ),
         ),
-      ],
-      const SizedBox(width: 8),
+      _buildNotificationActionButton(),
+      const SizedBox(width: 12),
     ];
+  }
+
+  Widget _buildModernBottomNavItem({
+    required int index,
+    required IconData icon,
+    required IconData activeIcon,
+    required String label,
+  }) {
+    final bool isSelected = _selectedIndex == index;
+
+    return Expanded(
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => _onTabTapped(index),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOutCubic,
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 220),
+                curve: Curves.easeOutCubic,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+                decoration: BoxDecoration(
+                  gradient: isSelected
+                      ? const LinearGradient(
+                          colors: [Color(0xFF1E4C7A), Color(0xFF2563EB)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        )
+                      : null,
+                  color: isSelected ? null : Colors.transparent,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: isSelected
+                      ? [
+                          BoxShadow(
+                            color: _accentBlue.withOpacity(0.25),
+                            blurRadius: 8,
+                            offset: const Offset(0, 3),
+                          ),
+                        ]
+                      : null,
+                ),
+                child: Icon(
+                  isSelected ? activeIcon : icon,
+                  size: 21,
+                  color: isSelected ? Colors.white : const Color(0xFF64748B),
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 10.8,
+                  fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                  color: isSelected ? _brandBlue : const Color(0xFF64748B),
+                  letterSpacing: 0.1,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final bool showFab = _selectedIndex == 0 || _selectedIndex == 2;
-    final bool showAppBar = _selectedIndex == 0 || _selectedIndex == 1 || _selectedIndex == 2;
+    final bool showAppBar =
+        _selectedIndex == 0 || _selectedIndex == 1 || _selectedIndex == 2;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF7F9FC),
+      backgroundColor: _scaffoldBg,
       appBar: showAppBar
           ? AppBar(
               backgroundColor: Colors.white,
               elevation: 0,
-              scrolledUnderElevation: 0,
+              scrolledUnderElevation: 0.5,
               centerTitle: false,
-              titleSpacing: 20,
+              titleSpacing: 16,
+              bottom: PreferredSize(
+                preferredSize: const Size.fromHeight(1),
+                child: Container(
+                  height: 1,
+                  color: const Color(0xFFE2E8F0),
+                ),
+              ),
               title: Row(
                 children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: Image.asset(
-                      'assets/images/app_logo.png',
-                      width: 32,
-                      height: 32,
-                      fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) =>
-                          const Icon(Icons.school_rounded, color: Color(0xFF1E4C7A), size: 30),
+                  Container(
+                    padding: const EdgeInsets.all(2),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(11),
+                      gradient: const LinearGradient(
+                        colors: [_brandBlue, _accentBlue],
+                      ),
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(9),
+                      child: Container(
+                        color: Colors.white,
+                        child: Image.asset(
+                          'assets/images/app_logo.png',
+                          width: 32,
+                          height: 32,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) =>
+                              const Padding(
+                            padding: EdgeInsets.all(4.0),
+                            child: Icon(
+                              Icons.school_rounded,
+                              color: _brandBlue,
+                              size: 24,
+                            ),
+                          ),
+                        ),
+                      ),
                     ),
                   ),
-                  const SizedBox(width: 10),
-                  const Text(
-                    'FYBTT',
-                    style: TextStyle(
-                      color: Color(0xFF1E4C7A),
-                      fontWeight: FontWeight.w900,
-                      fontSize: 20,
-                      letterSpacing: 0.5,
+                  const SizedBox(width: 11),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Row(
+                          children: [
+                            const Text(
+                              'FYBTT',
+                              style: TextStyle(
+                                color: _primaryNavy,
+                                fontWeight: FontWeight.w900,
+                                fontSize: 18.5,
+                                letterSpacing: 0.4,
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 1.5,
+                              ),
+                              decoration: BoxDecoration(
+                                color: _accentBlue.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: const Text(
+                                'STUDENT',
+                                style: TextStyle(
+                                  color: _accentBlue,
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: 0.5,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        Text(
+                          _tabSubtitles[_selectedIndex],
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Color(0xFF64748B),
+                            fontSize: 11.2,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],
@@ -190,18 +542,42 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
         children: _screens,
       ),
       floatingActionButton: showFab
-          ? FloatingActionButton(
-              backgroundColor: const Color(0xFF1E4C7A),
-              elevation: 4,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              onPressed: _handleFabPressed,
-              child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 250),
-                transitionBuilder: (child, animation) => ScaleTransition(scale: animation, child: child),
-                child: Icon(
-                  _selectedIndex == 0 ? Icons.chat_rounded : Icons.filter_alt_rounded,
-                  key: ValueKey<int>(_selectedIndex),
-                  color: Colors.white,
+          ? Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(18),
+                gradient: const LinearGradient(
+                  colors: [_brandBlue, _accentBlue],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: _brandBlue.withOpacity(0.32),
+                    blurRadius: 14,
+                    offset: const Offset(0, 6),
+                  ),
+                ],
+              ),
+              child: FloatingActionButton(
+                backgroundColor: Colors.transparent,
+                elevation: 0,
+                highlightElevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                onPressed: _handleFabPressed,
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 220),
+                  transitionBuilder: (child, animation) =>
+                      ScaleTransition(scale: animation, child: child),
+                  child: Icon(
+                    _selectedIndex == 0
+                        ? Icons.person_search_rounded
+                        : Icons.tune_rounded,
+                    key: ValueKey<int>(_selectedIndex),
+                    color: Colors.white,
+                    size: 24,
+                  ),
                 ),
               ),
             )
@@ -209,9 +585,12 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
           color: Colors.white,
+          border: const Border(
+            top: BorderSide(color: Color(0xFFE2E8F0), width: 1),
+          ),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.04),
+              color: _primaryNavy.withOpacity(0.05),
               blurRadius: 20,
               offset: const Offset(0, -4),
             ),
@@ -219,80 +598,42 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
         ),
         child: SafeArea(
           top: false,
-          child: BottomNavigationBar(
-            currentIndex: _selectedIndex,
-            onTap: _onTabTapped,
-            backgroundColor: Colors.white,
-            elevation: 0,
-            type: BottomNavigationBarType.fixed,
-            selectedItemColor: const Color(0xFF1E4C7A),
-            unselectedItemColor: Colors.grey.shade400,
-            selectedLabelStyle: const TextStyle(
-              fontWeight: FontWeight.bold,
-              fontSize: 11,
-              letterSpacing: 0.3,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            child: Row(
+              children: [
+                _buildModernBottomNavItem(
+                  index: 0,
+                  icon: Icons.chat_bubble_outline_rounded,
+                  activeIcon: Icons.chat_bubble_rounded,
+                  label: 'Messages',
+                ),
+                _buildModernBottomNavItem(
+                  index: 1,
+                  icon: Icons.school_outlined,
+                  activeIcon: Icons.school_rounded,
+                  label: 'Teachers',
+                ),
+                _buildModernBottomNavItem(
+                  index: 2,
+                  icon: Icons.search_rounded,
+                  activeIcon: Icons.manage_search_rounded,
+                  label: 'Search',
+                ),
+                _buildModernBottomNavItem(
+                  index: 3,
+                  icon: Icons.auto_awesome_outlined,
+                  activeIcon: Icons.auto_awesome_rounded,
+                  label: 'AI Assistant',
+                ),
+                _buildModernBottomNavItem(
+                  index: 4,
+                  icon: Icons.person_outline_rounded,
+                  activeIcon: Icons.person_rounded,
+                  label: 'Profile',
+                ),
+              ],
             ),
-            unselectedLabelStyle: const TextStyle(
-              fontWeight: FontWeight.w600,
-              fontSize: 11,
-            ),
-            items: const [
-              BottomNavigationBarItem(
-                icon: Padding(
-                  padding: EdgeInsets.only(bottom: 4),
-                  child: Icon(Icons.chat_bubble_outline_rounded, size: 22),
-                ),
-                activeIcon: Padding(
-                  padding: EdgeInsets.only(bottom: 4),
-                  child: Icon(Icons.chat_bubble_rounded, size: 22),
-                ),
-                label: 'Messages',
-              ),
-              BottomNavigationBarItem(
-                icon: Padding(
-                  padding: EdgeInsets.only(bottom: 4),
-                  child: Icon(Icons.school_outlined, size: 24),
-                ),
-                activeIcon: Padding(
-                  padding: EdgeInsets.only(bottom: 4),
-                  child: Icon(Icons.school_rounded, size: 24),
-                ),
-                label: 'Teachers',
-              ),
-              BottomNavigationBarItem(
-                icon: Padding(
-                  padding: EdgeInsets.only(bottom: 4),
-                  child: Icon(Icons.search_rounded, size: 24),
-                ),
-                activeIcon: Padding(
-                  padding: EdgeInsets.only(bottom: 4),
-                  child: Icon(Icons.manage_search_rounded, size: 24),
-                ),
-                label: 'Search',
-              ),
-              BottomNavigationBarItem(
-                icon: Padding(
-                  padding: EdgeInsets.only(bottom: 4),
-                  child: Icon(Icons.auto_awesome_outlined, size: 22),
-                ),
-                activeIcon: Padding(
-                  padding: EdgeInsets.only(bottom: 4),
-                  child: Icon(Icons.auto_awesome_rounded, size: 22),
-                ),
-                label: 'AI Assistant',
-              ),
-              BottomNavigationBarItem(
-                icon: Padding(
-                  padding: EdgeInsets.only(bottom: 4),
-                  child: Icon(Icons.person_outline_rounded, size: 24),
-                ),
-                activeIcon: Padding(
-                  padding: EdgeInsets.only(bottom: 4),
-                  child: Icon(Icons.person_rounded, size: 24),
-                ),
-                label: 'Profile',
-              ),
-            ],
           ),
         ),
       ),
