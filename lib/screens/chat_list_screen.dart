@@ -2,7 +2,10 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import '../services/chat_service.dart';
 import 'chat_screen.dart';
+import 'group/create_group_screen.dart';
 import 'group/group_chat_screen.dart';
+import 'group/group_list_screen.dart';
+import 'group/invitation_list_screen.dart';
 
 class ChatListScreen extends StatefulWidget {
   final String currentUserId;
@@ -19,9 +22,14 @@ class ChatListScreen extends StatefulWidget {
 }
 
 class _ChatListScreenState extends State<ChatListScreen>
-    with WidgetsBindingObserver, AutomaticKeepAliveClientMixin {
+    with
+        WidgetsBindingObserver,
+        AutomaticKeepAliveClientMixin,
+        SingleTickerProviderStateMixin {
   final ChatService _chatService = ChatService();
   final TextEditingController _searchController = TextEditingController();
+  late TabController _tabController;
+
   String _searchText = '';
   String _currentUserName = 'User';
 
@@ -36,6 +44,13 @@ class _ChatListScreenState extends State<ChatListScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _tabController = TabController(length: 2, vsync: this);
+    _tabController.addListener(() {
+      if (_tabController.index == 1 && _isSelectionMode) {
+        _clearSelection();
+      }
+      if (mounted) setState(() {});
+    });
     _loadCurrentUserName();
     _searchController.addListener(() {
       if (mounted) {
@@ -74,6 +89,7 @@ class _ChatListScreenState extends State<ChatListScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _tabController.dispose();
     _searchController.dispose();
     super.dispose();
   }
@@ -115,16 +131,35 @@ class _ChatListScreenState extends State<ChatListScreen>
             ),
             onPressed: () async {
               Navigator.pop(ctx);
-
-              for (String docId in _selectedChatDocIds) {
-                try {
-                  await FirebaseFirestore.instance
-                      .collection('chats')
-                      .doc(docId)
-                      .delete();
-                } catch (_) {}
-              }
+              final idsToDelete = List<String>.from(_selectedChatDocIds);
               _clearSelection();
+
+              for (final String docId in idsToDelete) {
+                try {
+                  final chatRef =
+                      FirebaseFirestore.instance.collection('chats').doc(docId);
+                  final messagesSnap =
+                      await chatRef.collection('messages').get();
+                  final batch = FirebaseFirestore.instance.batch();
+                  for (final mDoc in messagesSnap.docs) {
+                    batch.delete(mDoc.reference);
+                  }
+                  batch.delete(chatRef);
+                  await batch.commit();
+                } catch (_) {
+                  try {
+                    await FirebaseFirestore.instance
+                        .collection('chats')
+                        .doc(docId)
+                        .set({
+                      'deletedBy':
+                          FieldValue.arrayUnion([widget.currentUserId]),
+                      'lastMessage': '',
+                      'unreadCount_${widget.currentUserId}': 0,
+                    }, SetOptions(merge: true));
+                  } catch (_) {}
+                }
+              }
             },
             child: const Text('Delete', style: TextStyle(color: Colors.white)),
           ),
@@ -197,6 +232,346 @@ class _ChatListScreenState extends State<ChatListScreen>
     return name.contains(_searchText) || lastMessage.contains(_searchText);
   }
 
+  Widget _buildStudentNetworkStyleTabs() {
+    return Container(
+      color: Colors.white,
+      child: TabBar(
+        controller: _tabController,
+        indicatorColor: const Color(0xFF0F766E),
+        indicatorWeight: 2.8,
+        labelColor: const Color(0xFF0F766E),
+        unselectedLabelColor: const Color(0xFF64748B),
+        labelStyle: const TextStyle(
+          fontSize: 14.5,
+          fontWeight: FontWeight.bold,
+        ),
+        unselectedLabelStyle: const TextStyle(
+          fontSize: 14.5,
+          fontWeight: FontWeight.w600,
+        ),
+        tabs: [
+          Tab(
+            child: StreamBuilder<int>(
+              stream: _chatService
+                  .getTotalUnreadChatsCountStream(widget.currentUserId),
+              builder: (context, snapshot) {
+                final int count = snapshot.data ?? 0;
+                return Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Text('Chats'),
+                    if (count > 0) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 7, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFE2E8F0),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          '$count',
+                          style: const TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF0F172A),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                );
+              },
+            ),
+          ),
+          Tab(
+            child: StreamBuilder<int>(
+              stream: _chatService
+                  .getTotalUnreadGroupsCountStream(widget.currentUserId),
+              builder: (context, snapshot) {
+                final int count = snapshot.data ?? 0;
+                return Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Text('Groups'),
+                    if (count > 0) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 7, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFE2E8F0),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          '$count',
+                          style: const TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF0F172A),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPrivateChatsList() {
+    return StreamBuilder<QuerySnapshot>(
+      stream: _chatService.getUserChatsStream(widget.currentUserId),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(
+            child: CircularProgressIndicator(color: Color(0xFF1E4C7A)),
+          );
+        }
+        if (snapshot.hasError) {
+          return const Center(
+            child: Text(
+              'Failed to load chats.',
+              style: TextStyle(fontSize: 14, color: Colors.red),
+            ),
+          );
+        }
+        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+          return _buildEmptyState();
+        }
+
+        final rawChatDocs = snapshot.data!.docs;
+        final Map<String, DocumentSnapshot> uniqueChatsMap = {};
+
+        for (var doc in rawChatDocs) {
+          final data = doc.data() as Map<String, dynamic>;
+          final List<dynamic> deletedBy =
+              (data['deletedBy'] as List<dynamic>?) ?? const [];
+          if (deletedBy.contains(widget.currentUserId)) continue;
+
+          final bool isGroup = data['isGroup'] == true;
+          if (isGroup) continue;
+
+          final bool isOfficial = data['isOfficial'] == true ||
+              doc.id.startsWith('official_desk_');
+
+          if (isOfficial) {
+            uniqueChatsMap['official_desk'] = doc;
+          } else {
+            final List<dynamic> participants = data['participants'] ?? [];
+            final List<String> participantsList =
+                List<String>.from(participants);
+            participantsList.remove(widget.currentUserId);
+
+            if (participantsList.isNotEmpty) {
+              final String otherUserId = participantsList.first;
+
+              if (!uniqueChatsMap.containsKey(otherUserId)) {
+                uniqueChatsMap[otherUserId] = doc;
+              } else {
+                final existingData =
+                    uniqueChatsMap[otherUserId]!.data() as Map<String, dynamic>;
+                final existingTime =
+                    existingData['lastMessageTime'] as Timestamp?;
+                final currentTime = data['lastMessageTime'] as Timestamp?;
+
+                if (currentTime != null &&
+                    (existingTime == null ||
+                        currentTime.compareTo(existingTime) > 0)) {
+                  uniqueChatsMap[otherUserId] = doc;
+                }
+              }
+            }
+          }
+        }
+
+        final chatDocs = uniqueChatsMap.values.toList();
+
+        chatDocs.sort((a, b) {
+          final aData = a.data() as Map<String, dynamic>;
+          final bData = b.data() as Map<String, dynamic>;
+
+          final aIsOfficial = aData['isOfficial'] == true ||
+              a.id.startsWith('official_desk_');
+          final bIsOfficial = bData['isOfficial'] == true ||
+              b.id.startsWith('official_desk_');
+
+          if (aIsOfficial && !bIsOfficial) return -1;
+          if (!aIsOfficial && bIsOfficial) return 1;
+
+          final aTime = aData['lastMessageTime'] as Timestamp?;
+          final bTime = bData['lastMessageTime'] as Timestamp?;
+          if (aTime == null && bTime == null) return 0;
+          if (aTime == null) return 1;
+          if (bTime == null) return -1;
+          return bTime.compareTo(aTime);
+        });
+
+        if (chatDocs.isEmpty) {
+          return _buildEmptyState();
+        }
+
+        return ListView.builder(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          physics: const BouncingScrollPhysics(),
+          itemCount: chatDocs.length,
+          itemBuilder: (context, index) {
+            final doc = chatDocs[index];
+            final chatData = doc.data() as Map<String, dynamic>;
+            final bool isOfficial = chatData['isOfficial'] == true ||
+                doc.id.startsWith('official_desk_');
+
+            final String lastMessage =
+                (chatData['lastMessage'] ?? '').toString();
+            final Timestamp? lastTime =
+                chatData['lastMessageTime'] as Timestamp?;
+            final bool isSelected = _selectedChatDocIds.contains(doc.id);
+
+            final String lastSenderId =
+                (chatData['lastSenderId'] ?? chatData['senderId'] ?? '')
+                    .toString();
+            int unreadCount = 0;
+
+            if (lastSenderId != widget.currentUserId) {
+              if (chatData
+                  .containsKey('unreadCount_${widget.currentUserId}')) {
+                unreadCount =
+                    chatData['unreadCount_${widget.currentUserId}'] ?? 0;
+              } else {
+                unreadCount = chatData['unreadCount'] ?? 0;
+              }
+            }
+
+            if (isOfficial) {
+              const String officialName = 'FYBTT official';
+              if (!_matchesSearch(chatData, officialName)) {
+                return const SizedBox.shrink();
+              }
+
+              return _ChatCard(
+                name: officialName,
+                lastMessage: lastMessage.isEmpty
+                    ? 'Official Communication Desk'
+                    : lastMessage,
+                timeText: _formatTime(lastTime),
+                unreadCount: unreadCount,
+                imageUrl: '',
+                isOnline: false,
+                isGroup: false,
+                isOfficial: true,
+                isVerified: true,
+                isSelected: isSelected,
+                onLongPress: () => _toggleSelection(doc.id),
+                onTap: () {
+                  if (_isSelectionMode) {
+                    _toggleSelection(doc.id);
+                  } else {
+                    _openChat(
+                      chatData: chatData,
+                      chatDocId: doc.id,
+                      receiverName: officialName,
+                      receiverId: 'OFFICIAL_FYBTT_DESK',
+                      receiverImage: 'assets/images/app_logo.png',
+                    );
+                  }
+                },
+              );
+            }
+
+            final List<dynamic> participants = chatData['participants'] ?? [];
+            final List<String> participantsList =
+                List<String>.from(participants);
+            participantsList.remove(widget.currentUserId);
+            if (participantsList.isEmpty) {
+              return const SizedBox.shrink();
+            }
+            final String receiverId = participantsList.first;
+
+            String fallbackName = chatData['receiverName'] ??
+                chatData['teacherName'] ??
+                chatData['studentName'] ??
+                'User';
+
+            return StreamBuilder<Map<String, dynamic>>(
+              stream: _chatService.getUserStatusStream(
+                receiverId,
+                !widget.isTeacher,
+              ),
+              builder: (context, userSnapshot) {
+                String finalName = fallbackName;
+                String finalImageUrl = '';
+                bool isOnline = false;
+
+                if (userSnapshot.hasData && userSnapshot.data != null) {
+                  final mapData = userSnapshot.data!;
+
+                  final extractedName = (mapData['fullName'] ??
+                          mapData['name'] ??
+                          mapData['displayName'] ??
+                          mapData['teacherName'] ??
+                          mapData['studentName'])
+                      ?.toString();
+
+                  if (extractedName != null && extractedName.isNotEmpty) {
+                    finalName = extractedName;
+                  }
+
+                  finalImageUrl = (mapData['profileImageUrl'] ??
+                          mapData['profilePic'] ??
+                          '')
+                      .toString();
+                  isOnline = mapData['isOnline'] == true;
+                }
+                if (!_matchesSearch(chatData, finalName)) {
+                  return const SizedBox.shrink();
+                }
+
+                return StreamBuilder<bool>(
+                  stream:
+                      _chatService.getTypingStatusStream(doc.id, receiverId),
+                  builder: (context, typingSnap) {
+                    final bool isTyping = typingSnap.data == true;
+                    return _ChatCard(
+                      name: finalName,
+                      lastMessage: isTyping ? 'typing...' : lastMessage,
+                      isTyping: isTyping,
+                      timeText: _formatTime(lastTime),
+                      unreadCount: unreadCount,
+                      imageUrl: finalImageUrl,
+                      isOnline: isOnline,
+                      isGroup: false,
+                      isOfficial: false,
+                      isVerified: false,
+                      isSelected: isSelected,
+                      onLongPress: () => _toggleSelection(doc.id),
+                      onTap: () {
+                        if (_isSelectionMode) {
+                          _toggleSelection(doc.id);
+                        } else {
+                          _openChat(
+                            chatData: chatData,
+                            chatDocId: doc.id,
+                            receiverName: finalName,
+                            receiverId: receiverId,
+                            receiverImage: finalImageUrl,
+                          );
+                        }
+                      },
+                    );
+                  },
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     super.build(context);
@@ -212,271 +587,18 @@ class _ChatListScreenState extends State<ChatListScreen>
         body: Column(
           children: [
             _buildTopHeader(),
+            _buildStudentNetworkStyleTabs(),
             Expanded(
-              child: StreamBuilder<QuerySnapshot>(
-                stream: _chatService.getUserChatsStream(widget.currentUserId),
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(
-                      child: CircularProgressIndicator(color: Color(0xFF1E4C7A)),
-                    );
-                  }
-                  if (snapshot.hasError) {
-                    return const Center(
-                      child: Text(
-                        'Failed to load chats.',
-                        style: TextStyle(fontSize: 14, color: Colors.red),
-                      ),
-                    );
-                  }
-                  if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                    return _buildEmptyState();
-                  }
-
-                  final rawChatDocs = snapshot.data!.docs;
-                  final Map<String, DocumentSnapshot> uniqueChatsMap = {};
-
-                  for (var doc in rawChatDocs) {
-                    final data = doc.data() as Map<String, dynamic>;
-                    final bool isGroup = data['isGroup'] == true;
-                    final bool isOfficial = data['isOfficial'] == true ||
-                        doc.id.startsWith('official_desk_');
-
-                    if (isOfficial) {
-                      uniqueChatsMap['official_desk'] = doc;
-                    } else if (isGroup) {
-                      uniqueChatsMap[doc.id] = doc;
-                    } else {
-                      final List<dynamic> participants = data['participants'] ?? [];
-                      final List<String> participantsList = List<String>.from(participants);
-                      participantsList.remove(widget.currentUserId);
-
-                      if (participantsList.isNotEmpty) {
-                        final String otherUserId = participantsList.first;
-
-                        if (!uniqueChatsMap.containsKey(otherUserId)) {
-                          uniqueChatsMap[otherUserId] = doc;
-                        } else {
-                          final existingData = uniqueChatsMap[otherUserId]!.data() as Map<String, dynamic>;
-                          final existingTime = existingData['lastMessageTime'] as Timestamp?;
-                          final currentTime = data['lastMessageTime'] as Timestamp?;
-
-                          if (currentTime != null && (existingTime == null || currentTime.compareTo(existingTime) > 0)) {
-                            uniqueChatsMap[otherUserId] = doc;
-                          }
-                        }
-                      }
-                    }
-                  }
-
-                  final chatDocs = uniqueChatsMap.values.toList();
-
-                  chatDocs.sort((a, b) {
-                    final aData = a.data() as Map<String, dynamic>;
-                    final bData = b.data() as Map<String, dynamic>;
-
-                    final aIsOfficial = aData['isOfficial'] == true || a.id.startsWith('official_desk_');
-                    final bIsOfficial = bData['isOfficial'] == true || b.id.startsWith('official_desk_');
-
-                    if (aIsOfficial && !bIsOfficial) return -1;
-                    if (!aIsOfficial && bIsOfficial) return 1;
-
-                    final aTime = aData['lastMessageTime'] as Timestamp?;
-                    final bTime = bData['lastMessageTime'] as Timestamp?;
-                    if (aTime == null && bTime == null) return 0;
-                    if (aTime == null) return 1;
-                    if (bTime == null) return -1;
-                    return bTime.compareTo(aTime);
-                  });
-
-                  if (chatDocs.isEmpty) {
-                    return _buildEmptyState();
-                  }
-
-                  return ListView.builder(
-                    padding: const EdgeInsets.symmetric(vertical: 10),
-                    physics: const BouncingScrollPhysics(),
-                    itemCount: chatDocs.length,
-                    itemBuilder: (context, index) {
-                      final doc = chatDocs[index];
-                      final chatData = doc.data() as Map<String, dynamic>;
-                      final bool isGroup = chatData['isGroup'] == true;
-                      final bool isOfficial = chatData['isOfficial'] == true ||
-                          doc.id.startsWith('official_desk_');
-
-                      final String lastMessage =
-                          (chatData['lastMessage'] ?? '').toString();
-                      final Timestamp? lastTime =
-                          chatData['lastMessageTime'] as Timestamp?;
-                      final bool isSelected =
-                          _selectedChatDocIds.contains(doc.id);
-
-                      final String lastSenderId =
-                          (chatData['lastSenderId'] ?? chatData['senderId'] ?? '').toString();
-                      int unreadCount = 0;
-
-                      if (lastSenderId != widget.currentUserId) {
-                        if (chatData.containsKey('unreadCount_${widget.currentUserId}')) {
-                          unreadCount = chatData['unreadCount_${widget.currentUserId}'] ?? 0;
-                        } else {
-                          unreadCount = chatData['unreadCount'] ?? 0;
-                        }
-                      }
-
-                      if (isOfficial) {
-                        const String officialName = 'FYBTT official';
-                        if (!_matchesSearch(chatData, officialName)) {
-                          return const SizedBox.shrink();
-                        }
-
-                        return _ChatCard(
-                          name: officialName,
-                          lastMessage: lastMessage.isEmpty ? 'Official Communication Desk' : lastMessage,
-                          timeText: _formatTime(lastTime),
-                          unreadCount: unreadCount,
-                          imageUrl: '',
-                          isOnline: false,
-                          isGroup: false,
-                          isOfficial: true,
-                          isVerified: true,
-                          isSelected: isSelected,
-                          onLongPress: () => _toggleSelection(doc.id),
-                          onTap: () {
-                            if (_isSelectionMode) {
-                              _toggleSelection(doc.id);
-                            } else {
-                              _openChat(
-                                chatData: chatData,
-                                chatDocId: doc.id,
-                                receiverName: officialName,
-                                receiverId: 'OFFICIAL_FYBTT_DESK',
-                                receiverImage: 'assets/images/app_logo.png',
-                              );
-                            }
-                          },
-                        );
-                      }
-
-                      if (isGroup) {
-                        final String groupName =
-                            (chatData['groupName'] ?? 'Group Chat').toString();
-                        final String groupImageUrl =
-                            (chatData['groupImage'] ?? '').toString();
-
-                        if (!_matchesSearch(chatData, groupName)) {
-                          return const SizedBox.shrink();
-                        }
-
-                        return _ChatCard(
-                          name: groupName,
-                          lastMessage: lastMessage,
-                          timeText: _formatTime(lastTime),
-                          unreadCount: unreadCount,
-                          imageUrl: groupImageUrl,
-                          isOnline: false,
-                          isGroup: true,
-                          isOfficial: false,
-                          isVerified: false,
-                          isSelected: isSelected,
-                          onLongPress: () => _toggleSelection(doc.id),
-                          onTap: () {
-                            if (_isSelectionMode) {
-                              _toggleSelection(doc.id);
-                            } else {
-                              _openChat(
-                                chatData: chatData,
-                                chatDocId: doc.id,
-                                receiverName: groupName,
-                                receiverId: '',
-                                receiverImage: groupImageUrl,
-                              );
-                            }
-                          },
-                        );
-                      } else {
-                        final List<dynamic> participants =
-                            chatData['participants'] ?? [];
-                        final List<String> participantsList =
-                            List<String>.from(participants);
-                        participantsList.remove(widget.currentUserId);
-                        if (participantsList.isEmpty) {
-                          return const SizedBox.shrink();
-                        }
-                        final String receiverId = participantsList.first;
-
-                        String fallbackName = chatData['receiverName'] ??
-                            chatData['teacherName'] ??
-                            chatData['studentName'] ??
-                            'User';
-
-                        return StreamBuilder<Map<String, dynamic>>(
-                          stream: _chatService.getUserStatusStream(
-                            receiverId,
-                            !widget.isTeacher,
-                          ),
-                          builder: (context, userSnapshot) {
-                            String finalName = fallbackName;
-                            String finalImageUrl = "";
-                            bool isOnline = false;
-
-                            if (userSnapshot.hasData &&
-                                userSnapshot.data != null) {
-                              final mapData = userSnapshot.data!;
-
-                              final extractedName = (mapData['fullName'] ??
-                                      mapData['name'] ??
-                                      mapData['displayName'] ??
-                                      mapData['teacherName'] ??
-                                      mapData['studentName'])
-                                  ?.toString();
-
-                              if (extractedName != null &&
-                                  extractedName.isNotEmpty) {
-                                finalName = extractedName;
-                              }
-
-                              finalImageUrl = (mapData['profileImageUrl'] ??
-                                      mapData['profilePic'] ??
-                                      '')
-                                  .toString();
-                              isOnline = mapData['isOnline'] == true;
-                            }
-                            if (!_matchesSearch(chatData, finalName)) {
-                              return const SizedBox.shrink();
-                            }
-
-                            return _ChatCard(
-                              name: finalName,
-                              lastMessage: lastMessage,
-                              timeText: _formatTime(lastTime),
-                              unreadCount: unreadCount,
-                              imageUrl: finalImageUrl,
-                              isOnline: isOnline,
-                              isGroup: false,
-                              isOfficial: false,
-                              isVerified: false,
-                              isSelected: isSelected,
-                              onLongPress: () => _toggleSelection(doc.id),
-                              onTap: () {
-                                if (_isSelectionMode) {
-                                  _toggleSelection(doc.id);
-                                } else {
-                                  _openChat(
-                                    chatData: chatData,
-                                    chatDocId: doc.id,
-                                    receiverName: finalName,
-                                    receiverId: receiverId,
-                                    receiverImage: finalImageUrl,
-                                  );
-                                }
-                              },
-                            );
-                          },
-                        );
-                      }
-                    },
-                  );
-                },
+              child: TabBarView(
+                controller: _tabController,
+                children: [
+                  _buildPrivateChatsList(),
+                  GroupListScreen(
+                    currentUserId: widget.currentUserId,
+                    currentUserName: _currentUserName,
+                    isEmbedded: true,
+                  ),
+                ],
               ),
             ),
           ],
@@ -486,12 +608,13 @@ class _ChatListScreenState extends State<ChatListScreen>
   }
 
   Widget _buildTopHeader() {
+    final double topPad = MediaQuery.of(context).padding.top;
     return AnimatedSwitcher(
       duration: const Duration(milliseconds: 250),
       child: Container(
         key: ValueKey<bool>(_isSelectionMode),
         padding: EdgeInsets.only(
-          top: MediaQuery.of(context).padding.top + 12,
+          top: topPad > 0 ? topPad + 10 : 16,
           bottom: 16,
           left: 16,
           right: 16,
@@ -520,7 +643,8 @@ class _ChatListScreenState extends State<ChatListScreen>
                   ),
                   const Spacer(),
                   IconButton(
-                    icon: const Icon(Icons.delete_outline, color: Colors.white),
+                    icon:
+                        const Icon(Icons.delete_outline, color: Colors.white),
                     onPressed: _confirmDeleteSelected,
                   ),
                   PopupMenuButton<String>(
@@ -547,29 +671,58 @@ class _ChatListScreenState extends State<ChatListScreen>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Image.asset(
-                        'assets/images/app_logo.png',
-                        height: 30,
-                        errorBuilder: (_, __, ___) => const Icon(
-                          Icons.chat_bubble_rounded,
-                          color: Colors.white,
-                          size: 26,
-                        ),
-                      ),
-                      const SizedBox(width: 10),
                       const Text(
                         'FYBTT Chats',
                         style: TextStyle(
                           color: Colors.white,
-                          fontSize: 20,
+                          fontSize: 22,
                           fontWeight: FontWeight.bold,
-                          letterSpacing: 0.5,
+                          letterSpacing: 0.4,
                         ),
+                      ),
+                      Row(
+                        children: [
+                          if (!widget.isTeacher)
+                            IconButton(
+                              visualDensity: VisualDensity.compact,
+                              icon: const Icon(Icons.mail_outline_rounded,
+                                  color: Colors.white),
+                              tooltip: 'Group Invitations',
+                              onPressed: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => InvitationListScreen(
+                                      currentUserId: widget.currentUserId,
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                          if (widget.isTeacher)
+                            IconButton(
+                              visualDensity: VisualDensity.compact,
+                              icon: const Icon(Icons.group_add_rounded,
+                                  color: Colors.white),
+                              tooltip: 'Create New Group',
+                              onPressed: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => CreateGroupScreen(
+                                      teacherId: widget.currentUserId,
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                        ],
                       ),
                     ],
                   ),
-                  const SizedBox(height: 14),
+                  const SizedBox(height: 12),
                   _buildSearchBar(),
                 ],
               ),
@@ -591,10 +744,12 @@ class _ChatListScreenState extends State<ChatListScreen>
           hintText: 'Search chats...',
           hintStyle:
               TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 14),
-          prefixIcon: const Icon(Icons.search, color: Colors.white70, size: 20),
+          prefixIcon:
+              const Icon(Icons.search, color: Colors.white70, size: 20),
           suffixIcon: _searchText.isNotEmpty
               ? IconButton(
-                  icon: const Icon(Icons.close, color: Colors.white70, size: 18),
+                  icon:
+                      const Icon(Icons.close, color: Colors.white70, size: 18),
                   onPressed: _searchController.clear,
                 )
               : null,
@@ -630,6 +785,7 @@ class _ChatListScreenState extends State<ChatListScreen>
 class _ChatCard extends StatelessWidget {
   final String name;
   final String lastMessage;
+  final bool isTyping;
   final String timeText;
   final int unreadCount;
   final String imageUrl;
@@ -644,6 +800,7 @@ class _ChatCard extends StatelessWidget {
   const _ChatCard({
     required this.name,
     required this.lastMessage,
+    this.isTyping = false,
     required this.timeText,
     required this.unreadCount,
     required this.imageUrl,
@@ -686,7 +843,8 @@ class _ChatCard extends StatelessWidget {
         child: ListTile(
           onTap: onTap,
           onLongPress: onLongPress,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           contentPadding:
               const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
           leading: Stack(
@@ -703,7 +861,8 @@ class _ChatCard extends StatelessWidget {
                     errorBuilder: (_, __, ___) => CircleAvatar(
                       radius: 26,
                       backgroundColor: Colors.teal.shade100,
-                      child: const Icon(Icons.verified_rounded, color: Colors.teal, size: 28),
+                      child: const Icon(Icons.verified_rounded,
+                          color: Colors.teal, size: 28),
                     ),
                   ),
                 )
@@ -765,7 +924,9 @@ class _ChatCard extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.bold,
-                    color: isOfficial ? const Color(0xFF0F766E) : Colors.black87,
+                    color: isOfficial
+                        ? const Color(0xFF0F766E)
+                        : Colors.black87,
                   ),
                 ),
               ),
@@ -793,8 +954,14 @@ class _ChatCard extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 fontSize: 13,
-                color: isOfficial ? const Color(0xFF0D9488) : Colors.grey.shade600,
-                fontWeight: isOfficial ? FontWeight.w500 : FontWeight.normal,
+                color: isTyping
+                    ? const Color(0xFF22C55E)
+                    : (isOfficial
+                        ? const Color(0xFF0D9488)
+                        : Colors.grey.shade600),
+                fontWeight: (isTyping || isOfficial)
+                    ? FontWeight.w600
+                    : FontWeight.normal,
               ),
             ),
           ),
@@ -820,7 +987,9 @@ class _ChatCard extends StatelessWidget {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                   decoration: BoxDecoration(
-                    color: isOfficial ? const Color(0xFF0F766E) : const Color(0xFF1E4C7A),
+                    color: isOfficial
+                        ? const Color(0xFF0F766E)
+                        : const Color(0xFF1E4C7A),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Text(
