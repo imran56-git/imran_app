@@ -9,6 +9,7 @@ class AiCooldownManager extends ChangeNotifier {
 
   static const String _prefCooldownEndTime = 'ai_cooldown_end_time';
   static const String _prefIsDailyQuota = 'ai_is_daily_quota';
+  static const String _prefMigrationVersion = 'ai_cooldown_v2_reset';
 
   DateTime? _cooldownEndTime;
   bool _isDailyQuota = false;
@@ -47,6 +48,15 @@ class AiCooldownManager extends ChangeNotifier {
 
   Future<void> init() async {
     final prefs = await SharedPreferences.getInstance();
+
+    // Clear any stale 24-hour lock from previous failed connection attempts
+    final bool hasResetStaleLock = prefs.getBool(_prefMigrationVersion) ?? false;
+    if (!hasResetStaleLock) {
+      await prefs.remove(_prefCooldownEndTime);
+      await prefs.remove(_prefIsDailyQuota);
+      await prefs.setBool(_prefMigrationVersion, true);
+    }
+
     final storedEpoch = prefs.getInt(_prefCooldownEndTime);
     _isDailyQuota = prefs.getBool(_prefIsDailyQuota) ?? false;
 
@@ -61,12 +71,12 @@ class AiCooldownManager extends ChangeNotifier {
     }
   }
 
-  Future<void> setShortCooldown({int seconds = 15}) async {
+  Future<void> setShortCooldown({int seconds = 10}) async {
     await _applyCooldown(Duration(seconds: seconds), isDaily: false);
   }
 
-  Future<void> setDailyQuotaCooldown() async {
-    await _applyCooldown(const Duration(hours: 24), isDaily: true);
+  Future<void> setDailyQuotaCooldown({Duration duration = const Duration(minutes: 30)}) async {
+    await _applyCooldown(duration, isDaily: true);
   }
 
   Future<void> _applyCooldown(Duration duration, {required bool isDaily}) async {
@@ -74,7 +84,10 @@ class AiCooldownManager extends ChangeNotifier {
     _isDailyQuota = isDaily;
 
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt(_prefCooldownEndTime, _cooldownEndTime!.millisecondsSinceEpoch);
+    await prefs.setInt(
+      _prefCooldownEndTime,
+      _cooldownEndTime!.millisecondsSinceEpoch,
+    );
     await prefs.setBool(_prefIsDailyQuota, isDaily);
 
     _startTicker();
@@ -107,7 +120,7 @@ class AiCooldownManager extends ChangeNotifier {
 
   @override
   void dispose() {
+    // Keep singleton alive across tab switches; only stop active ticker if needed
     _tickerTimer?.cancel();
-    super.dispose();
   }
 }
