@@ -21,6 +21,7 @@ dependencies:
   cloud_firestore: ^5.6.12
   firebase_messaging: ^15.2.10
   firebase_storage: ^12.4.10
+  flutter_local_notifications: ^18.0.1  # <-- এটি নোটিফিকেশন সিস্টেমের জন্য অ্যাড করা হয়েছে
   google_generative_ai: ^0.4.7
   equatable: ^2.1.0
   image_picker: ^1.2.4
