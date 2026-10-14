@@ -43,6 +43,13 @@ class _GroupChatScreenState extends State<GroupChatScreen>
   final ScrollController _scrollController = ScrollController();
   final TextEditingController _searchController = TextEditingController();
 
+  // Cached stream so scrolling or state updates never reset the list position
+  late Stream<List<MessageModel>> _messagesStream;
+
+  // ValueNotifier prevents rebuilding the entire ListView during scroll gestures
+  final ValueNotifier<bool> _showScrollToBottomBtnNotifier =
+      ValueNotifier<bool>(false);
+
   StreamSubscription<GroupModel?>? _groupSubscription;
   GroupModel? _currentGroup;
   List<MessageModel> _latestMessages = [];
@@ -52,7 +59,6 @@ class _GroupChatScreenState extends State<GroupChatScreen>
   String _selectedCategory = 'all';
   String _searchQuery = '';
   bool _isSearching = false;
-  bool _showScrollToBottomBtn = false;
   bool _exitDialogShown = false;
   int _initialUnreadCount = 0;
   bool _capturedInitialUnread = false;
@@ -104,6 +110,11 @@ class _GroupChatScreenState extends State<GroupChatScreen>
   @override
   void initState() {
     super.initState();
+    _messagesStream = _chatService.getGroupMessagesStream(
+      widget.groupId,
+      categoryFilter: _selectedCategory,
+    );
+
     _bounceController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 550),
@@ -122,11 +133,22 @@ class _GroupChatScreenState extends State<GroupChatScreen>
     _chatService.markGroupMessagesAsSeen(widget.groupId, widget.currentUserId);
   }
 
+  void _updateCategoryFilter(String newCategory) {
+    if (_selectedCategory == newCategory) return;
+    setState(() {
+      _selectedCategory = newCategory;
+      _messagesStream = _chatService.getGroupMessagesStream(
+        widget.groupId,
+        categoryFilter: _selectedCategory,
+      );
+    });
+  }
+
   void _onScrollChanged() {
     if (!_scrollController.hasClients) return;
     final bool shouldShow = _scrollController.offset > 280;
-    if (shouldShow != _showScrollToBottomBtn && mounted) {
-      setState(() => _showScrollToBottomBtn = shouldShow);
+    if (_showScrollToBottomBtnNotifier.value != shouldShow) {
+      _showScrollToBottomBtnNotifier.value = shouldShow;
     }
   }
 
@@ -286,6 +308,7 @@ class _GroupChatScreenState extends State<GroupChatScreen>
     _bounceController.dispose();
     _scrollController.removeListener(_onScrollChanged);
     _scrollController.dispose();
+    _showScrollToBottomBtnNotifier.dispose();
     _searchController.dispose();
     super.dispose();
   }
@@ -1050,9 +1073,7 @@ class _GroupChatScreenState extends State<GroupChatScreen>
             padding: const EdgeInsets.only(right: 8),
             child: InkWell(
               borderRadius: BorderRadius.circular(18),
-              onTap: () {
-                setState(() => _selectedCategory = cat['key'] as String);
-              },
+              onTap: () => _updateCategoryFilter(cat['key'] as String),
               child: Container(
                 padding:
                     const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
@@ -1210,13 +1231,66 @@ class _GroupChatScreenState extends State<GroupChatScreen>
               final double ratio = totalVotes > 0 ? count / totalVotes : 0.0;
               final bool isSelected = myVote == i;
 
+              final optionCard = Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: isSelected
+                      ? Colors.blue.shade50
+                      : const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: isSelected
+                        ? Colors.blueAccent
+                        : Colors.grey.shade300,
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            options[i].toString(),
+                            style: TextStyle(
+                              fontWeight: isSelected
+                                  ? FontWeight.bold
+                                  : FontWeight.w500,
+                              fontSize: 13.5,
+                            ),
+                          ),
+                        ),
+                        Text(
+                          "$count (${(ratio * 100).toStringAsFixed(0)}%)",
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Colors.blueGrey,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    LinearProgressIndicator(
+                      value: ratio,
+                      backgroundColor: Colors.grey.shade200,
+                      color: Colors.blueAccent,
+                      minHeight: 5,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  ],
+                ),
+              );
+
               return Padding(
                 padding: const EdgeInsets.only(bottom: 8),
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(10),
-                  onTap: _isStudentMuted
-                      ? null
-                      : () {
+                child: _isStudentMuted
+                    ? optionCard
+                    : GestureDetector(
+                        behavior: HitTestBehavior.translucent,
+                        onTap: () {
                           _groupService.voteOnPoll(
                             groupId: widget.groupId,
                             messageId: message.messageId,
@@ -1224,59 +1298,8 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                             optionIndex: i,
                           );
                         },
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: isSelected
-                          ? Colors.blue.shade50
-                          : const Color(0xFFF8FAFC),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(
-                        color: isSelected
-                            ? Colors.blueAccent
-                            : Colors.grey.shade300,
+                        child: optionCard,
                       ),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Expanded(
-                              child: Text(
-                                options[i].toString(),
-                                style: TextStyle(
-                                  fontWeight: isSelected
-                                      ? FontWeight.bold
-                                      : FontWeight.w500,
-                                  fontSize: 13.5,
-                                ),
-                              ),
-                            ),
-                            Text(
-                              "$count (${(ratio * 100).toStringAsFixed(0)}%)",
-                              style: const TextStyle(
-                                fontSize: 12,
-                                color: Colors.blueGrey,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 6),
-                        LinearProgressIndicator(
-                          value: ratio,
-                          backgroundColor: Colors.grey.shade200,
-                          color: Colors.blueAccent,
-                          minHeight: 5,
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
               );
             }),
             Text(
@@ -1359,13 +1382,42 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                 }
               }
 
+              final optionBox = Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: bgColor,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: borderColor),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        options[i].toString(),
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w500,
+                          fontSize: 13.5,
+                        ),
+                      ),
+                    ),
+                    if (hasAnswered && isCorrectOption)
+                      const Icon(Icons.check_circle,
+                          color: Colors.green, size: 18),
+                    if (hasAnswered && isMySelected && !isCorrectOption)
+                      const Icon(Icons.cancel,
+                          color: Colors.redAccent, size: 18),
+                  ],
+                ),
+              );
+
               return Padding(
                 padding: const EdgeInsets.only(bottom: 8),
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(10),
-                  onTap: (myAnswer != null || _isStudentMuted)
-                      ? null
-                      : () {
+                child: (myAnswer != null || _isStudentMuted)
+                    ? optionBox
+                    : GestureDetector(
+                        behavior: HitTestBehavior.translucent,
+                        onTap: () {
                           _groupService.submitQuizAnswer(
                             groupId: widget.groupId,
                             messageId: message.messageId,
@@ -1373,35 +1425,8 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                             selectedOptionIndex: i,
                           );
                         },
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: bgColor,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: borderColor),
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            options[i].toString(),
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w500,
-                              fontSize: 13.5,
-                            ),
-                          ),
-                        ),
-                        if (hasAnswered && isCorrectOption)
-                          const Icon(Icons.check_circle,
-                              color: Colors.green, size: 18),
-                        if (hasAnswered && isMySelected && !isCorrectOption)
-                          const Icon(Icons.cancel,
-                              color: Colors.redAccent, size: 18),
-                      ],
-                    ),
-                  ),
-                ),
+                        child: optionBox,
+                      ),
               );
             }),
             Text(
@@ -2032,10 +2057,7 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                   _buildCategoryFilterBar(),
                   Expanded(
                     child: StreamBuilder<List<MessageModel>>(
-                      stream: _chatService.getGroupMessagesStream(
-                        widget.groupId,
-                        categoryFilter: _selectedCategory,
-                      ),
+                      stream: _messagesStream,
                       builder: (context, snapshot) {
                         if (snapshot.hasError) {
                           return const Center(
@@ -2049,14 +2071,15 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                         }
 
                         if (snapshot.connectionState ==
-                            ConnectionState.waiting) {
+                                ConnectionState.waiting &&
+                            _latestMessages.isEmpty) {
                           return const Center(
                             child: CircularProgressIndicator(
                                 color: Colors.blueAccent),
                           );
                         }
 
-                        final rawMessages = (snapshot.data ?? const [])
+                        final rawMessages = (snapshot.data ?? _latestMessages)
                             .where((m) => !m.deletedForUsers
                                 .contains(widget.currentUserId))
                             .toList();
@@ -2099,9 +2122,15 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                             _buildPinnedMessageBanner(rawMessages),
                             Expanded(
                               child: ListView.builder(
+                                key: PageStorageKey<String>(
+                                    'group_chat_${widget.groupId}_$_selectedCategory'),
                                 controller: _scrollController,
                                 reverse: true,
-                                physics: const BouncingScrollPhysics(),
+                                keyboardDismissBehavior:
+                                    ScrollViewKeyboardDismissBehavior.onDrag,
+                                physics: const AlwaysScrollableScrollPhysics(
+                                  parent: BouncingScrollPhysics(),
+                                ),
                                 padding: EdgeInsets.only(
                                   left: 14,
                                   right: 14,
@@ -2130,6 +2159,7 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                                           index == _initialUnreadCount - 1;
 
                                   return Column(
+                                    key: ValueKey(message.messageId),
                                     crossAxisAlignment: isMe
                                         ? CrossAxisAlignment.end
                                         : CrossAxisAlignment.start,
@@ -2394,17 +2424,24 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                 ],
               ),
               if (_showTopActionBar) _buildTopActionToolbar(),
-              if (_showScrollToBottomBtn)
-                Positioned(
-                  right: 16,
-                  bottom: 86,
-                  child: FloatingActionButton.small(
-                    backgroundColor: const Color(0xFF0F172A),
-                    onPressed: _scrollToBottom,
-                    child: const Icon(Icons.keyboard_arrow_down_rounded,
-                        color: Colors.white),
-                  ),
-                ),
+              ValueListenableBuilder<bool>(
+                valueListenable: _showScrollToBottomBtnNotifier,
+                builder: (context, showBtn, _) {
+                  if (!showBtn) return const SizedBox.shrink();
+                  return Positioned(
+                    right: 16,
+                    bottom: 86,
+                    child: FloatingActionButton.small(
+                      backgroundColor: const Color(0xFF0F172A),
+                      onPressed: _scrollToBottom,
+                      child: const Icon(
+                        Icons.keyboard_arrow_down_rounded,
+                        color: Colors.white,
+                      ),
+                    ),
+                  );
+                },
+              ),
             ],
           ),
         ),
