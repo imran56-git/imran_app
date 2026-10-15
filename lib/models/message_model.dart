@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../constants/algorithm_config.dart';
 
 class MessageModel {
   final String messageId;
@@ -30,6 +31,7 @@ class MessageModel {
   final Map<String, dynamic>? pollData;
   final Map<String, dynamic>? quizData;
   final Map<String, dynamic>? linkPreviewData;
+  final Map<String, dynamic>? ratingPromptData;
   final bool isScheduled;
   final DateTime? scheduledAt;
   final DateTime? expiresAt;
@@ -68,6 +70,7 @@ class MessageModel {
     this.pollData,
     this.quizData,
     this.linkPreviewData,
+    this.ratingPromptData,
     this.isScheduled = false,
     this.scheduledAt,
     this.expiresAt,
@@ -76,6 +79,74 @@ class MessageModel {
     this.clientMessageId,
     this.reportedBy = const [],
   });
+
+  bool get isSeasonRatingPrompt =>
+      type == AlgorithmConfig.seasonRatingMessageType ||
+      messageCategory == AlgorithmConfig.seasonRatingMessageType;
+
+  String get promptTeacherId =>
+      ratingPromptData?['teacherId']?.toString() ?? senderId;
+
+  String get promptSeasonId =>
+      ratingPromptData?['seasonId']?.toString() ?? '';
+
+  String get promptConnectionId =>
+      ratingPromptData?['connectionId']?.toString() ?? '';
+
+  bool get canTriggerDirectRating =>
+      isSeasonRatingPrompt && promptTeacherId.isNotEmpty;
+
+  factory MessageModel.createSeasonRatingPrompt({
+    required String messageId,
+    required String teacherId,
+    required String studentId,
+    required String teacherName,
+    required String studentName,
+    required String teacherProfilePic,
+    required String seasonId,
+    required String seasonName,
+    required String connectionId,
+    String subjectId = 'general',
+    bool isTeacherVerified = false,
+    bool hasTeacherGoldenBadge = false,
+  }) {
+    final promptText = AlgorithmConfig.buildSeasonalRatingPromptMessage(
+      studentName: studentName,
+      teacherName: teacherName,
+      seasonName: seasonName,
+    );
+
+    return MessageModel(
+      messageId: messageId,
+      senderId: teacherId,
+      receiverId: studentId,
+      content: promptText,
+      timestamp: DateTime.now(),
+      type: AlgorithmConfig.seasonRatingMessageType,
+      status: 'sent',
+      isDeletedForEveryone: false,
+      deletedForUsers: const [],
+      starredBy: const [],
+      reactions: const {},
+      senderRole: 'teacher',
+      senderName: teacherName,
+      senderProfilePic: teacherProfilePic,
+      isSenderVerified: isTeacherVerified,
+      hasSenderGoldenBadge: hasTeacherGoldenBadge,
+      messageCategory: AlgorithmConfig.seasonRatingMessageType,
+      ratingPromptData: {
+        'teacherId': teacherId,
+        'studentId': studentId,
+        'teacherName': teacherName,
+        'seasonId': seasonId,
+        'seasonName': seasonName,
+        'connectionId': connectionId,
+        'subjectId': subjectId,
+        'actionLabel': 'Rate Teacher Now',
+        'isDirectRatingEnabled': true,
+      },
+    );
+  }
 
   String getVisibleSenderName({
     required String currentUserId,
@@ -163,6 +234,7 @@ class MessageModel {
       pollData: parseDynamicMap(map['pollData']),
       quizData: parseDynamicMap(map['quizData']),
       linkPreviewData: parseDynamicMap(map['linkPreviewData']),
+      ratingPromptData: parseDynamicMap(map['ratingPromptData']),
       isScheduled: map['isScheduled'] as bool? ?? false,
       scheduledAt: parseDateTime(map['scheduledAt']),
       expiresAt: parseDateTime(map['expiresAt']),
@@ -210,6 +282,7 @@ class MessageModel {
       'pollData': pollData,
       'quizData': quizData,
       'linkPreviewData': linkPreviewData,
+      'ratingPromptData': ratingPromptData,
       'isScheduled': isScheduled,
       'scheduledAt':
           scheduledAt != null ? Timestamp.fromDate(scheduledAt!) : null,
@@ -251,6 +324,7 @@ class MessageModel {
     Map<String, dynamic>? pollData,
     Map<String, dynamic>? quizData,
     Map<String, dynamic>? linkPreviewData,
+    Map<String, dynamic>? ratingPromptData,
     bool? isScheduled,
     DateTime? scheduledAt,
     DateTime? expiresAt,
@@ -289,6 +363,7 @@ class MessageModel {
       pollData: pollData ?? this.pollData,
       quizData: quizData ?? this.quizData,
       linkPreviewData: linkPreviewData ?? this.linkPreviewData,
+      ratingPromptData: ratingPromptData ?? this.ratingPromptData,
       isScheduled: isScheduled ?? this.isScheduled,
       scheduledAt: scheduledAt ?? this.scheduledAt,
       expiresAt: expiresAt ?? this.expiresAt,
