@@ -706,7 +706,6 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
     );
   }
 
-  // Clean Executive Curved Gradient Header (NO Background Photo Banner)
   Widget _buildHeader() {
     final currentUid = widget.currentUserId.isNotEmpty
         ? widget.currentUserId
@@ -1051,7 +1050,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                const Icon(Icons.Bookmark_rounded,
+                                const Icon(Icons.bookmark_rounded,
                                     size: 14, color: _accentBlue),
                                 const SizedBox(width: 5),
                                 Text(
