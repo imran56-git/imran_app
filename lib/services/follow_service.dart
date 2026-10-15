@@ -12,6 +12,7 @@ class FollowService {
     required String studentName,
     required String teacherPhoto,
     required String studentPhoto,
+    List<String> subjects = const [],
   }) async {
     if (teacherId.isEmpty || studentId.isEmpty) return;
 
@@ -29,6 +30,7 @@ class FollowService {
         studentPhoto: studentPhoto,
         status: 'pending',
         requestedAt: Timestamp.now(),
+        subjects: subjects,
       );
 
       await docRef.set(followModel.toMap(), SetOptions(merge: true));
@@ -61,6 +63,7 @@ class FollowService {
       batch.set(requestRef, {
         'status': 'accepted',
         'acceptedAt': Timestamp.now(),
+        'hasVerifiedLearningExperience': true,
       }, SetOptions(merge: true));
 
       final teacherRef = _firestore.collection('teachers').doc(teacherId);
@@ -165,10 +168,26 @@ class FollowService {
       final String docId = '${teacherId}_$studentId';
       final doc = await _firestore.collection('follow_requests').doc(docId).get();
       if (!doc.exists) return false;
-      return doc.data()?['status'] == 'accepted';
+      final data = doc.data();
+      if (data == null) return false;
+      final followModel = FollowModel.fromMap(data, doc.id);
+      return followModel.isEligibleToRate;
     } catch (e) {
       log('🔴 Error in isAcceptedStudent: $e');
       return false;
+    }
+  }
+
+  Future<FollowModel?> getFollowConnection(String teacherId, String studentId) async {
+    if (teacherId.isEmpty || studentId.isEmpty) return null;
+    try {
+      final String docId = '${teacherId}_$studentId';
+      final doc = await _firestore.collection('follow_requests').doc(docId).get();
+      if (!doc.exists || doc.data() == null) return null;
+      return FollowModel.fromMap(doc.data()!, doc.id);
+    } catch (e) {
+      log('🔴 Error in getFollowConnection: $e');
+      return null;
     }
   }
 
@@ -185,8 +204,7 @@ class FollowService {
       for (var doc in snapshot.docs) {
         try {
           final data = doc.data();
-          data['id'] = doc.id;
-          list.add(FollowModel.fromMap(data));
+          list.add(FollowModel.fromMap(data, doc.id));
         } catch (e) {
           log('🔴 Parsing Error in getPendingRequests for doc ${doc.id}: $e');
         }
@@ -210,8 +228,7 @@ class FollowService {
       for (var doc in snapshot.docs) {
         try {
           final data = doc.data();
-          data['id'] = doc.id;
-          list.add(FollowModel.fromMap(data));
+          list.add(FollowModel.fromMap(data, doc.id));
         } catch (e) {
           log('🔴 Parsing Error in getAcceptedStudents for doc ${doc.id}: $e');
         }
