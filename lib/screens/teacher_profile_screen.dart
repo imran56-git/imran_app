@@ -46,14 +46,26 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
 
   late AnimationController _glowController;
   late Animation<double> _glowAnimation;
-
   late AnimationController _menuMenuAnimController;
+
+  // Cached streams to prevent unnecessary reloading on tab switch or scroll
+  Stream<QuerySnapshot>? _pendingRequestsStream;
+  Stream<int>? _followersCountStream;
+  Stream<QuerySnapshot>? _acceptedStudentsStream;
+  Stream<QuerySnapshot>? _todayClassesStream;
+  Stream<QuerySnapshot>? _studentFeesStream;
+  Stream<QuerySnapshot>? _activeLiveClassesStream;
+
   StreamSubscription<QuerySnapshot>? _notifSubscription;
   bool _isMenuExpanded = false;
 
   Map<String, dynamic>? teacherData;
-  bool isLoading = true, isEditing = false;
+  bool isLoading = true;
+  bool isEditing = false;
+  bool _isUploadingBanner = false;
+
   File? _selectedImage;
+  File? _selectedBannerImage;
 
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _phoneController = TextEditingController();
@@ -62,11 +74,17 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
   final TextEditingController _subjectSearchController =
       TextEditingController();
   final TextEditingController _instituteController = TextEditingController();
+  final TextEditingController _experienceController = TextEditingController();
 
   String? gender;
   List<String> selectedSubjects = [];
   List<dynamic> teacherLocations = [];
   bool hasUnreadNotifications = false;
+
+  static const Color _primaryNavy = Color(0xFF0F172A);
+  static const Color _brandBlue = Color(0xFF1E4C7A);
+  static const Color _accentBlue = Color(0xFF2563EB);
+  static const Color _scaffoldBg = Color(0xFFF8FAFC);
 
   bool get isOwnProfile =>
       widget.currentUserId == (_auth.currentUser?.uid ?? "");
@@ -77,6 +95,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
   @override
   void initState() {
     super.initState();
+    _initCachedStreams();
     fetchTeacherData();
     checkUnreadNotifications();
 
@@ -95,6 +114,41 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
     );
   }
 
+  void _initCachedStreams() {
+    if (widget.currentUserId.isEmpty) return;
+
+    _pendingRequestsStream = _firestore
+        .collection('follow_requests')
+        .where('teacherId', isEqualTo: widget.currentUserId)
+        .where('status', isEqualTo: 'pending')
+        .snapshots();
+
+    _followersCountStream =
+        _followService.streamFollowersCount(widget.currentUserId);
+
+    _acceptedStudentsStream = _firestore
+        .collection('follow_requests')
+        .where('teacherId', isEqualTo: widget.currentUserId)
+        .where('status', isEqualTo: 'accepted')
+        .snapshots();
+
+    _todayClassesStream = _firestore
+        .collection('live_classes')
+        .where('teacherId', isEqualTo: widget.currentUserId)
+        .snapshots();
+
+    _studentFeesStream = _firestore
+        .collection('student_fees')
+        .where('teacherId', isEqualTo: widget.currentUserId)
+        .snapshots();
+
+    _activeLiveClassesStream = _firestore
+        .collection('live_classes')
+        .where('teacherId', isEqualTo: widget.currentUserId)
+        .where('isLive', isEqualTo: true)
+        .snapshots();
+  }
+
   @override
   void dispose() {
     _notifSubscription?.cancel();
@@ -106,6 +160,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
     _bioController.dispose();
     _subjectSearchController.dispose();
     _instituteController.dispose();
+    _experienceController.dispose();
     super.dispose();
   }
 
@@ -117,18 +172,28 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
           .doc(widget.currentUserId)
           .get();
       if (doc.exists && mounted) {
+        final data = doc.data();
+        final String expVal = (data?['experience'] ??
+                data?['teachingExperience'] ??
+                data?['experienceYears'] ??
+                '')
+            .toString();
+
         setState(() {
-          teacherData = doc.data();
-          _nameController.text = teacherData?['name'] ?? '';
-          _phoneController.text = teacherData?['phone'] ?? '';
-          _classController.text = teacherData?['class'] ?? '';
-          _bioController.text = teacherData?['bio'] ?? '';
-          _instituteController.text = teacherData?['institute'] ?? '';
-          gender = teacherData?['gender'];
-          selectedSubjects = List<String>.from(teacherData?['subjects'] ?? []);
-          teacherLocations = List.from(teacherData?['locations'] ?? []);
+          teacherData = data;
+          _nameController.text = (data?['name'] ?? data?['fullName'] ?? '').toString();
+          _phoneController.text = (data?['phone'] ?? '').toString();
+          _classController.text = (data?['class'] ?? '').toString();
+          _bioController.text = (data?['bio'] ?? '').toString();
+          _instituteController.text = (data?['institute'] ?? '').toString();
+          _experienceController.text = expVal;
+          gender = data?['gender']?.toString();
+          selectedSubjects = List<String>.from(data?['subjects'] ?? []);
+          teacherLocations = List.from(data?['locations'] ?? []);
           isLoading = false;
         });
+      } else if (mounted) {
+        setState(() => isLoading = false);
       }
     } catch (_) {
       if (mounted) setState(() => isLoading = false);
@@ -155,6 +220,55 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
       });
       setState(() => hasUnreadNotifications = hasNonChatUnread);
     });
+  }
+
+  Future<void> _pickAndUploadBanner() async {
+    if (!isOwnProfile) return;
+    try {
+      final picked = await _picker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 1400,
+        maxHeight: 800,
+        imageQuality: 85,
+      );
+      if (picked == null) return;
+
+      final file = File(picked.path);
+      setState(() {
+        _selectedBannerImage = file;
+      });
+
+      // If user is not in full edit mode, upload immediately for instant UX
+      if (!isEditing) {
+        final uid = _auth.currentUser?.uid;
+        if (uid == null) return;
+        setState(() => _isUploadingBanner = true);
+        File? compressed = await ImageHelper.compressImage(file);
+        final ref = _storage.ref().child('teachers/$uid/banner.jpg');
+        await ref.putFile(compressed ?? file);
+        final bannerUrl = await ref.getDownloadURL();
+        await _firestore.collection('teachers').doc(uid).update({
+          'bannerImageUrl': bannerUrl,
+          'coverImageUrl': bannerUrl,
+        });
+        if (mounted) {
+          setState(() {
+            teacherData ??= {};
+            teacherData!['bannerImageUrl'] = bannerUrl;
+            teacherData!['coverImageUrl'] = bannerUrl;
+            _isUploadingBanner = false;
+          });
+          SuccessToast.show(context, 'Profile banner updated!');
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isUploadingBanner = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to update banner: $e')),
+        );
+      }
+    }
   }
 
   Future<void> _clearLocalSessionAndNavigate() async {
@@ -220,6 +334,10 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
     setState(() => isLoading = true);
     try {
       String? imageUrl = teacherData?['profileImageUrl'];
+      String? bannerUrl =
+          (teacherData?['bannerImageUrl'] ?? teacherData?['coverImageUrl'])
+              ?.toString();
+
       if (_selectedImage != null) {
         File? compressedFile =
             await ImageHelper.compressImage(_selectedImage!);
@@ -227,20 +345,43 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
         await ref.putFile(compressedFile ?? _selectedImage!);
         imageUrl = await ref.getDownloadURL();
       }
+
+      if (_selectedBannerImage != null) {
+        File? compressedBanner =
+            await ImageHelper.compressImage(_selectedBannerImage!);
+        final bannerRef = _storage.ref().child('teachers/$uid/banner.jpg');
+        await bannerRef.putFile(compressedBanner ?? _selectedBannerImage!);
+        bannerUrl = await bannerRef.getDownloadURL();
+      }
+
+      final String expText = _experienceController.text.trim();
+
       await _firestore.collection('teachers').doc(uid).update({
         'name': _nameController.text.trim(),
+        'fullName': _nameController.text.trim(),
         'phone': _phoneController.text.trim(),
         'class': _classController.text.trim(),
         'bio': _bioController.text.trim(),
         'institute': _instituteController.text.trim(),
+        'experience': expText,
+        'teachingExperience': expText,
         'gender': gender,
         'profileImageUrl': imageUrl,
+        if (bannerUrl != null && bannerUrl.isNotEmpty) ...{
+          'bannerImageUrl': bannerUrl,
+          'coverImageUrl': bannerUrl,
+        },
         'subjects': selectedSubjects,
         'locations': teacherLocations,
       });
+
       if (mounted) {
         SuccessToast.show(context, 'Updated Successfully');
-        setState(() => isEditing = false);
+        setState(() {
+          isEditing = false;
+          _selectedImage = null;
+          _selectedBannerImage = null;
+        });
         fetchTeacherData();
       }
     } catch (_) {
@@ -303,31 +444,34 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
             child: FadeTransition(
               opacity: anim,
               child: AlertDialog(
+                backgroundColor: Colors.white,
                 shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(20)),
+                    borderRadius: BorderRadius.circular(22)),
                 title: Text(title,
                     style: const TextStyle(
-                        fontWeight: FontWeight.bold, fontSize: 20)),
+                        fontWeight: FontWeight.w800,
+                        fontSize: 19,
+                        color: _primaryNavy)),
                 content: Text(message,
-                    style:
-                        const TextStyle(fontSize: 15, color: Colors.black87)),
+                    style: const TextStyle(
+                        fontSize: 14.5, color: Color(0xFF475569))),
                 actions: [
                   TextButton(
                     onPressed: () => Navigator.pop(dialogContext),
                     child: const Text('Cancel',
                         style: TextStyle(
-                            color: Colors.grey,
+                            color: Color(0xFF64748B),
                             fontWeight: FontWeight.bold,
-                            fontSize: 15)),
+                            fontSize: 14.5)),
                   ),
                   ElevatedButton(
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: isDelete
-                          ? Colors.redAccent
-                          : const Color(0xFF1565C0),
+                      backgroundColor:
+                          isDelete ? const Color(0xFFDC2626) : _brandBlue,
                       foregroundColor: Colors.white,
+                      elevation: 0,
                       shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10)),
+                          borderRadius: BorderRadius.circular(12)),
                     ),
                     onPressed: () async {
                       Navigator.pop(dialogContext);
@@ -335,7 +479,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                     },
                     child: Text(confirmText,
                         style: const TextStyle(
-                            fontWeight: FontWeight.bold, fontSize: 15)),
+                            fontWeight: FontWeight.bold, fontSize: 14.5)),
                   ),
                 ],
               ),
@@ -363,28 +507,33 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
             child: FadeTransition(
               opacity: anim,
               child: AlertDialog(
+                backgroundColor: Colors.white,
                 shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(20)),
+                    borderRadius: BorderRadius.circular(22)),
                 title: const Text("Exit App",
-                    style:
-                        TextStyle(fontWeight: FontWeight.bold, fontSize: 20)),
+                    style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 19,
+                        color: _primaryNavy)),
                 content: const Text("Are you sure you want to exit?",
-                    style: TextStyle(fontSize: 15, color: Colors.black87)),
+                    style:
+                        TextStyle(fontSize: 14.5, color: Color(0xFF475569))),
                 actions: [
                   TextButton(
                     onPressed: () => Navigator.pop(dialogContext),
                     child: const Text('Cancel',
                         style: TextStyle(
-                            color: Colors.grey,
+                            color: Color(0xFF64748B),
                             fontWeight: FontWeight.bold,
-                            fontSize: 15)),
+                            fontSize: 14.5)),
                   ),
                   ElevatedButton(
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.redAccent,
+                      backgroundColor: const Color(0xFFDC2626),
                       foregroundColor: Colors.white,
+                      elevation: 0,
                       shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10)),
+                          borderRadius: BorderRadius.circular(12)),
                     ),
                     onPressed: () {
                       Navigator.pop(dialogContext);
@@ -392,7 +541,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                     },
                     child: const Text('Exit',
                         style: TextStyle(
-                            fontWeight: FontWeight.bold, fontSize: 15)),
+                            fontWeight: FontWeight.bold, fontSize: 14.5)),
                   ),
                 ],
               ),
@@ -743,13 +892,28 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
     );
   }
 
+  ImageProvider? _resolveBannerImageProvider() {
+    if (_selectedBannerImage != null) {
+      return FileImage(_selectedBannerImage!);
+    }
+    final String? bannerUrl =
+        (teacherData?['bannerImageUrl'] ?? teacherData?['coverImageUrl'])
+            ?.toString();
+    if (bannerUrl != null && bannerUrl.trim().isNotEmpty) {
+      return NetworkImage(bannerUrl.trim());
+    }
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
     super.build(context);
     final double topInset = MediaQuery.of(context).padding.top;
-    final double headerHeight = 165.0 + topInset;
+    // Standard 16:9 / 2.5:1 wide banner height for mobile
+    final double bannerHeight = 205.0 + topInset;
     const double profileRadius = 56.0;
     final bool canPopScreen = Navigator.canPop(context) && !isOwnProfile;
+    final ImageProvider? bannerProvider = _resolveBannerImageProvider();
 
     return PopScope(
       canPop: canPopScreen && !_isMenuExpanded,
@@ -762,9 +926,11 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
         _showExitAnimatedPopup();
       },
       child: Scaffold(
-        backgroundColor: const Color(0xFFF7F9FC),
+        backgroundColor: _scaffoldBg,
         body: isLoading
-            ? const Center(child: CircularProgressIndicator())
+            ? const Center(
+                child: CircularProgressIndicator(color: _brandBlue),
+              )
             : GestureDetector(
                 behavior: HitTestBehavior.translucent,
                 onTap: () {
@@ -779,109 +945,243 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                     return false;
                   },
                   child: SingleChildScrollView(
-                    physics: const ClampingScrollPhysics(),
+                    physics: const BouncingScrollPhysics(),
                     child: Column(
                       children: [
+                        // Exclusive Teacher Banner + Overlapping Avatar Header
                         Stack(
                           clipBehavior: Clip.none,
                           alignment: Alignment.center,
                           children: [
-                            AnimatedBuilder(
-                              animation: _glowAnimation,
-                              builder: (context, child) {
-                                return ClipPath(
-                                  clipper: HeaderCurveClipper(),
-                                  child: Container(
-                                    height: headerHeight,
-                                    width: double.infinity,
-                                    decoration: BoxDecoration(
-                                      gradient: LinearGradient(
-                                        colors: [
-                                          Colors.blue[900]!,
-                                          Colors.blue[700]!
-                                        ],
-                                        begin: Alignment.topLeft,
-                                        end: Alignment.bottomRight,
+                            Container(
+                              height: bannerHeight,
+                              width: double.infinity,
+                              decoration: BoxDecoration(
+                                gradient: const LinearGradient(
+                                  colors: [
+                                    Color(0xFF0F172A),
+                                    Color(0xFF1E3A8A),
+                                    Color(0xFF1E4C7A),
+                                  ],
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                ),
+                                image: bannerProvider != null
+                                    ? DecorationImage(
+                                        image: bannerProvider,
+                                        fit: BoxFit.cover,
+                                      )
+                                    : null,
+                                borderRadius: const BorderRadius.vertical(
+                                  bottom: Radius.circular(30),
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: _primaryNavy.withOpacity(0.16),
+                                    blurRadius: 20,
+                                    offset: const Offset(0, 8),
+                                  ),
+                                ],
+                              ),
+                              child: Stack(
+                                fit: StackFit.expand,
+                                children: [
+                                  // Subtle decorative pattern when no custom banner is set
+                                  if (bannerProvider == null)
+                                    Positioned(
+                                      right: -30,
+                                      top: -20,
+                                      child: Container(
+                                        width: 170,
+                                        height: 170,
+                                        decoration: BoxDecoration(
+                                          shape: BoxShape.circle,
+                                          color: Colors.white.withOpacity(0.05),
+                                        ),
                                       ),
                                     ),
-                                    child: Stack(
+                                  // Scrim gradient for readable top bar & bottom contrast
+                                  Container(
+                                    decoration: BoxDecoration(
+                                      borderRadius: const BorderRadius.vertical(
+                                        bottom: Radius.circular(30),
+                                      ),
+                                      gradient: LinearGradient(
+                                        begin: Alignment.topCenter,
+                                        end: Alignment.bottomCenter,
+                                        colors: [
+                                          Colors.black.withOpacity(0.48),
+                                          Colors.transparent,
+                                          Colors.black.withOpacity(0.42),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                  // Top Title + Action Menu
+                                  Positioned(
+                                    top: topInset + 10,
+                                    left: 14,
+                                    right: 14,
+                                    child: Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.spaceBetween,
                                       children: [
-                                        Positioned(
-                                          top: topInset + 12,
-                                          left: 12,
-                                          right: 12,
-                                          child: Row(
-                                            mainAxisAlignment:
-                                                MainAxisAlignment.spaceBetween,
-                                            children: [
-                                              Row(
-                                                mainAxisSize: MainAxisSize.min,
-                                                children: [
-                                                  if (canPopScreen)
-                                                    IconButton(
-                                                      icon: const Icon(
-                                                        Icons
-                                                            .arrow_back_ios_new_rounded,
-                                                        color: Colors.white,
-                                                        size: 20,
-                                                      ),
-                                                      onPressed: () =>
-                                                          Navigator.pop(
-                                                              context),
-                                                    )
-                                                  else
-                                                    const SizedBox(width: 8),
-                                                  const Text(
-                                                    'My Profile',
-                                                    style: TextStyle(
-                                                      fontWeight:
-                                                          FontWeight.bold,
-                                                      color: Colors.white,
-                                                      fontSize: 22,
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                              Flexible(
-                                                child: Align(
-                                                  alignment:
-                                                      Alignment.centerRight,
-                                                  child:
-                                                      _buildActionHeaderBar(),
+                                        Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            if (canPopScreen)
+                                              Container(
+                                                margin: const EdgeInsets.only(
+                                                    right: 8),
+                                                decoration: BoxDecoration(
+                                                  color: Colors.black
+                                                      .withOpacity(0.28),
+                                                  borderRadius:
+                                                      BorderRadius.circular(12),
                                                 ),
+                                                child: IconButton(
+                                                  icon: const Icon(
+                                                    Icons
+                                                        .arrow_back_ios_new_rounded,
+                                                    color: Colors.white,
+                                                    size: 18,
+                                                  ),
+                                                  onPressed: () =>
+                                                      Navigator.pop(context),
+                                                ),
+                                              )
+                                            else
+                                              const SizedBox(width: 4),
+                                            Text(
+                                              isOwnProfile
+                                                  ? (isEditing
+                                                      ? 'Edit Profile'
+                                                      : 'My Profile')
+                                                  : 'Educator Profile',
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.w900,
+                                                color: Colors.white,
+                                                fontSize: 21,
+                                                letterSpacing: 0.2,
                                               ),
-                                            ],
+                                            ),
+                                          ],
+                                        ),
+                                        Flexible(
+                                          child: Align(
+                                            alignment: Alignment.centerRight,
+                                            child: _buildActionHeaderBar(),
                                           ),
                                         ),
                                       ],
                                     ),
                                   ),
-                                );
-                              },
+                                  // Exclusive Teacher Banner Upload / Edit Button
+                                  if (isOwnProfile)
+                                    Positioned(
+                                      right: 16,
+                                      bottom: 14,
+                                      child: Material(
+                                        color: Colors.transparent,
+                                        child: InkWell(
+                                          borderRadius:
+                                              BorderRadius.circular(20),
+                                          onTap: _isUploadingBanner
+                                              ? null
+                                              : _pickAndUploadBanner,
+                                          child: ClipRRect(
+                                            borderRadius:
+                                                BorderRadius.circular(20),
+                                            child: BackdropFilter(
+                                              filter: ImageFilter.blur(
+                                                  sigmaX: 10, sigmaY: 10),
+                                              child: Container(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                  horizontal: 12,
+                                                  vertical: 7,
+                                                ),
+                                                decoration: BoxDecoration(
+                                                  color: Colors.black
+                                                      .withOpacity(0.45),
+                                                  borderRadius:
+                                                      BorderRadius.circular(20),
+                                                  border: Border.all(
+                                                    color: Colors.white
+                                                        .withOpacity(0.35),
+                                                    width: 1,
+                                                  ),
+                                                ),
+                                                child: Row(
+                                                  mainAxisSize:
+                                                      MainAxisSize.min,
+                                                  children: [
+                                                    if (_isUploadingBanner)
+                                                      const SizedBox(
+                                                        width: 14,
+                                                        height: 14,
+                                                        child:
+                                                            CircularProgressIndicator(
+                                                          strokeWidth: 2,
+                                                          color: Colors.white,
+                                                        ),
+                                                      )
+                                                    else
+                                                      const Icon(
+                                                        Icons
+                                                            .photo_camera_back_rounded,
+                                                        color: Colors.white,
+                                                        size: 15,
+                                                      ),
+                                                    const SizedBox(width: 6),
+                                                    Text(
+                                                      _isUploadingBanner
+                                                          ? 'Uploading...'
+                                                          : (bannerProvider !=
+                                                                  null
+                                                              ? 'Change Cover'
+                                                              : 'Add Cover'),
+                                                      style: const TextStyle(
+                                                        color: Colors.white,
+                                                        fontSize: 11.5,
+                                                        fontWeight:
+                                                            FontWeight.w700,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                ],
+                              ),
                             ),
                             Positioned(
-                              top: headerHeight - profileRadius - 10,
+                              top: bannerHeight - profileRadius - 6,
                               child: _buildProfileImage(profileRadius),
                             ),
                           ],
                         ),
-                        const SizedBox(height: profileRadius + 12),
+                        const SizedBox(height: profileRadius + 14),
                         Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 16),
                           child: Column(
                             children: [
                               _buildNameWithBadge(),
-                              const SizedBox(height: 8),
+                              const SizedBox(height: 10),
                               _buildUidIdentityCard(),
-                              const SizedBox(height: 12),
+                              const SizedBox(height: 14),
                               _buildRatingSummaryCard(),
                               const SizedBox(height: 12),
                               if (!isEditing) _buildFollowStats(),
-                              if (!isOwnProfile) const SizedBox(height: 10),
+                              if (!isOwnProfile) const SizedBox(height: 12),
                               if (!isOwnProfile) _buildFollowButtonWidget(),
                               if (!isOwnProfile)
                                 _buildStudentRatingActionButton(),
-                              const SizedBox(height: 20),
+                              const SizedBox(height: 22),
                               isEditing
                                   ? _buildEditForm()
                                   : _buildViewProfile(),
@@ -893,7 +1193,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                             ],
                           ),
                         ),
-                        const SizedBox(height: 24),
+                        const SizedBox(height: 30),
                       ],
                     ),
                   ),
@@ -905,14 +1205,22 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
 
   Widget _buildActionHeaderBar() {
     if (!_isMenuExpanded) {
-      return IconButton(
-        icon: const Icon(
-          Icons.more_vert_rounded,
-          color: Colors.white,
-          size: 24,
+      return Container(
+        decoration: BoxDecoration(
+          color: Colors.black.withOpacity(0.28),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.white.withOpacity(0.22)),
         ),
-        tooltip: 'Menu',
-        onPressed: _openMenu,
+        child: IconButton(
+          visualDensity: VisualDensity.compact,
+          icon: const Icon(
+            Icons.more_vert_rounded,
+            color: Colors.white,
+            size: 22,
+          ),
+          tooltip: 'Menu',
+          onPressed: _openMenu,
+        ),
       );
     }
 
@@ -921,11 +1229,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
     if (isOwnProfile) {
       menuItems.add(
         StreamBuilder<QuerySnapshot>(
-          stream: _firestore
-              .collection('follow_requests')
-              .where('teacherId', isEqualTo: widget.currentUserId)
-              .where('status', isEqualTo: 'pending')
-              .snapshots(),
+          stream: _pendingRequestsStream,
           builder: (context, snapshot) {
             final int pendingCount =
                 snapshot.hasData ? snapshot.data!.docs.length : 0;
@@ -1122,7 +1426,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.18),
+              color: Colors.black.withOpacity(0.45),
               borderRadius: BorderRadius.circular(28),
               border: Border.all(
                 color: Colors.white.withOpacity(0.35),
@@ -1171,89 +1475,120 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
         teacherData?['currentSeason'] ?? RatingModel.getCurrentSeason();
 
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.blue.shade100),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
         boxShadow: [
-          BoxShadow(color: Colors.blue.withOpacity(0.03), blurRadius: 10)
+          BoxShadow(
+            color: _primaryNavy.withOpacity(0.04),
+            blurRadius: 14,
+            offset: const Offset(0, 4),
+          )
         ],
       ),
-      child: Column(
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      const Icon(Icons.star_rounded,
-                          color: Colors.amber, size: 24),
-                      const SizedBox(width: 4),
-                      Text(
-                        avgRating.toStringAsFixed(1),
-                        style: const TextStyle(
-                            fontSize: 20, fontWeight: FontWeight.bold),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 9, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFEF3C7),
+                        borderRadius: BorderRadius.circular(10),
                       ),
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 2),
-                        decoration: BoxDecoration(
-                            color: Colors.blue[50],
-                            borderRadius: BorderRadius.circular(10)),
-                        child: Text(
-                          "$currentSeason Rating",
-                          style: TextStyle(
-                              color: Colors.blue[900],
-                              fontSize: 11,
-                              fontWeight: FontWeight.bold),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    "All-Time: ★ $allTimeRating ($reviewCount Reviews)",
-                    style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey.shade600,
-                        fontWeight: FontWeight.w500),
-                  ),
-                ],
-              ),
-              OutlinedButton.icon(
-                style: OutlinedButton.styleFrom(
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10)),
-                  side: BorderSide(color: Colors.blue.shade300),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                ),
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => TeacherReviewsScreen(
-                        teacherId: widget.currentUserId,
-                        teacherName: _nameController.text.isEmpty
-                            ? "Teacher"
-                            : _nameController.text,
-                        teacherProfileUrl: teacherData?['profileImageUrl'],
-                        currentStudentId: _auth.currentUser?.uid ?? "",
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.star_rounded,
+                              color: Color(0xFFD97706), size: 20),
+                          const SizedBox(width: 4),
+                          Text(
+                            avgRating.toStringAsFixed(1),
+                            style: const TextStyle(
+                              fontSize: 17,
+                              fontWeight: FontWeight.w900,
+                              color: Color(0xFF92400E),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                  );
-                },
-                icon: const Icon(Icons.rate_review_outlined, size: 16),
-                label: const Text("View Reviews",
-                    style:
-                        TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFEFF6FF),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: const Color(0xFFBFDBFE)),
+                        ),
+                        child: Text(
+                          "$currentSeason Rating",
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Color(0xFF1D4ED8),
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 7),
+                Text(
+                  "All-Time: ★ ${allTimeRating.toStringAsFixed(1)} ($reviewCount Reviews)",
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    color: Color(0xFF64748B),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFF0FDF4),
+              foregroundColor: const Color(0xFF0F766E),
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+                side: const BorderSide(color: Color(0xFF99F6E4)),
               ),
-            ],
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            ),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => TeacherReviewsScreen(
+                    teacherId: widget.currentUserId,
+                    teacherName: _nameController.text.isEmpty
+                        ? "Teacher"
+                        : _nameController.text,
+                    teacherProfileUrl: teacherData?['profileImageUrl'],
+                    currentStudentId: _auth.currentUser?.uid ?? "",
+                  ),
+                ),
+              );
+            },
+            icon: const Icon(Icons.rate_review_outlined, size: 16),
+            label: const Text(
+              "View Reviews",
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
+            ),
           ),
         ],
       ),
@@ -1276,14 +1611,21 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
           padding: const EdgeInsets.only(top: 10),
           child: ElevatedButton.icon(
             style: ElevatedButton.styleFrom(
-              backgroundColor: hasRated ? Colors.amber[800] : Colors.amber[700],
+              backgroundColor:
+                  hasRated ? const Color(0xFFD97706) : const Color(0xFFF59E0B),
               foregroundColor: Colors.white,
-              minimumSize: const Size(180, 42),
+              elevation: 0,
+              minimumSize: const Size(190, 44),
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
+                  borderRadius: BorderRadius.circular(14)),
             ),
-            icon: Icon(hasRated ? Icons.edit_note : Icons.star, size: 18),
-            label: Text(hasRated ? "Edit Rating" : "Give Rating"),
+            icon: Icon(
+                hasRated ? Icons.edit_note_rounded : Icons.star_rounded,
+                size: 19),
+            label: Text(
+              hasRated ? "Edit Rating" : "Give Rating",
+              style: const TextStyle(fontWeight: FontWeight.w800),
+            ),
             onPressed: () {
               Navigator.push(
                 context,
@@ -1307,14 +1649,18 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
 
   Widget _buildUidIdentityCard() {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      constraints: const BoxConstraints(maxWidth: 320),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      constraints: const BoxConstraints(maxWidth: 340),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade200),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
         boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 4)
+          BoxShadow(
+            color: _primaryNavy.withOpacity(0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          )
         ],
       ),
       child: Row(
@@ -1324,40 +1670,49 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
+                const Text(
                   "TEACHER UID",
                   style: TextStyle(
-                      color: Colors.grey.shade500,
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 0.5),
+                    color: Color(0xFF94A3B8),
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.7,
+                  ),
                 ),
                 const SizedBox(height: 2),
                 Text(
                   widget.currentUserId,
                   style: const TextStyle(
-                      color: Colors.black87,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: 0.2),
+                    color: _primaryNavy,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.2,
+                  ),
                   overflow: TextOverflow.ellipsis,
                 ),
               ],
             ),
           ),
+          const SizedBox(width: 8),
           InkWell(
             onTap: () {
+              HapticFeedback.lightImpact();
               Clipboard.setData(ClipboardData(text: widget.currentUserId));
               SuccessToast.show(context, "Teacher UID Copied!");
             },
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(10),
             child: Container(
-              padding: const EdgeInsets.all(6),
+              padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                  color: Colors.blue.shade50,
-                  borderRadius: BorderRadius.circular(8)),
-              child: Icon(Icons.copy_all_rounded,
-                  color: Colors.blue.shade800, size: 18),
+                color: const Color(0xFFEFF6FF),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFFBFDBFE)),
+              ),
+              child: const Icon(
+                Icons.copy_all_rounded,
+                color: _accentBlue,
+                size: 18,
+              ),
             ),
           )
         ],
@@ -1367,6 +1722,9 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
 
   Widget _buildProfileImage(double radius) {
     final url = teacherData?['profileImageUrl'];
+    final String nameText =
+        _nameController.text.trim().isNotEmpty ? _nameController.text.trim() : 'T';
+
     return GestureDetector(
       onTap: isEditing
           ? () async {
@@ -1377,73 +1735,131 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
               }
             }
           : null,
-      child: Stack(children: [
-        Container(
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            border: Border.all(color: Colors.white, width: 4),
-            boxShadow: [
-              BoxShadow(
-                  color: Colors.black.withOpacity(0.08),
-                  blurRadius: 12,
-                  offset: const Offset(0, 6)),
-            ],
-          ),
-          child: CircleAvatar(
-            radius: radius,
-            backgroundColor: Colors.blue[50],
-            backgroundImage: _selectedImage != null
-                ? FileImage(_selectedImage!)
-                : (url != null ? NetworkImage(url) : null) as ImageProvider?,
-          ),
-        ),
-        if (isEditing)
-          Positioned(
-            bottom: 0,
-            right: 0,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: Colors.white,
+              boxShadow: [
+                BoxShadow(
+                  color: _primaryNavy.withOpacity(0.14),
+                  blurRadius: 18,
+                  offset: const Offset(0, 6),
+                ),
+              ],
+            ),
             child: CircleAvatar(
-              backgroundColor: Colors.blue[800],
-              radius: 18,
-              child: const Icon(Icons.camera_alt_rounded,
-                  color: Colors.white, size: 16),
+              radius: radius,
+              backgroundColor: const Color(0xFFE0F2FE),
+              backgroundImage: _selectedImage != null
+                  ? FileImage(_selectedImage!)
+                  : (url != null && url.toString().isNotEmpty
+                      ? NetworkImage(url.toString())
+                      : null) as ImageProvider?,
+              child: (_selectedImage == null &&
+                      (url == null || url.toString().isEmpty))
+                  ? Text(
+                      nameText[0].toUpperCase(),
+                      style: const TextStyle(
+                        fontSize: 36,
+                        fontWeight: FontWeight.w900,
+                        color: _brandBlue,
+                      ),
+                    )
+                  : null,
             ),
           ),
-      ]),
+          if (isEditing)
+            Positioned(
+              bottom: 2,
+              right: 2,
+              child: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [_brandBlue, _accentBlue],
+                  ),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white, width: 2.5),
+                ),
+                child: const Icon(
+                  Icons.camera_alt_rounded,
+                  color: Colors.white,
+                  size: 16,
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 
   Widget _buildNameWithBadge() {
-    return Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-      Text(
-        _nameController.text.isEmpty ? "No Name" : _nameController.text,
-        style: const TextStyle(
-            fontSize: 22,
-            fontWeight: FontWeight.bold,
-            color: Color(0xFF1B1B1B)),
-      ),
-      if (teacherData?['isVerified'] ?? false)
-        const Padding(
-          padding: EdgeInsets.only(left: 6),
-          child: Icon(Icons.verified, color: Colors.blue, size: 20),
+    final bool isVerified = teacherData?['isVerified'] == true ||
+        teacherData?['status'] == 'approved';
+    final bool hasGolden = teacherData?['hasGoldenBadge'] == true;
+
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Flexible(
+          child: Text(
+            _nameController.text.isEmpty ? "No Name" : _nameController.text,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 23,
+              fontWeight: FontWeight.w900,
+              color: _primaryNavy,
+              letterSpacing: -0.3,
+            ),
+          ),
         ),
-    ]);
+        if (isVerified)
+          const Padding(
+            padding: EdgeInsets.only(left: 6),
+            child: Icon(Icons.verified_rounded,
+                color: Color(0xFF0284C7), size: 22),
+          ),
+        if (hasGolden)
+          const Padding(
+            padding: EdgeInsets.only(left: 4),
+            child: Icon(Icons.workspace_premium_rounded,
+                color: Color(0xFFF59E0B), size: 22),
+          ),
+      ],
+    );
   }
 
   Widget _buildFollowStats() {
     return StreamBuilder<int>(
-      stream: _followService.streamFollowersCount(widget.currentUserId),
+      stream: _followersCountStream,
       builder: (context, snapshot) {
         int count = snapshot.data ?? 0;
         return Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 7),
           decoration: BoxDecoration(
-              color: Colors.blue[50], borderRadius: BorderRadius.circular(20)),
-          child: Text(
-            'Followers: $count',
-            style: TextStyle(
-                color: Colors.blue[800],
-                fontWeight: FontWeight.bold,
-                fontSize: 13),
+            color: const Color(0xFFEFF6FF),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: const Color(0xFFBFDBFE)),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.people_alt_rounded,
+                  size: 15, color: Color(0xFF1D4ED8)),
+              const SizedBox(width: 6),
+              Text(
+                'Followers: $count',
+                style: const TextStyle(
+                  color: Color(0xFF1D4ED8),
+                  fontWeight: FontWeight.w800,
+                  fontSize: 13,
+                ),
+              ),
+            ],
           ),
         );
       },
@@ -1512,65 +1928,157 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
   }
 
   Widget _buildViewProfile() {
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      _buildMaterial3Card("Tuition / Institute Name", _instituteController.text,
-          Icons.domain_outlined, Colors.indigo),
-      _buildMaterial3Card("Bio", _bioController.text,
-          Icons.description_outlined, const Color(0xFF3B82F6)),
-      _buildMaterial3Card(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildMaterial3Card(
+          "Tuition / Institute Name",
+          _instituteController.text,
+          Icons.domain_rounded,
+          const Color(0xFF4F46E5),
+        ),
+        _buildMaterial3Card(
+          "Teaching Experience",
+          _experienceController.text,
+          Icons.workspace_premium_rounded,
+          const Color(0xFF0D9488),
+        ),
+        _buildMaterial3Card(
+          "Bio",
+          _bioController.text,
+          Icons.description_rounded,
+          const Color(0xFF2563EB),
+        ),
+        _buildMaterial3Card(
           "Phone Number",
           isOwnProfile ? _phoneController.text : "Hidden for Privacy",
-          Icons.phone_outlined,
-          Colors.deepPurple),
-      _buildMaterial3Card("Teaching Class", _classController.text,
-          Icons.school_outlined, const Color(0xFF10B981)),
-      _buildMaterial3Card(
+          Icons.phone_rounded,
+          const Color(0xFF7C3AED),
+        ),
+        _buildMaterial3Card(
+          "Teaching Class",
+          _classController.text,
+          Icons.school_rounded,
+          const Color(0xFF10B981),
+        ),
+        _buildMaterial3Card(
           "Gender",
           isOwnProfile ? (gender ?? "Not set") : "Hidden for Privacy",
-          Icons.wc_outlined,
-          const Color(0xFFF59E0B)),
-      const SizedBox(height: 18),
-      const Text("Teaching Areas (Locations)",
-          style: TextStyle(
-              fontWeight: FontWeight.bold,
-              fontSize: 15,
-              color: Color(0xFF1B1B1B))),
-      const SizedBox(height: 8),
-      Wrap(
-        spacing: 8,
-        children: teacherLocations
-            .map((l) => Chip(
-                  label: Text(
-                      (l is Map) ? (l['address'] ?? "Unknown") : l.toString()),
-                  avatar:
-                      const Icon(Icons.location_on, size: 14, color: Colors.red),
-                  backgroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
-                  side: BorderSide(color: Colors.grey.shade200),
-                ))
-            .toList(),
+          Icons.wc_rounded,
+          const Color(0xFFF59E0B),
+        ),
+        const SizedBox(height: 18),
+        _buildSectionTitle(
+            "Teaching Areas (Locations)", Icons.location_on_rounded),
+        const SizedBox(height: 10),
+        teacherLocations.isEmpty
+            ? _buildEmptyChipNotice("No teaching locations added yet")
+            : Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: teacherLocations
+                    .map(
+                      (l) => Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: const Color(0xFFE2E8F0)),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.location_on_rounded,
+                                size: 15, color: Color(0xFFEF4444)),
+                            const SizedBox(width: 6),
+                            Flexible(
+                              child: Text(
+                                (l is Map)
+                                    ? (l['address'] ?? "Unknown").toString()
+                                    : l.toString(),
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: _primaryNavy,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    )
+                    .toList(),
+              ),
+        const SizedBox(height: 20),
+        _buildSectionTitle("Subjects", Icons.menu_book_rounded),
+        const SizedBox(height: 10),
+        selectedSubjects.isEmpty
+            ? _buildEmptyChipNotice("No subjects listed yet")
+            : Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: selectedSubjects
+                    .map(
+                      (s) => Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFEFF6FF),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: const Color(0xFFBFDBFE)),
+                        ),
+                        child: Text(
+                          s,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF1E3A8A),
+                          ),
+                        ),
+                      ),
+                    )
+                    .toList(),
+              ),
+      ],
+    );
+  }
+
+  Widget _buildSectionTitle(String title, IconData icon) {
+    return Row(
+      children: [
+        Icon(icon, size: 18, color: _brandBlue),
+        const SizedBox(width: 7),
+        Text(
+          title,
+          style: const TextStyle(
+            fontWeight: FontWeight.w800,
+            fontSize: 16,
+            color: _primaryNavy,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildEmptyChipNotice(String text) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
       ),
-      const SizedBox(height: 18),
-      const Text("Subjects",
-          style: TextStyle(
-              fontWeight: FontWeight.bold,
-              fontSize: 15,
-              color: Color(0xFF1B1B1B))),
-      const SizedBox(height: 8),
-      Wrap(
-        spacing: 8,
-        children: selectedSubjects
-            .map((s) => Chip(
-                  label: Text(s),
-                  backgroundColor: Colors.blue[50],
-                  side: BorderSide.none,
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
-                ))
-            .toList(),
+      child: Text(
+        text,
+        style: const TextStyle(
+          color: Color(0xFF94A3B8),
+          fontSize: 13,
+          fontWeight: FontWeight.w500,
+        ),
       ),
-    ]);
+    );
   }
 
   Widget _buildMaterial3Card(
@@ -1579,35 +2087,44 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
         boxShadow: [
           BoxShadow(
-              color: Colors.black.withOpacity(0.02),
-              blurRadius: 8,
-              offset: const Offset(0, 4))
+            color: _primaryNavy.withOpacity(0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          )
         ],
       ),
       child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
         leading: Container(
-          padding: const EdgeInsets.all(10),
+          padding: const EdgeInsets.all(11),
           decoration: BoxDecoration(
-              color: accentColor.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(12)),
+            color: accentColor.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(14),
+          ),
           child: Icon(icon, color: accentColor, size: 22),
         ),
-        title: Text(title,
-            style: TextStyle(
-                fontSize: 11,
-                color: Colors.grey.shade500,
-                fontWeight: FontWeight.bold)),
+        title: Text(
+          title,
+          style: const TextStyle(
+            fontSize: 11.5,
+            color: Color(0xFF64748B),
+            fontWeight: FontWeight.w700,
+          ),
+        ),
         subtitle: Padding(
-          padding: const EdgeInsets.only(top: 2.0),
-          child: Text(value.isEmpty ? "Not set" : value,
-              style: const TextStyle(
-                  fontSize: 15,
-                  color: Color(0xFF1B1B1B),
-                  fontWeight: FontWeight.w600)),
+          padding: const EdgeInsets.only(top: 3.0),
+          child: Text(
+            value.isEmpty ? "Not set" : value,
+            style: const TextStyle(
+              fontSize: 15,
+              color: _primaryNavy,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
         ),
       ),
     );
@@ -1617,13 +2134,10 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Padding(
-          padding: EdgeInsets.symmetric(vertical: 18),
-          child: Text("Teacher Dashboard",
-              style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 16,
-                  color: Color(0xFF1B1B1B))),
+        Padding(
+          padding: const EdgeInsets.only(top: 22, bottom: 14),
+          child: _buildSectionTitle(
+              "Teacher Dashboard", Icons.dashboard_customize_rounded),
         ),
         GridView.count(
           crossAxisCount: 2,
@@ -1631,37 +2145,35 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
           physics: const NeverScrollableScrollPhysics(),
           mainAxisSpacing: 12,
           crossAxisSpacing: 12,
-          childAspectRatio: 1.4,
+          childAspectRatio: 1.38,
           children: [
             StreamBuilder<QuerySnapshot>(
-              stream: _firestore
-                  .collection('follow_requests')
-                  .where('teacherId', isEqualTo: widget.currentUserId)
-                  .where('status', isEqualTo: 'accepted')
-                  .snapshots(),
+              stream: _acceptedStudentsStream,
               builder: (context, snapshot) {
                 int count = snapshot.hasData ? snapshot.data!.docs.length : 0;
-                return _buildDashboardCard("Total Students", "$count",
-                    Icons.people_alt_outlined, Colors.purple);
+                return _buildDashboardCard(
+                  "Total Students",
+                  "$count",
+                  Icons.people_alt_rounded,
+                  const Color(0xFF7C3AED),
+                );
               },
             ),
             StreamBuilder<QuerySnapshot>(
-              stream: _firestore
-                  .collection('live_classes')
-                  .where('teacherId', isEqualTo: widget.currentUserId)
-                  .snapshots(),
+              stream: _todayClassesStream,
               builder: (context, snapshot) {
                 int classCount =
                     snapshot.hasData ? snapshot.data!.docs.length : 0;
-                return _buildDashboardCard("Today's Classes", "$classCount",
-                    Icons.calendar_today_outlined, Colors.orange);
+                return _buildDashboardCard(
+                  "Today's Classes",
+                  "$classCount",
+                  Icons.calendar_today_rounded,
+                  const Color(0xFFEA580C),
+                );
               },
             ),
             StreamBuilder<QuerySnapshot>(
-              stream: _firestore
-                  .collection('student_fees')
-                  .where('teacherId', isEqualTo: widget.currentUserId)
-                  .snapshots(),
+              stream: _studentFeesStream,
               builder: (context, snapshot) {
                 double totalPending = 0;
                 List<Map<String, dynamic>> dueStudents = [];
@@ -1686,21 +2198,21 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                   }
                 }
 
-                dueStudents.sort(
-                    (a, b) => (b['due'] as double).compareTo(a['due'] as double));
+                dueStudents.sort((a, b) =>
+                    (b['due'] as double).compareTo(a['due'] as double));
 
                 return _buildDashboardCard(
                   "Pending Payments",
                   "₹${totalPending.toStringAsFixed(0)}",
-                  Icons.account_balance_wallet_outlined,
-                  Colors.red,
+                  Icons.account_balance_wallet_rounded,
+                  const Color(0xFFDC2626),
                   onTap: () => _showPendingDuesSheet(totalPending, dueStudents),
                   actionWidget: Container(
                     padding:
-                        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                     decoration: BoxDecoration(
-                      color: Colors.red.shade50,
-                      borderRadius: BorderRadius.circular(6),
+                      color: const Color(0xFFFEE2E2),
+                      borderRadius: BorderRadius.circular(8),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
@@ -1709,14 +2221,14 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                           dueStudents.isNotEmpty
                               ? "${dueStudents.length}"
                               : "0",
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.red.shade700,
+                          style: const TextStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w800,
+                            color: Color(0xFFB91C1C),
                           ),
                         ),
-                        Icon(Icons.chevron_right_rounded,
-                            size: 12, color: Colors.red.shade700),
+                        const Icon(Icons.chevron_right_rounded,
+                            size: 13, color: Color(0xFFB91C1C)),
                       ],
                     ),
                   ),
@@ -1724,19 +2236,18 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
               },
             ),
             StreamBuilder<QuerySnapshot>(
-              stream: _firestore
-                  .collection('live_classes')
-                  .where('teacherId', isEqualTo: widget.currentUserId)
-                  .where('isLive', isEqualTo: true)
-                  .snapshots(),
+              stream: _activeLiveClassesStream,
               builder: (context, snapshot) {
                 bool isLiveActive =
                     snapshot.hasData && snapshot.data!.docs.isNotEmpty;
                 return _buildDashboardCard(
-                    "Live Classes",
-                    isLiveActive ? "Active" : "Inactive",
-                    Icons.sensors_outlined,
-                    isLiveActive ? Colors.green : Colors.grey);
+                  "Live Classes",
+                  isLiveActive ? "Active" : "Inactive",
+                  Icons.sensors_rounded,
+                  isLiveActive
+                      ? const Color(0xFF16A34A)
+                      : const Color(0xFF64748B),
+                );
               },
             ),
           ],
@@ -1757,16 +2268,18 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(20),
         child: Container(
           decoration: BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.circular(18),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: const Color(0xFFE2E8F0)),
             boxShadow: [
               BoxShadow(
-                  color: Colors.black.withOpacity(0.015),
-                  blurRadius: 8,
-                  offset: const Offset(0, 4))
+                color: _primaryNavy.withOpacity(0.035),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              )
             ],
           ),
           padding: const EdgeInsets.all(14.0),
@@ -1778,11 +2291,12 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Container(
-                    padding: const EdgeInsets.all(8),
+                    padding: const EdgeInsets.all(9),
                     decoration: BoxDecoration(
-                        color: color.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(12)),
-                    child: Icon(icon, color: color, size: 18),
+                      color: color.withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(icon, color: color, size: 19),
                   ),
                   if (actionWidget != null) actionWidget,
                 ],
@@ -1790,17 +2304,27 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(value,
-                      style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xFF1B1B1B))),
+                  Text(
+                    value,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 19,
+                      fontWeight: FontWeight.w900,
+                      color: _primaryNavy,
+                    ),
+                  ),
                   const SizedBox(height: 2),
-                  Text(title,
-                      style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey.shade500,
-                          fontWeight: FontWeight.w500)),
+                  Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: Color(0xFF64748B),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ],
               )
             ],
@@ -1816,140 +2340,405 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
         .where((s) => s.toLowerCase().contains(query.toLowerCase()))
         .toList();
 
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      _editField("Full Name", _nameController, Icons.person),
-      _editField("Mobile Number", _phoneController, Icons.phone,
-          keyboardType: TextInputType.phone),
-      _editField("Tuition / Institute Name", _instituteController,
-          Icons.domain_outlined),
-      _editField("Bio", _bioController, Icons.info, maxLines: 3),
-      _editField("Teaching Class", _classController, Icons.book),
-      const Text("Gender",
-          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-      const SizedBox(height: 6),
-      Row(children: [
-        Radio<String>(
-            value: 'Male',
-            groupValue: gender,
-            activeColor: Colors.blue[800],
-            onChanged: (val) => setState(() => gender = val)),
-        const Text('Male', style: TextStyle(fontSize: 15)),
-        const SizedBox(width: 15),
-        Radio<String>(
-            value: 'Female',
-            groupValue: gender,
-            activeColor: Colors.blue[800],
-            onChanged: (val) => setState(() => gender = val)),
-        const Text('Female', style: TextStyle(fontSize: 15)),
-      ]),
-      const SizedBox(height: 15),
-      const Text("Add Teaching Areas",
-          style: TextStyle(fontWeight: FontWeight.bold)),
-      Wrap(
-        spacing: 8,
-        children: teacherLocations
-            .map((loc) => Chip(
-                  label: Text((loc is Map)
-                      ? (loc['address'] ?? "Unknown")
-                      : loc.toString()),
-                  onDeleted: () => setState(() => teacherLocations.remove(loc)),
-                ))
-            .toList(),
+    const List<String> quickExperienceOptions = [
+      '1+ Year',
+      '2+ Years',
+      '3+ Years',
+      '5+ Years',
+      '8+ Years',
+      '10+ Years',
+    ];
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: [
+          BoxShadow(
+            color: _primaryNavy.withOpacity(0.04),
+            blurRadius: 14,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
-      TextButton.icon(
-          onPressed: _openMapPicker,
-          icon: const Icon(Icons.map_outlined),
-          label: const Text("Pick Locations")),
-      const Divider(),
-      const Text("Select Subjects",
-          style: TextStyle(fontWeight: FontWeight.bold)),
-      const SizedBox(height: 10),
-      TextField(
-        controller: _subjectSearchController,
-        decoration: InputDecoration(
-            hintText: "Search subjects...",
-            prefixIcon: const Icon(Icons.search),
-            suffixIcon: (query.isNotEmpty && list.isEmpty)
-                ? IconButton(
-                    icon: const Icon(Icons.add, color: Colors.green),
-                    onPressed: () {
-                      if (!selectedSubjects.contains(query)) {
-                        setState(() {
-                          selectedSubjects.add(query);
-                          _subjectSearchController.clear();
-                        });
-                      }
-                    })
-                : null,
-            border: const OutlineInputBorder(
-                borderRadius: BorderRadius.all(Radius.circular(12)))),
-        onChanged: (_) => setState(() {}),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.badge_rounded, color: _brandBlue, size: 20),
+              SizedBox(width: 8),
+              Text(
+                "Personal & Academic Details",
+                style: TextStyle(
+                  fontSize: 16.5,
+                  fontWeight: FontWeight.w800,
+                  color: _primaryNavy,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          _editField("Full Name", _nameController, Icons.person_rounded),
+          _editField(
+            "Mobile Number",
+            _phoneController,
+            Icons.phone_rounded,
+            keyboardType: TextInputType.phone,
+          ),
+          _editField(
+            "Tuition / Institute Name",
+            _instituteController,
+            Icons.domain_rounded,
+          ),
+          // Added Teaching Experience field + quick preset chips
+          _editField(
+            "Teaching Experience (e.g. 5 Years)",
+            _experienceController,
+            Icons.workspace_premium_rounded,
+          ),
+          Padding(
+            padding: const EdgeInsets.only(bottom: 16),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: quickExperienceOptions.map((exp) {
+                final bool isSelected =
+                    _experienceController.text.trim().toLowerCase() ==
+                        exp.toLowerCase();
+                return InkWell(
+                  borderRadius: BorderRadius.circular(10),
+                  onTap: () {
+                    setState(() {
+                      _experienceController.text = exp;
+                    });
+                  },
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? _brandBlue
+                          : const Color(0xFFF1F5F9),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: isSelected
+                            ? _brandBlue
+                            : const Color(0xFFE2E8F0),
+                      ),
+                    ),
+                    child: Text(
+                      exp,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color:
+                            isSelected ? Colors.white : const Color(0xFF475569),
+                      ),
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+          _editField(
+            "Bio",
+            _bioController,
+            Icons.info_outline_rounded,
+            maxLines: 3,
+          ),
+          _editField(
+            "Teaching Class (e.g. Class 11-12, BSc)",
+            _classController,
+            Icons.menu_book_rounded,
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            "Gender",
+            style: TextStyle(
+              fontWeight: FontWeight.w800,
+              fontSize: 14.5,
+              color: _primaryNavy,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: ['Male', 'Female'].map((g) {
+              final bool isSel = gender == g;
+              return Expanded(
+                child: Padding(
+                  padding: EdgeInsets.only(right: g == 'Male' ? 10 : 0),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(14),
+                    onTap: () => setState(() => gender = g),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 180),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      decoration: BoxDecoration(
+                        color: isSel
+                            ? const Color(0xFFEFF6FF)
+                            : const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color: isSel
+                              ? _accentBlue
+                              : const Color(0xFFE2E8F0),
+                          width: isSel ? 1.6 : 1.0,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            g == 'Male'
+                                ? Icons.male_rounded
+                                : Icons.female_rounded,
+                            size: 19,
+                            color: isSel
+                                ? _accentBlue
+                                : const Color(0xFF64748B),
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            g,
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w800,
+                              color: isSel
+                                  ? _accentBlue
+                                  : const Color(0xFF475569),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+          const SizedBox(height: 20),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                "Add Teaching Areas",
+                style: TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 14.5,
+                  color: _primaryNavy,
+                ),
+              ),
+              TextButton.icon(
+                style: TextButton.styleFrom(
+                  foregroundColor: const Color(0xFF0F766E),
+                  backgroundColor: const Color(0xFFF0FDF4),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+                onPressed: _openMapPicker,
+                icon: const Icon(Icons.map_outlined, size: 17),
+                label: const Text(
+                  "Pick Locations",
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5),
+                ),
+              ),
+            ],
+          ),
+          if (teacherLocations.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: teacherLocations
+                  .map(
+                    (loc) => Chip(
+                      backgroundColor: const Color(0xFFF8FAFC),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        side: const BorderSide(color: Color(0xFFE2E8F0)),
+                      ),
+                      label: Text(
+                        (loc is Map)
+                            ? (loc['address'] ?? "Unknown").toString()
+                            : loc.toString(),
+                        style: const TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      onDeleted: () =>
+                          setState(() => teacherLocations.remove(loc)),
+                    ),
+                  )
+                  .toList(),
+            ),
+          ],
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 16),
+            child: Divider(height: 1, color: Color(0xFFE2E8F0)),
+          ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                "Select Subjects",
+                style: TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 14.5,
+                  color: _primaryNavy,
+                ),
+              ),
+              Text(
+                "${selectedSubjects.length} Selected",
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: _accentBlue,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: _subjectSearchController,
+            decoration: InputDecoration(
+              hintText: "Search or add custom subject...",
+              hintStyle: const TextStyle(
+                  fontSize: 13.5, color: Color(0xFF94A3B8)),
+              prefixIcon: const Icon(Icons.search_rounded,
+                  color: Color(0xFF64748B)),
+              filled: true,
+              fillColor: const Color(0xFFF8FAFC),
+              suffixIcon: (query.isNotEmpty && list.isEmpty)
+                  ? IconButton(
+                      icon: const Icon(Icons.add_circle_rounded,
+                          color: Color(0xFF16A34A)),
+                      onPressed: () {
+                        if (!selectedSubjects.contains(query)) {
+                          setState(() {
+                            selectedSubjects.add(query);
+                            _subjectSearchController.clear();
+                          });
+                        }
+                      },
+                    )
+                  : null,
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: const BorderSide(color: _accentBlue, width: 1.5),
+              ),
+            ),
+            onChanged: (_) => setState(() {}),
+          ),
+          const SizedBox(height: 10),
+          Container(
+            height: 220,
+            decoration: BoxDecoration(
+              color: const Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+            ),
+            child: ListView(
+              physics: const BouncingScrollPhysics(),
+              children: list
+                  .map(
+                    (s) => CheckboxListTile(
+                      dense: true,
+                      activeColor: _brandBlue,
+                      title: Text(
+                        s,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13.5,
+                          color: _primaryNavy,
+                        ),
+                      ),
+                      value: selectedSubjects.contains(s),
+                      onChanged: (v) => setState(() => v!
+                          ? selectedSubjects.add(s)
+                          : selectedSubjects.remove(s)),
+                    ),
+                  )
+                  .toList(),
+            ),
+          ),
+        ],
       ),
-      const SizedBox(height: 10),
-      SizedBox(
-        height: 200,
-        child: ListView(
-          children: list
-              .map((s) => CheckboxListTile(
-                    title: Text(s),
-                    value: selectedSubjects.contains(s),
-                    onChanged: (v) => setState(() =>
-                        v! ? selectedSubjects.add(s) : selectedSubjects.remove(s)),
-                  ))
-              .toList(),
-        ),
-      ),
-    ]);
+    );
   }
 
   Widget _buildSaveCancelButtons() {
     return Padding(
-      padding: const EdgeInsets.only(top: 20),
-      child: Row(children: [
-        Expanded(
-          child: OutlinedButton(
-            style: OutlinedButton.styleFrom(
+      padding: const EdgeInsets.only(top: 18),
+      child: Row(
+        children: [
+          Expanded(
+            child: OutlinedButton(
+              style: OutlinedButton.styleFrom(
                 padding: const EdgeInsets.symmetric(vertical: 15),
+                side: const BorderSide(color: Color(0xFFCBD5E1)),
                 shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12))),
-            onPressed: () => setState(() => isEditing = false),
-            child: const Text("CANCEL",
-                style:
-                    TextStyle(fontWeight: FontWeight.bold, color: Colors.grey)),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
+              onPressed: () {
+                setState(() {
+                  isEditing = false;
+                  _selectedImage = null;
+                  _selectedBannerImage = null;
+                });
+              },
+              child: const Text(
+                "CANCEL",
+                style: TextStyle(
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFF64748B),
+                ),
+              ),
+            ),
           ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: ElevatedButton(
-            style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.blue[800],
+          const SizedBox(width: 12),
+          Expanded(
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _brandBlue,
                 foregroundColor: Colors.white,
+                elevation: 0,
                 shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
-                padding: const EdgeInsets.symmetric(vertical: 15)),
-            onPressed: updateTeacherProfile,
-            child: const Text("SAVE CHANGES",
-                style: TextStyle(fontWeight: FontWeight.bold)),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                padding: const EdgeInsets.symmetric(vertical: 15),
+              ),
+              onPressed: updateTeacherProfile,
+              child: const Text(
+                "SAVE CHANGES",
+                style: TextStyle(fontWeight: FontWeight.w800),
+              ),
+            ),
           ),
-        ),
-      ]),
+        ],
+      ),
     );
   }
 
   Widget _buildToolsAndPayment() {
-    return Column(children: [
-      const SizedBox(height: 16),
-      Card(
-        elevation: 0,
-        color: Colors.white,
-        shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-            side: const BorderSide(color: Color(0xFFF1F5F9))),
-        child: ListTile(
-          leading: const Icon(Icons.videocam_rounded, color: Colors.red),
-          title: const Text("Go Live",
-              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-          trailing: const Icon(Icons.chevron_right_rounded),
+    return Column(
+      children: [
+        const SizedBox(height: 16),
+        _buildActionTile(
+          icon: Icons.videocam_rounded,
+          iconColor: const Color(0xFFDC2626),
+          bgColor: const Color(0xFFFEE2E2),
+          title: "Go Live",
+          subtitle: "Start an interactive live class session",
           onTap: () {
             Navigator.push(
               context,
@@ -1965,20 +2754,13 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
             );
           },
         ),
-      ),
-      const SizedBox(height: 4),
-      Card(
-        elevation: 0,
-        color: Colors.white,
-        shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-            side: const BorderSide(color: Color(0xFFF1F5F9))),
-        child: ListTile(
-          leading:
-              const Icon(Icons.assignment_turned_in_rounded, color: Colors.teal),
-          title: const Text("Tuition Management",
-              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-          trailing: const Icon(Icons.chevron_right_rounded),
+        const SizedBox(height: 10),
+        _buildActionTile(
+          icon: Icons.assignment_turned_in_rounded,
+          iconColor: const Color(0xFF0F766E),
+          bgColor: const Color(0xFFCCFBF1),
+          title: "Tuition Management",
+          subtitle: "Track monthly fees, attendance & academic diary",
           onTap: () {
             Navigator.push(
               context,
@@ -1993,24 +2775,111 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
             );
           },
         ),
-      ),
-    ]);
+      ],
+    );
   }
 
-  Widget _editField(String l, TextEditingController c, IconData i,
-          {int maxLines = 1,
-          TextInputType keyboardType = TextInputType.text}) =>
+  Widget _buildActionTile({
+    required IconData icon,
+    required Color iconColor,
+    required Color bgColor,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: [
+          BoxShadow(
+            color: _primaryNavy.withOpacity(0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        leading: Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: bgColor,
+            borderRadius: BorderRadius.circular(13),
+          ),
+          child: Icon(icon, color: iconColor, size: 22),
+        ),
+        title: Text(
+          title,
+          style: const TextStyle(
+            fontWeight: FontWeight.w800,
+            fontSize: 15,
+            color: _primaryNavy,
+          ),
+        ),
+        subtitle: Text(
+          subtitle,
+          style: const TextStyle(
+            fontSize: 12,
+            color: Color(0xFF64748B),
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        trailing: Container(
+          padding: const EdgeInsets.all(6),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF1F5F9),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: const Icon(
+            Icons.chevron_right_rounded,
+            color: _primaryNavy,
+            size: 18,
+          ),
+        ),
+        onTap: onTap,
+      ),
+    );
+  }
+
+  Widget _editField(
+    String label,
+    TextEditingController controller,
+    IconData icon, {
+    int maxLines = 1,
+    TextInputType keyboardType = TextInputType.text,
+  }) =>
       Padding(
-        padding: const EdgeInsets.only(bottom: 15),
+        padding: const EdgeInsets.only(bottom: 14),
         child: TextField(
-          controller: c,
+          controller: controller,
           maxLines: maxLines,
           keyboardType: keyboardType,
+          style: const TextStyle(
+            fontSize: 14.5,
+            fontWeight: FontWeight.w600,
+            color: _primaryNavy,
+          ),
           decoration: InputDecoration(
-            labelText: l,
-            prefixIcon: Icon(i),
-            border: const OutlineInputBorder(
-                borderRadius: BorderRadius.all(Radius.circular(12))),
+            labelText: label,
+            labelStyle: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF64748B),
+            ),
+            prefixIcon: Icon(icon, color: _brandBlue, size: 20),
+            filled: true,
+            fillColor: const Color(0xFFF8FAFC),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: const BorderSide(color: _accentBlue, width: 1.5),
+            ),
           ),
         ),
       );
