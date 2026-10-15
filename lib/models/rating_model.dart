@@ -4,11 +4,23 @@ class RatingModel {
   final String ratingId;
   final String teacherId;
   final String studentId;
+  final String connectionId;
+  final String subjectId;
   final double stars;
+  final double teachingQuality;
+  final double behaviour;
+  final double communication;
+  final double knowledge;
+  final double punctuality;
   final String review;
   final DateTime createdAt;
-  final String season; // e.g. "Season 1", "Season 2", "Season 3", "Season 4"
+  final DateTime? updatedAt;
+  final String season;
+  final String seasonId;
   final bool isVerified;
+  final String status;
+  final String? rejectionReason;
+  final int updateCount;
   final String? teacherReply;
   final DateTime? teacherReplyTime;
 
@@ -16,26 +28,57 @@ class RatingModel {
     required this.ratingId,
     required this.teacherId,
     required this.studentId,
+    this.connectionId = '',
+    this.subjectId = 'general',
     required this.stars,
+    double? teachingQuality,
+    double? behaviour,
+    double? communication,
+    double? knowledge,
+    double? punctuality,
     required this.review,
     required this.createdAt,
+    this.updatedAt,
     required this.season,
+    String? seasonId,
     this.isVerified = false,
+    String? status,
+    this.rejectionReason,
+    this.updateCount = 0,
     this.teacherReply,
     this.teacherReplyTime,
-  });
+  })  : teachingQuality = teachingQuality ?? stars,
+        behaviour = behaviour ?? stars,
+        communication = communication ?? stars,
+        knowledge = knowledge ?? stars,
+        punctuality = punctuality ?? stars,
+        seasonId = seasonId ?? getCurrentSeasonId(createdAt),
+        status = status ?? (isVerified ? 'verified' : 'pending');
 
-  // Convert RatingModel instance to JSON Map for Firestore
+  bool get isEligibleForCalculation => status == 'verified' || isVerified;
+
   Map<String, dynamic> toMap() {
     return {
       'ratingId': ratingId,
       'teacherId': teacherId,
       'studentId': studentId,
+      'connectionId': connectionId,
+      'subjectId': subjectId,
       'stars': stars,
+      'teachingQuality': teachingQuality,
+      'behaviour': behaviour,
+      'communication': communication,
+      'knowledge': knowledge,
+      'punctuality': punctuality,
       'review': review,
       'createdAt': Timestamp.fromDate(createdAt),
+      'updatedAt': updatedAt != null ? Timestamp.fromDate(updatedAt!) : null,
       'season': season,
-      'isVerified': isVerified,
+      'seasonId': seasonId,
+      'isVerified': status == 'verified' || isVerified,
+      'status': status,
+      'rejectionReason': rejectionReason,
+      'updateCount': updateCount,
       'teacherReply': teacherReply,
       'teacherReplyTime': teacherReplyTime != null
           ? Timestamp.fromDate(teacherReplyTime!)
@@ -43,62 +86,109 @@ class RatingModel {
     };
   }
 
-  // Create RatingModel instance from Firestore Document Snapshot / Map
   factory RatingModel.fromMap(Map<String, dynamic> map, String id) {
+    final parsedStars = (map['stars'] as num?)?.toDouble() ?? 0.0;
+    final parsedCreated =
+        (map['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now();
+    final parsedVerified = map['isVerified'] ?? false;
+    final parsedStatus =
+        map['status'] ?? (parsedVerified ? 'verified' : 'pending');
+
     return RatingModel(
       ratingId: id,
       teacherId: map['teacherId'] ?? '',
       studentId: map['studentId'] ?? '',
-      stars: (map['stars'] as num?)?.toDouble() ?? 0.0,
+      connectionId: map['connectionId'] ?? '',
+      subjectId: map['subjectId'] ?? 'general',
+      stars: parsedStars,
+      teachingQuality:
+          (map['teachingQuality'] as num?)?.toDouble() ?? parsedStars,
+      behaviour: (map['behaviour'] as num?)?.toDouble() ?? parsedStars,
+      communication:
+          (map['communication'] as num?)?.toDouble() ?? parsedStars,
+      knowledge: (map['knowledge'] as num?)?.toDouble() ?? parsedStars,
+      punctuality: (map['punctuality'] as num?)?.toDouble() ?? parsedStars,
       review: map['review'] ?? '',
-      createdAt: (map['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
-      season: map['season'] ?? _getCurrentSeason(),
-      isVerified: map['isVerified'] ?? false,
+      createdAt: parsedCreated,
+      updatedAt: (map['updatedAt'] as Timestamp?)?.toDate(),
+      season: map['season'] ?? _getCurrentSeason(parsedCreated),
+      seasonId: map['seasonId'] ?? getCurrentSeasonId(parsedCreated),
+      isVerified: parsedStatus == 'verified' || parsedVerified,
+      status: parsedStatus,
+      rejectionReason: map['rejectionReason'],
+      updateCount: (map['updateCount'] as num?)?.toInt() ?? 0,
       teacherReply: map['teacherReply'],
       teacherReplyTime: (map['teacherReplyTime'] as Timestamp?)?.toDate(),
     );
   }
 
-  // Helper method to automatically compute current season based on current month
-  static String getCurrentSeason() {
-    return _getCurrentSeason();
+  static String getCurrentSeason([DateTime? date]) {
+    return _getCurrentSeason(date ?? DateTime.now());
   }
 
-  static String _getCurrentSeason() {
-    final month = DateTime.now().month;
-    if (month >= 1 && month <= 3) {
+  static String getCurrentSeasonId([DateTime? date]) {
+    final target = date ?? DateTime.now();
+    final seasonNum = (target.month >= 1 && target.month <= 6) ? 1 : 2;
+    return '${target.year}_S$seasonNum';
+  }
+
+  static String _getCurrentSeason([DateTime? date]) {
+    final month = (date ?? DateTime.now()).month;
+    if (month >= 1 && month <= 6) {
       return "Season 1";
-    } else if (month >= 4 && month <= 6) {
-      return "Season 2";
-    } else if (month >= 7 && month <= 9) {
-      return "Season 3";
     } else {
-      return "Season 4";
+      return "Season 2";
     }
   }
 
-  // Helper method for copying object with modified values
   RatingModel copyWith({
     String? ratingId,
     String? teacherId,
     String? studentId,
+    String? connectionId,
+    String? subjectId,
     double? stars,
+    double? teachingQuality,
+    double? behaviour,
+    double? communication,
+    double? knowledge,
+    double? punctuality,
     String? review,
     DateTime? createdAt,
+    DateTime? updatedAt,
     String? season,
+    String? seasonId,
     bool? isVerified,
+    String? status,
+    String? rejectionReason,
+    int? updateCount,
     String? teacherReply,
     DateTime? teacherReplyTime,
   }) {
+    final nextStatus = status ?? this.status;
+    final nextVerified = isVerified ?? (nextStatus == 'verified');
+
     return RatingModel(
       ratingId: ratingId ?? this.ratingId,
       teacherId: teacherId ?? this.teacherId,
       studentId: studentId ?? this.studentId,
+      connectionId: connectionId ?? this.connectionId,
+      subjectId: subjectId ?? this.subjectId,
       stars: stars ?? this.stars,
+      teachingQuality: teachingQuality ?? this.teachingQuality,
+      behaviour: behaviour ?? this.behaviour,
+      communication: communication ?? this.communication,
+      knowledge: knowledge ?? this.knowledge,
+      punctuality: punctuality ?? this.punctuality,
       review: review ?? this.review,
       createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
       season: season ?? this.season,
-      isVerified: isVerified ?? this.isVerified,
+      seasonId: seasonId ?? this.seasonId,
+      isVerified: nextVerified,
+      status: nextStatus,
+      rejectionReason: rejectionReason ?? this.rejectionReason,
+      updateCount: updateCount ?? this.updateCount,
       teacherReply: teacherReply ?? this.teacherReply,
       teacherReplyTime: teacherReplyTime ?? this.teacherReplyTime,
     );
