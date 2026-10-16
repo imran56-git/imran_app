@@ -1,7 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../constants/algorithm_config.dart';
-import '../models/review_model.dart';
 import '../models/follow_model.dart';
+import '../models/season_model.dart';
 
 class AntiFraudService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -20,6 +20,14 @@ class AntiFraudService {
           'isValid': false,
           'status': 'rejected',
           'reason': 'Invalid teacher or student identification.',
+        };
+      }
+
+      if (teacherId == studentId) {
+        return {
+          'isValid': false,
+          'status': 'rejected',
+          'reason': 'Self-review is strictly prohibited.',
         };
       }
 
@@ -46,42 +54,42 @@ class AntiFraudService {
         return {
           'isValid': false,
           'status': 'rejected',
-          'reason': 'No established Student-Teacher connection found.',
+          'reason': 'Only connected students whose request was accepted can rate this teacher.',
         };
       }
 
-      final followModel = FollowModel.fromMap(connectionDoc.data()!, connectionDoc.id);
+      final followModel =
+          FollowModel.fromMap(connectionDoc.data()!, connectionDoc.id);
 
       if (!followModel.isEligibleToRate) {
         return {
           'isValid': false,
           'status': 'rejected',
-          'reason': 'Student-Teacher connection is not accepted or ineligible.',
+          'reason': 'Your follow request has not been accepted by the teacher yet.',
         };
       }
 
-      final currentSeasonId = ReviewModel.getCurrentSeasonId(DateTime.now());
+      final currentSeasonId = SeasonModel.current().id;
 
       final existingReviewsQuery = await _firestore
-          .collection('reviews')
+          .collection('teacher_reviews')
           .where('teacherId', isEqualTo: teacherId)
           .where('studentId', isEqualTo: studentId)
           .where('seasonId', isEqualTo: currentSeasonId)
           .get();
 
-      if (existingReviewsQuery.docs.isNotEmpty) {
-        if (!AlgorithmConfig.allowRatingUpdatesWithinSeason) {
-          return {
-            'isValid': false,
-            'status': 'rejected',
-            'reason': 'You have already submitted a review for this teacher in the current season.',
-          };
-        }
+      if (existingReviewsQuery.docs.isNotEmpty &&
+          !AlgorithmConfig.allowRatingUpdatesWithinSeason) {
+        return {
+          'isValid': false,
+          'status': 'rejected',
+          'reason': 'You have already submitted a review for this teacher in the current season.',
+        };
       }
 
       final oneHourAgo = DateTime.now().subtract(const Duration(hours: 1));
       final recentBurstQuery = await _firestore
-          .collection('reviews')
+          .collection('teacher_reviews')
           .where('teacherId', isEqualTo: teacherId)
           .where('createdAt', isGreaterThan: Timestamp.fromDate(oneHourAgo))
           .get();
@@ -89,9 +97,11 @@ class AntiFraudService {
       bool isFlagged = false;
       String? flagReason;
 
-      if (recentBurstQuery.docs.length >= AlgorithmConfig.suspiciousBurstReviewCountInOneHour) {
+      if (recentBurstQuery.docs.length >=
+          AlgorithmConfig.suspiciousBurstReviewCountInOneHour) {
         isFlagged = true;
-        flagReason = 'Unusually high rating frequency detected in a short time window.';
+        flagReason =
+            'Unusually high rating velocity detected within 1 hour; queued for manual verification.';
       }
 
       final status = isFlagged ? 'flagged' : 'verified';
@@ -114,6 +124,25 @@ class AntiFraudService {
     }
   }
 
+  Future<bool> submitTeacherAppeal({
+    required String teacherId,
+    required String reviewId,
+    required String appealReason,
+  }) async {
+    try {
+      await _firestore.collection('rating_appeals').add({
+        'teacherId': teacherId,
+        'reviewId': reviewId,
+        'appealReason': appealReason,
+        'status': 'pending_investigation',
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<void> logAuditTrail({
     required String reviewId,
     required String teacherId,
@@ -128,6 +157,7 @@ class AntiFraudService {
         'studentId': studentId,
         'status': status,
         'reason': reason,
+        'ruleVersion': AlgorithmConfig.currentRuleVersion,
         'timestamp': FieldValue.serverTimestamp(),
       });
     } catch (_) {}
