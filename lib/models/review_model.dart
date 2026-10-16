@@ -126,6 +126,12 @@ class ReviewModel extends Equatable {
     this.ruleVersion = AlgorithmConfig.currentRuleVersion,
   });
 
+  static String getCurrentSeasonId([DateTime? date]) {
+    final target = date ?? DateTime.now();
+    final seasonNum = (target.month >= 1 && target.month <= 6) ? 1 : 2;
+    return '${target.year}_S$seasonNum';
+  }
+
   bool get canBeEdited {
     if (!AlgorithmConfig.allowRatingUpdatesWithinSeason) {
       return false;
