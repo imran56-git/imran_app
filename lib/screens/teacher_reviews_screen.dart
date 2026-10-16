@@ -4,7 +4,6 @@ import '../models/rating_summary_model.dart';
 import '../services/review_service.dart';
 import '../services/rating_service.dart';
 import '../widgets/rating_dialog_widget.dart';
-import '../widgets/teacher_badge_widget.dart';
 
 class TeacherReviewsScreen extends StatefulWidget {
   final String teacherId;
@@ -48,6 +47,7 @@ class _TeacherReviewsScreenState extends State<TeacherReviewsScreen> {
 
       final reviews = await _reviewService.getTeacherReviews(
         teacherId: widget.teacherId,
+        onlyVerified: true,
       );
 
       setState(() {
@@ -74,7 +74,7 @@ class _TeacherReviewsScreenState extends State<TeacherReviewsScreen> {
           teacherId: widget.teacherId,
           studentId: widget.currentStudentId,
           studentName: 'Verified Student',
-          studentPhotoUrl: '', // ✅ এখানেstudentPhotoUrl প্যারামিটারটি ফিক্স করা হয়েছে
+          studentPhotoUrl: '',
           overallRating: rating,
           categories: CategoryRating(
             teaching: rating,
@@ -128,26 +128,26 @@ class _TeacherReviewsScreenState extends State<TeacherReviewsScreen> {
       body: StreamBuilder<RatingSummaryModel>(
         stream: _ratingService.streamTeacherRatingSummary(widget.teacherId),
         builder: (context, snapshot) {
-          final summary = snapshot.data ?? RatingSummaryModel.initial(widget.teacherId);
+          final summary =
+              snapshot.data ?? RatingSummaryModel.initial(widget.teacherId);
 
           return RefreshIndicator(
             onRefresh: _fetchData,
             color: primaryColor,
             child: SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(
+                parent: BouncingScrollPhysics(),
+              ),
               padding: const EdgeInsets.all(16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Overall Rating Overview Card
                   _buildSummaryHeader(summary, primaryColor),
                   const SizedBox(height: 20),
-
-                  // Categorical Progress Breakdown
                   _buildCategoryBreakdown(summary, primaryColor),
                   const SizedBox(height: 24),
-
                   const Text(
-                    'Student Reviews',
+                    'Verified Student Reviews',
                     style: TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
@@ -155,8 +155,6 @@ class _TeacherReviewsScreenState extends State<TeacherReviewsScreen> {
                     ),
                   ),
                   const SizedBox(height: 12),
-
-                  // Reviews List
                   if (_isLoadingReviews)
                     const Center(
                       child: Padding(
@@ -169,7 +167,7 @@ class _TeacherReviewsScreenState extends State<TeacherReviewsScreen> {
                       child: Padding(
                         padding: const EdgeInsets.all(32.0),
                         child: Text(
-                          'No reviews yet for ${widget.teacherName}.',
+                          'No verified reviews yet for ${widget.teacherName}.',
                           style: TextStyle(color: Colors.grey.shade600),
                         ),
                       ),
@@ -212,7 +210,7 @@ class _TeacherReviewsScreenState extends State<TeacherReviewsScreen> {
           Column(
             children: [
               Text(
-                summary.averageRating.toStringAsFixed(1),
+                summary.publicRatingDisplay,
                 style: const TextStyle(
                   fontSize: 42,
                   fontWeight: FontWeight.bold,
@@ -233,7 +231,7 @@ class _TeacherReviewsScreenState extends State<TeacherReviewsScreen> {
               ),
               const SizedBox(height: 4),
               Text(
-                '${summary.totalReviews} Ratings',
+                '${summary.verifiedReviewsCount} Verified Reviews',
                 style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
               ),
             ],
@@ -285,7 +283,8 @@ class _TeacherReviewsScreenState extends State<TeacherReviewsScreen> {
     );
   }
 
-  Widget _buildCategoryBreakdown(RatingSummaryModel summary, Color primaryColor) {
+  Widget _buildCategoryBreakdown(
+      RatingSummaryModel summary, Color primaryColor) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -311,11 +310,16 @@ class _TeacherReviewsScreenState extends State<TeacherReviewsScreen> {
             ),
           ),
           const SizedBox(height: 12),
-          _buildCategoryRow('Teaching Quality', summary.categoryAverages['teaching'] ?? 0.0),
-          _buildCategoryRow('Behaviour', summary.categoryAverages['behaviour'] ?? 0.0),
-          _buildCategoryRow('Communication', summary.categoryAverages['communication'] ?? 0.0),
-          _buildCategoryRow('Knowledge', summary.categoryAverages['knowledge'] ?? 0.0),
-          _buildCategoryRow('Punctuality', summary.categoryAverages['punctuality'] ?? 0.0),
+          _buildCategoryRow('Teaching Quality',
+              summary.categoryAverages['teaching'] ?? 0.0),
+          _buildCategoryRow(
+              'Behaviour', summary.categoryAverages['behaviour'] ?? 0.0),
+          _buildCategoryRow('Communication',
+              summary.categoryAverages['communication'] ?? 0.0),
+          _buildCategoryRow(
+              'Knowledge', summary.categoryAverages['knowledge'] ?? 0.0),
+          _buildCategoryRow(
+              'Punctuality', summary.categoryAverages['punctuality'] ?? 0.0),
         ],
       ),
     );
@@ -327,7 +331,8 @@ class _TeacherReviewsScreenState extends State<TeacherReviewsScreen> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: const TextStyle(fontSize: 13, color: Color(0xFF334155))),
+          Text(label,
+              style: const TextStyle(fontSize: 13, color: Color(0xFF334155))),
           Row(
             children: [
               const Icon(Icons.star_rounded, size: 14, color: Color(0xFFFFB300)),
@@ -406,7 +411,8 @@ class _TeacherReviewsScreenState extends State<TeacherReviewsScreen> {
               ),
               Row(
                 children: [
-                  const Icon(Icons.star_rounded, size: 16, color: Color(0xFFFFB300)),
+                  const Icon(Icons.star_rounded,
+                      size: 16, color: Color(0xFFFFB300)),
                   const SizedBox(width: 2),
                   Text(
                     review.overallRating.toStringAsFixed(1),
