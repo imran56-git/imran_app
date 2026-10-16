@@ -9,11 +9,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
+import '../constants/algorithm_config.dart';
+import '../models/review_model.dart';
+import '../models/season_model.dart';
 import 'chat_service.dart';
+import 'review_service.dart';
 
 const String _kReplyActionId = 'ACTION_INLINE_REPLY';
 const String _kSendPhotoActionId = 'ACTION_SEND_PHOTO';
 const String _kSendVideoActionId = 'ACTION_SEND_VIDEO';
+const String _kRateTeacherNowActionId = 'ACTION_RATE_TEACHER_NOW';
 
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
@@ -61,6 +66,7 @@ class NotificationService {
   StreamSubscription<QuerySnapshot>? _chatsSubscription;
   StreamSubscription<QuerySnapshot>? _eventsSubscription;
   Map<String, dynamic>? _pendingMediaActionPayload;
+  Map<String, dynamic>? _pendingRatingActionPayload;
 
   static const AndroidNotificationChannel _chatChannel =
       AndroidNotificationChannel(
@@ -125,6 +131,16 @@ class NotificationService {
             DarwinNotificationAction.plain(
               _kSendVideoActionId,
               'Send Video',
+              options: {DarwinNotificationActionOption.foreground},
+            ),
+          ],
+        ),
+        DarwinNotificationCategory(
+          'SEASON_RATING_CATEGORY',
+          actions: [
+            DarwinNotificationAction.plain(
+              _kRateTeacherNowActionId,
+              '⭐ Rate Teacher Now',
               options: {DarwinNotificationActionOption.foreground},
             ),
           ],
@@ -225,8 +241,11 @@ class NotificationService {
           final data = change.doc.data();
           if (data == null) continue;
 
-          final String lastSenderId =
-              (data['lastSenderId'] ?? data['senderId'] ?? '').toString();
+          final String lastSenderId = (data['lastSenderId'] ??
+                  data['lastMessageSenderId'] ??
+                  data['senderId'] ??
+                  '')
+              .toString();
           if (lastSenderId.isEmpty || lastSenderId == uid) continue;
 
           final Timestamp? lastTime = data['lastMessageTime'] as Timestamp?;
@@ -243,14 +262,32 @@ class NotificationService {
           final String messagePreview =
               (data['lastMessage'] ?? data['lastMessageContent'] ?? 'New message')
                   .toString();
+          final String lastMessageType =
+              (data['lastMessageType'] ?? 'text').toString();
 
-          showInteractiveChatNotification(
-            chatRoomId: change.doc.id,
-            senderId: lastSenderId,
-            senderName: senderName,
-            messageText: messagePreview,
-            isGroup: isGroup,
-          );
+          if (lastMessageType == AlgorithmConfig.seasonRatingMessageType) {
+            showActivityAlertNotification(
+              notificationId: change.doc.id.hashCode,
+              title: '$senderName • New Rating Season',
+              body: messagePreview,
+              payloadData: {
+                'notificationType': AlgorithmConfig.seasonRatingMessageType,
+                'teacherId': lastSenderId,
+                'teacherName': senderName,
+                'seasonId': SeasonModel.current().id,
+                'connectionId': '${lastSenderId}_$uid',
+                'chatRoomId': change.doc.id,
+              },
+            );
+          } else {
+            showInteractiveChatNotification(
+              chatRoomId: change.doc.id,
+              senderId: lastSenderId,
+              senderName: senderName,
+              messageText: messagePreview,
+              isGroup: isGroup,
+            );
+          }
         }
       }
     });
@@ -296,6 +333,13 @@ class NotificationService {
               'notificationType': type,
               'notificationDocId': change.doc.id,
               'senderId': (data['senderId'] ?? '').toString(),
+              'teacherId':
+                  (data['teacherId'] ?? data['senderId'] ?? '').toString(),
+              'teacherName': (data['senderName'] ?? 'Teacher').toString(),
+              'seasonId':
+                  (data['seasonId'] ?? SeasonModel.current().id).toString(),
+              'connectionId': (data['connectionId'] ?? '').toString(),
+              'subjectId': (data['subjectId'] ?? 'general').toString(),
               'groupId': (data['groupId'] ?? '').toString(),
             },
           );
@@ -342,6 +386,19 @@ class NotificationService {
         (data['title'] ?? data['senderName'] ?? 'FYBTT').toString();
     final String body = message.notification?.body ??
         (data['body'] ?? data['message'] ?? 'New notification').toString();
+
+    if (notifType == AlgorithmConfig.seasonRatingMessageType) {
+      await showActivityAlertNotification(
+        notificationId: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+        title: title,
+        body: body,
+        payloadData: {
+          ...data,
+          'notificationType': AlgorithmConfig.seasonRatingMessageType,
+        },
+      );
+      return;
+    }
 
     if (notifType == 'chat' ||
         notifType == 'group_chat' ||
@@ -449,6 +506,12 @@ class NotificationService {
     required String body,
     required Map<String, dynamic> payloadData,
   }) async {
+    final String notifType =
+        (payloadData['notificationType'] ?? payloadData['type'] ?? '')
+            .toString();
+    final bool isRatingPrompt =
+        notifType == AlgorithmConfig.seasonRatingMessageType;
+
     final AndroidNotificationDetails androidDetails =
         AndroidNotificationDetails(
       _activityChannel.id,
@@ -459,9 +522,20 @@ class NotificationService {
       icon: '@mipmap/ic_launcher',
       color: const Color(0xFF0F766E),
       styleInformation: BigTextStyleInformation(body, contentTitle: title),
+      actions: isRatingPrompt
+          ? const <AndroidNotificationAction>[
+              AndroidNotificationAction(
+                _kRateTeacherNowActionId,
+                '⭐ Rate Teacher Now',
+                showsUserInterface: true,
+                cancelNotification: true,
+              ),
+            ]
+          : null,
     );
 
-    const DarwinNotificationDetails iosDetails = DarwinNotificationDetails(
+    final DarwinNotificationDetails iosDetails = DarwinNotificationDetails(
+      categoryIdentifier: isRatingPrompt ? 'SEASON_RATING_CATEGORY' : null,
       presentAlert: true,
       presentBadge: true,
       presentSound: true,
@@ -495,6 +569,14 @@ class NotificationService {
     final String senderName = (data['senderName'] ?? 'User').toString();
     final bool isGroup = data['isGroup'] == true;
     final String? currentUserId = FirebaseAuth.instance.currentUser?.uid;
+
+    if (actionId == _kRateTeacherNowActionId) {
+      _processTappedPayload({
+        ...data,
+        'notificationType': AlgorithmConfig.seasonRatingMessageType,
+      });
+      return;
+    }
 
     if (actionId == _kReplyActionId) {
       final String replyText = (response.input ?? '').trim();
@@ -542,19 +624,376 @@ class NotificationService {
   }
 
   void consumePendingMediaActionIfNeeded(BuildContext context) {
-    if (_pendingMediaActionPayload == null) return;
-    final payload = Map<String, dynamic>.from(_pendingMediaActionPayload!);
-    _pendingMediaActionPayload = null;
+    if (_pendingMediaActionPayload != null) {
+      final payload = Map<String, dynamic>.from(_pendingMediaActionPayload!);
+      _pendingMediaActionPayload = null;
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _openQuickMediaReplyDialog(
-        context: context,
-        chatRoomId: (payload['chatRoomId'] ?? '').toString(),
-        receiverId: (payload['receiverId'] ?? '').toString(),
-        receiverName: (payload['receiverName'] ?? 'User').toString(),
-        mediaType: (payload['mediaType'] ?? 'photo').toString(),
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _openQuickMediaReplyDialog(
+          context: context,
+          chatRoomId: (payload['chatRoomId'] ?? '').toString(),
+          receiverId: (payload['receiverId'] ?? '').toString(),
+          receiverName: (payload['receiverName'] ?? 'User').toString(),
+          mediaType: (payload['mediaType'] ?? 'photo').toString(),
+        );
+      });
+    }
+
+    if (_pendingRatingActionPayload != null) {
+      final ratingPayload =
+          Map<String, dynamic>.from(_pendingRatingActionPayload!);
+      _pendingRatingActionPayload = null;
+
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        openDirectSeasonalRatingSheet(
+          context: context,
+          teacherId: (ratingPayload['teacherId'] ?? '').toString(),
+          teacherName: (ratingPayload['teacherName'] ?? 'Teacher').toString(),
+          seasonId: (ratingPayload['seasonId'] ?? SeasonModel.current().id)
+              .toString(),
+          connectionId: (ratingPayload['connectionId'] ?? '').toString(),
+          initialSubjectId:
+              (ratingPayload['subjectId'] ?? 'general').toString(),
+        );
+      });
+    }
+  }
+
+  Future<void> openDirectSeasonalRatingSheet({
+    required BuildContext context,
+    required String teacherId,
+    required String teacherName,
+    String? seasonId,
+    String? connectionId,
+    String initialSubjectId = 'general',
+  }) async {
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null || teacherId.isEmpty) return;
+
+    final reviewService = ReviewService();
+    final isEligible = await reviewService.canStudentReviewTeacher(
+      studentId: currentUser.uid,
+      teacherId: teacherId,
+    );
+
+    if (!context.mounted) return;
+
+    if (!isEligible) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Only accepted connected students can submit or update a rating for this season.',
+          ),
+        ),
       );
-    });
+      return;
+    }
+
+    final existingReview =
+        await reviewService.getStudentReviewForCurrentSeason(
+      studentId: currentUser.uid,
+      teacherId: teacherId,
+    );
+
+    if (!context.mounted) return;
+
+    double teaching = existingReview?.categories.teaching ?? 5.0;
+    double behaviour = existingReview?.categories.behaviour ?? 5.0;
+    double communication = existingReview?.categories.communication ?? 5.0;
+    double knowledge = existingReview?.categories.knowledge ?? 5.0;
+    double punctuality = existingReview?.categories.punctuality ?? 5.0;
+    final TextEditingController commentController =
+        TextEditingController(text: existingReview?.comment ?? '');
+    final TextEditingController subjectController = TextEditingController(
+      text: existingReview?.subjectId.isNotEmpty == true
+          ? existingReview!.subjectId
+          : initialSubjectId,
+    );
+    bool isSubmitting = false;
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetCtx) {
+        return StatefulBuilder(
+          builder: (ctx, setSheetState) {
+            final overall = double.parse(
+              ((teaching +
+                          behaviour +
+                          communication +
+                          knowledge +
+                          punctuality) /
+                      5.0)
+                  .toStringAsFixed(1),
+            );
+
+            Widget buildSliderRow(
+              String label,
+              double value,
+              ValueChanged<double> onChanged,
+            ) {
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Row(
+                  children: [
+                    SizedBox(
+                      width: 115,
+                      child: Text(
+                        label,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF1E293B),
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      child: Slider(
+                        value: value,
+                        min: 1.0,
+                        max: 5.0,
+                        divisions: 8,
+                        activeColor: const Color(0xFF1E4C7A),
+                        label: value.toStringAsFixed(1),
+                        onChanged: onChanged,
+                      ),
+                    ),
+                    SizedBox(
+                      width: 34,
+                      child: Text(
+                        value.toStringAsFixed(1),
+                        textAlign: TextAlign.right,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                          color: Color(0xFF0F766E),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }
+
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(sheetCtx).viewInsets.bottom,
+              ),
+              child: Container(
+                margin: const EdgeInsets.all(12),
+                padding: const EdgeInsets.all(18),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(24),
+                ),
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const CircleAvatar(
+                            backgroundColor: Color(0xFFEFF6FF),
+                            child: Icon(
+                              Icons.stars_rounded,
+                              color: Color(0xFF1E4C7A),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  existingReview != null
+                                      ? 'Update Season Rating for $teacherName'
+                                      : 'Rate $teacherName',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16,
+                                    color: Color(0xFF0F172A),
+                                  ),
+                                ),
+                                Text(
+                                  'Overall Score: $overall ⭐ (${SeasonModel.current().name.displayName})',
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: Color(0xFF0F766E),
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.close_rounded),
+                            onPressed: () => Navigator.pop(sheetCtx),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      buildSliderRow(
+                        'Teaching Quality',
+                        teaching,
+                        (v) => setSheetState(() => teaching = v),
+                      ),
+                      buildSliderRow(
+                        'Behaviour',
+                        behaviour,
+                        (v) => setSheetState(() => behaviour = v),
+                      ),
+                      buildSliderRow(
+                        'Communication',
+                        communication,
+                        (v) => setSheetState(() => communication = v),
+                      ),
+                      buildSliderRow(
+                        'Knowledge',
+                        knowledge,
+                        (v) => setSheetState(() => knowledge = v),
+                      ),
+                      buildSliderRow(
+                        'Punctuality',
+                        punctuality,
+                        (v) => setSheetState(() => punctuality = v),
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: subjectController,
+                        decoration: InputDecoration(
+                          labelText: 'Subject (e.g. Mathematics, Physics)',
+                          prefixIcon: const Icon(
+                            Icons.menu_book_rounded,
+                            color: Color(0xFF1E4C7A),
+                          ),
+                          filled: true,
+                          fillColor: const Color(0xFFF8FAFC),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            borderSide: BorderSide.none,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: commentController,
+                        maxLines: 3,
+                        decoration: InputDecoration(
+                          labelText: 'Share your learning experience...',
+                          prefixIcon: const Icon(
+                            Icons.rate_review_rounded,
+                            color: Color(0xFF1E4C7A),
+                          ),
+                          filled: true,
+                          fillColor: const Color(0xFFF8FAFC),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            borderSide: BorderSide.none,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF1E4C7A),
+                            padding: const EdgeInsets.symmetric(vertical: 13),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                          ),
+                          onPressed: isSubmitting
+                              ? null
+                              : () async {
+                                  setSheetState(() => isSubmitting = true);
+                                  final categories = CategoryRating(
+                                    teaching: teaching,
+                                    behaviour: behaviour,
+                                    communication: communication,
+                                    knowledge: knowledge,
+                                    punctuality: punctuality,
+                                  );
+
+                                  final reviewModel = ReviewModel(
+                                    id: existingReview?.id ?? '',
+                                    teacherId: teacherId,
+                                    studentId: currentUser.uid,
+                                    studentName:
+                                        currentUser.displayName ?? 'Student',
+                                    studentPhotoUrl:
+                                        currentUser.photoURL ?? '',
+                                    connectionId: connectionId?.isNotEmpty ==
+                                            true
+                                        ? connectionId!
+                                        : '${teacherId}_${currentUser.uid}',
+                                    subjectId:
+                                        subjectController.text.trim().isNotEmpty
+                                            ? subjectController.text
+                                                .trim()
+                                                .toLowerCase()
+                                            : 'general',
+                                    seasonId: seasonId?.isNotEmpty == true
+                                        ? seasonId!
+                                        : SeasonModel.current().id,
+                                    categories: categories,
+                                    overallRating: categories.overallAverage,
+                                    comment: commentController.text.trim(),
+                                    createdAt: existingReview?.createdAt ??
+                                        DateTime.now(),
+                                  );
+
+                                  final ok = await reviewService
+                                      .submitOrUpdateReview(review: reviewModel);
+                                  if (!sheetCtx.mounted) return;
+                                  Navigator.pop(sheetCtx);
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        ok
+                                            ? 'Thank you! Your seasonal rating has been saved.'
+                                            : 'Could not submit rating. Please verify your connection.',
+                                      ),
+                                    ),
+                                  );
+                                },
+                          icon: isSubmitting
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    color: Colors.white,
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(
+                                  Icons.check_circle_outline_rounded,
+                                  color: Colors.white,
+                                ),
+                          label: Text(
+                            isSubmitting
+                                ? 'Submitting...'
+                                : (existingReview != null
+                                    ? 'Update Season Rating'
+                                    : 'Submit Verified Rating'),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 
   Future<void> _openQuickMediaReplyDialog({
@@ -811,7 +1250,38 @@ class NotificationService {
     );
   }
 
-  void _processTappedPayload(Map<String, dynamic> data) {}
+  void _processTappedPayload(Map<String, dynamic> data) {
+    final String notifType =
+        (data['notificationType'] ?? data['type'] ?? '').toString();
+
+    if (notifType == AlgorithmConfig.seasonRatingMessageType) {
+      final String teacherId =
+          (data['teacherId'] ?? data['senderId'] ?? '').toString();
+      if (teacherId.isEmpty) return;
+
+      final Map<String, dynamic> ratingRequest = {
+        'teacherId': teacherId,
+        'teacherName':
+            (data['teacherName'] ?? data['senderName'] ?? 'Teacher').toString(),
+        'seasonId': (data['seasonId'] ?? SeasonModel.current().id).toString(),
+        'connectionId': (data['connectionId'] ?? '').toString(),
+        'subjectId': (data['subjectId'] ?? 'general').toString(),
+      };
+
+      if (navigatorKey.currentContext != null) {
+        openDirectSeasonalRatingSheet(
+          context: navigatorKey.currentContext!,
+          teacherId: ratingRequest['teacherId'],
+          teacherName: ratingRequest['teacherName'],
+          seasonId: ratingRequest['seasonId'],
+          connectionId: ratingRequest['connectionId'],
+          initialSubjectId: ratingRequest['subjectId'],
+        );
+      } else {
+        _pendingRatingActionPayload = ratingRequest;
+      }
+    }
+  }
 
   Future<String?> getDeviceToken() async {
     try {
