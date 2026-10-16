@@ -31,13 +31,11 @@ class _ChatListScreenState extends State<ChatListScreen>
   final TextEditingController _searchController = TextEditingController();
   late final TabController _tabController;
 
-  // Cached streams & last snapshots so switching tabs NEVER shows a loading spinner
   late final Stream<QuerySnapshot> _chatsStream;
   late final Stream<int> _unreadChatsCountStream;
   late final Stream<int> _unreadGroupsCountStream;
   QuerySnapshot? _lastChatsSnapshot;
 
-  // Per-user stream & profile memory cache to prevent flickering on rebuilds
   final Map<String, Stream<Map<String, dynamic>>> _userStatusStreams = {};
   final Map<String, Map<String, dynamic>> _userProfileCache = {};
   final Map<String, Stream<bool>> _typingStreams = {};
@@ -57,7 +55,6 @@ class _ChatListScreenState extends State<ChatListScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
 
-    // Initialize all streams ONCE in initState
     _chatsStream = _chatService.getUserChatsStream(widget.currentUserId);
     _unreadChatsCountStream =
         _chatService.getTotalUnreadChatsCountStream(widget.currentUserId);
@@ -878,58 +875,64 @@ class _ChatListScreenState extends State<ChatListScreen>
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              const Text(
-                                'FYBTT Chats',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 22,
-                                  fontWeight: FontWeight.w900,
-                                  letterSpacing: 0.3,
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 2.5,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: Colors.white.withOpacity(0.14),
-                                  borderRadius: BorderRadius.circular(20),
-                                  border: Border.all(
-                                    color: Colors.white.withOpacity(0.22),
-                                  ),
-                                ),
-                                child: Text(
-                                  widget.isTeacher ? 'Educator Hub' : 'Student Hub',
-                                  style: const TextStyle(
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                const Text(
+                                  'FYBTT Chats',
+                                  style: TextStyle(
                                     color: Colors.white,
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w700,
+                                    fontSize: 22,
+                                    fontWeight: FontWeight.w900,
+                                    letterSpacing: 0.3,
                                   ),
                                 ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 3),
-                          Text(
-                            widget.isTeacher
-                                ? 'Direct messages & academic batch groups'
-                                : 'Connect with your teachers & study batches',
-                            style: TextStyle(
-                              color: Colors.white.withOpacity(0.74),
-                              fontSize: 12,
-                              fontWeight: FontWeight.w500,
+                                const SizedBox(width: 8),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 2.5,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withOpacity(0.14),
+                                    borderRadius: BorderRadius.circular(20),
+                                    border: Border.all(
+                                      color: Colors.white.withOpacity(0.22),
+                                    ),
+                                  ),
+                                  child: Text(
+                                    widget.isTeacher ? 'Educator Hub' : 'Student Hub',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
-                          ),
-                        ],
+                            const SizedBox(height: 3),
+                            Text(
+                              widget.isTeacher
+                                  ? 'Direct messages & academic batch groups'
+                                  : 'Connect with your teachers & study batches',
+                              style: TextStyle(
+                                color: Colors.white.withOpacity(0.74),
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
                       ),
+                      const SizedBox(width: 8),
                       Row(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
                           if (!widget.isTeacher)
                             _buildHeaderActionBtn(
@@ -984,7 +987,7 @@ class _ChatListScreenState extends State<ChatListScreen>
         borderRadius: BorderRadius.circular(14),
         onTap: onTap,
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
           decoration: BoxDecoration(
             color: Colors.white.withOpacity(0.14),
             borderRadius: BorderRadius.circular(14),
@@ -996,13 +999,13 @@ class _ChatListScreenState extends State<ChatListScreen>
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(icon, color: Colors.white, size: 18),
-              const SizedBox(width: 6),
+              Icon(icon, color: Colors.white, size: 17),
+              const SizedBox(width: 5),
               Text(
                 label,
                 style: const TextStyle(
                   color: Colors.white,
-                  fontSize: 12.2,
+                  fontSize: 11.5,
                   fontWeight: FontWeight.w700,
                 ),
               ),
@@ -1211,7 +1214,6 @@ class _ChatCard extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             child: Row(
               children: [
-                // Avatar with online ring & selection overlay
                 Stack(
                   clipBehavior: Clip.none,
                   alignment: Alignment.center,
@@ -1331,8 +1333,6 @@ class _ChatCard extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(width: 13),
-
-                // Center Name & Message preview
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -1439,8 +1439,6 @@ class _ChatCard extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 10),
-
-                // Right Timestamp & Unread Badge
                 Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.end,
