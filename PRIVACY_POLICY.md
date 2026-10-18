@@ -2,7 +2,7 @@
 
 **Effective Date:** March 31, 2026
 **Developer:** Md Imran Mondal
-**Contact Email:** findyourbestteachertoday01@gmail.com
+**Contact Email:** findyourbestteachertoday@gmail.com
 
 ---
 
@@ -49,4 +49,4 @@ We may update this Privacy Policy from time to time. Any significant changes wil
 ### 9. Contact Us
 If you have any questions or concerns, please contact:
 * **Developer:** Md Imran Mondal
-* **Email:** findyourbestteachertoday01@gmail.com
+* **Email:** findyourbestteachertoday@gmail.com
