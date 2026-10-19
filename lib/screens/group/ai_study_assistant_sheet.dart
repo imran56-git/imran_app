@@ -437,57 +437,64 @@ class _AiStudyAssistantSheetState extends State<AiStudyAssistantSheet>
           else if (_summaryResult.isNotEmpty)
             Container(
               width: double.infinity,
+              constraints: const BoxConstraints(maxHeight: 320),
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
                 color: const Color(0xFFF8FAFC),
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(color: Colors.blue.shade100),
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  SelectableText(
-                    _summaryResult,
-                    style: const TextStyle(
-                      fontSize: 13.5,
-                      color: Color(0xFF0F172A),
-                      height: 1.45,
-                    ),
-                  ),
-                  const Divider(height: 24),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
+              child: Scrollbar(
+                thumbVisibility: true,
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      TextButton.icon(
-                        onPressed: () async {
-                          await Clipboard.setData(
-                              ClipboardData(text: _summaryResult));
-                          _showSnackBar('Summary copied to clipboard!');
-                        },
-                        icon: const Icon(Icons.copy_rounded, size: 17),
-                        label: const Text('Copy'),
-                      ),
-                      if (widget.isTeacher) ...[
-                        const SizedBox(width: 8),
-                        ElevatedButton.icon(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.blueAccent,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                          ),
-                          onPressed: _postSummaryToGroup,
-                          icon: const Icon(Icons.send_rounded,
-                              color: Colors.white, size: 16),
-                          label: const Text(
-                            'Share with Batch',
-                            style: TextStyle(color: Colors.white, fontSize: 12),
-                          ),
+                      SelectableText(
+                        _summaryResult,
+                        style: const TextStyle(
+                          fontSize: 13.5,
+                          color: Color(0xFF0F172A),
+                          height: 1.45,
                         ),
-                      ],
+                      ),
+                      const Divider(height: 24),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          TextButton.icon(
+                            onPressed: () async {
+                              await Clipboard.setData(
+                                  ClipboardData(text: _summaryResult));
+                              _showSnackBar('Summary copied to clipboard!');
+                            },
+                            icon: const Icon(Icons.copy_rounded, size: 17),
+                            label: const Text('Copy'),
+                          ),
+                          if (widget.isTeacher) ...[
+                            const SizedBox(width: 8),
+                            ElevatedButton.icon(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.blueAccent,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                              ),
+                              onPressed: _postSummaryToGroup,
+                              icon: const Icon(Icons.send_rounded,
+                                  color: Colors.white, size: 16),
+                              label: const Text(
+                                'Share with Batch',
+                                style:
+                                    TextStyle(color: Colors.white, fontSize: 12),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
                     ],
                   ),
-                ],
+                ),
               ),
             )
           else
@@ -589,7 +596,9 @@ class _AiStudyAssistantSheetState extends State<AiStudyAssistantSheet>
           const SizedBox(height: 12),
           TextField(
             controller: _tutorInputController,
-            maxLines: 4,
+            minLines: 3,
+            maxLines: 5,
+            keyboardType: TextInputType.multiline,
             decoration: InputDecoration(
               hintText: _tutorMode == 'explain'
                   ? 'Type the difficult question or concept you want explained simply...'
@@ -646,37 +655,43 @@ class _AiStudyAssistantSheetState extends State<AiStudyAssistantSheet>
             const SizedBox(height: 16),
             Container(
               width: double.infinity,
+              constraints: const BoxConstraints(maxHeight: 320),
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
                 color: const Color(0xFFF8FAFC),
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(color: Colors.blue.shade100),
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  SelectableText(
-                    _tutorResult,
-                    style: const TextStyle(
-                      fontSize: 13.5,
-                      color: Color(0xFF0F172A),
-                      height: 1.45,
-                    ),
+              child: Scrollbar(
+                thumbVisibility: true,
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      SelectableText(
+                        _tutorResult,
+                        style: const TextStyle(
+                          fontSize: 13.5,
+                          color: Color(0xFF0F172A),
+                          height: 1.45,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton.icon(
+                          onPressed: () async {
+                            await Clipboard.setData(
+                                ClipboardData(text: _tutorResult));
+                            _showSnackBar('Copied to clipboard!');
+                          },
+                          icon: const Icon(Icons.copy_rounded, size: 16),
+                          label: const Text('Copy Response'),
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 8),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: TextButton.icon(
-                      onPressed: () async {
-                        await Clipboard.setData(
-                            ClipboardData(text: _tutorResult));
-                        _showSnackBar('Copied to clipboard!');
-                      },
-                      icon: const Icon(Icons.copy_rounded, size: 16),
-                      label: const Text('Copy Response'),
-                    ),
-                  ),
-                ],
+                ),
               ),
             ),
           ],
@@ -702,7 +717,9 @@ class _AiStudyAssistantSheetState extends State<AiStudyAssistantSheet>
           const SizedBox(height: 8),
           TextField(
             controller: _quizTopicController,
-            maxLines: 3,
+            minLines: 3,
+            maxLines: 5,
+            keyboardType: TextInputType.multiline,
             decoration: InputDecoration(
               hintText:
                   'Paste lesson notes, key definitions, or topic summary to generate MCQs...',
