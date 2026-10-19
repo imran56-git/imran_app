@@ -18,6 +18,7 @@ class MessageModel {
   final bool isEdited;
   final DateTime? editTimestamp;
   final Map<String, dynamic>? mediaMetaData;
+  final String? mediaUrl;
   final String senderRole;
   final String senderName;
   final String senderProfilePic;
@@ -39,6 +40,8 @@ class MessageModel {
   final String? parentThreadMessageId;
   final String? clientMessageId;
   final List<String> reportedBy;
+  final bool isSyncedWithServer;
+  final bool isDeletedFromServer;
 
   const MessageModel({
     required this.messageId,
@@ -57,6 +60,7 @@ class MessageModel {
     this.isEdited = false,
     this.editTimestamp,
     this.mediaMetaData,
+    this.mediaUrl,
     this.senderRole = 'student',
     this.senderName = '',
     this.senderProfilePic = '',
@@ -78,7 +82,11 @@ class MessageModel {
     this.parentThreadMessageId,
     this.clientMessageId,
     this.reportedBy = const [],
+    this.isSyncedWithServer = true,
+    this.isDeletedFromServer = false,
   });
+
+  bool get isRead => status.toLowerCase() == 'seen' || status.toLowerCase() == 'read';
 
   bool get isSeasonRatingPrompt =>
       type == AlgorithmConfig.seasonRatingMessageType ||
@@ -221,6 +229,7 @@ class MessageModel {
       isEdited: map['isEdited'] as bool? ?? false,
       editTimestamp: parseDateTime(map['editTimestamp']),
       mediaMetaData: parseDynamicMap(map['mediaMetaData']),
+      mediaUrl: map['mediaUrl']?.toString(),
       senderRole: map['senderRole']?.toString() ?? 'student',
       senderName: map['senderName']?.toString() ?? '',
       senderProfilePic: map['senderProfilePic']?.toString() ?? '',
@@ -244,6 +253,8 @@ class MessageModel {
       parentThreadMessageId: map['parentThreadMessageId']?.toString(),
       clientMessageId: map['clientMessageId']?.toString(),
       reportedBy: parseStringList(map['reportedBy']),
+      isSyncedWithServer: map['isSyncedWithServer'] as bool? ?? true,
+      isDeletedFromServer: map['isDeletedFromServer'] as bool? ?? false,
     );
   }
 
@@ -269,6 +280,7 @@ class MessageModel {
       'editTimestamp':
           editTimestamp != null ? Timestamp.fromDate(editTimestamp!) : null,
       'mediaMetaData': mediaMetaData,
+      'mediaUrl': mediaUrl,
       'senderRole': senderRole,
       'senderName': senderName,
       'senderProfilePic': senderProfilePic,
@@ -291,6 +303,8 @@ class MessageModel {
       'parentThreadMessageId': parentThreadMessageId,
       'clientMessageId': clientMessageId,
       'reportedBy': reportedBy,
+      'isSyncedWithServer': isSyncedWithServer,
+      'isDeletedFromServer': isDeletedFromServer,
     };
   }
 
@@ -311,6 +325,7 @@ class MessageModel {
     bool? isEdited,
     DateTime? editTimestamp,
     Map<String, dynamic>? mediaMetaData,
+    String? mediaUrl,
     String? senderRole,
     String? senderName,
     String? senderProfilePic,
@@ -332,6 +347,8 @@ class MessageModel {
     String? parentThreadMessageId,
     String? clientMessageId,
     List<String>? reportedBy,
+    bool? isSyncedWithServer,
+    bool? isDeletedFromServer,
   }) {
     return MessageModel(
       messageId: messageId ?? this.messageId,
@@ -350,6 +367,7 @@ class MessageModel {
       isEdited: isEdited ?? this.isEdited,
       editTimestamp: editTimestamp ?? this.editTimestamp,
       mediaMetaData: mediaMetaData ?? this.mediaMetaData,
+      mediaUrl: mediaUrl ?? this.mediaUrl,
       senderRole: senderRole ?? this.senderRole,
       senderName: senderName ?? this.senderName,
       senderProfilePic: senderProfilePic ?? this.senderProfilePic,
@@ -372,6 +390,8 @@ class MessageModel {
           parentThreadMessageId ?? this.parentThreadMessageId,
       clientMessageId: clientMessageId ?? this.clientMessageId,
       reportedBy: reportedBy ?? this.reportedBy,
+      isSyncedWithServer: isSyncedWithServer ?? this.isSyncedWithServer,
+      isDeletedFromServer: isDeletedFromServer ?? this.isDeletedFromServer,
     );
   }
 
@@ -389,7 +409,10 @@ class MessageModel {
         other.isDeletedForEveryone == isDeletedForEveryone &&
         other.isEdited == isEdited &&
         other.isPinned == isPinned &&
-        other.messageCategory == messageCategory;
+        other.messageCategory == messageCategory &&
+        other.mediaUrl == mediaUrl &&
+        other.isSyncedWithServer == isSyncedWithServer &&
+        other.isDeletedFromServer == isDeletedFromServer;
   }
 
   @override
@@ -403,6 +426,9 @@ class MessageModel {
         isDeletedForEveryone.hashCode ^
         isEdited.hashCode ^
         isPinned.hashCode ^
-        messageCategory.hashCode;
+        messageCategory.hashCode ^
+        mediaUrl.hashCode ^
+        isSyncedWithServer.hashCode ^
+        isDeletedFromServer.hashCode;
   }
 }
