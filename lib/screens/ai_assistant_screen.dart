@@ -679,6 +679,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen>
       ),
       child: SafeArea(
         child: Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
           children: [
             Expanded(
               child: Container(
@@ -688,13 +689,16 @@ class _AiAssistantScreenState extends State<AiAssistantScreen>
                   border: Border.all(color: const Color(0xFFE2E8F0)),
                 ),
                 child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     const SizedBox(width: 14),
                     Expanded(
                       child: TextField(
                         controller: _controller,
                         enabled: !isBlocked,
-                        maxLines: null,
+                        minLines: 1,
+                        maxLines: 5,
+                        scrollPhysics: const BouncingScrollPhysics(),
                         keyboardType: TextInputType.multiline,
                         decoration: InputDecoration(
                           hintText: _cooldownManager.isInCooldown
@@ -715,48 +719,53 @@ class _AiAssistantScreenState extends State<AiAssistantScreen>
                           contentPadding:
                               const EdgeInsets.symmetric(vertical: 12),
                         ),
-                        onSubmitted: (_) => _sendMessage(),
                       ),
                     ),
-                    IconButton(
-                      icon: Icon(
-                        _isListening ? Icons.mic : Icons.mic_none_rounded,
-                        color: _isListening
-                            ? Colors.red
-                            : const Color(0xFF64748B),
-                        size: 22,
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 2),
+                      child: IconButton(
+                        icon: Icon(
+                          _isListening ? Icons.mic : Icons.mic_none_rounded,
+                          color: _isListening
+                              ? Colors.red
+                              : const Color(0xFF64748B),
+                          size: 22,
+                        ),
+                        onPressed: isBlocked ? null : _toggleListening,
+                        splashRadius: 20,
                       ),
-                      onPressed: isBlocked ? null : _toggleListening,
-                      splashRadius: 20,
                     ),
                   ],
                 ),
               ),
             ),
             const SizedBox(width: 8),
-            Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: _isLoading
-                      ? [Colors.red.shade400, Colors.red.shade700]
-                      : (isBlocked
-                          ? [Colors.grey.shade400, Colors.grey.shade500]
-                          : [accentBlue, primaryNavy]),
+            Padding(
+              padding: const EdgeInsets.only(bottom: 2),
+              child: Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: _isLoading
+                        ? [Colors.red.shade400, Colors.red.shade700]
+                        : (isBlocked
+                            ? [Colors.grey.shade400, Colors.grey.shade500]
+                            : [accentBlue, primaryNavy]),
+                  ),
+                  shape: BoxShape.circle,
                 ),
-                shape: BoxShape.circle,
-              ),
-              child: IconButton(
-                icon: Icon(
-                  _isLoading ? Icons.stop_rounded : Icons.send_rounded,
-                  color: Colors.white,
-                  size: 18,
+                child: IconButton(
+                  icon: Icon(
+                    _isLoading ? Icons.stop_rounded : Icons.send_rounded,
+                    color: Colors.white,
+                    size: 18,
+                  ),
+                  onPressed: _isLoading
+                      ? _stopGenerating
+                      : (_cooldownManager.isInCooldown
+                          ? null
+                          : () => _sendMessage()),
+                  splashRadius: 22,
                 ),
-                onPressed: _isLoading
-                    ? _stopGenerating
-                    : (_cooldownManager.isInCooldown
-                        ? null
-                        : () => _sendMessage()),
-                splashRadius: 22,
               ),
             ),
           ],
@@ -846,6 +855,9 @@ class _AiAssistantScreenState extends State<AiAssistantScreen>
                 ? _buildEmptyState()
                 : ListView.builder(
                     controller: _scrollController,
+                    physics: const AlwaysScrollableScrollPhysics(
+                      parent: BouncingScrollPhysics(),
+                    ),
                     padding: const EdgeInsets.symmetric(
                         horizontal: 14, vertical: 16),
                     itemCount: _messages.length,
@@ -948,7 +960,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen>
                                               )
                                             : MarkdownBody(
                                                 data: message.text,
-                                                selectable: true,
+                                                selectable: false,
                                                 onTapLink:
                                                     (text, href, title) =>
                                                         _handleLinkTap(
