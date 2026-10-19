@@ -41,7 +41,6 @@ class LocalChatStorageService {
             content TEXT,
             type TEXT,
             timestamp INTEGER,
-            isRead INTEGER DEFAULT 0,
             status TEXT,
             mediaUrl TEXT,
             isDeletedForEveryone INTEGER DEFAULT 0,
@@ -78,7 +77,6 @@ class LocalChatStorageService {
       'type': message.type,
       'timestamp': message.timestamp?.millisecondsSinceEpoch ??
           DateTime.now().millisecondsSinceEpoch,
-      'isRead': message.isRead ? 1 : 0,
       'status': message.status,
       'mediaUrl': message.mediaUrl,
       'isDeletedForEveryone': message.isDeletedForEveryone ? 1 : 0,
@@ -142,17 +140,18 @@ class LocalChatStorageService {
     return MessageModel(
       messageId: map['messageId'] ?? '',
       senderId: map['senderId'] ?? '',
-      receiverId: map['receiverId'],
-      senderName: map['senderName'],
-      senderRole: map['senderRole'],
+      receiverId: map['receiverId'] ?? '',
+      senderName: map['senderName'] ?? '',
+      senderRole: map['senderRole'] ?? 'student',
       content: map['content'] ?? '',
       type: map['type'] ?? 'text',
       timestamp: time,
-      isRead: map['isRead'] == 1,
       status: map['status'] ?? 'sent',
       mediaUrl: map['mediaUrl'],
       isDeletedForEveryone: map['isDeletedForEveryone'] == 1,
       deletedForUsers: deletedUsers,
+      starredBy: const [],
+      reactions: const {},
       replyToMessageId: map['replyToMessageId'],
       replyText: map['replyText'],
       messageCategory: map['messageCategory'] ?? 'general',
@@ -160,6 +159,7 @@ class LocalChatStorageService {
       pollData: poll,
       quizData: quiz,
       mediaMetaData: mediaMeta,
+      isSyncedWithServer: map['isSyncedWithServer'] == 1,
     );
   }
 
@@ -245,7 +245,7 @@ class LocalChatStorageService {
     final db = await database;
     await db.update(
       'local_messages',
-      {'isRead': 1, 'status': 'seen'},
+      {'status': 'seen'},
       where: 'messageId = ?',
       whereArgs: [messageId],
     );
@@ -256,7 +256,7 @@ class LocalChatStorageService {
     final db = await database;
     await db.update(
       'local_messages',
-      {'isRead': 1, 'status': 'seen'},
+      {'status': 'seen'},
       where: 'chatRoomId = ?',
       whereArgs: [chatRoomId],
     );
