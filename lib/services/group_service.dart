@@ -1,9 +1,12 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/group_model.dart';
 import '../models/invitation_model.dart';
+import '../models/message_model.dart';
+import 'local_chat_storage_service.dart';
 
 class GroupService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final LocalChatStorageService _localStorage = LocalChatStorageService();
 
   Future<bool> _verifySingleAdmin(String groupId, String userId) async {
     if (groupId.trim().isEmpty || userId.trim().isEmpty) return false;
@@ -131,7 +134,7 @@ class GroupService {
     batch.set(docRef, group.toMap());
 
     final welcomeMsgRef = docRef.collection('messages').doc();
-    batch.set(welcomeMsgRef, {
+    final Map<String, dynamic> welcomeData = {
       'messageId': welcomeMsgRef.id,
       'senderId': createdBy,
       'receiverId': docRef.id,
@@ -150,7 +153,31 @@ class GroupService {
       'deletedForUsers': [],
       'starredBy': [],
       'reactions': {},
-    });
+    };
+
+    batch.set(welcomeMsgRef, welcomeData);
+
+    final localWelcomeMsg = MessageModel(
+      messageId: welcomeMsgRef.id,
+      senderId: createdBy,
+      receiverId: docRef.id,
+      content: defaultWelcome,
+      type: 'text',
+      timestamp: DateTime.now(),
+      status: 'sent',
+      isDeletedForEveryone: false,
+      deletedForUsers: const [],
+      starredBy: const [],
+      reactions: const {},
+      senderRole: 'teacher',
+      senderName: teacherMeta['teacherName'],
+      senderProfilePic: teacherMeta['teacherProfilePic'],
+      isSenderVerified: teacherMeta['isTeacherVerified'],
+      hasSenderGoldenBadge: teacherMeta['hasGoldenBadge'],
+      messageCategory: 'announcement',
+      isPinned: true,
+    );
+    await _localStorage.saveMessage(localWelcomeMsg, docRef.id);
 
     for (final studentId in invitedStudentIds) {
       if (studentId.trim().isEmpty || studentId == createdBy) continue;
@@ -592,6 +619,7 @@ class GroupService {
 
     await batch.commit();
     await _cleanupGroupMessages(groupId);
+    await _localStorage.clearRoomLocally(groupId);
   }
 
   Future<void> _cleanupGroupMessages(String groupId) async {
@@ -714,6 +742,12 @@ class GroupService {
     if (!isAdmin) {
       throw Exception('Only the group teacher can pin or unpin messages.');
     }
+
+    await _localStorage.togglePinLocally(
+      messageId: messageId,
+      chatRoomId: groupId,
+      isPinned: pin,
+    );
 
     final WriteBatch batch = _firestore.batch();
     final groupRef = _firestore.collection('groups').doc(groupId);
@@ -839,6 +873,13 @@ class GroupService {
     required String userId,
     required int optionIndex,
   }) async {
+    await _localStorage.updatePollVoteLocally(
+      messageId: messageId,
+      chatRoomId: groupId,
+      userId: userId,
+      optionIndex: optionIndex,
+    );
+
     final msgRef = _firestore
         .collection('groups')
         .doc(groupId)
@@ -870,6 +911,13 @@ class GroupService {
     required String userId,
     required int selectedOptionIndex,
   }) async {
+    await _localStorage.updateQuizAnswerLocally(
+      messageId: messageId,
+      chatRoomId: groupId,
+      userId: userId,
+      optionIndex: selectedOptionIndex,
+    );
+
     final msgRef = _firestore
         .collection('groups')
         .doc(groupId)
