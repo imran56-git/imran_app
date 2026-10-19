@@ -48,7 +48,7 @@ class _RatingDialogWidgetState extends State<RatingDialogWidget> {
     if (_selectedRating == 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('দয়া করে রেটিং নির্বাচন করুন (১-৫ স্টার)'),
+          content: Text('Please select a rating (1-5 stars)'),
           backgroundColor: Colors.orange,
         ),
       );
@@ -65,7 +65,7 @@ class _RatingDialogWidgetState extends State<RatingDialogWidget> {
         Navigator.of(context).pop();
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('আপনার রিভিউ সফলভাবে জমা দেওয়া হয়েছে!'),
+            content: Text('Your review has been submitted successfully!'),
             backgroundColor: Colors.green,
           ),
         );
@@ -74,7 +74,7 @@ class _RatingDialogWidgetState extends State<RatingDialogWidget> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('রিভিউ জমা দেওয়া সম্ভব হয়নি: $e'),
+            content: Text('Failed to submit review: $e'),
             backgroundColor: Colors.red,
           ),
         );
@@ -102,7 +102,6 @@ class _RatingDialogWidgetState extends State<RatingDialogWidget> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Header & Avatar
               CircleAvatar(
                 radius: 36,
                 backgroundColor: const Color(0xFFF1F5F9),
@@ -128,15 +127,13 @@ class _RatingDialogWidgetState extends State<RatingDialogWidget> {
               ),
               const SizedBox(height: 4),
               Text(
-                'শিক্ষককে কেমন রেটিং দিতে চান?',
+                'How would you rate the teacher?',
                 style: TextStyle(
                   fontSize: 13,
                   color: Colors.grey.shade600,
                 ),
               ),
               const SizedBox(height: 16),
-
-              // Interactive Star Rating
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: List.generate(5, (index) {
@@ -162,14 +159,12 @@ class _RatingDialogWidgetState extends State<RatingDialogWidget> {
                 }),
               ),
               const SizedBox(height: 16),
-
-              // Review Comment Input Box
               TextField(
                 controller: _commentController,
                 maxLines: 3,
                 maxLength: 250,
                 decoration: InputDecoration(
-                  hintText: 'আপনার মতামত লিখুন (ঐচ্ছিক)...',
+                  hintText: 'Write your review (optional)...',
                   hintStyle: TextStyle(fontSize: 13, color: Colors.grey.shade400),
                   filled: true,
                   fillColor: const Color(0xFFF8FAFC),
@@ -189,8 +184,6 @@ class _RatingDialogWidgetState extends State<RatingDialogWidget> {
                 ),
               ),
               const SizedBox(height: 16),
-
-              // Action Buttons
               Row(
                 children: [
                   Expanded(
@@ -206,7 +199,7 @@ class _RatingDialogWidgetState extends State<RatingDialogWidget> {
                           ? null
                           : () => Navigator.of(context).pop(),
                       child: const Text(
-                        'বাতিল',
+                        'Cancel',
                         style: TextStyle(
                           color: Colors.grey,
                           fontWeight: FontWeight.bold,
@@ -237,7 +230,7 @@ class _RatingDialogWidgetState extends State<RatingDialogWidget> {
                               ),
                             )
                           : const Text(
-                              'জমা দিন',
+                              'Submit',
                               style: TextStyle(
                                 fontWeight: FontWeight.bold,
                               ),
