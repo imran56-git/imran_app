@@ -43,10 +43,8 @@ class _GroupChatScreenState extends State<GroupChatScreen>
   final ScrollController _scrollController = ScrollController();
   final TextEditingController _searchController = TextEditingController();
 
-  // Cached stream so scrolling or state updates never reset the list position
   late Stream<List<MessageModel>> _messagesStream;
 
-  // ValueNotifier prevents rebuilding the entire ListView during scroll gestures
   final ValueNotifier<bool> _showScrollToBottomBtnNotifier =
       ValueNotifier<bool>(false);
 
@@ -965,15 +963,32 @@ class _GroupChatScreenState extends State<GroupChatScreen>
         return AlertDialog(
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-          title: const Row(
+          title: Row(
             children: [
-              Icon(Icons.warning_amber_rounded, color: Colors.redAccent),
-              SizedBox(width: 8),
-              Text("Dismiss Group Permanently?"),
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.red.shade50,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.warning_amber_rounded,
+                    color: Colors.redAccent, size: 24),
+              ),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Text(
+                  "Dismiss Group Permanently",
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 17,
+                  ),
+                ),
+              ),
             ],
           ),
           content: const Text(
             "Once dismissed, this group will be permanently closed. Every student in this group will receive a real-time dismissal popup and no further messages can be sent.",
+            style: TextStyle(fontSize: 14.5, color: Color(0xFF475569)),
           ),
           actions: [
             TextButton(
@@ -983,6 +998,8 @@ class _GroupChatScreenState extends State<GroupChatScreen>
             ElevatedButton(
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.redAccent,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10)),
               ),
               onPressed: () async {
                 Navigator.pop(ctx);
