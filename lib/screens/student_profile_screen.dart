@@ -466,7 +466,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
   Widget build(BuildContext context) {
     super.build(context);
     return Scaffold(
-      backgroundColor: _scaffoldBg,
+      backgroundColor: _primaryNavy,
       appBar: AppBar(
         backgroundColor: _primaryNavy,
         foregroundColor: Colors.white,
@@ -542,7 +542,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
                   return false;
                 },
                 child: SingleChildScrollView(
-                  physics: const BouncingScrollPhysics(),
+                  physics: const ClampingScrollPhysics(),
                   child: AnimatedSwitcher(
                     duration: const Duration(milliseconds: 300),
                     child: Container(
