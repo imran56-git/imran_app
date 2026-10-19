@@ -704,25 +704,9 @@ class _GroupListScreenState extends State<GroupListScreen> {
   @override
   Widget build(BuildContext context) {
     if (widget.isEmbedded) {
-      return Scaffold(
-        backgroundColor: Colors.white,
-        body: _buildBodyContent(),
-        floatingActionButton: _isTeacherRole
-            ? FloatingActionButton(
-                backgroundColor: ChatColors.primaryApp,
-                elevation: 4,
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) =>
-                          CreateGroupScreen(teacherId: widget.currentUserId),
-                    ),
-                  );
-                },
-                child: const Icon(Icons.group_add, color: Colors.white),
-              )
-            : null,
+      return Container(
+        color: Colors.white,
+        child: _buildBodyContent(),
       );
     }
 
