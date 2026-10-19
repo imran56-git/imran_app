@@ -109,7 +109,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
 
     _menuMenuAnimController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 300),
+      duration: const Duration(milliseconds: 260),
     );
   }
 
@@ -571,7 +571,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
     required int totalItems,
     required Widget child,
   }) {
-    final double start = (index * 0.10).clamp(0.0, 0.7);
+    final double start = (index * 0.08).clamp(0.0, 0.6);
     final double end = (start + 0.35).clamp(0.0, 1.0);
 
     final Animation<double> itemAnimation = CurvedAnimation(
@@ -921,7 +921,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
         _showExitAnimatedPopup();
       },
       child: Scaffold(
-        backgroundColor: _scaffoldBg,
+        backgroundColor: const Color(0xFF0F172A),
         body: isLoading
             ? const Center(
                 child: CircularProgressIndicator(color: _brandBlue),
@@ -940,9 +940,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                     return false;
                   },
                   child: SingleChildScrollView(
-                    physics: const AlwaysScrollableScrollPhysics(
-                      parent: BouncingScrollPhysics(),
-                    ),
+                    physics: const ClampingScrollPhysics(),
                     child: Container(
                       color: _scaffoldBg,
                       child: Column(
@@ -1021,53 +1019,66 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                                       child: Row(
                                         mainAxisAlignment:
                                             MainAxisAlignment.spaceBetween,
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.center,
                                         children: [
-                                          Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              if (canPopScreen)
-                                                Container(
-                                                  margin: const EdgeInsets.only(
-                                                      right: 8),
-                                                  decoration: BoxDecoration(
-                                                    color: Colors.black
-                                                        .withOpacity(0.28),
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                            12),
-                                                  ),
-                                                  child: IconButton(
-                                                    icon: const Icon(
-                                                      Icons
-                                                          .arrow_back_ios_new_rounded,
-                                                      color: Colors.white,
-                                                      size: 18,
+                                          if (!_isMenuExpanded)
+                                            Expanded(
+                                              child: Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  if (canPopScreen)
+                                                    Container(
+                                                      margin:
+                                                          const EdgeInsets.only(
+                                                              right: 8),
+                                                      decoration: BoxDecoration(
+                                                        color: Colors.black
+                                                            .withOpacity(0.28),
+                                                        borderRadius:
+                                                            BorderRadius
+                                                                .circular(12),
+                                                      ),
+                                                      child: IconButton(
+                                                        icon: const Icon(
+                                                          Icons
+                                                              .arrow_back_ios_new_rounded,
+                                                          color: Colors.white,
+                                                          size: 18,
+                                                        ),
+                                                        onPressed: () =>
+                                                            Navigator.pop(
+                                                                context),
+                                                      ),
+                                                    )
+                                                  else
+                                                    const SizedBox(width: 4),
+                                                  Flexible(
+                                                    child: Text(
+                                                      isOwnProfile
+                                                          ? (isEditing
+                                                              ? 'Edit Profile'
+                                                              : 'My Profile')
+                                                          : 'Educator Profile',
+                                                      maxLines: 1,
+                                                      overflow:
+                                                          TextOverflow.ellipsis,
+                                                      style: const TextStyle(
+                                                        fontWeight:
+                                                            FontWeight.w900,
+                                                        color: Colors.white,
+                                                        fontSize: 20,
+                                                        letterSpacing: 0.2,
+                                                      ),
                                                     ),
-                                                    onPressed: () =>
-                                                        Navigator.pop(context),
                                                   ),
-                                                )
-                                              else
-                                                const SizedBox(width: 4),
-                                              Text(
-                                                isOwnProfile
-                                                    ? (isEditing
-                                                        ? 'Edit Profile'
-                                                        : 'My Profile')
-                                                    : 'Educator Profile',
-                                                style: const TextStyle(
-                                                  fontWeight: FontWeight.w900,
-                                                  color: Colors.white,
-                                                  fontSize: 21,
-                                                  letterSpacing: 0.2,
-                                                ),
+                                                ],
                                               ),
-                                            ],
-                                          ),
-                                          Align(
-                                            alignment: Alignment.centerRight,
-                                            child: _buildActionHeaderBar(),
-                                          ),
+                                            )
+                                          else
+                                            const Spacer(),
+                                          const SizedBox(width: 8),
+                                          _buildActionHeaderBar(),
                                         ],
                                       ),
                                     ),
@@ -1242,14 +1253,14 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                 );
               },
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
                 child: Stack(
                   clipBehavior: Clip.none,
                   children: [
                     const Icon(
                       Icons.person_add_alt_1_rounded,
                       color: Colors.white,
-                      size: 20,
+                      size: 19,
                     ),
                     if (pendingCount > 0)
                       Positioned(
@@ -1305,14 +1316,14 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
           );
         },
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
           child: Stack(
             clipBehavior: Clip.none,
             children: [
               const Icon(
                 Icons.notifications_none_rounded,
                 color: Colors.white,
-                size: 20,
+                size: 19,
               ),
               if (hasUnreadNotifications)
                 Positioned(
@@ -1415,23 +1426,21 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
     return GestureDetector(
       onTap: () {},
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(28),
+        borderRadius: BorderRadius.circular(24),
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
             decoration: BoxDecoration(
-              color: Colors.black.withOpacity(0.55),
-              borderRadius: BorderRadius.circular(28),
+              color: Colors.black.withOpacity(0.6),
+              borderRadius: BorderRadius.circular(24),
               border: Border.all(
                 color: Colors.white.withOpacity(0.35),
-                width: 1.2,
+                width: 1.1,
               ),
             ),
-            child: Wrap(
-              alignment: WrapAlignment.end,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              spacing: 2,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
               children: List.generate(
                 menuItems.length,
                 (index) => _buildStaggeredMenuItem(
@@ -1454,11 +1463,12 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
     Color iconColor = Colors.white,
   }) {
     return IconButton(
-      icon: Icon(icon, color: iconColor, size: 20),
+      icon: Icon(icon, color: iconColor, size: 19),
       tooltip: tooltip,
       onPressed: onTap,
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-      constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+      constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+      visualDensity: VisualDensity.compact,
     );
   }
 
