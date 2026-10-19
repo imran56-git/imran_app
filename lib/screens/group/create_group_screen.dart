@@ -33,13 +33,12 @@ class _CreateGroupScreenState extends State<CreateGroupScreen>
   final TextEditingController _uidSearchController = TextEditingController();
 
   List<Map<String, dynamic>> selectedStudents = [];
-  List<Map<String, dynamic>> allStudents = [];
+  List<Map<String, dynamic>> connectedStudents = [];
   Set<String> connectedStudentIds = {};
 
   bool isLoading = true;
   bool isSearchingUid = false;
   bool isCreating = false;
-  bool showOnlyConnected = false;
   String searchQuery = '';
   String teacherName = 'Teacher';
   bool isTeacherVerified = false;
@@ -72,7 +71,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen>
 
   Future<void> _initializeData() async {
     await _loadTeacherInfoAndConnections();
-    await fetchStudents();
+    await fetchConnectedStudents();
   }
 
   Future<void> _loadTeacherInfoAndConnections() async {
@@ -97,6 +96,19 @@ class _CreateGroupScreenState extends State<CreateGroupScreen>
         }
       }
 
+      final followSnap = await _firestore
+          .collection('follow_requests')
+          .where('teacherId', isEqualTo: widget.teacherId)
+          .where('status', isEqualTo: 'accepted')
+          .get();
+      for (final doc in followSnap.docs) {
+        final data = doc.data();
+        final String sId = (data['studentId'] ?? '').toString();
+        if (sId.isNotEmpty) {
+          connectedStudentIds.add(sId);
+        }
+      }
+
       final chatsSnap = await _firestore
           .collection('chats')
           .where('participants', arrayContains: widget.teacherId)
@@ -114,71 +126,46 @@ class _CreateGroupScreenState extends State<CreateGroupScreen>
     } catch (_) {}
   }
 
-  Future<void> fetchStudents() async {
+  Future<void> fetchConnectedStudents() async {
     try {
       final Map<String, Map<String, dynamic>> studentMap = {};
 
-      final studentsSnap = await _firestore.collection('students').get();
-      for (final doc in studentsSnap.docs) {
-        final data = doc.data();
-        final id = doc.id;
-        if (id == widget.teacherId) continue;
-        studentMap[id] = {
-          'id': id,
-          'uid': (data['uid'] ?? data['fybttUid'] ?? id).toString(),
-          'name': (data['name'] ?? data['fullName'] ?? 'Unnamed Student')
-              .toString(),
-          'photoUrl': (data['profileImageUrl'] ??
-                  data['profileUrl'] ??
-                  data['photoUrl'] ??
-                  '')
-              .toString(),
-          'className': (data['className'] ?? data['studentClass'] ?? '')
-              .toString(),
-          'isConnected': connectedStudentIds.contains(id),
-        };
-      }
+      for (final studentId in connectedStudentIds) {
+        if (studentId == widget.teacherId || studentId.isEmpty) continue;
 
-      final usersSnap = await _firestore.collection('users').get();
-      for (final doc in usersSnap.docs) {
-        final data = doc.data();
-        final id = doc.id;
-        if (id == widget.teacherId) continue;
-        final role = (data['role'] ?? data['type'] ?? '').toString().toLowerCase();
-        if (role == 'teacher') continue;
+        DocumentSnapshot<Map<String, dynamic>> userDoc =
+            await _firestore.collection('students').doc(studentId).get();
+        if (!userDoc.exists || userDoc.data() == null) {
+          userDoc = await _firestore.collection('users').doc(studentId).get();
+        }
 
-        if (!studentMap.containsKey(id)) {
-          studentMap[id] = {
-            'id': id,
-            'uid': (data['uid'] ?? data['fybttUid'] ?? id).toString(),
-            'name': (data['name'] ?? data['fullName'] ?? 'Unnamed Student')
+        if (userDoc.exists && userDoc.data() != null) {
+          final data = userDoc.data()!;
+          studentMap[studentId] = {
+            'id': studentId,
+            'uid': (data['uid'] ?? data['fybttUid'] ?? studentId).toString(),
+            'name': (data['name'] ?? data['fullName'] ?? 'Connected Student')
                 .toString(),
-            'photoUrl': (data['photoUrl'] ??
-                    data['profileImageUrl'] ??
+            'photoUrl': (data['profileImageUrl'] ??
                     data['profileUrl'] ??
+                    data['photoUrl'] ??
                     '')
                 .toString(),
             'className': (data['className'] ?? data['studentClass'] ?? '')
                 .toString(),
-            'isConnected': connectedStudentIds.contains(id),
+            'isConnected': true,
           };
         }
       }
 
       final list = studentMap.values.toList();
-      list.sort((a, b) {
-        final bool aConn = a['isConnected'] == true;
-        final bool bConn = b['isConnected'] == true;
-        if (aConn && !bConn) return -1;
-        if (!aConn && bConn) return 1;
-        return (a['name'] as String)
-            .toLowerCase()
-            .compareTo((b['name'] as String).toLowerCase());
-      });
+      list.sort((a, b) => (a['name'] as String)
+          .toLowerCase()
+          .compareTo((b['name'] as String).toLowerCase()));
 
       if (mounted) {
         setState(() {
-          allStudents = list;
+          connectedStudents = list;
           isLoading = false;
         });
       }
@@ -186,7 +173,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen>
       if (mounted) {
         setState(() => isLoading = false);
       }
-      _showSnackBar("Error loading students: $e");
+      _showSnackBar("Error loading connected students: $e");
     }
   }
 
@@ -199,12 +186,12 @@ class _CreateGroupScreenState extends State<CreateGroupScreen>
 
     setState(() => isSearchingUid = true);
     try {
-      final existingIndex = allStudents.indexWhere((s) =>
+      final existingIndex = connectedStudents.indexWhere((s) =>
           s['id'].toString().toLowerCase() == rawUid.toLowerCase() ||
           s['uid'].toString().toLowerCase() == rawUid.toLowerCase());
 
       if (existingIndex != -1) {
-        final foundStudent = allStudents[existingIndex];
+        final foundStudent = connectedStudents[existingIndex];
         if (!selectedStudents.any((s) => s['id'] == foundStudent['id'])) {
           setState(() {
             selectedStudents.add(foundStudent);
@@ -223,25 +210,9 @@ class _CreateGroupScreenState extends State<CreateGroupScreen>
         docSnap = await _firestore.collection('users').doc(rawUid).get();
       }
 
-      if (!docSnap.exists) {
-        final queryByUidField = await _firestore
-            .collection('users')
-            .where('uid', isEqualTo: rawUid)
-            .limit(1)
-            .get();
-        if (queryByUidField.docs.isNotEmpty) {
-          docSnap = queryByUidField.docs.first;
-        }
-      }
-
       if (docSnap.exists && docSnap.data() != null) {
         final data = docSnap.data()!;
         final String docId = docSnap.id;
-        if (docId == widget.teacherId) {
-          _showSnackBar("You cannot invite yourself.");
-          setState(() => isSearchingUid = false);
-          return;
-        }
 
         final Map<String, dynamic> studentObj = {
           'id': docId,
@@ -258,8 +229,8 @@ class _CreateGroupScreenState extends State<CreateGroupScreen>
         };
 
         setState(() {
-          if (!allStudents.any((s) => s['id'] == docId)) {
-            allStudents.insert(0, studentObj);
+          if (!connectedStudents.any((s) => s['id'] == docId)) {
+            connectedStudents.insert(0, studentObj);
           }
           if (!selectedStudents.any((s) => s['id'] == docId)) {
             selectedStudents.add(studentObj);
@@ -268,7 +239,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen>
         _uidSearchController.clear();
         _showSnackBar("${studentObj['name']} added to invite list!");
       } else {
-        _showSnackBar("No student found with UID: $rawUid");
+        _showSnackBar("No connected student found with UID: $rawUid");
       }
     } catch (e) {
       _showSnackBar("UID search error: $e");
@@ -357,7 +328,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen>
       return;
     }
     if (selectedStudents.isEmpty) {
-      _showSnackBar("Please select at least one student to invite");
+      _showSnackBar("Please select at least one connected student to invite");
       _tabController.animateTo(1);
       return;
     }
@@ -386,7 +357,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen>
 
       if (!mounted) return;
       Navigator.pop(context);
-      _showSnackBar("Group created & invitations sent to ${invitedIds.length} student(s)!");
+      _showSnackBar("Group created & invitations sent to ${invitedIds.length} connected student(s)!");
     } catch (e) {
       _showSnackBar("Failed to create group: $e");
     } finally {
@@ -729,7 +700,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen>
               icon: const Icon(Icons.person_add_alt_1_rounded,
                   color: Colors.white),
               label: Text(
-                "Next: Select Students (${selectedStudents.length} Selected)",
+                "Next: Select Connected Students (${selectedStudents.length} Selected)",
                 style: const TextStyle(
                   color: Colors.white,
                   fontWeight: FontWeight.bold,
@@ -745,10 +716,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen>
   }
 
   Widget _buildStudentSelectionTab() {
-    final filteredList = allStudents.where((student) {
-      if (showOnlyConnected && student['isConnected'] != true) {
-        return false;
-      }
+    final filteredList = connectedStudents.where((student) {
       if (searchQuery.isEmpty) return true;
       final name = (student['name'] ?? '').toString().toLowerCase();
       final uid = (student['uid'] ?? '').toString().toLowerCase();
@@ -778,7 +746,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen>
                       child: TextField(
                         controller: _uidSearchController,
                         decoration: const InputDecoration(
-                          hintText: "Invite directly by Student UID...",
+                          hintText: "Invite connected student by UID...",
                           hintStyle:
                               TextStyle(fontSize: 13.5, color: Colors.grey),
                           prefixIcon: Icon(Icons.qr_code_scanner_rounded,
@@ -832,7 +800,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen>
                   onChanged: (val) =>
                       setState(() => searchQuery = val.trim().toLowerCase()),
                   decoration: const InputDecoration(
-                    hintText: "Filter students by name or UID...",
+                    hintText: "Filter connected students by name or UID...",
                     hintStyle: TextStyle(fontSize: 13.5, color: Colors.grey),
                     prefixIcon:
                         Icon(Icons.search, color: Colors.grey, size: 20),
@@ -841,41 +809,17 @@ class _CreateGroupScreenState extends State<CreateGroupScreen>
                   ),
                 ),
               ),
-              const SizedBox(height: 10),
-              Row(
-                children: [
-                  ChoiceChip(
-                    label: const Text("All Students"),
-                    selected: !showOnlyConnected,
-                    selectedColor: Colors.blueAccent.withOpacity(0.15),
-                    labelStyle: TextStyle(
-                      color:
-                          !showOnlyConnected ? Colors.blueAccent : Colors.grey,
-                      fontWeight: !showOnlyConnected
-                          ? FontWeight.bold
-                          : FontWeight.normal,
-                      fontSize: 12.5,
-                    ),
-                    onSelected: (_) =>
-                        setState(() => showOnlyConnected = false),
+              const SizedBox(height: 6),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                child: Text(
+                  "Showing My Connected Students (${connectedStudents.length})",
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF1E4C7A),
                   ),
-                  const SizedBox(width: 8),
-                  ChoiceChip(
-                    label: Text(
-                        "My Connected Students (${connectedStudentIds.length})"),
-                    selected: showOnlyConnected,
-                    selectedColor: Colors.blueAccent.withOpacity(0.15),
-                    labelStyle: TextStyle(
-                      color:
-                          showOnlyConnected ? Colors.blueAccent : Colors.grey,
-                      fontWeight: showOnlyConnected
-                          ? FontWeight.bold
-                          : FontWeight.normal,
-                      fontSize: 12.5,
-                    ),
-                    onSelected: (_) => setState(() => showOnlyConnected = true),
-                  ),
-                ],
+                ),
               ),
             ],
           ),
@@ -961,7 +905,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen>
               : filteredList.isEmpty
                   ? const Center(
                       child: Text(
-                        "No students found",
+                        "No connected students found",
                         style: TextStyle(color: Colors.grey, fontSize: 15),
                       ),
                     )
@@ -974,8 +918,6 @@ class _CreateGroupScreenState extends State<CreateGroupScreen>
                         final student = filteredList[index];
                         final bool isSelected = selectedStudents
                             .any((s) => s['id'] == student['id']);
-                        final bool isConnected =
-                            student['isConnected'] == true;
                         final String name =
                             (student['name'] ?? 'Student').toString();
                         final String photoUrl =
@@ -1006,48 +948,21 @@ class _CreateGroupScreenState extends State<CreateGroupScreen>
                                   )
                                 : null,
                           ),
-                          title: Row(
-                            children: [
-                              Flexible(
-                                child: Text(
-                                  name,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 15,
-                                  ),
-                                ),
-                              ),
-                              if (isConnected) ...[
-                                const SizedBox(width: 6),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 6, vertical: 2),
-                                  decoration: BoxDecoration(
-                                    color: Colors.green.shade50,
-                                    borderRadius: BorderRadius.circular(6),
-                                    border: Border.all(
-                                        color: Colors.green.shade200),
-                                  ),
-                                  child: Text(
-                                    "Connected",
-                                    style: TextStyle(
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.green.shade700,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ],
-                          ),
-                          subtitle: Text(
-                            "UID: $uid",
+                          title: Text(
+                            name,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
-                                fontSize: 12, color: Colors.grey),
+                              fontWeight: FontWeight.w600,
+                              fontSize: 15,
+                            ),
+                          ),
+                          subtitle: Text(
+                            "UID: $uid • Connected",
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                                fontSize: 12, color: Colors.green),
                           ),
                           trailing: Icon(
                             isSelected
