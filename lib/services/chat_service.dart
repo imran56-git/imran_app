@@ -1,13 +1,16 @@
+import 'dart:async';
 import 'dart:developer';
 import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import '../models/group_model.dart';
 import '../models/message_model.dart';
+import 'local_chat_storage_service.dart';
 
 class ChatService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseStorage _storage = FirebaseStorage.instance;
+  final LocalChatStorageService _localStorage = LocalChatStorageService();
   final Map<String, DateTime> _recentClientMessages = {};
 
   Future<Map<String, dynamic>?> getUserProfile(
@@ -355,7 +358,6 @@ class ChatService {
         expiresAt = DateTime.now().add(Duration(hours: disappearingHours));
       }
 
-      final batch = _firestore.batch();
       final messageRef = chatRef.collection('messages').doc();
 
       final Map<String, dynamic> messageData = {
@@ -398,6 +400,31 @@ class ChatService {
         messageData['linkPreviewData'] = linkPreviewData;
       }
 
+      final localMsg = MessageModel(
+        messageId: messageRef.id,
+        senderId: senderId,
+        receiverId: receiverId,
+        content: message,
+        type: type,
+        timestamp: DateTime.now(),
+        status: 'sent',
+        isDeletedForEveryone: false,
+        deletedForUsers: const [],
+        starredBy: const [],
+        reactions: const {},
+        replyToMessageId: replyToMessageId,
+        replyText: replyToText,
+        mediaMetaData: mediaMetaData,
+        mediaUrl: (type == 'image' || type == 'video' || type == 'audio' || type == 'document') ? message : null,
+        messageCategory: messageCategory,
+        isPinned: false,
+        pollData: pollData,
+        quizData: quizData,
+        clientMessageId: clientMessageId,
+      );
+      await _localStorage.saveMessage(localMsg, correctChatId);
+
+      final batch = _firestore.batch();
       batch.set(messageRef, messageData);
 
       final String previewText =
@@ -528,7 +555,6 @@ class ChatService {
             .add(Duration(hours: group.disappearingDurationHours));
       }
 
-      final WriteBatch batch = _firestore.batch();
       final messageRef = groupRef.collection('messages').doc();
 
       final Map<String, dynamic> messageData = {
@@ -573,6 +599,36 @@ class ChatService {
         'reportedBy': [],
       };
 
+      final localGroupMsg = MessageModel(
+        messageId: messageRef.id,
+        senderId: senderId,
+        receiverId: groupId,
+        content: message,
+        type: type,
+        timestamp: DateTime.now(),
+        status: 'sent',
+        isDeletedForEveryone: false,
+        deletedForUsers: const [],
+        starredBy: const [],
+        reactions: const {},
+        replyToMessageId: replyToMessageId,
+        replyText: replyToText,
+        mediaMetaData: mediaMetaData,
+        mediaUrl: (type == 'image' || type == 'video' || type == 'audio' || type == 'document') ? message : null,
+        senderRole: isTeacherSender ? 'teacher' : 'student',
+        senderName: senderName,
+        senderProfilePic: senderProfilePic,
+        isSenderVerified: isTeacherSender ? group.isTeacherVerified : false,
+        hasSenderGoldenBadge: isTeacherSender ? group.hasGoldenBadge : false,
+        messageCategory: messageCategory,
+        isPinned: false,
+        pollData: pollData,
+        quizData: quizData,
+        clientMessageId: clientMessageId,
+      );
+      await _localStorage.saveMessage(localGroupMsg, groupId);
+
+      final WriteBatch batch = _firestore.batch();
       batch.set(messageRef, messageData);
 
       if (replyToMessageId != null && replyToMessageId.isNotEmpty) {
@@ -636,34 +692,37 @@ class ChatService {
 
   Future<void> markAsSeen(String chatId, String currentUserId) async {
     try {
+      await _localStorage.markAllMessagesReadLocally(chatId);
+
       final querySnapshot = await _firestore
           .collection('chats')
           .doc(chatId)
           .collection('messages')
           .where('receiverId', isEqualTo: currentUserId)
-          .where('status', isEqualTo: 'sent')
           .get();
 
+      if (querySnapshot.docs.isEmpty) {
+        await _firestore.collection('chats').doc(chatId).set({
+          'unreadCount': 0,
+          'unreadFor': '',
+          'unreadCount_$currentUserId': 0,
+        }, SetOptions(merge: true));
+        return;
+      }
+
       final batch = _firestore.batch();
-
       for (var doc in querySnapshot.docs) {
-        batch.update(doc.reference, {
-          'status': 'seen',
-          'readBy': FieldValue.arrayUnion([currentUserId]),
-        });
+        batch.delete(doc.reference);
       }
 
-      final chatDoc = await _firestore.collection('chats').doc(chatId).get();
-      if (chatDoc.exists) {
-        batch.set(
-            _firestore.collection('chats').doc(chatId),
-            {
-              'unreadCount': 0,
-              'unreadFor': '',
-              'unreadCount_$currentUserId': 0,
-            },
-            SetOptions(merge: true));
-      }
+      batch.set(
+          _firestore.collection('chats').doc(chatId),
+          {
+            'unreadCount': 0,
+            'unreadFor': '',
+            'unreadCount_$currentUserId': 0,
+          },
+          SetOptions(merge: true));
 
       await batch.commit();
     } catch (e) {
@@ -675,6 +734,8 @@ class ChatService {
       String groupId, String currentUserId) async {
     if (groupId.trim().isEmpty || currentUserId.trim().isEmpty) return;
     try {
+      await _localStorage.markAllMessagesReadLocally(groupId);
+
       final groupRef = _firestore.collection('groups').doc(groupId);
       await groupRef.set({
         'unreadCounts': {currentUserId: 0},
@@ -807,54 +868,53 @@ class ChatService {
   }
 
   Stream<List<MessageModel>> getMessages(String chatId) {
-    return _firestore
+    _firestore
         .collection('chats')
         .doc(chatId)
         .collection('messages')
-        .orderBy('timestamp', descending: true)
-        .snapshots(includeMetadataChanges: true)
-        .map((snapshot) {
-      final list = snapshot.docs.map((doc) {
-        final data = doc.data();
-        data['messageId'] = doc.id;
-        return MessageModel.fromMap(data);
-      }).toList();
-      return _filterActiveMessages(list);
-    }).handleError((error) {
-      _handleError('getMessages (Stream Error)', error);
+        .snapshots(includeMetadataChanges: false)
+        .listen((snapshot) async {
+      if (snapshot.docs.isNotEmpty) {
+        final List<MessageModel> incomingMessages = snapshot.docs.map((doc) {
+          final data = doc.data();
+          data['messageId'] = doc.id;
+          return MessageModel.fromMap(data);
+        }).toList();
+        await _localStorage.saveMessagesBatch(incomingMessages, chatId);
+      }
+    }, onError: (e) {
+      _handleError('getMessages (Listener error)', e);
     });
+
+    return _localStorage.streamLocalMessages(chatRoomId: chatId);
   }
 
   Stream<List<MessageModel>> getGroupMessagesStream(
     String groupId, {
     String? categoryFilter,
   }) {
-    return _firestore
+    _firestore
         .collection('groups')
         .doc(groupId)
         .collection('messages')
-        .orderBy('timestamp', descending: true)
-        .snapshots(includeMetadataChanges: true)
-        .map((snapshot) {
-      final list = snapshot.docs.map((doc) {
-        final data = doc.data();
-        data['messageId'] = doc.id;
-        return MessageModel.fromMap(data);
-      }).toList();
-
-      final activeList = _filterActiveMessages(list);
-      if (categoryFilter == null ||
-          categoryFilter.isEmpty ||
-          categoryFilter.toLowerCase() == 'all') {
-        return activeList;
+        .snapshots(includeMetadataChanges: false)
+        .listen((snapshot) async {
+      if (snapshot.docs.isNotEmpty) {
+        final List<MessageModel> incomingGroupMessages = snapshot.docs.map((doc) {
+          final data = doc.data();
+          data['messageId'] = doc.id;
+          return MessageModel.fromMap(data);
+        }).toList();
+        await _localStorage.saveMessagesBatch(incomingGroupMessages, groupId);
       }
-      return activeList
-          .where((m) =>
-              m.messageCategory.toLowerCase() == categoryFilter.toLowerCase())
-          .toList();
-    }).handleError((error) {
-      _handleError('getGroupMessagesStream (Stream Error)', error);
+    }, onError: (e) {
+      _handleError('getGroupMessagesStream (Listener error)', e);
     });
+
+    return _localStorage.streamLocalMessages(
+      chatRoomId: groupId,
+      categoryFilter: categoryFilter,
+    );
   }
 
   Future<List<MessageModel>> getPaginatedMessages({
@@ -864,6 +924,14 @@ class ChatService {
     int limit = 30,
   }) async {
     try {
+      final localMsgs = await _localStorage.getLocalMessages(
+        chatRoomId: chatOrGroupId,
+        limit: limit,
+      );
+      if (localMsgs.isNotEmpty) {
+        return _filterActiveMessages(localMsgs);
+      }
+
       final String rootCollection = isGroup ? 'groups' : 'chats';
       Query<Map<String, dynamic>> query = _firestore
           .collection(rootCollection)
@@ -882,6 +950,8 @@ class ChatService {
         data['messageId'] = doc.id;
         return MessageModel.fromMap(data);
       }).toList();
+
+      await _localStorage.saveMessagesBatch(list, chatOrGroupId);
       return _filterActiveMessages(list);
     } catch (e) {
       _handleError('getPaginatedMessages', e);
@@ -926,6 +996,12 @@ class ChatService {
       String chatId, String messageId, String newText,
       {bool? isGroup}) async {
     try {
+      await _localStorage.updateMessageContentLocally(
+        messageId: messageId,
+        chatRoomId: chatId,
+        newContent: newText,
+      );
+
       final ref = await _resolveMessageRef(chatId, messageId, isGroup: isGroup);
       await ref.update({
         'content': newText,
@@ -941,12 +1017,10 @@ class ChatService {
       String chatId, String messageId,
       {bool? isGroup}) async {
     try {
+      await _localStorage.deleteMessageForEveryoneLocally(messageId, chatId);
+
       final ref = await _resolveMessageRef(chatId, messageId, isGroup: isGroup);
-      await ref.update({
-        'content': 'This message was deleted',
-        'type': 'text',
-        'isDeletedForEveryone': true,
-      });
+      await ref.delete();
     } catch (e) {
       _handleError('deleteMessageForEveryone', e);
     }
@@ -956,6 +1030,8 @@ class ChatService {
       String chatId, String messageId, String userId,
       {bool? isGroup}) async {
     try {
+      await _localStorage.deleteMessageForMeLocally(messageId, chatId, userId);
+
       final ref = await _resolveMessageRef(chatId, messageId, isGroup: isGroup);
       await ref.update({
         'deletedForUsers': FieldValue.arrayUnion([userId]),
@@ -1114,18 +1190,13 @@ class ChatService {
     required bool isViewerTeacherOfGroup,
   }) async {
     try {
-      final String rootCollection = isGroup ? 'groups' : 'chats';
-      final snap = await _firestore
-          .collection(rootCollection)
-          .doc(chatOrGroupId)
-          .collection('messages')
-          .orderBy('timestamp', descending: false)
-          .limit(500)
-          .get();
+      final localList = await _localStorage.getLocalMessages(
+        chatRoomId: chatOrGroupId,
+        limit: 500,
+      );
 
       final StringBuffer buffer = StringBuffer();
-      for (final doc in snap.docs) {
-        final msg = MessageModel.fromMap(doc.data());
+      for (final msg in localList.reversed) {
         if (msg.isDeletedForEveryone ||
             msg.deletedForUsers.contains(currentUserId)) {
           continue;
