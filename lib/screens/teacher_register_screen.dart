@@ -8,7 +8,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../services/location_service.dart';
 import '../utils/image_utils.dart';
-import '../services/document_verification_service.dart';
+import '../services/gemini_service.dart';
 import 'teacher_liveness_check_screen.dart';
 
 class TeacherRegistrationScreen extends StatefulWidget {
@@ -33,12 +33,20 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
   File? _profileImage;
   File? _qualificationCertificate;
   File? _idProofImage;
+  File? _verifiedFaceFile;
+
   bool _isLoading = false;
+  bool _isAnalyzingDoc = false;
   bool _isAccepted = false;
   bool _isLivenessVerified = false;
   bool _obscurePassword = true;
 
-  final DocumentVerificationService _docService = DocumentVerificationService();
+  String _selectedIdType = "Aadhaar Card";
+  Map<String, dynamic>? _scannedCertificateData;
+  bool _isCertificateConfirmed = false;
+  String _analysisStatusText = "";
+
+  final GeminiService _geminiService = GeminiService();
   final String _policyUrl = "https://docs.google.com/document/d/1pLnjsGpdQwmbdytG7ZC5Nro7LHaOmgy8nSLCKGEgy0E/edit?usp=drivesdk";
 
   @override
@@ -51,12 +59,11 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
     _tuitionNameController.dispose();
     _experienceController.dispose();
     _subjectInputController.dispose();
-    _docService.dispose();
     super.dispose();
   }
 
   Future<void> _pickImage(Function(File) onPicked) async {
-    final picked = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 80);
+    final picked = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 85);
     if (picked != null) onPicked(File(picked.path));
   }
 
@@ -101,8 +108,131 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
     }
   }
 
+  void _showIdProofSelector() {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(22))),
+      backgroundColor: Colors.white,
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.all(22.0),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text("Select Government ID Type", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
+            const SizedBox(height: 6),
+            const Text("Choose the official document you wish to upload for verification.", style: TextStyle(fontSize: 13, color: Colors.grey)),
+            const SizedBox(height: 16),
+            _idTypeTile("Aadhaar Card", Icons.fingerprint_rounded),
+            _idTypeTile("PAN Card", Icons.credit_card_rounded),
+            _idTypeTile("Passport", Icons.airplanemode_active_rounded),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _idTypeTile(String title, IconData icon) {
+    return ListTile(
+      leading: Icon(icon, color: Colors.blueAccent),
+      title: Text(title, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
+      trailing: _selectedIdType == title ? const Icon(Icons.check_circle, color: Colors.green) : null,
+      onTap: () {
+        Navigator.pop(context);
+        setState(() => _selectedIdType = title);
+        _pickAndVerifyIdProof();
+      },
+    );
+  }
+
+  Future<void> _pickAndVerifyIdProof() async {
+    final picked = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 85);
+    if (picked == null) return;
+
+    final File idFile = File(picked.path);
+    setState(() {
+      _isAnalyzingDoc = true;
+      _analysisStatusText = "Scanning $_selectedIdType with forensic AI...";
+    });
+
+    try {
+      final fullName = _nameController.text.trim();
+      final result = await _geminiService.verifyGovernmentIdDocument(
+        documentFile: idFile,
+        selectedDocType: _selectedIdType,
+        expectedFullName: fullName,
+      );
+
+      if (!mounted) return;
+
+      if (result['isValid'] == true && result['nameMatches'] == true) {
+        setState(() {
+          _idProofImage = idFile;
+          _isAnalyzingDoc = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("$_selectedIdType verified successfully!"), backgroundColor: Colors.green),
+        );
+      } else {
+        setState(() => _isAnalyzingDoc = false);
+        _showErrorDialog("ID Verification Failed", result['errorMessage'] ?? "Document verification failed.");
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isAnalyzingDoc = false);
+        _showErrorDialog("Error", "Could not verify ID proof: $e");
+      }
+    }
+  }
+
+  Future<void> _pickAndVerifyCertificate() async {
+    final picked = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 85);
+    if (picked == null) return;
+
+    final File certFile = File(picked.path);
+    setState(() {
+      _isAnalyzingDoc = true;
+      _analysisStatusText = "Scanning qualification certificate...";
+      _scannedCertificateData = null;
+      _isCertificateConfirmed = false;
+    });
+
+    try {
+      final fullName = _nameController.text.trim();
+      final result = await _geminiService.verifyQualificationCertificate(
+        certificateFile: certFile,
+        expectedFullName: fullName,
+      );
+
+      if (!mounted) return;
+
+      if (result['isValid'] == true) {
+        setState(() {
+          _qualificationCertificate = certFile;
+          _scannedCertificateData = result;
+          _isAnalyzingDoc = false;
+        });
+      } else {
+        setState(() => _isAnalyzingDoc = false);
+        _showErrorDialog("Invalid Certificate", result['errorMessage'] ?? "Could not scan valid educational certificate.");
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isAnalyzingDoc = false);
+        _showErrorDialog("Error", "Could not process certificate: $e");
+      }
+    }
+  }
+
   Future<void> _startFaceLivenessCheck() async {
-    final bool? livenessPassed = await Navigator.push(
+    if (_idProofImage == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Please upload and verify your ID proof first."), backgroundColor: Colors.red),
+      );
+      return;
+    }
+
+    final result = await Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => TeacherLivenessCheckScreen(
@@ -111,16 +241,60 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
       ),
     );
 
-    if (livenessPassed == true) {
+    if (result != null && result is Map && result['success'] == true) {
+      final File liveFace = result['faceFile'] as File;
+
       setState(() {
-        _isLivenessVerified = true;
+        _isAnalyzingDoc = true;
+        _analysisStatusText = "Performing 85%+ biometric face match with ID proof...";
       });
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Face Liveness Verified Successfully!"), backgroundColor: Colors.green),
+
+      try {
+        final matchResult = await _geminiService.verifyFaceMatchWithIdCard(
+          idDocumentFile: _idProofImage!,
+          liveFaceFile: liveFace,
+          minimumSimilarityThreshold: 85.0,
         );
+
+        if (!mounted) return;
+
+        if (matchResult['isMatched'] == true) {
+          setState(() {
+            _verifiedFaceFile = liveFace;
+            _isLivenessVerified = true;
+            _isAnalyzingDoc = false;
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text("Biometric Face Match Verified (85%+) Successfully!"), backgroundColor: Colors.green),
+          );
+        } else {
+          setState(() => _isAnalyzingDoc = false);
+          _showErrorDialog("Face Match Failed", matchResult['message'] ?? "Face does not match ID proof.");
+        }
+      } catch (e) {
+        if (mounted) {
+          setState(() => _isAnalyzingDoc = false);
+          _showErrorDialog("Error", "Biometric comparison error: $e");
+        }
       }
     }
+  }
+
+  void _showErrorDialog(String title, String message) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(title, style: const TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text("OK", style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _submit() async {
@@ -138,16 +312,23 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
       return;
     }
 
-    if (_qualificationCertificate == null || _idProofImage == null) {
+    if (_qualificationCertificate == null || !_isCertificateConfirmed) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Qualification Certificate and ID Proof are mandatory.'), backgroundColor: Colors.red),
+        const SnackBar(content: Text('Please upload and confirm your Qualification Certificate.'), backgroundColor: Colors.red),
+      );
+      return;
+    }
+
+    if (_idProofImage == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Government ID Proof is mandatory.'), backgroundColor: Colors.red),
       );
       return;
     }
 
     if (!_isLivenessVerified) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please complete the Face Liveness Verification.'), backgroundColor: Colors.red),
+        const SnackBar(content: Text('Please complete Face Liveness & Biometric Verification.'), backgroundColor: Colors.red),
       );
       return;
     }
@@ -155,19 +336,6 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
     setState(() => _isLoading = true);
 
     try {
-      final String extractedText = await _docService.extractTextFromDocument(_idProofImage!.path);
-      final bool isNameValid = _docService.verifyNameMatch(extractedText, _nameController.text.trim());
-
-      if (!isNameValid) {
-        setState(() => _isLoading = false);
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text("Verification Failed: Name on ID Proof does not match Full Name."), backgroundColor: Colors.red),
-          );
-        }
-        return;
-      }
-
       final UserCredential userCredential = await FirebaseAuth.instance
           .createUserWithEmailAndPassword(
               email: _emailController.text.trim(),
@@ -180,24 +348,18 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
       if (_profileImage != null) {
         try {
           profileUrl = await _processAndUpload(_profileImage!, 'teachers/$uid/profile.jpg');
-        } catch (e) {
-          debugPrint("Profile image upload failed: $e");
-        }
+        } catch (_) {}
       }
 
       String certUrl = "";
       try {
         certUrl = await _processAndUpload(_qualificationCertificate!, 'teachers/$uid/certificate.jpg');
-      } catch (e) {
-        debugPrint("Certificate upload failed: $e");
-      }
+      } catch (_) {}
 
       String idProofUrl = "";
       try {
         idProofUrl = await _processAndUpload(_idProofImage!, 'teachers/$uid/id_proof.jpg');
-      } catch (e) {
-        debugPrint("ID Proof upload failed: $e");
-      }
+      } catch (_) {}
 
       await FirebaseFirestore.instance.collection('teachers').doc(uid).set({
         'uid': uid,
@@ -211,6 +373,8 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
         'profileUrl': profileUrl,
         'certUrl': certUrl,
         'idProofUrl': idProofUrl,
+        'idProofType': _selectedIdType,
+        'qualificationDetails': _scannedCertificateData ?? {},
         'isVerified': true,
         'status': 'approved',
         'role': 'teacher',
@@ -231,7 +395,7 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
           builder: (ctx) => AlertDialog(
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
             title: const Text("Registration Successful"),
-            content: const Text("Your documents and face liveness have been verified successfully. Please check your email to verify your account."),
+            content: const Text("Your academic credentials, ID proof, and biometric face match have been verified successfully. Please check your email to verify your account."),
             actions: [
               TextButton(
                 onPressed: () {
@@ -289,8 +453,21 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
         foregroundColor: Colors.black87,
         centerTitle: true,
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: Colors.blueAccent))
+      body: _isLoading || _isAnalyzingDoc
+          ? Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const CircularProgressIndicator(color: Colors.blueAccent),
+                  const SizedBox(height: 18),
+                  Text(
+                    _isAnalyzingDoc ? _analysisStatusText : "Registering educator account...",
+                    style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: Colors.black54),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+            )
           : SingleChildScrollView(
               padding: const EdgeInsets.all(20),
               child: Form(
@@ -478,7 +655,7 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text("AI Verification & Documents", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                          const Text("Verification & Documents", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                           const SizedBox(height: 16),
                           ListTile(
                             contentPadding: EdgeInsets.zero,
@@ -491,14 +668,51 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
                               ),
                               icon: Icon(_qualificationCertificate != null ? Icons.check : Icons.upload_file, size: 16, color: Colors.white),
                               label: Text(_qualificationCertificate != null ? "Selected" : "Upload", style: const TextStyle(color: Colors.white, fontSize: 12)),
-                              onPressed: () => _pickImage((f) => setState(() => _qualificationCertificate = f)),
+                              onPressed: _pickAndVerifyCertificate,
                             ),
                           ),
+                          if (_scannedCertificateData != null) ...[
+                            const SizedBox(height: 10),
+                            Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Colors.blue.shade50,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: Colors.blue.shade200),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text("Degree: ${_scannedCertificateData!['qualificationTitle']}", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.blueAccent)),
+                                  const SizedBox(height: 2),
+                                  Text("Institution: ${_scannedCertificateData!['institutionOrCollege']}", style: const TextStyle(fontSize: 12, color: Colors.black87)),
+                                  Text("Board/University: ${_scannedCertificateData!['boardOrUniversity']}", style: const TextStyle(fontSize: 12, color: Colors.black87)),
+                                  Text("Candidate: ${_scannedCertificateData!['candidateName']}", style: const TextStyle(fontSize: 12, color: Colors.black87)),
+                                  const SizedBox(height: 8),
+                                  Row(
+                                    children: [
+                                      Checkbox(
+                                        value: _isCertificateConfirmed,
+                                        activeColor: Colors.blueAccent,
+                                        onChanged: (val) => setState(() => _isCertificateConfirmed = val!),
+                                      ),
+                                      const Expanded(
+                                        child: Text(
+                                          "I confirm that the extracted certificate details above are accurate.",
+                                          style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Colors.black87),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
                           const Divider(height: 24),
                           ListTile(
                             contentPadding: EdgeInsets.zero,
                             leading: const Icon(Icons.badge_outlined, color: Colors.blueAccent),
-                            title: const Text("ID Proof - NID/Aadhaar (Required)", style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+                            title: Text("ID Proof - $_selectedIdType (Required)", style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
                             trailing: ElevatedButton.icon(
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: _idProofImage != null ? Colors.green : Colors.blueAccent,
@@ -506,21 +720,21 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
                               ),
                               icon: Icon(_idProofImage != null ? Icons.check : Icons.upload_file, size: 16, color: Colors.white),
                               label: Text(_idProofImage != null ? "Selected" : "Upload", style: const TextStyle(color: Colors.white, fontSize: 12)),
-                              onPressed: () => _pickImage((f) => setState(() => _idProofImage = f)),
+                              onPressed: _showIdProofSelector,
                             ),
                           ),
                           const Divider(height: 24),
                           ListTile(
                             contentPadding: EdgeInsets.zero,
                             leading: const Icon(Icons.face, color: Colors.blueAccent),
-                            title: const Text("Face Liveness Verification", style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+                            title: const Text("Face Liveness & Biometric Verification", style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
                             trailing: ElevatedButton.icon(
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: _isLivenessVerified ? Colors.green : Colors.blueAccent,
                                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                               ),
                               icon: Icon(_isLivenessVerified ? Icons.check_circle : Icons.camera_front, size: 16, color: Colors.white),
-                              label: Text(_isLivenessVerified ? "Verified" : "Verify Face", style: const TextStyle(color: Colors.white, fontSize: 12)),
+                              label: Text(_isLivenessVerified ? "Verified (85%+)" : "Verify Face", style: const TextStyle(color: Colors.white, fontSize: 12)),
                               onPressed: _startFaceLivenessCheck,
                             ),
                           ),
