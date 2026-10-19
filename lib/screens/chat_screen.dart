@@ -11,6 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:find_your_best_teacher_today/models/message_model.dart';
 import 'package:find_your_best_teacher_today/services/chat_menu_service.dart';
 import 'package:find_your_best_teacher_today/services/chat_service.dart';
+import 'package:find_your_best_teacher_today/services/local_chat_storage_service.dart';
 import 'package:find_your_best_teacher_today/utils/popup_menu_actions.dart';
 import 'package:find_your_best_teacher_today/widgets/block_dialog.dart';
 import 'package:find_your_best_teacher_today/widgets/chat_input_bar.dart';
@@ -48,9 +49,9 @@ class _ChatScreenState extends State<ChatScreen>
     with WidgetsBindingObserver, SingleTickerProviderStateMixin {
   final ChatService _chatService = ChatService();
   final ChatMenuService _chatMenuService = ChatMenuService();
+  final LocalChatStorageService _localStorage = LocalChatStorageService();
   final ScrollController _scrollController = ScrollController();
 
-  // ValueNotifier prevents rebuilding the chat list when toggling scroll-to-bottom button
   final ValueNotifier<bool> _showScrollToBottomBtnNotifier =
       ValueNotifier<bool>(false);
 
@@ -97,7 +98,6 @@ class _ChatScreenState extends State<ChatScreen>
     _activeChatRoomId = widget.chatRoomId;
 
     if (!_isOfficialChannel) {
-      // Cache header streams in initState so UI state changes never recreate them
       _userStatusStream = _chatService.getUserStatusStream(
         widget.receiverId,
         widget.isTeacher,
@@ -591,6 +591,8 @@ class _ChatScreenState extends State<ChatScreen>
   }
 
   Future<void> _clearChatSafe() async {
+    await _localStorage.clearRoomLocally(_activeChatRoomId);
+
     final chatRef =
         FirebaseFirestore.instance.collection('chats').doc(_activeChatRoomId);
     final messagesSnap = await chatRef.collection('messages').get();
@@ -600,13 +602,7 @@ class _ChatScreenState extends State<ChatScreen>
       final chunk = messagesSnap.docs.skip(i).take(chunkSize);
       final batch = FirebaseFirestore.instance.batch();
       for (final doc in chunk) {
-        batch.set(
-          doc.reference,
-          {
-            'deletedForUsers': FieldValue.arrayUnion([widget.currentUserId]),
-          },
-          SetOptions(merge: true),
-        );
+        batch.delete(doc.reference);
       }
       await batch.commit();
     }
