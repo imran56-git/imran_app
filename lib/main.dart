@@ -4,15 +4,10 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
-import 'package:find_your_best_teacher_today/ratings_badges_system.dart';
 
 import 'firebase_options.dart';
 import 'routes/app_routes.dart';
-
-@pragma('vm:entry-point')
-Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  await Firebase.initializeApp();
-}
+import 'services/notification_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -28,7 +23,11 @@ void main() async {
     cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
   );
 
-  FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+  FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+
+  await NotificationService.instance.initializeNotificationSystem(
+    appNavigatorKey: NotificationService.navigatorKey,
+  );
 
   runApp(const FindYourBestTeacherTodayApp());
 }
@@ -37,11 +36,12 @@ class FindYourBestTeacherTodayApp extends StatefulWidget {
   const FindYourBestTeacherTodayApp({super.key});
 
   @override
-  State<FindYourBestTeacherTodayApp> createState() => _FindYourBestTeacherTodayAppState();
+  State<FindYourBestTeacherTodayApp> createState() =>
+      _FindYourBestTeacherTodayAppState();
 }
 
-class _FindYourBestTeacherTodayAppState extends State<FindYourBestTeacherTodayApp>
-    with WidgetsBindingObserver {
+class _FindYourBestTeacherTodayAppState
+    extends State<FindYourBestTeacherTodayApp> with WidgetsBindingObserver {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseMessaging _messaging = FirebaseMessaging.instance;
@@ -75,10 +75,6 @@ class _FindYourBestTeacherTodayAppState extends State<FindYourBestTeacherTodayAp
     _messaging.onTokenRefresh.listen((newToken) {
       _updateFcmTokenInFirestore(newToken);
     });
-
-    FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-      if (message.notification != null) {}
-    });
   }
 
   @override
@@ -91,6 +87,7 @@ class _FindYourBestTeacherTodayAppState extends State<FindYourBestTeacherTodayAp
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       _setUserOnlineStatusAndToken(true);
+      NotificationService.instance.consumePendingMediaActionIfNeeded(context);
     } else {
       _setUserOnlineStatusAndToken(false);
     }
@@ -109,16 +106,26 @@ class _FindYourBestTeacherTodayAppState extends State<FindYourBestTeacherTodayAp
         'lastSeen': FieldValue.serverTimestamp(),
       };
 
-      if (token != null) {
+      if (token != null && token.isNotEmpty) {
         updateData['fcmToken'] = token;
       }
 
-      await _firestore.collection('users').doc(user.uid).update(updateData).catchError((_) {});
-      await _firestore.collection('teachers').doc(user.uid).update(updateData).catchError((_) {});
-      await _firestore.collection('students').doc(user.uid).update(updateData).catchError((_) {});
-    } catch (e) {
-      debugPrint("Firestore Online/Token Update Error: $e");
-    }
+      await _firestore
+          .collection('users')
+          .doc(user.uid)
+          .set(updateData, SetOptions(merge: true))
+          .catchError((_) {});
+      await _firestore
+          .collection('teachers')
+          .doc(user.uid)
+          .set(updateData, SetOptions(merge: true))
+          .catchError((_) {});
+      await _firestore
+          .collection('students')
+          .doc(user.uid)
+          .set(updateData, SetOptions(merge: true))
+          .catchError((_) {});
+    } catch (_) {}
   }
 
   Future<void> _updateFcmTokenInFirestore(String token) async {
@@ -126,21 +133,33 @@ class _FindYourBestTeacherTodayAppState extends State<FindYourBestTeacherTodayAp
     if (user == null) return;
 
     try {
-      await _firestore.collection('users').doc(user.uid).update({'fcmToken': token}).catchError((_) {});
-      await _firestore.collection('teachers').doc(user.uid).update({'fcmToken': token}).catchError((_) {});
-      await _firestore.collection('students').doc(user.uid).update({'fcmToken': token}).catchError((_) {});
-    } catch (e) {
-      debugPrint("Token Refresh Error: $e");
-    }
+      final updateData = {'fcmToken': token};
+      await _firestore
+          .collection('users')
+          .doc(user.uid)
+          .set(updateData, SetOptions(merge: true))
+          .catchError((_) {});
+      await _firestore
+          .collection('teachers')
+          .doc(user.uid)
+          .set(updateData, SetOptions(merge: true))
+          .catchError((_) {});
+      await _firestore
+          .collection('students')
+          .doc(user.uid)
+          .set(updateData, SetOptions(merge: true))
+          .catchError((_) {});
+    } catch (_) {}
   }
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      navigatorKey: NotificationService.navigatorKey,
       title: 'Find Your Best Teacher Today',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal),
+        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF1E4C7A)),
         useMaterial3: true,
       ),
       initialRoute: AppRoutes.splash,
