@@ -389,7 +389,14 @@ class _DiaryHistoryScreenState extends State<DiaryHistoryScreen> {
                                   children: [
                                     const Text('Pending Due', style: TextStyle(fontSize: 11, color: Color(0xFF64748B), fontWeight: FontWeight.w600)),
                                     const SizedBox(height: 2),
-                                    Text('₹${totalDue.toStringAsFixed(0)}', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: totalDue > 0 ? const Color(0xFFEF4444) : const Color(0xFF10B981))),
+                                    Text(
+                                      '₹${totalDue.toStringAsFixed(0)}',
+                                      style: TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.bold,
+                                        color: totalDue > 0 ? const Color(0xFFEF4444) : const Color(0xFF10B981),
+                                      ),
+                                    ),
                                     Text('$dueCount Months Pending', style: TextStyle(fontSize: 10.5, color: Colors.grey.shade500)),
                                   ],
                                 ),
