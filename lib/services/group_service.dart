@@ -454,6 +454,45 @@ class GroupService {
     await batch.commit();
   }
 
+  Future<void> leaveGroup({
+    required String groupId,
+    required String studentId,
+  }) async {
+    final groupRef = _firestore.collection('groups').doc(groupId);
+    final groupSnap = await groupRef.get();
+    if (!groupSnap.exists || groupSnap.data() == null) return;
+
+    final group = GroupModel.fromMap(groupSnap.data()!, groupSnap.id);
+    if (studentId == group.createdBy) {
+      throw Exception('Teacher admin cannot leave their own group. Use dismiss instead.');
+    }
+
+    final WriteBatch batch = _firestore.batch();
+
+    batch.update(groupRef, {
+      'members': FieldValue.arrayRemove([studentId]),
+      'mutedStudents': FieldValue.arrayRemove([studentId]),
+    });
+
+    final userNoticeRef = _firestore
+        .collection('users')
+        .doc(studentId)
+        .collection('group_notices')
+        .doc(groupId);
+    batch.delete(userNoticeRef);
+
+    final auditRef = _firestore.collection('group_audit_logs').doc();
+    batch.set(auditRef, {
+      'groupId': groupId,
+      'action': 'leave_group',
+      'performedBy': studentId,
+      'timestamp': FieldValue.serverTimestamp(),
+    });
+
+    await batch.commit();
+    await _localStorage.clearRoomLocally(groupId);
+  }
+
   Future<void> acknowledgeStudentRemoval({
     required String groupId,
     required String studentId,
