@@ -14,6 +14,7 @@ import 'package:find_your_best_teacher_today/services/chat_service.dart';
 import 'package:find_your_best_teacher_today/services/local_chat_storage_service.dart';
 import 'package:find_your_best_teacher_today/utils/popup_menu_actions.dart';
 import 'package:find_your_best_teacher_today/widgets/block_dialog.dart';
+import 'package:find_your_best_teacher_today/widgets/chat_gesture_tutorial_dialog.dart';
 import 'package:find_your_best_teacher_today/widgets/chat_input_bar.dart';
 import 'package:find_your_best_teacher_today/widgets/chat_popup_menu.dart';
 import 'package:find_your_best_teacher_today/widgets/clear_chat_dialog.dart';
@@ -125,6 +126,18 @@ class _ChatScreenState extends State<ChatScreen>
     _scrollController.addListener(_onScrollChanged);
     _setupChatRoom();
     _loadCustomTheme();
+
+    if (!_isOfficialChannel) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          ChatGestureTutorialDialog.showIfNeeded(
+            context,
+            userId: widget.currentUserId,
+            isGroup: false,
+          );
+        }
+      });
+    }
   }
 
   void _onScrollChanged() {
