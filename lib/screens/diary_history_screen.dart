@@ -25,6 +25,7 @@ class _DiaryHistoryScreenState extends State<DiaryHistoryScreen> {
   String _selectedFilter = 'All';
   String _searchQuery = '';
   final List<String> _filters = ['All', 'Pending Dues', 'Fully Paid'];
+  final Set<String> _optimisticallyDeletedIds = {};
 
   final List<String> _months = [
     'January', 'February', 'March', 'April', 'May', 'June',
@@ -121,6 +122,120 @@ class _DiaryHistoryScreenState extends State<DiaryHistoryScreen> {
           style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 16),
         ),
       ),
+    );
+  }
+
+  void _confirmDeleteDiary({
+    required String docId,
+    required String studentId,
+    required String studentName,
+    VoidCallback? onDeletedSuccess,
+  }) {
+    showDialog(
+      context: context,
+      builder: (dialogCtx) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 10),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 20),
+          actionsPadding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.red.shade50,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(Icons.delete_forever_rounded, color: Colors.red.shade600, size: 24),
+              ),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Text(
+                  'Delete Record?',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 17,
+                    color: Color(0xFF0F172A),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          content: Text(
+            'Are you sure you want to remove the diary fee ledger for $studentName? This record and its calculations will be permanently deleted.',
+            style: const TextStyle(fontSize: 13.5, color: Color(0xFF475569), height: 1.4),
+          ),
+          actions: [
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      side: const BorderSide(color: Color(0xFFCBD5E1)),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    onPressed: () => Navigator.pop(dialogCtx),
+                    child: const Text(
+                      'Cancel',
+                      style: TextStyle(color: Color(0xFF64748B), fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.red.shade600,
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    onPressed: () async {
+                      Navigator.pop(dialogCtx);
+                      if (onDeletedSuccess != null) {
+                        onDeletedSuccess();
+                      }
+
+                      setState(() {
+                        _optimisticallyDeletedIds.add(docId);
+                      });
+
+                      try {
+                        final batch = _firestore.batch();
+                        batch.delete(_firestore.collection('student_fees').doc(docId));
+                        if (studentId.isNotEmpty) {
+                          batch.delete(_firestore.collection('monthly_fee').doc(studentId));
+                        }
+                        await batch.commit();
+
+                        if (mounted) {
+                          SuccessToast.show(context, 'Diary record deleted');
+                        }
+                      } catch (e) {
+                        if (mounted) {
+                          setState(() {
+                            _optimisticallyDeletedIds.remove(docId);
+                          });
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Failed to delete student fee record')),
+                          );
+                        }
+                      }
+                    },
+                    child: const Text(
+                      'Delete',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -274,7 +389,7 @@ class _DiaryHistoryScreenState extends State<DiaryHistoryScreen> {
                                   children: [
                                     const Text('Pending Due', style: TextStyle(fontSize: 11, color: Color(0xFF64748B), fontWeight: FontWeight.w600)),
                                     const SizedBox(height: 2),
-                                    Text('₹${totalDue.toStringAsFixed(0)}', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: totalDue > 0 ? const Color(0xFFEF4444) : const Color(0xFF10B981))),
+                                    Text('₹${totalDue.toStringAsFixed(0)}', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: totalDue > 0 ? const Color(0xFFEF4444) : const Color(0xFF10B981))),
                                     Text('$dueCount Months Pending', style: TextStyle(fontSize: 10.5, color: Colors.grey.shade500)),
                                   ],
                                 ),
@@ -369,59 +484,86 @@ class _DiaryHistoryScreenState extends State<DiaryHistoryScreen> {
                   ),
                 ),
                 const SizedBox(height: 12),
-                SizedBox(
-                  width: double.infinity,
-                  height: 50,
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF10B981),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                      elevation: 2,
-                    ),
-                    onPressed: () async {
-                      Navigator.pop(ctx);
-                      try {
-                        final batch = _firestore.batch();
-                        final docRef = _firestore.collection('student_fees').doc(docId);
-
-                        batch.update(docRef, {
-                          'subject': subjectController.text.trim(),
-                          'monthlyFee': monthlyFee,
-                          'monthStatuses': tempMonthStatuses,
-                          'paidMonthsCount': paidCount,
-                          'dueMonthsCount': dueCount,
-                          'totalPaid': totalPaid,
-                          'totalDue': totalDue,
-                          'lastUpdated': FieldValue.serverTimestamp(),
-                        });
-
-                        final monthlyRef = _firestore.collection('monthly_fee').doc(studentId);
-                        batch.set(monthlyRef, {
-                          'studentId': studentId,
-                          'studentName': studentName,
-                          'subject': subjectController.text.trim(),
-                          'teacherId': widget.currentUserId,
-                          'pendingAmount': totalDue,
-                          'totalPaid': totalPaid,
-                          'monthlyFee': monthlyFee,
-                          'lastUpdated': FieldValue.serverTimestamp(),
-                        }, SetOptions(merge: true));
-
-                        await batch.commit();
-
-                        if (mounted) {
-                          SuccessToast.show(context, 'Fee Ledger Updated & Balanced');
-                        }
-                      } catch (e) {
-                        if (mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Failed to update student fee record')),
+                Row(
+                  children: [
+                    Container(
+                      height: 50,
+                      width: 50,
+                      decoration: BoxDecoration(
+                        color: Colors.red.shade50,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: Colors.red.shade200),
+                      ),
+                      child: IconButton(
+                        icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 24),
+                        tooltip: 'Delete Record',
+                        onPressed: () {
+                          _confirmDeleteDiary(
+                            docId: docId,
+                            studentId: studentId,
+                            studentName: studentName,
+                            onDeletedSuccess: () => Navigator.pop(ctx),
                           );
-                        }
-                      }
-                    },
-                    child: const Text('SAVE EDITED RECORD', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.white, letterSpacing: 0.5)),
-                  ),
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: SizedBox(
+                        height: 50,
+                        child: ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF10B981),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                            elevation: 2,
+                          ),
+                          onPressed: () async {
+                            Navigator.pop(ctx);
+                            try {
+                              final batch = _firestore.batch();
+                              final docRef = _firestore.collection('student_fees').doc(docId);
+
+                              batch.update(docRef, {
+                                'subject': subjectController.text.trim(),
+                                'monthlyFee': monthlyFee,
+                                'monthStatuses': tempMonthStatuses,
+                                'paidMonthsCount': paidCount,
+                                'dueMonthsCount': dueCount,
+                                'totalPaid': totalPaid,
+                                'totalDue': totalDue,
+                                'lastUpdated': FieldValue.serverTimestamp(),
+                              });
+
+                              final monthlyRef = _firestore.collection('monthly_fee').doc(studentId);
+                              batch.set(monthlyRef, {
+                                'studentId': studentId,
+                                'studentName': studentName,
+                                'subject': subjectController.text.trim(),
+                                'teacherId': widget.currentUserId,
+                                'pendingAmount': totalDue,
+                                'totalPaid': totalPaid,
+                                'monthlyFee': monthlyFee,
+                                'lastUpdated': FieldValue.serverTimestamp(),
+                              }, SetOptions(merge: true));
+
+                              await batch.commit();
+
+                              if (mounted) {
+                                SuccessToast.show(context, 'Fee Ledger Updated & Balanced');
+                              }
+                            } catch (e) {
+                              if (mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('Failed to update student fee record')),
+                                );
+                              }
+                            }
+                          },
+                          child: const Text('SAVE EDITED RECORD', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.white, letterSpacing: 0.5)),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -556,10 +698,11 @@ class _DiaryHistoryScreenState extends State<DiaryHistoryScreen> {
           }
 
           final allDocs = snapshot.hasData ? snapshot.data!.docs : <DocumentSnapshot>[];
+          final activeDocs = allDocs.where((doc) => !_optimisticallyDeletedIds.contains(doc.id)).toList();
 
           return Column(
             children: [
-              if (allDocs.isNotEmpty) _buildHeaderSummaryCard(allDocs),
+              if (activeDocs.isNotEmpty) _buildHeaderSummaryCard(activeDocs),
               Container(
                 color: Colors.transparent,
                 padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
@@ -637,7 +780,7 @@ class _DiaryHistoryScreenState extends State<DiaryHistoryScreen> {
               Expanded(
                 child: Builder(
                   builder: (context) {
-                    if (allDocs.isEmpty) {
+                    if (activeDocs.isEmpty) {
                       return Center(
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
@@ -652,7 +795,7 @@ class _DiaryHistoryScreenState extends State<DiaryHistoryScreen> {
                       );
                     }
 
-                    final filteredDocs = allDocs.where((doc) {
+                    final filteredDocs = activeDocs.where((doc) {
                       final data = doc.data() as Map<String, dynamic>;
                       final studentName = (data['studentName'] ?? '').toString().toLowerCase();
                       final studentId = (data['studentId'] ?? '').toString().toLowerCase();
@@ -735,6 +878,22 @@ class _DiaryHistoryScreenState extends State<DiaryHistoryScreen> {
                                       ],
                                     ),
                                   ),
+                                  Container(
+                                    decoration: BoxDecoration(
+                                      color: Colors.red.shade50,
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: IconButton(
+                                      icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 22),
+                                      tooltip: 'Delete Diary Record',
+                                      onPressed: () => _confirmDeleteDiary(
+                                        docId: doc.id,
+                                        studentId: studentId,
+                                        studentName: studentName,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
                                   Container(
                                     decoration: BoxDecoration(
                                       color: Colors.blue.shade50,
