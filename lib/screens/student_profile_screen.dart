@@ -444,8 +444,8 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
     required int totalItems,
     required Widget child,
   }) {
-    final double start = (index * 0.12).clamp(0.0, 0.8);
-    final double end = (start + 0.4).clamp(0.0, 1.0);
+    final double start = (index * 0.08).clamp(0.0, 0.6);
+    final double end = (start + 0.35).clamp(0.0, 1.0);
 
     final Animation<double> itemAnimation = CurvedAnimation(
       parent: _menuAnimController,
@@ -454,11 +454,8 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
 
     return ScaleTransition(
       scale: itemAnimation,
-      child: SlideTransition(
-        position: Tween<Offset>(
-          begin: const Offset(0.3, 0.0),
-          end: Offset.zero,
-        ).animate(itemAnimation),
+      child: FadeTransition(
+        opacity: itemAnimation,
         child: child,
       ),
     );
@@ -611,6 +608,26 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
       return _buildNotificationBellIcon();
     }
 
+    if (!_isMenuExpanded) {
+      return Container(
+        decoration: BoxDecoration(
+          color: Colors.black.withOpacity(0.28),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.white.withOpacity(0.22)),
+        ),
+        child: IconButton(
+          visualDensity: VisualDensity.compact,
+          icon: const Icon(
+            Icons.more_vert_rounded,
+            color: Colors.white,
+            size: 22,
+          ),
+          tooltip: 'Menu',
+          onPressed: _openMenu,
+        ),
+      );
+    }
+
     final List<Widget> menuItems = [
       _buildNotificationBellIcon(),
       _buildGlassIconButton(
@@ -674,23 +691,27 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
       ),
     ];
 
-    if (_isMenuExpanded) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(28),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.18),
-              borderRadius: BorderRadius.circular(28),
-              border: Border.all(color: Colors.white.withOpacity(0.32)),
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(24),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+          decoration: BoxDecoration(
+            color: Colors.black.withOpacity(0.6),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(
+              color: Colors.white.withOpacity(0.35),
+              width: 1.1,
             ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: List.generate(
-                menuItems.length,
-                (index) => _buildStaggeredMenuItem(
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: List.generate(
+              menuItems.length,
+              (index) => Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 2.0),
+                child: _buildStaggeredMenuItem(
                   index: index,
                   totalItems: menuItems.length,
                   child: menuItems[index],
@@ -699,19 +720,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
             ),
           ),
         ),
-      );
-    }
-
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        _buildNotificationBellIcon(),
-        IconButton(
-          icon: const Icon(Icons.more_vert_rounded, color: Colors.white),
-          tooltip: 'Menu',
-          onPressed: _openMenu,
-        ),
-      ],
+      ),
     );
   }
 
@@ -722,11 +731,12 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
     Color iconColor = Colors.white,
   }) {
     return IconButton(
-      icon: Icon(icon, color: iconColor, size: 20),
+      icon: Icon(icon, color: iconColor, size: 19),
       tooltip: tooltip,
       onPressed: onTap,
-      padding: const EdgeInsets.symmetric(horizontal: 9),
-      constraints: const BoxConstraints(),
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 4),
+      constraints: const BoxConstraints(minWidth: 32, minHeight: 30),
+      visualDensity: VisualDensity.compact,
     );
   }
 
