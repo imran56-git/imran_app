@@ -16,6 +16,8 @@ import '../routes/app_routes.dart';
 import '../utils/image_utils.dart';
 import '../widgets/success_toast.dart';
 import 'notification_screen.dart';
+import 'privacy_policy_screen.dart';
+import 'help_center_screen.dart';
 
 class StudentProfileScreen extends StatefulWidget {
   final String currentUserId;
@@ -628,6 +630,28 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
         onTap: () {
           _closeMenu();
           _showServiceUnavailableDialog();
+        },
+      ),
+      _buildGlassIconButton(
+        icon: Icons.privacy_tip_outlined,
+        tooltip: 'Privacy Policy',
+        onTap: () {
+          _closeMenu();
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const PrivacyPolicyScreen()),
+          );
+        },
+      ),
+      _buildGlassIconButton(
+        icon: Icons.help_outline_rounded,
+        tooltip: 'Help Center',
+        onTap: () {
+          _closeMenu();
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const HelpCenterScreen()),
+          );
         },
       ),
       _buildGlassIconButton(
