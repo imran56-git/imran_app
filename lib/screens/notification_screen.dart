@@ -26,6 +26,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
     'follow_request',
     'request_accepted',
     'follow_accepted',
+    'follow_rejected',
     'follow',
     'new_follower',
     'unfollow',
@@ -115,6 +116,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
 
   bool _matchesSelectedFilter(Map<String, dynamic> data) {
     if (_selectedFilter == 'all') return true;
+
     final String type = (data['type'] ?? '').toString().toLowerCase();
     final String text =
         '${data['message'] ?? ''} ${data['body'] ?? ''}'.toLowerCase();
@@ -126,8 +128,14 @@ class _NotificationScreenState extends State<NotificationScreen> {
         type.contains('invite') ||
         text.contains('group');
 
+    final bool isFollowEvent = type.contains('follow') ||
+        type.contains('connect') ||
+        text.contains('follow') ||
+        text.contains('unfollow');
+
     if (_selectedFilter == 'group') return isGroupEvent;
-    if (_selectedFilter == 'follow') return !isGroupEvent;
+    if (_selectedFilter == 'follow') return isFollowEvent;
+
     return true;
   }
 
@@ -161,7 +169,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
           : 'invited you to join a batch group.';
     }
     if (type == 'unfollow' || type == 'unfollowed') {
-      return 'unfollowed your profile.';
+      return 'has unfollowed you.';
     }
     if (type == 'follow' || type == 'new_follower') {
       return 'started following you.';
@@ -171,6 +179,9 @@ class _NotificationScreenState extends State<NotificationScreen> {
     }
     if (type == 'request_accepted' || type == 'follow_accepted') {
       return 'accepted your connect request.';
+    }
+    if (type == 'follow_rejected') {
+      return 'declined your follow request.';
     }
     if (type == 'student_muted') {
       return groupName.isNotEmpty
@@ -206,6 +217,14 @@ class _NotificationScreenState extends State<NotificationScreen> {
     final t = type.toLowerCase();
     final msg = messageText.toLowerCase();
 
+    if (t.contains('unfollow') || msg.contains('unfollow')) {
+      return const _NotificationBadgeStyle(
+        icon: Icons.person_remove_alt_1_rounded,
+        color: Color(0xFFE11D48),
+        bgColor: Color(0xFFFFE4E6),
+        tagLabel: 'Unfollowed',
+      );
+    }
     if (t.contains('dismiss') || msg.contains('dismiss')) {
       return const _NotificationBadgeStyle(
         icon: Icons.cancel_rounded,
@@ -222,14 +241,6 @@ class _NotificationScreenState extends State<NotificationScreen> {
         tagLabel: 'Removed from Group',
       );
     }
-    if (t.contains('unfollow') || msg.contains('unfollow')) {
-      return const _NotificationBadgeStyle(
-        icon: Icons.person_remove_alt_1_rounded,
-        color: Color(0xFFE11D48),
-        bgColor: Color(0xFFFFE4E6),
-        tagLabel: 'Unfollowed',
-      );
-    }
     if (t.contains('invite') || msg.contains('invited')) {
       return const _NotificationBadgeStyle(
         icon: Icons.group_add_rounded,
@@ -244,6 +255,14 @@ class _NotificationScreenState extends State<NotificationScreen> {
         color: Color(0xFF16A34A),
         bgColor: Color(0xFFDCFCE7),
         tagLabel: 'Connected',
+      );
+    }
+    if (t == 'follow_rejected') {
+      return const _NotificationBadgeStyle(
+        icon: Icons.person_off_rounded,
+        color: Color(0xFF64748B),
+        bgColor: Color(0xFFF1F5F9),
+        tagLabel: 'Declined',
       );
     }
     if (t == 'follow_request') {
@@ -292,8 +311,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
     if (name.isNotEmpty &&
         name != 'Someone' &&
         name != 'New Message' &&
-        name != 'User' &&
-        photoUrl.isNotEmpty) {
+        name != 'User') {
       return {'name': name, 'photoUrl': photoUrl};
     }
 
