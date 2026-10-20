@@ -11,6 +11,7 @@ import '../../services/chat_service.dart';
 import '../../services/group_service.dart';
 import '../../services/media_service.dart';
 import '../../widgets/academic_composer_sheet.dart';
+import '../../widgets/chat_gesture_tutorial_dialog.dart';
 import '../../widgets/chat_input_bar.dart';
 import '../../widgets/message_bubble.dart';
 import 'ai_study_assistant_sheet.dart';
@@ -129,6 +130,16 @@ class _GroupChatScreenState extends State<GroupChatScreen>
     _scrollController.addListener(_onScrollChanged);
     _listenToGroupRealtimeState();
     _chatService.markGroupMessagesAsSeen(widget.groupId, widget.currentUserId);
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        ChatGestureTutorialDialog.showIfNeeded(
+          context,
+          userId: widget.currentUserId,
+          isGroup: true,
+        );
+      }
+    });
   }
 
   void _updateCategoryFilter(String newCategory) {
@@ -2326,11 +2337,11 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                                                           !_didDropOnTarget &&
                                                           _draggedMessage !=
                                                               null) {
-                                                        _didDropOnTarget = true;
-                                                        _triggerReply(
-                                                            _draggedMessage!);
-                                                        return;
-                                                      }
+                                                      _didDropOnTarget = true;
+                                                      _triggerReply(
+                                                          _draggedMessage!);
+                                                      return;
+                                                    }
 
                                                       setState(() {
                                                         _isDraggingMessage =
