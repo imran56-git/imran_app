@@ -692,7 +692,13 @@ class ChatService {
 
   Future<void> markAsSeen(String chatId, String currentUserId) async {
     try {
-      await _localStorage.markAllMessagesReadLocally(chatId);
+      final db = await _localStorage.database;
+      await db.update(
+        'local_messages',
+        {'status': 'seen'},
+        where: 'chatRoomId = ? AND receiverId = ?',
+        whereArgs: [chatId, currentUserId],
+      );
 
       final querySnapshot = await _firestore
           .collection('chats')
@@ -701,18 +707,12 @@ class ChatService {
           .where('receiverId', isEqualTo: currentUserId)
           .get();
 
-      if (querySnapshot.docs.isEmpty) {
-        await _firestore.collection('chats').doc(chatId).set({
-          'unreadCount': 0,
-          'unreadFor': '',
-          'unreadCount_$currentUserId': 0,
-        }, SetOptions(merge: true));
-        return;
-      }
-
       final batch = _firestore.batch();
       for (var doc in querySnapshot.docs) {
-        batch.delete(doc.reference);
+        batch.update(doc.reference, {
+          'status': 'seen',
+          'readAt': FieldValue.serverTimestamp(),
+        });
       }
 
       batch.set(
@@ -734,7 +734,13 @@ class ChatService {
       String groupId, String currentUserId) async {
     if (groupId.trim().isEmpty || currentUserId.trim().isEmpty) return;
     try {
-      await _localStorage.markAllMessagesReadLocally(groupId);
+      final db = await _localStorage.database;
+      await db.update(
+        'local_messages',
+        {'status': 'seen'},
+        where: 'chatRoomId = ? AND senderId != ?',
+        whereArgs: [groupId, currentUserId],
+      );
 
       final groupRef = _firestore.collection('groups').doc(groupId);
       await groupRef.set({
