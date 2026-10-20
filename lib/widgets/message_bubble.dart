@@ -356,7 +356,6 @@ class _MessageBubbleState extends State<MessageBubble> {
     return GestureDetector(
       onTap: widget.onReplyPreviewTap,
       child: Container(
-        width: double.infinity,
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         margin: const EdgeInsets.only(bottom: 6),
         decoration: BoxDecoration(
@@ -835,18 +834,18 @@ class _MessageBubbleState extends State<MessageBubble> {
       child: Align(
         alignment: widget.isMe ? Alignment.centerRight : Alignment.centerLeft,
         child: Container(
-          margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-          padding: const EdgeInsets.fromLTRB(12, 8, 12, 6),
+          margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           constraints: BoxConstraints(
             maxWidth: MediaQuery.of(context).size.width * 0.78,
           ),
           decoration: BoxDecoration(
             color: bubbleColor,
             borderRadius: BorderRadius.only(
-              topLeft: const Radius.circular(18),
-              topRight: const Radius.circular(18),
-              bottomLeft: Radius.circular(widget.isMe ? 18 : 4),
-              bottomRight: Radius.circular(widget.isMe ? 4 : 18),
+              topLeft: const Radius.circular(16),
+              topRight: const Radius.circular(16),
+              bottomLeft: Radius.circular(widget.isMe ? 16 : 4),
+              bottomRight: Radius.circular(widget.isMe ? 4 : 16),
             ),
             border: Border.all(
               color: widget.isMe
@@ -857,8 +856,8 @@ class _MessageBubbleState extends State<MessageBubble> {
             boxShadow: [
               BoxShadow(
                 color: _primaryNavy.withOpacity(widget.isMe ? 0.04 : 0.03),
-                blurRadius: 6,
-                offset: const Offset(0, 2),
+                blurRadius: 4,
+                offset: const Offset(0, 1),
               ),
             ],
           ),
@@ -931,45 +930,42 @@ class _MessageBubbleState extends State<MessageBubble> {
                     ),
                   ),
                 ),
-              const SizedBox(height: 3),
-              Align(
-                alignment: Alignment.centerRight,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    if (widget.message.isPinned &&
-                        !widget.message.isDeletedForEveryone) ...[
-                      const Icon(Icons.push_pin_rounded,
-                          size: 11, color: Colors.amber),
-                      const SizedBox(width: 3),
-                    ],
-                    if (isStarred && !widget.message.isDeletedForEveryone) ...[
-                      Icon(Icons.star_rounded,
-                          size: 12, color: Colors.amber.shade700),
-                      const SizedBox(width: 3),
-                    ],
-                    if (widget.message.isEdited == true &&
-                        !widget.message.isDeletedForEveryone) ...[
-                      Text(
-                        "edited ",
-                        style: TextStyle(
-                          fontSize: 9.5,
-                          color: Colors.grey.shade500,
-                          fontStyle: FontStyle.italic,
-                        ),
-                      ),
-                    ],
-                    Text(
-                      _formatTime(widget.message.timestamp),
-                      style: TextStyle(fontSize: 10, color: Colors.grey.shade500),
-                    ),
-                    if (widget.isMe) ...[
-                      const SizedBox(width: 4),
-                      _buildStatusIcon(),
-                    ],
+              const SizedBox(height: 4),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  if (widget.message.isPinned &&
+                      !widget.message.isDeletedForEveryone) ...[
+                    const Icon(Icons.push_pin_rounded,
+                        size: 11, color: Colors.amber),
+                    const SizedBox(width: 3),
                   ],
-                ),
+                  if (isStarred && !widget.message.isDeletedForEveryone) ...[
+                    Icon(Icons.star_rounded,
+                        size: 12, color: Colors.amber.shade700),
+                    const SizedBox(width: 3),
+                  ],
+                  if (widget.message.isEdited == true &&
+                      !widget.message.isDeletedForEveryone) ...[
+                    Text(
+                      "edited ",
+                      style: TextStyle(
+                        fontSize: 9.5,
+                        color: Colors.grey.shade500,
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                  ],
+                  Text(
+                    _formatTime(widget.message.timestamp),
+                    style: TextStyle(fontSize: 10, color: Colors.grey.shade500),
+                  ),
+                  if (widget.isMe) ...[
+                    const SizedBox(width: 4),
+                    _buildStatusIcon(),
+                  ],
+                ],
               ),
             ],
           ),
