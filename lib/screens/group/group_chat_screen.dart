@@ -2265,12 +2265,15 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                                                   BorderRadius.circular(14),
                                             ),
                                             child: Row(
+                                              mainAxisAlignment: isMe
+                                                  ? MainAxisAlignment.end
+                                                  : MainAxisAlignment.start,
                                               children: [
-                                                if (_isSelectionMode)
+                                                if (_isSelectionMode && !isMe)
                                                   Padding(
                                                     padding:
                                                         const EdgeInsets.only(
-                                                            left: 6, right: 2),
+                                                            right: 6),
                                                     child: Icon(
                                                       isSelected
                                                           ? Icons
@@ -2284,7 +2287,8 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                                                       size: 20,
                                                     ),
                                                   ),
-                                                Expanded(
+                                                Flexible(
+                                                  fit: FlexFit.loose,
                                                   child: LongPressDraggable<
                                                       MessageModel>(
                                                     delay: const Duration(
@@ -2337,11 +2341,11 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                                                           !_didDropOnTarget &&
                                                           _draggedMessage !=
                                                               null) {
-                                                      _didDropOnTarget = true;
-                                                      _triggerReply(
-                                                          _draggedMessage!);
-                                                      return;
-                                                    }
+                                                        _didDropOnTarget = true;
+                                                        _triggerReply(
+                                                            _draggedMessage!);
+                                                        return;
+                                                      }
 
                                                       setState(() {
                                                         _isDraggingMessage =
@@ -2361,41 +2365,17 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                                                     feedback: Material(
                                                       color: Colors.transparent,
                                                       child: Transform.scale(
-                                                        scale: 1.06,
-                                                        child: Container(
-                                                          width: MediaQuery.of(
-                                                                      context)
-                                                                  .size
-                                                                  .width *
-                                                              0.85,
-                                                          decoration:
-                                                              BoxDecoration(
-                                                            boxShadow: [
-                                                              BoxShadow(
-                                                                color: const Color(
-                                                                        0xFF0F172A)
-                                                                    .withOpacity(
-                                                                        0.26),
-                                                                blurRadius: 20,
-                                                                spreadRadius: 2,
-                                                                offset:
-                                                                    const Offset(
-                                                                        0, 8),
-                                                              ),
-                                                            ],
-                                                          ),
-                                                          child: IgnorePointer(
-                                                            child:
-                                                                MessageBubble(
-                                                              message: message,
-                                                              isMe: isMe,
-                                                              chatRoomId: widget
-                                                                  .groupId,
-                                                              currentUserId: widget
-                                                                  .currentUserId,
-                                                              onReplyPressed:
-                                                                  (_) {},
-                                                            ),
+                                                        scale: 1.05,
+                                                        child: IgnorePointer(
+                                                          child: MessageBubble(
+                                                            message: message,
+                                                            isMe: isMe,
+                                                            chatRoomId:
+                                                                widget.groupId,
+                                                            currentUserId: widget
+                                                                .currentUserId,
+                                                            onReplyPressed:
+                                                                (_) {},
                                                           ),
                                                         ),
                                                       ),
@@ -2434,6 +2414,24 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                                                     ),
                                                   ),
                                                 ),
+                                                if (_isSelectionMode && isMe)
+                                                  Padding(
+                                                    padding:
+                                                        const EdgeInsets.only(
+                                                            left: 6),
+                                                    child: Icon(
+                                                      isSelected
+                                                          ? Icons
+                                                              .check_circle_rounded
+                                                          : Icons
+                                                              .radio_button_unchecked_rounded,
+                                                      color: isSelected
+                                                          ? Colors.blueAccent
+                                                          : Colors
+                                                              .grey.shade400,
+                                                      size: 20,
+                                                    ),
+                                                  ),
                                               ],
                                             ),
                                           ),
