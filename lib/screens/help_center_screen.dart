@@ -20,7 +20,7 @@ class _HelpCenterScreenState extends State<HelpCenterScreen> {
   final List<Map<String, String>> _faqs = [
     {
       'question': 'How do I search for nearby teachers?',
-      'answer': 'Go to the Explore tab, grant location permission, and use the distance radius slider to find qualified teachers near your current location within your chosen kilometer range.'
+      'answer': 'Go to the Search tab, grant location permission, and use the distance radius slider to find qualified teachers near your current location within your chosen kilometer range.'
     },
     {
       'question': 'How does the Diary Fee Management work?',
@@ -57,23 +57,53 @@ class _HelpCenterScreenState extends State<HelpCenterScreen> {
   }
 
   Future<void> _launchEmailSupport() async {
-    final Uri emailUri = Uri(
-      scheme: 'mailto',
-      path: 'findyourbestteachertoday@gmail.com',
-      query: 'subject=Support Request - Find Your Best Teacher Today',
-    );
+    const String supportEmail = 'findyourbestteachertoday@gmail.com';
+    final Uri emailUri = Uri.parse('mailto:$supportEmail?subject=Support%20Request%20-%20Find%20Your%20Best%20Teacher%20Today');
+    
     try {
+      bool launched = false;
       if (await canLaunchUrl(emailUri)) {
-        await launchUrl(emailUri);
-      } else {
+        launched = await launchUrl(emailUri, mode: LaunchMode.externalApplication);
+      }
+      
+      if (!launched) {
+        await Clipboard.setData(const ClipboardData(text: supportEmail));
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Could not launch email client')),
+          showDialog(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+              title: const Text('Mail Support', style: TextStyle(fontWeight: FontWeight.bold, color: _primaryNavy)),
+              content: const Text(
+                'No email app was detected on this device.\n\nOur support email has been copied to your clipboard:\nfindyourbestteachertoday@gmail.com',
+                style: TextStyle(fontSize: 14, color: Color(0xFF475569), height: 1.4),
+              ),
+              actions: [
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _brandBlue,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('OK', style: TextStyle(fontWeight: FontWeight.bold)),
+                ),
+              ],
+            ),
           );
         }
       }
     } catch (e) {
-      debugPrint('Email launch error: $e');
+      await Clipboard.setData(const ClipboardData(text: supportEmail));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Email copied to clipboard: findyourbestteachertoday@gmail.com'),
+            backgroundColor: Color(0xFF10B981),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
     }
   }
 
@@ -131,7 +161,7 @@ class _HelpCenterScreenState extends State<HelpCenterScreen> {
               ),
               child: Column(
                 children: [
-                  const Icon(Icons.support_agent_rounded, size: 48, color: Colors.cyanAccent),
+                  const Icon(Icons.headset_mic_rounded, size: 54, color: Colors.cyanAccent),
                   const SizedBox(height: 10),
                   const Text(
                     'How can we help you today?',
@@ -304,7 +334,7 @@ class _HelpCenterScreenState extends State<HelpCenterScreen> {
                       },
                       icon: const Icon(Icons.send_rounded, size: 18),
                       label: const Text(
-                        'Email Developer Support',
+                        'FYBTT Mail Support',
                         style: TextStyle(
                           fontWeight: FontWeight.bold,
                           fontSize: 14,
