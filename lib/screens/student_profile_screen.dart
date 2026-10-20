@@ -661,7 +661,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
         },
       ),
       _buildGlassIconButton(
-        icon: Icons.help_outline_rounded,
+        icon: Icons.support_agent_rounded,
         tooltip: 'Help Center',
         onTap: () {
           _closeMenu();
