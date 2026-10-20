@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:ui';
-import 'package:animate_do/animate_do.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
@@ -1384,7 +1383,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
           },
         ),
         _buildGlassIconButton(
-          icon: Icons.help_outline_rounded,
+          icon: Icons.support_agent_rounded,
           tooltip: 'Help Center',
           onTap: () {
             _closeMenu();
