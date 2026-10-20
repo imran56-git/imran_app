@@ -56,7 +56,7 @@ class _ChatGestureTutorialDialogState extends State<ChatGestureTutorialDialog>
     super.initState();
     _animController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 3400),
+      duration: const Duration(milliseconds: 3200),
     )..repeat();
   }
 
@@ -89,7 +89,7 @@ class _ChatGestureTutorialDialogState extends State<ChatGestureTutorialDialog>
     }
   }
 
-  double _ remap(double value, double start, double end) {
+  double _remap(double value, double start, double end) {
     if (value <= start) return 0.0;
     if (value >= end) return 1.0;
     return Curves.easeInOutCubic.transform((value - start) / (end - start));
@@ -148,8 +148,7 @@ class _ChatGestureTutorialDialogState extends State<ChatGestureTutorialDialog>
                           width: isCurrent ? 22 : 7,
                           height: 7,
                           decoration: BoxDecoration(
-                            color:
-                                isCurrent ? _brandBlue : Colors.grey.shade300,
+                            color: isCurrent ? _brandBlue : Colors.grey.shade300,
                             borderRadius: BorderRadius.circular(10),
                           ),
                         ),
@@ -160,10 +159,10 @@ class _ChatGestureTutorialDialogState extends State<ChatGestureTutorialDialog>
               ),
               const SizedBox(height: 14),
               Container(
-                height: 265,
+                height: 255,
                 width: double.infinity,
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF1F5F9),
+                  color: const Color(0xFFF8FAFC),
                   borderRadius: BorderRadius.circular(22),
                   border: Border.all(color: const Color(0xFFCBD5E1), width: 1.2),
                 ),
@@ -304,33 +303,33 @@ class _ChatGestureTutorialDialogState extends State<ChatGestureTutorialDialog>
   Widget _buildReplyScene(double w, double h) {
     final double t = _animController.value;
 
-    final bool isHolding = t >= 0.14 && t < 0.72;
-    final double dragProgress = _remap(t, 0.26, 0.64);
-    final bool isHoveringInput = t >= 0.50 && t < 0.72;
-    final bool isReplyAttached = t >= 0.72 && t < 0.95;
+    final bool isHolding = t >= 0.12 && t < 0.72;
+    final double dragProgress = _remap(t, 0.24, 0.62);
+    final bool isHoveringInput = t >= 0.48 && t < 0.72;
+    final bool isReplyAttached = t >= 0.72 && t < 0.96;
 
-    final double bubbleWidth = w * 0.46;
+    const double bubbleWidth = 145.0;
     final double baseRightBubbleLeft = w - bubbleWidth - 14;
-    const double baseRightBubbleTop = 108.0;
+    const double baseRightBubbleTop = 96.0;
 
     final double targetDropLeft = (w - bubbleWidth) / 2;
-    final double targetDropTop = h - 76.0;
+    final double targetDropTop = h - 68.0;
 
     final double currentDragLeft = baseRightBubbleLeft +
         (targetDropLeft - baseRightBubbleLeft) * dragProgress;
     final double currentDragTop = baseRightBubbleTop +
         (targetDropTop - baseRightBubbleTop) * dragProgress;
 
-    final double handLeft = currentDragLeft + (bubbleWidth * 0.52);
-    final double handTop = currentDragTop + 16.0;
+    final double handLeft = currentDragLeft + (bubbleWidth * 0.5);
+    final double handTop = currentDragTop + 14.0;
 
     return Stack(
       children: [
         _buildMiniChatHeader(),
         Positioned(
-          top: 52,
+          top: 48,
           left: 14,
-          child: _buildIncomingChatBubble(w * 0.44),
+          child: _buildIncomingChatBubble(130.0),
         ),
         Positioned(
           top: baseRightBubbleTop,
@@ -342,16 +341,16 @@ class _ChatGestureTutorialDialogState extends State<ChatGestureTutorialDialog>
         ),
         if (isHolding)
           Positioned(
-            top: 8,
-            left: 16,
-            right: 16,
+            top: 6,
+            left: 14,
+            right: 14,
             child: _buildFloatingTopBar(
               showSelectionCount: false,
               highlightedAction: null,
             ),
           ),
         Positioned(
-          bottom: 10,
+          bottom: 8,
           left: 10,
           right: 10,
           child: _buildMiniInputBar(
@@ -364,11 +363,11 @@ class _ChatGestureTutorialDialogState extends State<ChatGestureTutorialDialog>
             top: currentDragTop,
             left: currentDragLeft,
             child: Transform.scale(
-              scale: 1.05,
+              scale: 1.04,
               child: _buildOutgoingChatBubble(bubbleWidth, isLifted: true),
             ),
           ),
-        if (t >= 0.08 && t < 0.76)
+        if (t >= 0.06 && t < 0.76)
           Positioned(
             top: handTop,
             left: handLeft,
@@ -381,33 +380,33 @@ class _ChatGestureTutorialDialogState extends State<ChatGestureTutorialDialog>
   Widget _buildDragDeleteScene(double w, double h) {
     final double t = _animController.value;
 
-    final bool isHolding = t >= 0.14 && t < 0.72;
-    final double dragProgress = _remap(t, 0.26, 0.64);
-    final bool isHoveringTrash = t >= 0.52 && t < 0.72;
-    final bool isDeleted = t >= 0.72 && t < 0.95;
+    final bool isHolding = t >= 0.12 && t < 0.72;
+    final double dragProgress = _remap(t, 0.24, 0.62);
+    final bool isHoveringTrash = t >= 0.50 && t < 0.72;
+    final bool isDeleted = t >= 0.72 && t < 0.96;
 
-    final double bubbleWidth = w * 0.46;
+    const double bubbleWidth = 145.0;
     final double baseRightBubbleLeft = w - bubbleWidth - 14;
-    const double baseRightBubbleTop = 116.0;
+    const double baseRightBubbleTop = 104.0;
 
     final double trashTargetLeft = (w * 0.5) - (bubbleWidth * 0.5);
-    const double trashTargetTop = 18.0;
+    const double trashTargetTop = 16.0;
 
     final double currentDragLeft = baseRightBubbleLeft +
         (trashTargetLeft - baseRightBubbleLeft) * dragProgress;
     final double currentDragTop = baseRightBubbleTop +
         (trashTargetTop - baseRightBubbleTop) * dragProgress;
 
-    final double handLeft = currentDragLeft + (bubbleWidth * 0.48);
+    final double handLeft = currentDragLeft + (bubbleWidth * 0.5);
     final double handTop = currentDragTop + 14.0;
 
     return Stack(
       children: [
         _buildMiniChatHeader(),
         Positioned(
-          top: 60,
+          top: 48,
           left: 14,
-          child: _buildIncomingChatBubble(w * 0.44),
+          child: _buildIncomingChatBubble(130.0),
         ),
         if (!isDeleted)
           Positioned(
@@ -420,16 +419,16 @@ class _ChatGestureTutorialDialogState extends State<ChatGestureTutorialDialog>
           ),
         if (isHolding)
           Positioned(
-            top: 8,
-            left: 16,
-            right: 16,
+            top: 6,
+            left: 14,
+            right: 14,
             child: _buildFloatingTopBar(
               showSelectionCount: false,
               highlightedAction: isHoveringTrash ? 'delete' : null,
             ),
           ),
         Positioned(
-          bottom: 10,
+          bottom: 8,
           left: 10,
           right: 10,
           child: _buildMiniInputBar(
@@ -444,12 +443,12 @@ class _ChatGestureTutorialDialogState extends State<ChatGestureTutorialDialog>
             child: Opacity(
               opacity: isHoveringTrash ? 0.75 : 1.0,
               child: Transform.scale(
-                scale: isHoveringTrash ? 0.92 : 1.05,
+                scale: isHoveringTrash ? 0.92 : 1.04,
                 child: _buildOutgoingChatBubble(bubbleWidth, isLifted: true),
               ),
             ),
           ),
-        if (t >= 0.08 && t < 0.76)
+        if (t >= 0.06 && t < 0.76)
           Positioned(
             top: handTop,
             left: handLeft,
@@ -462,22 +461,22 @@ class _ChatGestureTutorialDialogState extends State<ChatGestureTutorialDialog>
   Widget _buildHoldTapDeleteScene(double w, double h) {
     final double t = _animController.value;
 
-    final bool isInitialPress = t >= 0.12 && t < 0.32;
-    final bool isSelectedMode = t >= 0.26 && t < 0.74;
-    final bool isTappingTrash = t >= 0.62 && t < 0.74;
-    final bool isDeleted = t >= 0.74 && t < 0.95;
+    final bool isInitialPress = t >= 0.10 && t < 0.30;
+    final bool isSelectedMode = t >= 0.24 && t < 0.74;
+    final bool isTappingTrash = t >= 0.60 && t < 0.74;
+    final bool isDeleted = t >= 0.74 && t < 0.96;
 
-    final double bubbleWidth = w * 0.46;
+    const double bubbleWidth = 145.0;
     final double baseRightBubbleLeft = w - bubbleWidth - 14;
-    const double baseRightBubbleTop = 116.0;
+    const double baseRightBubbleTop = 104.0;
 
-    final double moveUpProgress = _remap(t, 0.36, 0.60);
+    final double moveUpProgress = _remap(t, 0.34, 0.58);
 
     final double startHandLeft = baseRightBubbleLeft + (bubbleWidth * 0.5);
     const double startHandTop = baseRightBubbleTop + 14.0;
 
-    final double trashIconLeft = (w * 0.54);
-    const double trashIconTop = 22.0;
+    final double trashIconLeft = (w * 0.56);
+    const double trashIconTop = 18.0;
 
     final double handLeft =
         startHandLeft + (trashIconLeft - startHandLeft) * moveUpProgress;
@@ -488,29 +487,28 @@ class _ChatGestureTutorialDialogState extends State<ChatGestureTutorialDialog>
       children: [
         _buildMiniChatHeader(),
         Positioned(
-          top: 60,
+          top: 48,
           left: 14,
-          child: _buildIncomingChatBubble(w * 0.44),
+          child: _buildIncomingChatBubble(130.0),
         ),
         if (!isDeleted)
           Positioned(
-            top: baseRightBubbleTop - 4,
+            top: baseRightBubbleTop,
             left: 10,
             right: 10,
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
               decoration: BoxDecoration(
                 color: isSelectedMode
-                    ? _accentBlue.withOpacity(0.14)
+                    ? _accentBlue.withOpacity(0.12)
                     : Colors.transparent,
-                borderRadius: BorderRadius.circular(14),
+                borderRadius: BorderRadius.circular(12),
               ),
               child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   if (isSelectedMode)
                     const Padding(
-                      padding: EdgeInsets.only(left: 4),
+                      padding: EdgeInsets.only(left: 6, right: 6),
                       child: Icon(
                         Icons.check_circle_rounded,
                         color: _accentBlue,
@@ -518,7 +516,8 @@ class _ChatGestureTutorialDialogState extends State<ChatGestureTutorialDialog>
                       ),
                     )
                   else
-                    const SizedBox(width: 22),
+                    const SizedBox(width: 30),
+                  Spacer(),
                   _buildOutgoingChatBubble(bubbleWidth, isLifted: isInitialPress),
                 ],
               ),
@@ -526,16 +525,16 @@ class _ChatGestureTutorialDialogState extends State<ChatGestureTutorialDialog>
           ),
         if (isSelectedMode || isInitialPress)
           Positioned(
-            top: 8,
-            left: 16,
-            right: 16,
+            top: 6,
+            left: 14,
+            right: 14,
             child: _buildFloatingTopBar(
               showSelectionCount: isSelectedMode,
               highlightedAction: isTappingTrash ? 'delete' : null,
             ),
           ),
         Positioned(
-          bottom: 10,
+          bottom: 8,
           left: 10,
           right: 10,
           child: _buildMiniInputBar(
@@ -543,7 +542,7 @@ class _ChatGestureTutorialDialogState extends State<ChatGestureTutorialDialog>
             showAttachedReply: false,
           ),
         ),
-        if (t >= 0.08 && t < 0.78)
+        if (t >= 0.06 && t < 0.78)
           Positioned(
             top: handTop,
             left: handLeft,
@@ -561,8 +560,8 @@ class _ChatGestureTutorialDialogState extends State<ChatGestureTutorialDialog>
       left: 0,
       right: 0,
       child: Container(
-        height: 36,
-        padding: const EdgeInsets.symmetric(horizontal: 12),
+        height: 34,
+        padding: const EdgeInsets.symmetric(horizontal: 10),
         decoration: const BoxDecoration(
           gradient: LinearGradient(
             colors: [_primaryNavy, _brandBlue],
@@ -573,13 +572,13 @@ class _ChatGestureTutorialDialogState extends State<ChatGestureTutorialDialog>
         child: Row(
           children: [
             const Icon(Icons.arrow_back_ios_new_rounded,
-                color: Colors.white70, size: 12),
+                color: Colors.white70, size: 11),
             const SizedBox(width: 6),
             CircleAvatar(
-              radius: 10,
+              radius: 9,
               backgroundColor: Colors.white.withOpacity(0.2),
               child: const Icon(Icons.person_rounded,
-                  color: Colors.white, size: 12),
+                  color: Colors.white, size: 11),
             ),
             const SizedBox(width: 8),
             Column(
@@ -587,20 +586,20 @@ class _ChatGestureTutorialDialogState extends State<ChatGestureTutorialDialog>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Container(
-                  width: 68,
-                  height: 6,
+                  width: 62,
+                  height: 5.5,
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.85),
-                    borderRadius: BorderRadius.circular(4),
+                    color: Colors.white.withOpacity(0.9),
+                    borderRadius: BorderRadius.circular(3),
                   ),
                 ),
-                const SizedBox(height: 3),
+                const SizedBox(height: 2.5),
                 Container(
-                  width: 42,
-                  height: 4,
+                  width: 38,
+                  height: 3.5,
                   decoration: BoxDecoration(
                     color: const Color(0xFF86EFAC),
-                    borderRadius: BorderRadius.circular(4),
+                    borderRadius: BorderRadius.circular(3),
                   ),
                 ),
               ],
@@ -614,20 +613,20 @@ class _ChatGestureTutorialDialogState extends State<ChatGestureTutorialDialog>
   Widget _buildIncomingChatBubble(double width) {
     return Container(
       width: width,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: const BorderRadius.only(
           topLeft: Radius.circular(4),
-          topRight: Radius.circular(14),
-          bottomLeft: Radius.circular(14),
-          bottomRight: Radius.circular(14),
+          topRight: Radius.circular(12),
+          bottomLeft: Radius.circular(12),
+          bottomRight: Radius.circular(12),
         ),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.04),
-            blurRadius: 4,
-            offset: const Offset(0, 2),
+            blurRadius: 3,
+            offset: const Offset(0, 1),
           ),
         ],
       ),
@@ -635,31 +634,31 @@ class _ChatGestureTutorialDialogState extends State<ChatGestureTutorialDialog>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            width: width * 0.72,
-            height: 6.5,
+            width: width * 0.75,
+            height: 5.5,
             decoration: BoxDecoration(
-              color: const Color(0xFF94A3B8),
-              borderRadius: BorderRadius.circular(4),
+              color: const Color(0xFF64748B),
+              borderRadius: BorderRadius.circular(3),
             ),
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 5),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Container(
-                width: width * 0.42,
-                height: 6.5,
+                width: width * 0.45,
+                height: 5.5,
                 decoration: BoxDecoration(
-                  color: const Color(0xFFCBD5E1),
-                  borderRadius: BorderRadius.circular(4),
+                  color: const Color(0xFF94A3B8),
+                  borderRadius: BorderRadius.circular(3),
                 ),
               ),
               Container(
-                width: 20,
-                height: 4.5,
+                width: 16,
+                height: 3.5,
                 decoration: BoxDecoration(
-                  color: const Color(0xFFE2E8F0),
-                  borderRadius: BorderRadius.circular(3),
+                  color: const Color(0xFFCBD5E1),
+                  borderRadius: BorderRadius.circular(2),
                 ),
               ),
             ],
@@ -672,14 +671,14 @@ class _ChatGestureTutorialDialogState extends State<ChatGestureTutorialDialog>
   Widget _buildOutgoingChatBubble(double width, {required bool isLifted}) {
     return Container(
       width: width,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
         color: _outgoingBubbleColor,
         borderRadius: const BorderRadius.only(
-          topLeft: Radius.circular(14),
+          topLeft: Radius.circular(12),
           topRight: Radius.circular(4),
-          bottomLeft: Radius.circular(14),
-          bottomRight: Radius.circular(14),
+          bottomLeft: Radius.circular(12),
+          bottomRight: Radius.circular(12),
         ),
         border: Border.all(
           color: isLifted ? _accentBlue : const Color(0xFFBFDBFE),
@@ -687,9 +686,9 @@ class _ChatGestureTutorialDialogState extends State<ChatGestureTutorialDialog>
         ),
         boxShadow: [
           BoxShadow(
-            color: _primaryNavy.withOpacity(isLifted ? 0.24 : 0.05),
-            blurRadius: isLifted ? 14 : 4,
-            offset: Offset(0, isLifted ? 6 : 2),
+            color: _primaryNavy.withOpacity(isLifted ? 0.22 : 0.04),
+            blurRadius: isLifted ? 12 : 3,
+            offset: Offset(0, isLifted ? 5 : 1),
           ),
         ],
       ),
@@ -697,28 +696,28 @@ class _ChatGestureTutorialDialogState extends State<ChatGestureTutorialDialog>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            width: width * 0.70,
-            height: 6.5,
+            width: width * 0.72,
+            height: 5.5,
             decoration: BoxDecoration(
-              color: const Color(0xFF1E4C7A).withOpacity(0.65),
-              borderRadius: BorderRadius.circular(4),
+              color: const Color(0xFF1E4C7A).withOpacity(0.7),
+              borderRadius: BorderRadius.circular(3),
             ),
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 5),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Container(
-                width: width * 0.38,
-                height: 6.5,
+                width: width * 0.40,
+                height: 5.5,
                 decoration: BoxDecoration(
-                  color: const Color(0xFF1E4C7A).withOpacity(0.40),
-                  borderRadius: BorderRadius.circular(4),
+                  color: const Color(0xFF1E4C7A).withOpacity(0.45),
+                  borderRadius: BorderRadius.circular(3),
                 ),
               ),
               const Icon(
                 Icons.done_all_rounded,
-                size: 13,
+                size: 12,
                 color: _accentBlue,
               ),
             ],
@@ -735,17 +734,17 @@ class _ChatGestureTutorialDialogState extends State<ChatGestureTutorialDialog>
     final bool isDeleteHighlighted = highlightedAction == 'delete';
 
     return Container(
-      height: 42,
-      padding: const EdgeInsets.symmetric(horizontal: 12),
+      height: 38,
+      padding: const EdgeInsets.symmetric(horizontal: 10),
       decoration: BoxDecoration(
         color: _primaryNavy.withOpacity(0.92),
-        borderRadius: BorderRadius.circular(24),
+        borderRadius: BorderRadius.circular(22),
         border: Border.all(color: Colors.white.withOpacity(0.3), width: 1.1),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.22),
-            blurRadius: 10,
-            offset: const Offset(0, 3),
+            color: Colors.black.withOpacity(0.2),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
           ),
         ],
       ),
@@ -754,22 +753,22 @@ class _ChatGestureTutorialDialogState extends State<ChatGestureTutorialDialog>
         children: [
           if (showSelectionCount)
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
               decoration: BoxDecoration(
                 color: Colors.white.withOpacity(0.16),
-                borderRadius: BorderRadius.circular(14),
+                borderRadius: BorderRadius.circular(12),
               ),
               child: const Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.close_rounded, color: Colors.white, size: 12),
-                  SizedBox(width: 3),
+                  Icon(Icons.close_rounded, color: Colors.white, size: 11),
+                  SizedBox(width: 2),
                   Text(
                     '1',
                     style: TextStyle(
                       color: Colors.white,
                       fontWeight: FontWeight.bold,
-                      fontSize: 11,
+                      fontSize: 10.5,
                     ),
                   ),
                 ],
@@ -801,10 +800,10 @@ class _ChatGestureTutorialDialogState extends State<ChatGestureTutorialDialog>
     required bool isHighlighted,
   }) {
     return AnimatedScale(
-      scale: isHighlighted ? 1.38 : 1.0,
-      duration: const Duration(milliseconds: 160),
+      scale: isHighlighted ? 1.35 : 1.0,
+      duration: const Duration(milliseconds: 150),
       child: Container(
-        padding: const EdgeInsets.all(6),
+        padding: const EdgeInsets.all(5),
         decoration: BoxDecoration(
           color: isHighlighted
               ? color.withOpacity(0.32)
@@ -812,13 +811,13 @@ class _ChatGestureTutorialDialogState extends State<ChatGestureTutorialDialog>
           shape: BoxShape.circle,
           border: Border.all(
             color: isHighlighted ? color : Colors.white.withOpacity(0.22),
-            width: isHighlighted ? 1.5 : 1.0,
+            width: isHighlighted ? 1.4 : 1.0,
           ),
         ),
         child: Icon(
           icon,
           color: isHighlighted ? color : Colors.white,
-          size: 16,
+          size: 15,
         ),
       ),
     );
@@ -833,23 +832,23 @@ class _ChatGestureTutorialDialogState extends State<ChatGestureTutorialDialog>
       children: [
         if (isHoveringReply)
           Container(
-            height: 24,
+            height: 22,
             width: double.infinity,
             decoration: const BoxDecoration(
               color: _primaryNavy,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(10)),
             ),
             alignment: Alignment.center,
             child: const Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(Icons.reply_rounded, color: Colors.white, size: 13),
-                SizedBox(width: 5),
+                Icon(Icons.reply_rounded, color: Colors.white, size: 12),
+                SizedBox(width: 4),
                 Text(
                   'Release here to Reply',
                   style: TextStyle(
                     color: Colors.white,
-                    fontSize: 10.5,
+                    fontSize: 10,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
@@ -858,21 +857,21 @@ class _ChatGestureTutorialDialogState extends State<ChatGestureTutorialDialog>
           ),
         if (showAttachedReply)
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius:
-                  const BorderRadius.vertical(top: Radius.circular(14)),
+                  const BorderRadius.vertical(top: Radius.circular(12)),
               border: Border.all(color: const Color(0xFFE2E8F0)),
             ),
             child: Row(
               children: [
                 Container(
-                  width: 3.5,
-                  height: 24,
+                  width: 3.0,
+                  height: 20,
                   decoration: BoxDecoration(
                     color: _brandBlue,
-                    borderRadius: BorderRadius.circular(4),
+                    borderRadius: BorderRadius.circular(3),
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -883,24 +882,24 @@ class _ChatGestureTutorialDialogState extends State<ChatGestureTutorialDialog>
                       const Text(
                         'Replying to Message',
                         style: TextStyle(
-                          fontSize: 9.5,
+                          fontSize: 9,
                           fontWeight: FontWeight.w800,
                           color: _brandBlue,
                         ),
                       ),
-                      const SizedBox(height: 3),
+                      const SizedBox(height: 2.5),
                       Container(
-                        width: 90,
-                        height: 5,
+                        width: 80,
+                        height: 4.5,
                         decoration: BoxDecoration(
                           color: const Color(0xFF94A3B8),
-                          borderRadius: BorderRadius.circular(3),
+                          borderRadius: BorderRadius.circular(2),
                         ),
                       ),
                     ],
                   ),
                 ),
-                const Icon(Icons.close_rounded, size: 14, color: Colors.grey),
+                const Icon(Icons.close_rounded, size: 13, color: Colors.grey),
               ],
             ),
           ),
@@ -908,11 +907,11 @@ class _ChatGestureTutorialDialogState extends State<ChatGestureTutorialDialog>
           children: [
             Expanded(
               child: Container(
-                height: 36,
-                padding: const EdgeInsets.symmetric(horizontal: 10),
+                height: 34,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
                 decoration: BoxDecoration(
                   color: Colors.white,
-                  borderRadius: BorderRadius.circular(20),
+                  borderRadius: BorderRadius.circular(18),
                   border: Border.all(
                     color: isHoveringReply
                         ? _accentBlue
@@ -923,28 +922,28 @@ class _ChatGestureTutorialDialogState extends State<ChatGestureTutorialDialog>
                 child: Row(
                   children: [
                     Icon(Icons.emoji_emotions_outlined,
-                        size: 16, color: Colors.grey.shade500),
-                    const SizedBox(width: 8),
+                        size: 15, color: Colors.grey.shade500),
+                    const SizedBox(width: 6),
                     Expanded(
                       child: Container(
-                        height: 5.5,
-                        margin: const EdgeInsets.only(right: 40),
+                        height: 4.5,
+                        margin: const EdgeInsets.only(right: 36),
                         decoration: BoxDecoration(
                           color: const Color(0xFFE2E8F0),
-                          borderRadius: BorderRadius.circular(4),
+                          borderRadius: BorderRadius.circular(3),
                         ),
                       ),
                     ),
                     Icon(Icons.attach_file_rounded,
-                        size: 15, color: Colors.grey.shade500),
+                        size: 14, color: Colors.grey.shade500),
                   ],
                 ),
               ),
             ),
             const SizedBox(width: 6),
             Container(
-              width: 34,
-              height: 34,
+              width: 32,
+              height: 32,
               decoration: const BoxDecoration(
                 color: _brandBlue,
                 shape: BoxShape.circle,
@@ -952,7 +951,7 @@ class _ChatGestureTutorialDialogState extends State<ChatGestureTutorialDialog>
               child: const Icon(
                 Icons.mic_rounded,
                 color: Colors.white,
-                size: 16,
+                size: 15,
               ),
             ),
           ],
@@ -968,14 +967,14 @@ class _ChatGestureTutorialDialogState extends State<ChatGestureTutorialDialog>
       children: [
         if (isPressed)
           Container(
-            width: 38,
-            height: 38,
+            width: 34,
+            height: 34,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               color: _accentBlue.withOpacity(0.22),
               border: Border.all(
                 color: _accentBlue.withOpacity(0.5),
-                width: 1.5,
+                width: 1.4,
               ),
             ),
           ),
@@ -983,23 +982,23 @@ class _ChatGestureTutorialDialogState extends State<ChatGestureTutorialDialog>
           scale: isPressed ? 0.90 : 1.0,
           duration: const Duration(milliseconds: 120),
           child: Container(
-            padding: const EdgeInsets.all(6),
+            padding: const EdgeInsets.all(5),
             decoration: BoxDecoration(
               color: _primaryNavy.withOpacity(0.88),
               shape: BoxShape.circle,
-              border: Border.all(color: Colors.white, width: 2),
+              border: Border.all(color: Colors.white, width: 1.8),
               boxShadow: [
                 BoxShadow(
                   color: Colors.black.withOpacity(0.28),
-                  blurRadius: 8,
-                  offset: const Offset(0, 3),
+                  blurRadius: 6,
+                  offset: const Offset(0, 2),
                 ),
               ],
             ),
             child: const Icon(
               Icons.touch_app_rounded,
               color: Colors.white,
-              size: 18,
+              size: 16,
             ),
           ),
         ),
