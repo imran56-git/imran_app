@@ -348,120 +348,244 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
 
   void _showAddOrInviteStudentDialog() {
     if (!_isViewerTeacher) return;
-    final TextEditingController uidCtrl = TextEditingController();
-    bool sendInviteInsteadOfDirectAdd = true;
+    final TextEditingController searchCtrl = TextEditingController();
+    bool sendInviteMode = true;
+    String searchKeyword = '';
 
-    showDialog(
+    showModalBottomSheet(
       context: context,
-      builder: (ctx) {
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (bottomSheetCtx) {
         return StatefulBuilder(
-          builder: (context, setDialogState) {
-            return AlertDialog(
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(18)),
-              title: const Text(
-                'Add / Invite Student',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
-              ),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
+          builder: (context, setModalState) {
+            return Container(
+              height: MediaQuery.of(context).size.height * 0.85,
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+              child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  TextField(
-                    controller: uidCtrl,
-                    decoration: InputDecoration(
-                      labelText: 'Student UID',
-                      hintText: 'Enter student UID...',
-                      prefixIcon: const Icon(Icons.person_search_rounded),
-                      filled: true,
-                      fillColor: const Color(0xFFF1F5F9),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide.none,
+                  Center(
+                    child: Container(
+                      width: 44,
+                      height: 5,
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade300,
+                        borderRadius: BorderRadius.circular(10),
                       ),
                     ),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 14),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        'Select & Invite Students',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF0F172A),
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close_rounded, color: Colors.grey),
+                        onPressed: () => Navigator.pop(bottomSheetCtx),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF1F5F9),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: TextField(
+                      controller: searchCtrl,
+                      onChanged: (val) {
+                        setModalState(() {
+                          searchKeyword = val.trim().toLowerCase();
+                        });
+                      },
+                      decoration: const InputDecoration(
+                        hintText: 'Search student by name or UID...',
+                        hintStyle: TextStyle(fontSize: 13, color: Colors.grey),
+                        prefixIcon: Icon(Icons.search_rounded, size: 20, color: Colors.grey),
+                        border: InputBorder.none,
+                        contentPadding: EdgeInsets.symmetric(vertical: 12),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
                   SwitchListTile(
                     contentPadding: EdgeInsets.zero,
+                    dense: true,
                     title: const Text(
-                      'Send Invitation (Recommended)',
-                      style:
-                          TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600),
+                      'Send Official Invitation',
+                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
                     ),
                     subtitle: Text(
-                      sendInviteInsteadOfDirectAdd
-                          ? 'Student will receive an Accept/Decline invite.'
-                          : 'Student will be added directly to this group.',
-                      style: const TextStyle(fontSize: 11.5),
+                      sendInviteMode
+                          ? 'Student will receive an Accept/Decline request.'
+                          : 'Student will be added directly into this batch.',
+                      style: const TextStyle(fontSize: 11, color: Colors.grey),
                     ),
-                    value: sendInviteInsteadOfDirectAdd,
+                    value: sendInviteMode,
                     activeColor: Colors.blueAccent,
                     onChanged: (val) {
-                      setDialogState(() => sendInviteInsteadOfDirectAdd = val);
+                      setModalState(() => sendInviteMode = val);
                     },
+                  ),
+                  const Divider(height: 16),
+                  Expanded(
+                    child: StreamBuilder<QuerySnapshot>(
+                      stream: _firestore
+                          .collection('student_fees')
+                          .where('teacherId', isEqualTo: widget.currentUserId)
+                          .snapshots(),
+                      builder: (context, feeSnap) {
+                        final Set<String> connectedStudentIds = {};
+                        if (feeSnap.hasData) {
+                          for (var d in feeSnap.data!.docs) {
+                            final m = d.data() as Map<String, dynamic>;
+                            final sid = m['studentId']?.toString();
+                            if (sid != null && sid.isNotEmpty) {
+                              connectedStudentIds.add(sid);
+                            }
+                          }
+                        }
+
+                        return StreamBuilder<QuerySnapshot>(
+                          stream: _firestore.collection('students').snapshots(),
+                          builder: (context, studentsSnap) {
+                            if (studentsSnap.connectionState == ConnectionState.waiting) {
+                              return const Center(child: CircularProgressIndicator());
+                            }
+
+                            final allStudents = studentsSnap.hasData ? studentsSnap.data!.docs : [];
+                            final existingMembers = _group?.members ?? [];
+
+                            final filteredList = allStudents.where((doc) {
+                              final data = doc.data() as Map<String, dynamic>;
+                              final sId = doc.id;
+                              final name = (data['fullName'] ?? data['name'] ?? 'Student').toString().toLowerCase();
+
+                              final matchesSearch = searchKeyword.isEmpty ||
+                                  name.contains(searchKeyword) ||
+                                  sId.toLowerCase().contains(searchKeyword);
+
+                              final isConnectedOrMatched = connectedStudentIds.contains(sId) || searchKeyword.isNotEmpty;
+                              return matchesSearch && isConnectedOrMatched;
+                            }).toList();
+
+                            if (filteredList.isEmpty) {
+                              return Center(
+                                child: Text(
+                                  searchKeyword.isEmpty
+                                      ? 'No connected students found. Type UID in search.'
+                                      : 'No matching student found.',
+                                  style: const TextStyle(color: Colors.grey, fontSize: 13),
+                                ),
+                              );
+                            }
+
+                            return ListView.separated(
+                              physics: const BouncingScrollPhysics(),
+                              itemCount: filteredList.length,
+                              separatorBuilder: (_, __) => const Divider(height: 1),
+                              itemBuilder: (context, idx) {
+                                final sDoc = filteredList[idx];
+                                final sData = sDoc.data() as Map<String, dynamic>;
+                                final sId = sDoc.id;
+                                final sName = (sData['fullName'] ?? sData['name'] ?? 'Student').toString();
+                                final sPic = (sData['profileImageUrl'] ?? sData['profilePic'] ?? '').toString();
+                                final bool alreadyInGroup = existingMembers.contains(sId);
+
+                                return ListTile(
+                                  contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                                  leading: CircleAvatar(
+                                    backgroundColor: Colors.blue.shade50,
+                                    backgroundImage: sPic.isNotEmpty ? NetworkImage(sPic) : null,
+                                    child: sPic.isEmpty
+                                        ? Text(
+                                            sName.isNotEmpty ? sName[0].toUpperCase() : 'S',
+                                            style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blueAccent),
+                                          )
+                                        : null,
+                                  ),
+                                  title: Text(
+                                    sName,
+                                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14.5),
+                                  ),
+                                  subtitle: Text(
+                                    'UID: $sId',
+                                    style: const TextStyle(fontSize: 11, color: Colors.grey, fontFamily: 'monospace'),
+                                  ),
+                                  trailing: alreadyInGroup
+                                      ? Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                          decoration: BoxDecoration(
+                                            color: Colors.green.shade50,
+                                            borderRadius: BorderRadius.circular(12),
+                                          ),
+                                          child: Text(
+                                            'Added',
+                                            style: TextStyle(
+                                              color: Colors.green.shade700,
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 12,
+                                            ),
+                                          ),
+                                        )
+                                      : ElevatedButton(
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: Colors.blueAccent,
+                                            foregroundColor: Colors.white,
+                                            elevation: 0,
+                                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                          ),
+                                          onPressed: () async {
+                                            Navigator.pop(bottomSheetCtx);
+                                            try {
+                                              if (sendInviteMode) {
+                                                await _groupService.sendInvitation(
+                                                  groupId: widget.groupId,
+                                                  groupName: _group?.name ?? 'Group',
+                                                  invitedUserId: sId,
+                                                  invitedByUserId: widget.currentUserId,
+                                                );
+                                                _showSnackBar('Invitation sent to $sName!');
+                                              } else {
+                                                await _groupService.addStudentDirectlyByTeacher(
+                                                  groupId: widget.groupId,
+                                                  teacherId: widget.currentUserId,
+                                                  studentId: sId,
+                                                );
+                                                _showSnackBar('$sName added to group!');
+                                              }
+                                            } catch (e) {
+                                              _showSnackBar('Failed: $e');
+                                            }
+                                          },
+                                          child: Text(
+                                            sendInviteMode ? 'Invite' : 'Add',
+                                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5),
+                                          ),
+                                        ),
+                                );
+                              },
+                            );
+                          },
+                        );
+                      },
+                    ),
                   ),
                 ],
               ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  child: const Text('Cancel'),
-                ),
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.blueAccent,
-                  ),
-                  onPressed: () async {
-                    final rawUid = uidCtrl.text.trim();
-                    if (rawUid.isEmpty) return;
-                    Navigator.pop(ctx);
-
-                    try {
-                      String resolvedStudentDocId = rawUid;
-                      final sDoc = await _firestore
-                          .collection('students')
-                          .doc(rawUid)
-                          .get();
-                      if (!sDoc.exists) {
-                        final uQuery = await _firestore
-                            .collection('users')
-                            .where('uid', isEqualTo: rawUid)
-                            .limit(1)
-                            .get();
-                        if (uQuery.docs.isNotEmpty) {
-                          resolvedStudentDocId = uQuery.docs.first.id;
-                        }
-                      }
-
-                      if (sendInviteInsteadOfDirectAdd) {
-                        await _groupService.sendInvitation(
-                          groupId: widget.groupId,
-                          groupName: _group?.name ?? 'Group',
-                          invitedUserId: resolvedStudentDocId,
-                          invitedByUserId: widget.currentUserId,
-                        );
-                        _showSnackBar('Invitation sent to student!');
-                      } else {
-                        await _groupService.addStudentDirectlyByTeacher(
-                          groupId: widget.groupId,
-                          teacherId: widget.currentUserId,
-                          studentId: resolvedStudentDocId,
-                        );
-                        _showSnackBar('Student added to group!');
-                      }
-                    } catch (e) {
-                      _showSnackBar('Failed: $e');
-                    }
-                  },
-                  child: Text(
-                    sendInviteInsteadOfDirectAdd
-                        ? 'Send Invite'
-                        : 'Add Directly',
-                    style: const TextStyle(color: Colors.white),
-                  ),
-                ),
-              ],
             );
           },
         );
@@ -735,6 +859,98 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
               },
               child:
                   const Text('Remove', style: TextStyle(color: Colors.white)),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _confirmLeaveGroup() {
+    showDialog(
+      context: context,
+      builder: (dialogCtx) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 10),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 20),
+          actionsPadding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.red.shade50,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(Icons.exit_to_app_rounded, color: Colors.red.shade600, size: 24),
+              ),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Text(
+                  'Leave Group?',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 17,
+                    color: Color(0xFF0F172A),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          content: const Text(
+            'Are you sure you want to leave this batch? You will no longer receive announcements, assignments, or group messages.',
+            style: TextStyle(fontSize: 13.5, color: Color(0xFF475569), height: 1.4),
+          ),
+          actions: [
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      side: const BorderSide(color: Color(0xFFCBD5E1)),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    onPressed: () => Navigator.pop(dialogCtx),
+                    child: const Text(
+                      'Cancel',
+                      style: TextStyle(color: Color(0xFF64748B), fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.red.shade600,
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    onPressed: () async {
+                      Navigator.pop(dialogCtx);
+                      try {
+                        await _groupService.leaveGroup(
+                          groupId: widget.groupId,
+                          studentId: widget.currentUserId,
+                        );
+                        if (mounted) {
+                          Navigator.of(context).popUntil((route) => route.isFirst);
+                          _showSnackBar('You have left the group.');
+                        }
+                      } catch (e) {
+                        _showSnackBar('Failed to leave group: $e');
+                      }
+                    },
+                    child: const Text(
+                      'Leave',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ],
         );
@@ -1799,13 +2015,13 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
             ListTile(
               contentPadding: EdgeInsets.zero,
               leading:
-                  const Icon(Icons.flag_outlined, color: Colors.redAccent),
+                  const Icon(Icons.flag_outlined, color: Colors.orange),
               title: const Text(
                 'Report Group or Abuse',
                 style: TextStyle(
                   fontWeight: FontWeight.w600,
                   fontSize: 14.5,
-                  color: Colors.redAccent,
+                  color: Colors.orange,
                 ),
               ),
               onTap: () => _showReportDialog(
@@ -1813,6 +2029,24 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
                 targetType: 'group',
                 title: 'Report Group',
               ),
+            ),
+            const Divider(height: 1),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.exit_to_app_rounded, color: Colors.redAccent),
+              title: const Text(
+                'Leave Group',
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 14.5,
+                  color: Colors.redAccent,
+                ),
+              ),
+              subtitle: const Text(
+                'Leave this batch voluntarily',
+                style: TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+              onTap: _confirmLeaveGroup,
             ),
           ],
           if (_isViewerTeacher) ...[
