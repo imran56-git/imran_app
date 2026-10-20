@@ -58,14 +58,18 @@ class _HelpCenterScreenState extends State<HelpCenterScreen> {
 
   Future<void> _launchEmailSupport() async {
     const String supportEmail = 'findyourbestteachertoday@gmail.com';
-    final Uri emailUri = Uri.parse('mailto:$supportEmail?subject=Support%20Request%20-%20Find%20Your%20Best%20Teacher%20Today');
-    
+    final Uri emailUri = Uri(
+      scheme: 'mailto',
+      path: supportEmail,
+      query: 'subject=Support Request - Find Your Best Teacher Today',
+    );
+
     try {
-      bool launched = false;
-      if (await canLaunchUrl(emailUri)) {
-        launched = await launchUrl(emailUri, mode: LaunchMode.externalApplication);
-      }
-      
+      final bool launched = await launchUrl(
+        emailUri,
+        mode: LaunchMode.externalApplication,
+      );
+
       if (!launched) {
         await Clipboard.setData(const ClipboardData(text: supportEmail));
         if (mounted) {
@@ -73,7 +77,10 @@ class _HelpCenterScreenState extends State<HelpCenterScreen> {
             context: context,
             builder: (ctx) => AlertDialog(
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-              title: const Text('Email Support', style: TextStyle(fontWeight: FontWeight.bold, color: _primaryNavy)),
+              title: const Text(
+                'Email Support',
+                style: TextStyle(fontWeight: FontWeight.bold, color: _primaryNavy),
+              ),
               content: const Text(
                 'No email app was detected on this device.\n\nOur support email has been copied to your clipboard:\nfindyourbestteachertoday@gmail.com',
                 style: TextStyle(fontSize: 14, color: Color(0xFF475569), height: 1.4),
@@ -93,7 +100,7 @@ class _HelpCenterScreenState extends State<HelpCenterScreen> {
           );
         }
       }
-    } catch (e) {
+    } catch (_) {
       await Clipboard.setData(const ClipboardData(text: supportEmail));
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -161,7 +168,6 @@ class _HelpCenterScreenState extends State<HelpCenterScreen> {
               ),
               child: Column(
                 children: [
-                  // হেল্প সেন্টার আইকন: মানুষের মাথা ও হেডফোন পরা (Support Agent)
                   const Icon(Icons.support_agent_rounded, size: 54, color: Colors.cyanAccent),
                   const SizedBox(height: 10),
                   const Text(
@@ -335,7 +341,7 @@ class _HelpCenterScreenState extends State<HelpCenterScreen> {
                       },
                       icon: const Icon(Icons.send_rounded, size: 18),
                       label: const Text(
-                        'Email Support',
+                        'FYBTT Email Support',
                         style: TextStyle(
                           fontWeight: FontWeight.bold,
                           fontSize: 14,
