@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:ui';
+import 'package:animate_do/animate_do.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
@@ -8,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
 import '../animations/animation_constants.dart';
 import '../animations/screen_pull_controller.dart';
 import '../models/rating_model.dart';
@@ -23,6 +25,8 @@ import 'notification_screen.dart';
 import 'teacher_follow_requests_screen.dart';
 import 'teacher_reviews_screen.dart';
 import 'tuition_management_screen.dart';
+import 'privacy_policy_screen.dart';
+import 'help_center_screen.dart';
 
 class TeacherProfileScreen extends StatefulWidget {
   final String currentUserId;
@@ -1369,6 +1373,28 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
           },
         ),
         _buildGlassIconButton(
+          icon: Icons.privacy_tip_outlined,
+          tooltip: 'Privacy Policy',
+          onTap: () {
+            _closeMenu();
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const PrivacyPolicyScreen()),
+            );
+          },
+        ),
+        _buildGlassIconButton(
+          icon: Icons.help_outline_rounded,
+          tooltip: 'Help Center',
+          onTap: () {
+            _closeMenu();
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const HelpCenterScreen()),
+            );
+          },
+        ),
+        _buildGlassIconButton(
           icon: Icons.logout_rounded,
           iconColor: Colors.orangeAccent,
           tooltip: 'Sign Out',
@@ -1430,7 +1456,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
             decoration: BoxDecoration(
               color: Colors.black.withOpacity(0.6),
               borderRadius: BorderRadius.circular(24),
@@ -1443,10 +1469,13 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
               mainAxisSize: MainAxisSize.min,
               children: List.generate(
                 menuItems.length,
-                (index) => _buildStaggeredMenuItem(
-                  index: index,
-                  totalItems: menuItems.length,
-                  child: menuItems[index],
+                (index) => Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 2.0),
+                  child: _buildStaggeredMenuItem(
+                    index: index,
+                    totalItems: menuItems.length,
+                    child: menuItems[index],
+                  ),
                 ),
               ),
             ),
@@ -1466,8 +1495,8 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
       icon: Icon(icon, color: iconColor, size: 19),
       tooltip: tooltip,
       onPressed: onTap,
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-      constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 4),
+      constraints: const BoxConstraints(minWidth: 32, minHeight: 30),
       visualDensity: VisualDensity.compact,
     );
   }
