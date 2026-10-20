@@ -1,9 +1,11 @@
 import 'dart:developer';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../models/follow_model.dart';
 
 class FollowService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseAuth _auth = FirebaseAuth.instance;
 
   Future<void> sendFollowRequest({
     required String teacherId,
@@ -33,7 +35,28 @@ class FollowService {
         subjects: subjects,
       );
 
-      await docRef.set(followModel.toMap(), SetOptions(merge: true));
+      final batch = _firestore.batch();
+      batch.set(docRef, followModel.toMap(), SetOptions(merge: true));
+
+      final notifRef = _firestore.collection('notifications').doc();
+      batch.set(notifRef, {
+        'notificationId': notifRef.id,
+        'receiverId': teacherId,
+        'senderId': studentId,
+        'senderName': studentName,
+        'senderPhoto': studentPhoto,
+        'type': 'follow_request',
+        'title': 'New Follow Request',
+        'body': '$studentName sent you a follow request.',
+        'message': '$studentName sent you a follow request.',
+        'isRead': false,
+        'status': 'unread',
+        'createdAt': FieldValue.serverTimestamp(),
+        'timestamp': FieldValue.serverTimestamp(),
+        'targetId': docId,
+      });
+
+      await batch.commit();
     } catch (e) {
       log('🔴 Error in sendFollowRequest: $e');
       rethrow;
@@ -57,9 +80,15 @@ class FollowService {
 
     try {
       final String docId = '${teacherId}_$studentId';
+      final requestRef = _firestore.collection('follow_requests').doc(docId);
+      final docSnap = await requestRef.get();
+      final data = docSnap.data() ?? {};
+
+      final String teacherName = (data['teacherName'] ?? 'Teacher').toString();
+      final String teacherPhoto = (data['teacherPhoto'] ?? '').toString();
+
       final batch = _firestore.batch();
 
-      final requestRef = _firestore.collection('follow_requests').doc(docId);
       batch.set(requestRef, {
         'status': 'accepted',
         'acceptedAt': Timestamp.now(),
@@ -71,6 +100,24 @@ class FollowService {
         'followersCount': FieldValue.increment(1),
         'acceptedStudentsCount': FieldValue.increment(1),
       }, SetOptions(merge: true));
+
+      final notifRef = _firestore.collection('notifications').doc();
+      batch.set(notifRef, {
+        'notificationId': notifRef.id,
+        'receiverId': studentId,
+        'senderId': teacherId,
+        'senderName': teacherName,
+        'senderPhoto': teacherPhoto,
+        'type': 'follow_accepted',
+        'title': 'Follow Request Accepted',
+        'body': '$teacherName accepted your follow request.',
+        'message': '$teacherName accepted your follow request.',
+        'isRead': false,
+        'status': 'unread',
+        'createdAt': FieldValue.serverTimestamp(),
+        'timestamp': FieldValue.serverTimestamp(),
+        'targetId': docId,
+      });
 
       await batch.commit();
     } catch (e) {
@@ -85,18 +132,43 @@ class FollowService {
     try {
       final String docId = '${teacherId}_$studentId';
       final docRef = _firestore.collection('follow_requests').doc(docId);
+      final docSnap = await docRef.get();
+      final data = docSnap.data() ?? {};
+      final String teacherName = (data['teacherName'] ?? 'Teacher').toString();
+      final String teacherPhoto = (data['teacherPhoto'] ?? '').toString();
 
-      await docRef.set({
+      final batch = _firestore.batch();
+      batch.set(docRef, {
         'status': 'rejected',
         'rejectedAt': Timestamp.now(),
       }, SetOptions(merge: true));
+
+      final notifRef = _firestore.collection('notifications').doc();
+      batch.set(notifRef, {
+        'notificationId': notifRef.id,
+        'receiverId': studentId,
+        'senderId': teacherId,
+        'senderName': teacherName,
+        'senderPhoto': teacherPhoto,
+        'type': 'follow_rejected',
+        'title': 'Follow Request Declined',
+        'body': '$teacherName declined your follow request.',
+        'message': '$teacherName declined your follow request.',
+        'isRead': false,
+        'status': 'unread',
+        'createdAt': FieldValue.serverTimestamp(),
+        'timestamp': FieldValue.serverTimestamp(),
+        'targetId': docId,
+      });
+
+      await batch.commit();
     } catch (e) {
       log('🔴 Error in rejectRequest: $e');
       rethrow;
     }
   }
 
-  Future<void> unfollowTeacher(String teacherId, String studentId) async {
+  Future<void> unfollowTeacher(String teacherId, String studentId, {String? customUnfollowerId}) async {
     if (teacherId.isEmpty || studentId.isEmpty) return;
 
     try {
@@ -105,9 +177,23 @@ class FollowService {
 
       final docSnap = await requestRef.get();
       bool wasAccepted = false;
+      Map<String, dynamic> data = {};
       if (docSnap.exists) {
-        wasAccepted = docSnap.data()?['status'] == 'accepted';
+        data = docSnap.data() ?? {};
+        wasAccepted = data['status'] == 'accepted';
       }
+
+      final String currentUid = customUnfollowerId ?? (_auth.currentUser?.uid ?? '');
+      final bool isTeacherInitiated = currentUid == teacherId;
+
+      final String receiverId = isTeacherInitiated ? studentId : teacherId;
+      final String senderId = isTeacherInitiated ? teacherId : studentId;
+      final String senderName = isTeacherInitiated
+          ? (data['teacherName'] ?? 'Teacher').toString()
+          : (data['studentName'] ?? 'Student').toString();
+      final String senderPhoto = isTeacherInitiated
+          ? (data['teacherPhoto'] ?? '').toString()
+          : (data['studentPhoto'] ?? '').toString();
 
       final batch = _firestore.batch();
 
@@ -122,6 +208,24 @@ class FollowService {
           'acceptedStudentsCount': FieldValue.increment(-1),
         }, SetOptions(merge: true));
       }
+
+      final notifRef = _firestore.collection('notifications').doc();
+      batch.set(notifRef, {
+        'notificationId': notifRef.id,
+        'receiverId': receiverId,
+        'senderId': senderId,
+        'senderName': senderName,
+        'senderPhoto': senderPhoto,
+        'type': 'unfollow',
+        'title': 'Unfollowed',
+        'body': '$senderName has unfollowed you.',
+        'message': '$senderName has unfollowed you.',
+        'isRead': false,
+        'status': 'unread',
+        'createdAt': FieldValue.serverTimestamp(),
+        'timestamp': FieldValue.serverTimestamp(),
+        'targetId': docId,
+      });
 
       await batch.commit();
     } catch (e) {
