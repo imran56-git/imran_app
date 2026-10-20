@@ -73,7 +73,7 @@ class _HelpCenterScreenState extends State<HelpCenterScreen> {
             context: context,
             builder: (ctx) => AlertDialog(
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-              title: const Text('Mail Support', style: TextStyle(fontWeight: FontWeight.bold, color: _primaryNavy)),
+              title: const Text('Email Support', style: TextStyle(fontWeight: FontWeight.bold, color: _primaryNavy)),
               content: const Text(
                 'No email app was detected on this device.\n\nOur support email has been copied to your clipboard:\nfindyourbestteachertoday@gmail.com',
                 style: TextStyle(fontSize: 14, color: Color(0xFF475569), height: 1.4),
@@ -161,7 +161,8 @@ class _HelpCenterScreenState extends State<HelpCenterScreen> {
               ),
               child: Column(
                 children: [
-                  const Icon(Icons.headset_mic_rounded, size: 54, color: Colors.cyanAccent),
+                  // হেল্প সেন্টার আইকন: মানুষের মাথা ও হেডফোন পরা (Support Agent)
+                  const Icon(Icons.support_agent_rounded, size: 54, color: Colors.cyanAccent),
                   const SizedBox(height: 10),
                   const Text(
                     'How can we help you today?',
@@ -334,7 +335,7 @@ class _HelpCenterScreenState extends State<HelpCenterScreen> {
                       },
                       icon: const Icon(Icons.send_rounded, size: 18),
                       label: const Text(
-                        'FYBTT Mail Support',
+                        'Email Support',
                         style: TextStyle(
                           fontWeight: FontWeight.bold,
                           fontSize: 14,
