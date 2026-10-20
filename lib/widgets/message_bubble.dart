@@ -781,7 +781,7 @@ class _MessageBubbleState extends State<MessageBubble> {
     final Map<String, int> counts = {};
     for (final emoji in widget.message.reactions.values) {
       if (emoji.trim().isEmpty) continue;
-      counts[emoji] = (emojiCounts[emoji] ?? 0) + 1;
+      counts[emoji] = (counts[emoji] ?? 0) + 1;
     }
     if (counts.isEmpty) return const SizedBox.shrink();
 
@@ -932,42 +932,44 @@ class _MessageBubbleState extends State<MessageBubble> {
                   ),
                 ),
               const SizedBox(height: 3),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  const Spacer(),
-                  if (widget.message.isPinned &&
-                      !widget.message.isDeletedForEveryone) ...[
-                    const Icon(Icons.push_pin_rounded,
-                        size: 11, color: Colors.amber),
-                    const SizedBox(width: 3),
-                  ],
-                  if (isStarred && !widget.message.isDeletedForEveryone) ...[
-                    Icon(Icons.star_rounded,
-                        size: 12, color: Colors.amber.shade700),
-                    const SizedBox(width: 3),
-                  ],
-                  if (widget.message.isEdited == true &&
-                      !widget.message.isDeletedForEveryone) ...[
-                    Text(
-                      "edited ",
-                      style: TextStyle(
-                        fontSize: 9.5,
-                        color: Colors.grey.shade500,
-                        fontStyle: FontStyle.italic,
+              Align(
+                alignment: Alignment.centerRight,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    if (widget.message.isPinned &&
+                        !widget.message.isDeletedForEveryone) ...[
+                      const Icon(Icons.push_pin_rounded,
+                          size: 11, color: Colors.amber),
+                      const SizedBox(width: 3),
+                    ],
+                    if (isStarred && !widget.message.isDeletedForEveryone) ...[
+                      Icon(Icons.star_rounded,
+                          size: 12, color: Colors.amber.shade700),
+                      const SizedBox(width: 3),
+                    ],
+                    if (widget.message.isEdited == true &&
+                        !widget.message.isDeletedForEveryone) ...[
+                      Text(
+                        "edited ",
+                        style: TextStyle(
+                          fontSize: 9.5,
+                          color: Colors.grey.shade500,
+                          fontStyle: FontStyle.italic,
+                        ),
                       ),
+                    ],
+                    Text(
+                      _formatTime(widget.message.timestamp),
+                      style: TextStyle(fontSize: 10, color: Colors.grey.shade500),
                     ),
+                    if (widget.isMe) ...[
+                      const SizedBox(width: 4),
+                      _buildStatusIcon(),
+                    ],
                   ],
-                  Text(
-                    _formatTime(widget.message.timestamp),
-                    style: TextStyle(fontSize: 10, color: Colors.grey.shade500),
-                  ),
-                  if (widget.isMe) ...[
-                    const SizedBox(width: 4),
-                    _buildStatusIcon(),
-                  ],
-                ],
+                ),
               ),
             ],
           ),
