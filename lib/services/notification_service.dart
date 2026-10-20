@@ -60,6 +60,7 @@ class NotificationService {
 
   bool _isInitialized = false;
   String? _listeningUserId;
+  String? _activeChatRoomId;
   final DateTime _sessionStartTime = DateTime.now();
   final Set<String> _shownNotificationIds = {};
 
@@ -67,6 +68,16 @@ class NotificationService {
   StreamSubscription<QuerySnapshot>? _eventsSubscription;
   Map<String, dynamic>? _pendingMediaActionPayload;
   Map<String, dynamic>? _pendingRatingActionPayload;
+
+  String? get activeChatRoomId => _activeChatRoomId;
+
+  void setActiveChatRoomId(String? chatRoomId) {
+    _activeChatRoomId = chatRoomId;
+  }
+
+  void clearActiveChatRoomId() {
+    _activeChatRoomId = null;
+  }
 
   static const AndroidNotificationChannel _chatChannel =
       AndroidNotificationChannel(
@@ -241,6 +252,11 @@ class NotificationService {
           final data = change.doc.data();
           if (data == null) continue;
 
+          final String chatRoomId = change.doc.id;
+          if (_activeChatRoomId != null && _activeChatRoomId == chatRoomId) {
+            continue;
+          }
+
           final String lastSenderId = (data['lastSenderId'] ??
                   data['lastMessageSenderId'] ??
                   data['senderId'] ??
@@ -382,6 +398,16 @@ class NotificationService {
             .toString()
             .toLowerCase();
 
+    final String chatRoomId =
+        (data['chatRoomId'] ?? data['chatId'] ?? data['groupId'] ?? '')
+            .toString();
+
+    if (_activeChatRoomId != null &&
+        chatRoomId.isNotEmpty &&
+        _activeChatRoomId == chatRoomId) {
+      return;
+    }
+
     final String title = message.notification?.title ??
         (data['title'] ?? data['senderName'] ?? 'FYBTT').toString();
     final String body = message.notification?.body ??
@@ -403,9 +429,6 @@ class NotificationService {
     if (notifType == 'chat' ||
         notifType == 'group_chat' ||
         data.containsKey('chatRoomId')) {
-      final String chatRoomId =
-          (data['chatRoomId'] ?? data['chatId'] ?? data['groupId'] ?? '')
-              .toString();
       final String senderId = (data['senderId'] ?? '').toString();
       final bool isGroup =
           data['isGroup'] == 'true' || data['isGroup'] == true;
@@ -435,6 +458,10 @@ class NotificationService {
     bool isGroup = false,
   }) async {
     if (chatRoomId.isEmpty) return;
+
+    if (_activeChatRoomId != null && _activeChatRoomId == chatRoomId) {
+      return;
+    }
 
     final Map<String, dynamic> payloadMap = {
       'category': 'chat_interactive',
