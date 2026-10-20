@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import '../services/chat_service.dart';
 
@@ -53,6 +54,10 @@ class _ChatInputBarState extends State<ChatInputBar> {
   String? _failedReplyId;
   String? _failedReplyText;
 
+  static const Color _primaryNavy = Color(0xFF0F172A);
+  static const Color _brandBlue = Color(0xFF1E4C7A);
+  static const Color _accentBlue = Color(0xFF2563EB);
+
   static const List<String> _commonEmojis = [
     '😀', '😂', '😊', '😍', '🤔', '😎', '😢', '😭',
     '👍', '👎', '👏', '🙏', '🔥', '🎉', '❤️', '💯',
@@ -65,7 +70,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
     {'emoji': '✅👍', 'label': 'Well Done!'},
     {'emoji': '❓🙋', 'label': 'I have a doubt'},
     {'emoji': '📝⏰', 'label': 'Homework Due'},
-    {'emoji': '🎯🏆', 'label': ' Keep Going!'},
+    {'emoji': '🎯🏆', 'label': 'Keep Going!'},
     {'emoji': '🙏📘', 'label': 'Thank You Sir'},
   ];
 
@@ -108,6 +113,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
 
   void _toggleEmojiPanel() {
     if (_isUploading || widget.isMutedByTeacher) return;
+    HapticFeedback.lightImpact();
     if (_showEmojiPanel) {
       setState(() => _showEmojiPanel = false);
       _focusNode.requestFocus();
@@ -118,6 +124,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
   }
 
   void _insertEmoji(String emoji) {
+    HapticFeedback.selectionClick();
     final text = _controller.text;
     final selection = _controller.selection;
     final int start = selection.start >= 0 ? selection.start : text.length;
@@ -131,6 +138,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
 
   Future<void> _sendQuickSticker(String stickerText) async {
     if (_isUploading || widget.isMutedByTeacher) return;
+    HapticFeedback.lightImpact();
     setState(() => _showEmojiPanel = false);
     try {
       await _chatService.sendMessage(
@@ -158,6 +166,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
 
   void _showAttachmentBottomSheet() {
     if (_isUploading || widget.isMutedByTeacher) return;
+    HapticFeedback.mediumImpact();
 
     final bool isGroupChat = widget.receiverId == 'group';
     final List<Map<String, String>> groupCategories = [
@@ -181,6 +190,13 @@ class _ChatInputBarState extends State<ChatInputBar> {
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(24),
+                boxShadow: [
+                  BoxShadow(
+                    color: _primaryNavy.withOpacity(0.12),
+                    blurRadius: 20,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
               ),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -190,7 +206,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 16,
-                      color: Color(0xFF1E4C7A),
+                      color: _brandBlue,
                     ),
                   ),
                   if (isGroupChat) ...[
@@ -210,10 +226,10 @@ class _ChatInputBarState extends State<ChatInputBar> {
                               ),
                               selected: isSel,
                               selectedColor:
-                                  const Color(0xFF1E4C7A).withOpacity(0.15),
+                                  _brandBlue.withOpacity(0.15),
                               labelStyle: TextStyle(
                                 color: isSel
-                                    ? const Color(0xFF1E4C7A)
+                                    ? _brandBlue
                                     : Colors.black87,
                                 fontWeight:
                                     isSel ? FontWeight.bold : FontWeight.normal,
@@ -395,6 +411,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
     final text = _controller.text.trim();
     if (text.isEmpty || _isUploading || widget.isMutedByTeacher) return;
 
+    HapticFeedback.lightImpact();
     final String? currentReplyId = widget.replyToMessageId;
     final String? currentReplyText = widget.replyToText;
     final String clientMsgId =
@@ -467,6 +484,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
 
   void _startVoiceNoteSession() {
     if (_isUploading || widget.isMutedByTeacher) return;
+    HapticFeedback.heavyImpact();
     _recordingTimer?.cancel();
     setState(() {
       _isRecordingVoice = true;
@@ -531,7 +549,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
                       style: const TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
-                        color: Color(0xFF1E4C7A),
+                        color: _brandBlue,
                       ),
                     ),
                     onPressed: () => _sendQuickSticker(
@@ -629,7 +647,8 @@ class _ChatInputBarState extends State<ChatInputBar> {
         if (_isUploading)
           const LinearProgressIndicator(
             backgroundColor: Colors.transparent,
-            valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF1E4C7A)),
+            valueColor: AlwaysStoppedAnimation<Color>(_brandBlue),
+            minHeight: 2.5,
           ),
         if (_failedMessageText != null)
           Container(
@@ -666,14 +685,21 @@ class _ChatInputBarState extends State<ChatInputBar> {
           ),
         if (widget.replyToMessageId != null && widget.replyToText != null)
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
             decoration: BoxDecoration(
-              color: Colors.grey.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(12),
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(14),
               border: const Border(
-                left: BorderSide(color: Color(0xFF1E4C7A), width: 4),
+                left: BorderSide(color: _brandBlue, width: 4),
               ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.04),
+                  blurRadius: 6,
+                  offset: const Offset(0, 2),
+                ),
+              ],
             ),
             child: Row(
               children: [
@@ -685,7 +711,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
                         "Replying to Message",
                         style: TextStyle(
                           fontWeight: FontWeight.bold,
-                          color: Color(0xFF1E4C7A),
+                          color: _brandBlue,
                           fontSize: 12,
                         ),
                       ),
@@ -695,29 +721,30 @@ class _ChatInputBarState extends State<ChatInputBar> {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          color: Colors.black.withOpacity(0.87),
-                          fontSize: 13,
+                          color: Colors.black.withOpacity(0.85),
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w500,
                         ),
                       ),
                     ],
                   ),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.close, size: 18, color: Colors.grey),
+                  icon: const Icon(Icons.close_rounded, size: 18, color: Colors.grey),
                   onPressed: widget.onCancelReply,
                 ),
               ],
             ),
           ),
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 6.0),
+          padding: const EdgeInsets.symmetric(horizontal: 10.0, vertical: 6.0),
           child: _isRecordingVoice
               ? Container(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
                   decoration: BoxDecoration(
                     color: Colors.red.shade50,
-                    borderRadius: BorderRadius.circular(25),
+                    borderRadius: BorderRadius.circular(26),
                     border: Border.all(color: Colors.red.shade200),
                   ),
                   child: Row(
@@ -743,7 +770,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
                       ),
                       ElevatedButton.icon(
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF1E4C7A),
+                          backgroundColor: _brandBlue,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(18),
                           ),
@@ -765,12 +792,13 @@ class _ChatInputBarState extends State<ChatInputBar> {
                       child: Container(
                         decoration: BoxDecoration(
                           color: Colors.white,
-                          borderRadius: BorderRadius.circular(25.0),
+                          borderRadius: BorderRadius.circular(26.0),
+                          border: Border.all(color: const Color(0xFFE2E8F0)),
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.black.withOpacity(0.05),
-                              blurRadius: 5,
-                              offset: const Offset(0, 1),
+                              color: _primaryNavy.withOpacity(0.04),
+                              blurRadius: 8,
+                              offset: const Offset(0, 2),
                             ),
                           ],
                         ),
@@ -782,8 +810,9 @@ class _ChatInputBarState extends State<ChatInputBar> {
                                     ? Icons.keyboard_alt_outlined
                                     : Icons.emoji_emotions_outlined,
                                 color: _showEmojiPanel
-                                    ? const Color(0xFF1E4C7A)
-                                    : Colors.grey,
+                                    ? _brandBlue
+                                    : Colors.grey.shade600,
+                                size: 22,
                               ),
                               onPressed: _toggleEmojiPanel,
                             ),
@@ -794,10 +823,18 @@ class _ChatInputBarState extends State<ChatInputBar> {
                                 minLines: 1,
                                 maxLines: 5,
                                 enabled: !_isUploading,
-                                decoration: const InputDecoration(
+                                style: const TextStyle(
+                                  fontSize: 14.5,
+                                  color: Color(0xFF0F172A),
+                                ),
+                                decoration: InputDecoration(
                                   hintText: 'Type a message...',
+                                  hintStyle: TextStyle(
+                                    color: Colors.grey.shade400,
+                                    fontSize: 14,
+                                  ),
                                   border: InputBorder.none,
-                                  contentPadding: EdgeInsets.symmetric(
+                                  contentPadding: const EdgeInsets.symmetric(
                                     vertical: 10.0,
                                     horizontal: 4,
                                   ),
@@ -805,8 +842,8 @@ class _ChatInputBarState extends State<ChatInputBar> {
                               ),
                             ),
                             IconButton(
-                              icon: const Icon(Icons.attach_file_rounded,
-                                  color: Colors.grey),
+                              icon: Icon(Icons.attach_file_rounded,
+                                  color: Colors.grey.shade600, size: 22),
                               onPressed: _isUploading
                                   ? null
                                   : _showAttachmentBottomSheet,
@@ -815,17 +852,53 @@ class _ChatInputBarState extends State<ChatInputBar> {
                         ),
                       ),
                     ),
-                    const SizedBox(width: 6.0),
+                    const SizedBox(width: 8.0),
                     GestureDetector(
-                      onTap:
-                          _isTyping ? _handleSend : _startVoiceNoteSession,
-                      child: CircleAvatar(
-                        radius: 22,
-                        backgroundColor: const Color(0xFF1E4C7A),
-                        child: Icon(
-                          _isTyping ? Icons.send : Icons.mic,
-                          color: Colors.white,
-                          size: 20,
+                      onTap: _isTyping ? _handleSend : _startVoiceNoteSession,
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 220),
+                        curve: Curves.easeOutCubic,
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          color: _isTyping ? _accentBlue : _brandBlue,
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: (_isTyping ? _accentBlue : _brandBlue)
+                                  .withOpacity(0.28),
+                              blurRadius: 8,
+                              offset: const Offset(0, 3),
+                            ),
+                          ],
+                        ),
+                        child: Center(
+                          child: AnimatedSwitcher(
+                            duration: const Duration(milliseconds: 220),
+                            transitionBuilder: (child, animation) {
+                              return ScaleTransition(
+                                scale: animation,
+                                child: RotationTransition(
+                                  turns: Tween<double>(begin: 0.75, end: 1.0)
+                                      .animate(animation),
+                                  child: child,
+                                ),
+                              );
+                            },
+                            child: _isTyping
+                                ? const Icon(
+                                    Icons.send_rounded,
+                                    key: ValueKey('send_action_btn'),
+                                    color: Colors.white,
+                                    size: 20,
+                                  )
+                                : const Icon(
+                                    Icons.mic_rounded,
+                                    key: ValueKey('mic_action_btn'),
+                                    color: Colors.white,
+                                    size: 20,
+                                  ),
+                          ),
                         ),
                       ),
                     ),
