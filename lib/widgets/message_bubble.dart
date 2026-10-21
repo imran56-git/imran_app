@@ -185,6 +185,52 @@ class _MessageBubbleState extends State<MessageBubble> {
     return match?.group(0);
   }
 
+  String _extractDomain(String url) {
+    try {
+      final uri = Uri.parse(url);
+      String host = uri.host.toLowerCase();
+      if (host.startsWith('www.')) {
+        host = host.substring(4);
+      }
+      return host.isNotEmpty ? host : 'link';
+    } catch (_) {
+      return 'link';
+    }
+  }
+
+  String? _getYoutubeThumbnail(String url) {
+    try {
+      final uri = Uri.parse(url);
+      String? videoId;
+
+      if (uri.host.contains('youtube.com')) {
+        if (uri.pathSegments.contains('shorts') && uri.pathSegments.length > 1) {
+          final index = uri.pathSegments.indexOf('shorts');
+          if (index + 1 < uri.pathSegments.length) {
+            videoId = uri.pathSegments[index + 1];
+          }
+        } else if (uri.pathSegments.contains('watch')) {
+          videoId = uri.queryParameters['v'];
+        } else if (uri.pathSegments.isNotEmpty) {
+          videoId = uri.pathSegments.last;
+        }
+      } else if (uri.host.contains('youtu.be') && uri.pathSegments.isNotEmpty) {
+        videoId = uri.pathSegments.first;
+      }
+
+      if (videoId != null && videoId.isNotEmpty) {
+        if (videoId.contains('&')) {
+          videoId = videoId.split('&').first;
+        }
+        if (videoId.contains('?')) {
+          videoId = videoId.split('?').first;
+        }
+        return 'https://img.youtube.com/vi/$videoId/hqdefault.jpg';
+      }
+    } catch (_) {}
+    return null;
+  }
+
   Future<void> _cyclePlaybackSpeed() async {
     double nextSpeed = 1.0;
     if (_playbackSpeed == 1.0) {
@@ -220,18 +266,31 @@ class _MessageBubbleState extends State<MessageBubble> {
 
   Future<void> _openUrl(String url) async {
     try {
-      final Uri uri = Uri.parse(url);
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
-      } else {
+      final Uri uri = Uri.parse(url.trim());
+      final bool launched = await launchUrl(
+        uri,
+        mode: LaunchMode.externalApplication,
+      );
+      if (!launched) {
+        await launchUrl(
+          uri,
+          mode: LaunchMode.platformDefault,
+        );
+      }
+    } catch (_) {
+      try {
+        final Uri uri = Uri.parse(url.trim());
+        await launchUrl(
+          uri,
+          mode: LaunchMode.inAppBrowserView,
+        );
+      } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Could not open link')),
           );
         }
       }
-    } catch (e) {
-      debugPrint('Error launching URL: $e');
     }
   }
 
@@ -722,54 +781,125 @@ class _MessageBubbleState extends State<MessageBubble> {
     final String content = widget.message.content;
     final String? detectedUrl = _extractFirstUrl(content);
 
+    if (detectedUrl == null) {
+      return Text(
+        content,
+        style: const TextStyle(
+          fontSize: 14.5,
+          color: Color(0xFF0F172A),
+          height: 1.34,
+          letterSpacing: 0.1,
+        ),
+      );
+    }
+
+    final String domain = _extractDomain(detectedUrl);
+    final String? ytThumb = _getYoutubeThumbnail(detectedUrl);
+    final String remainingText = content.replaceAll(detectedUrl, '').trim();
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (detectedUrl != null)
-          InkWell(
-            onTap: () => _openUrl(detectedUrl),
-            borderRadius: BorderRadius.circular(10),
-            child: Container(
-              margin: const EdgeInsets.only(bottom: 6),
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: Colors.blue.withOpacity(0.08),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: Colors.blue.withOpacity(0.2)),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.link_rounded,
-                      color: Colors.blueAccent, size: 18),
-                  const SizedBox(width: 6),
-                  Flexible(
-                    child: Text(
-                      detectedUrl,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: Colors.blueAccent,
-                        decoration: TextDecoration.underline,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ],
+        InkWell(
+          onTap: () => _openUrl(detectedUrl),
+          borderRadius: BorderRadius.circular(12),
+          child: Container(
+            margin: const EdgeInsets.only(bottom: 6),
+            decoration: BoxDecoration(
+              color: widget.isMe
+                  ? const Color(0xFFDBEAFE)
+                  : const Color(0xFFF1F5F9),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: widget.isMe
+                    ? const Color(0xFF93C5FD)
+                    : const Color(0xFFCBD5E1),
               ),
             ),
-          ),
-        Text(
-          content,
-          style: const TextStyle(
-            fontSize: 14.5,
-            color: Color(0xFF0F172A),
-            height: 1.34,
-            letterSpacing: 0.1,
+            clipBehavior: Clip.antiAlias,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (ytThumb != null)
+                  Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      Image.network(
+                        ytThumb,
+                        height: 140,
+                        width: double.infinity,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.55),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.play_arrow_rounded,
+                          color: Colors.white,
+                          size: 30,
+                        ),
+                      ),
+                    ],
+                  ),
+                Padding(
+                  padding: const EdgeInsets.all(8),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        detectedUrl,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF1E40AF),
+                          height: 1.25,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.link_rounded,
+                            size: 13,
+                            color: Color(0xFF64748B),
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            domain,
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: Color(0xFF64748B),
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
+        if (remainingText.isNotEmpty)
+          Text(
+            remainingText,
+            style: const TextStyle(
+              fontSize: 14.5,
+              color: Color(0xFF0F172A),
+              height: 1.34,
+              letterSpacing: 0.1,
+            ),
+          ),
       ],
     );
   }
@@ -855,7 +985,7 @@ class _MessageBubbleState extends State<MessageBubble> {
             ),
             boxShadow: [
               BoxShadow(
-                color: _primaryNavy.withOpacity(widget.isMe ? 0.04 : 0.03),
+                color: _primaryNavy.withOpacity(0.04),
                 blurRadius: 4,
                 offset: const Offset(0, 1),
               ),
