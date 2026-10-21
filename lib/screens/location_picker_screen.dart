@@ -20,14 +20,15 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> with Ticker
   bool _isSearching = false;
   bool _isLoadingLocation = false;
 
-  LatLng _currentCenterPosition = const LatLng(22.5726, 88.3639); // Default Kolkata
-  String _draggedAddress = "Loading address...";
+  LatLng _currentCenterPosition = const LatLng(22.5726, 88.3639);
+  String _draggedAddress = "Locating area...";
   bool _isDragging = false;
 
   @override
   void initState() {
     super.initState();
-    _getUserCurrentLocation(moveToPosition: false);
+    _updateAddressFromPosition(_currentCenterPosition);
+    _getUserCurrentLocation(moveToPosition: true);
   }
 
   @override
@@ -37,7 +38,6 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> with Ticker
     super.dispose();
   }
 
-  /// Get user's active device location automatically
   Future<void> _getUserCurrentLocation({bool moveToPosition = false}) async {
     if (!mounted) return;
     setState(() => _isLoadingLocation = true);
@@ -46,48 +46,57 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> with Ticker
       final position = await LocationService.getCurrentLocation();
       final currentLatLng = LatLng(position.latitude, position.longitude);
 
+      if (!mounted) return;
       setState(() {
         _currentCenterPosition = currentLatLng;
       });
 
-      if (_mapController != null) {
+      if (_mapController != null && moveToPosition) {
         _mapController!.animateCamera(
-          CameraUpdate.newLatLngZoom(currentLatLng, 14),
+          CameraUpdate.newLatLngZoom(currentLatLng, 15),
         );
       }
 
       await _updateAddressFromPosition(currentLatLng);
-    } catch (e) {
-      _showSnackBar("Could not detect location: $e");
+    } catch (_) {
+      if (mounted) {
+        await _updateAddressFromPosition(_currentCenterPosition);
+      }
     } finally {
-      if (mounted) setState(() => _isLoadingLocation = false);
+      if (mounted) {
+        setState(() => _isLoadingLocation = false);
+      }
     }
   }
 
-  /// Search Location using Geocoding
   Future<void> _searchLocation(String query) async {
     if (query.trim().isEmpty) return;
+    FocusScope.of(context).unfocus();
     setState(() => _isSearching = true);
 
     try {
-      List<Location> locations = await locationFromAddress(query);
+      List<Location> locations = await locationFromAddress(query.trim());
       if (locations.isNotEmpty) {
         final position = LatLng(locations.first.latitude, locations.first.longitude);
-        _currentCenterPosition = position;
+        if (!mounted) return;
+        setState(() {
+          _currentCenterPosition = position;
+        });
 
         _mapController?.animateCamera(
-          CameraUpdate.newLatLngZoom(position, 14),
+          CameraUpdate.newLatLngZoom(position, 15),
         );
         await _updateAddressFromPosition(position);
+      } else {
+        _showSnackBar('Location not found. Please try another specific name.');
       }
-    } catch (e) {
+    } catch (_) {
       _showSnackBar('Location not found. Please try another specific name.');
     } finally {
       if (mounted) setState(() => _isSearching = false);
     }
   }
 
-  /// Reverse Geocode Address Update
   Future<void> _updateAddressFromPosition(LatLng position) async {
     try {
       List<Placemark> placemarks = await placemarkFromCoordinates(
@@ -116,7 +125,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> with Ticker
           _draggedAddress = formatted.isEmpty ? "Unknown Location" : formatted;
         });
       }
-    } catch (e) {
+    } catch (_) {
       if (mounted) {
         setState(() {
           _draggedAddress = "Lat: ${position.latitude.toStringAsFixed(4)}, Lng: ${position.longitude.toStringAsFixed(4)}";
@@ -125,7 +134,6 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> with Ticker
     }
   }
 
-  /// Single Pin Tapping Logic
   void _addCurrentPositionAsArea() {
     bool exists = selectedLocations.any((loc) => 
       (loc['latitude'] as double).toStringAsFixed(4) == _currentCenterPosition.latitude.toStringAsFixed(4) &&
@@ -171,7 +179,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> with Ticker
       return Circle(
         circleId: CircleId('circle_${loc['latitude']}_${loc['longitude']}'),
         center: LatLng(loc['latitude'], loc['longitude']),
-        radius: 10000, // 10 KM Radius
+        radius: 10000,
         fillColor: Colors.blue.withOpacity(0.12),
         strokeColor: Colors.blue[700]!,
         strokeWidth: 2,
@@ -182,26 +190,29 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> with Ticker
       Circle(
         circleId: const CircleId('current_center_radius'),
         center: _currentCenterPosition,
-        radius: 10000, // 10 KM
+        radius: 10000,
         fillColor: Colors.amber.withOpacity(0.06),
         strokeColor: Colors.amber[700]!.withOpacity(0.4),
         strokeWidth: 1,
-      )
+      ),
     );
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       body: Stack(
         children: [
-          /// 1. Google Maps SDK Widget
           GoogleMap(
             initialCameraPosition: CameraPosition(
               target: _currentCenterPosition,
-              zoom: 12,
+              zoom: 13,
             ),
             onMapCreated: (controller) {
               _mapController = controller;
-              _getUserCurrentLocation(moveToPosition: true);
+              if (_currentCenterPosition != const LatLng(22.5726, 88.3639)) {
+                _mapController!.animateCamera(
+                  CameraUpdate.newLatLngZoom(_currentCenterPosition, 15),
+                );
+              }
             },
             onCameraMoveStarted: () {
               setState(() {
@@ -226,7 +237,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> with Ticker
                 icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
                 infoWindow: InfoWindow(
                   title: data['address'],
-                  snippet: "Tap to view options",
+                  snippet: "Selected teaching area",
                 ),
               );
             }).toSet(),
@@ -237,23 +248,18 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> with Ticker
             compassEnabled: false,
             mapToolbarEnabled: false,
           ),
-
-          /// 2. Custom Center Floating Pointer (Pin)
           Center(
             child: Padding(
               padding: const EdgeInsets.only(bottom: 40.0),
               child: Icon(
                 Icons.location_on_rounded, 
                 size: 46, 
-                color: _isDragging ? Colors.amber[800] : Colors.blue[900]
+                color: _isDragging ? Colors.amber[800] : Colors.blue[900],
               )
               .animate(target: _isDragging ? 1 : 0)
-              .scaleXY(end: 1.2, curve: Curves.easeOut), 
-              // ফিক্সড: অকারণ .view() মেথডটি রিমুভ করা হয়েছে যা এরর তৈরি করছিল
+              .scaleXY(end: 1.2, curve: Curves.easeOut),
             ),
           ),
-
-          /// 3. Top Floating Search Box Widget
           Positioned(
             top: MediaQuery.of(context).padding.top + 12,
             left: 16,
@@ -302,8 +308,6 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> with Ticker
               ),
             ),
           ),
-
-          /// 4. Center-Right Quick Floating Controls
           Positioned(
             right: 16,
             bottom: selectedLocations.isNotEmpty ? 240 : 200,
@@ -323,8 +327,6 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> with Ticker
               ],
             ),
           ),
-
-          /// 5. Live Address Feedback & Active Action Bottom Sheet Panel
           Positioned(
             bottom: 0,
             left: 0,
