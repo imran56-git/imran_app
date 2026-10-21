@@ -22,7 +22,12 @@ class _LoginScreenState extends State<LoginScreen> {
 
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final GoogleSignIn _googleSignIn = GoogleSignIn();
+  final GoogleSignIn _googleSignIn = GoogleSignIn(
+    scopes: [
+      'email',
+      'profile',
+    ],
+  );
 
   final _formKey = GlobalKey<FormState>();
   bool _isLoading = false;
@@ -36,6 +41,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _saveUserSession(String uid, String role) async {
     final prefs = await SharedPreferences.getInstance();
+    await prefs.clear();
     await prefs.setBool('isLoggedIn', true);
     await prefs.setString('userId', uid);
     await prefs.setString('userType', role);
@@ -47,12 +53,12 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => _isLoading = true);
 
     try {
-      await _auth.signInWithEmailAndPassword(
+      final userCredential = await _auth.signInWithEmailAndPassword(
         email: _emailController.text.trim(),
         password: _passwordController.text.trim(),
       );
 
-      final user = _auth.currentUser;
+      final user = userCredential.user ?? _auth.currentUser;
       if (user != null) {
         await _checkAndNavigateUser(user);
       }
@@ -74,11 +80,11 @@ class _LoginScreenState extends State<LoginScreen> {
           errorMessage = 'Too many failed attempts. Please try again later.';
           break;
         default:
-          errorMessage = 'Login failed. Please check your credentials.';
+          errorMessage = e.message ?? 'Login failed. Please check credentials.';
       }
       _showError(errorMessage);
     } catch (e) {
-      _showError('Login failed. Please try again.');
+      _showError('Login failed: ${e.toString()}');
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
@@ -90,7 +96,7 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => _isLoading = true);
 
     try {
-      await _googleSignIn.signOut();
+      await _googleSignIn.signOut().catchError((_) {});
       final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
 
       if (googleUser == null) {
@@ -98,23 +104,27 @@ class _LoginScreenState extends State<LoginScreen> {
         return;
       }
 
-      final googleAuth = await googleUser.authentication;
+      final GoogleSignInAuthentication googleAuth =
+          await googleUser.authentication;
 
-      final credential = GoogleAuthProvider.credential(
+      final OAuthCredential credential = GoogleAuthProvider.credential(
         accessToken: googleAuth.accessToken,
         idToken: googleAuth.idToken,
       );
 
-      final userCredential = await _auth.signInWithCredential(credential);
-      final user = userCredential.user;
+      final UserCredential userCredential =
+          await _auth.signInWithCredential(credential);
+      final User? user = userCredential.user;
 
       if (user != null) {
         await _checkAndNavigateUser(user);
       }
-    } on PlatformException catch (_) {
-      _showError('Google sign-in failed. Please try again.');
+    } on FirebaseAuthException catch (e) {
+      _showError(e.message ?? 'Firebase Google sign-in failed.');
+    } on PlatformException catch (e) {
+      _showError(e.message ?? 'Google Sign-In failed on this device.');
     } catch (e) {
-      _showError('Google sign-in failed. Please try again.');
+      _showError('Sign-in error: ${e.toString()}');
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
@@ -123,37 +133,63 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _checkAndNavigateUser(User user) async {
-    DocumentSnapshot teacherDoc = await _firestore.collection('teachers').doc(user.uid).get();
-
     String userType = 'student';
 
-    if (teacherDoc.exists) {
-      userType = 'teacher';
-    } else {
-      DocumentSnapshot studentDoc = await _firestore.collection('students').doc(user.uid).get();
-      if (studentDoc.exists) {
-        userType = 'student';
+    try {
+      final DocumentSnapshot teacherDoc = await _firestore
+          .collection('teachers')
+          .doc(user.uid)
+          .get(const GetOptions(source: Source.serverAndCache));
+
+      if (teacherDoc.exists) {
+        userType = 'teacher';
       } else {
-        userType = 'student';
+        final DocumentSnapshot studentDoc = await _firestore
+            .collection('students')
+            .doc(user.uid)
+            .get(const GetOptions(source: Source.serverAndCache));
 
-        String finalName = user.displayName ?? user.email!.split('@')[0];
+        if (studentDoc.exists) {
+          userType = 'student';
+        } else {
+          final DocumentSnapshot userDoc = await _firestore
+              .collection('users')
+              .doc(user.uid)
+              .get(const GetOptions(source: Source.serverAndCache));
 
-        await _firestore.collection('students').doc(user.uid).set({
-          'uid': user.uid,
-          'name': finalName,
-          'email': user.email,
-          'userType': 'student',
-          'createdAt': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
+          if (userDoc.exists && userDoc.data() != null) {
+            final uData = userDoc.data() as Map<String, dynamic>;
+            final String role = (uData['role'] ?? uData['userType'] ?? 'student')
+                .toString()
+                .toLowerCase();
+            userType = role == 'teacher' ? 'teacher' : 'student';
+          } else {
+            userType = 'student';
+            final String finalName =
+                user.displayName ?? user.email!.split('@')[0];
 
-        await _firestore.collection('users').doc(user.uid).set({
-          'uid': user.uid,
-          'name': finalName,
-          'email': user.email,
-          'role': 'student',
-          'createdAt': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
+            await _firestore.collection('students').doc(user.uid).set({
+              'uid': user.uid,
+              'name': finalName,
+              'fullName': finalName,
+              'email': user.email,
+              'userType': 'student',
+              'createdAt': FieldValue.serverTimestamp(),
+            }, SetOptions(merge: true));
+
+            await _firestore.collection('users').doc(user.uid).set({
+              'uid': user.uid,
+              'name': finalName,
+              'email': user.email,
+              'role': 'student',
+              'userType': 'student',
+              'createdAt': FieldValue.serverTimestamp(),
+            }, SetOptions(merge: true));
+          }
+        }
       }
+    } catch (_) {
+      userType = 'student';
     }
 
     await _saveUserSession(user.uid, userType);
@@ -180,6 +216,27 @@ class _LoginScreenState extends State<LoginScreen> {
         backgroundColor: Colors.redAccent,
         behavior: SnackBarBehavior.floating,
       ),
+    );
+  }
+
+  Widget _buildGoogleLogo() {
+    return Image.network(
+      'https://upload.wikimedia.org/wikipedia/commons/thumb/c/c1/Google_%22G%22_logo.svg/480px-Google_%22G%22_logo.svg.png',
+      height: 24,
+      width: 24,
+      fit: BoxFit.contain,
+      errorBuilder: (context, error, stackTrace) {
+        return Image.asset(
+          'assets/images/google_logo.png',
+          height: 24,
+          width: 24,
+          errorBuilder: (_, __, ___) => const Icon(
+            Icons.g_mobiledata_rounded,
+            size: 28,
+            color: Color(0xFF4285F4),
+          ),
+        );
+      },
     );
   }
 
@@ -211,13 +268,13 @@ class _LoginScreenState extends State<LoginScreen> {
                   style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 40),
-
                 TextFormField(
                   controller: _emailController,
                   keyboardType: TextInputType.emailAddress,
                   validator: (val) {
                     if (val == null || val.trim().isEmpty) return 'Enter email';
-                    if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(val.trim())) {
+                    if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$')
+                        .hasMatch(val.trim())) {
                       return 'Enter a valid email';
                     }
                     return null;
@@ -231,11 +288,12 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                 ),
                 const SizedBox(height: 20),
-
                 TextFormField(
                   controller: _passwordController,
                   obscureText: true,
-                  validator: (val) => val == null || val.length < 6 ? 'Password must be at least 6 characters' : null,
+                  validator: (val) => val == null || val.length < 6
+                      ? 'Password must be at least 6 characters'
+                      : null,
                   decoration: InputDecoration(
                     labelText: 'Password',
                     prefixIcon: const Icon(Icons.lock_outline),
@@ -244,7 +302,6 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ),
                 ),
-
                 Align(
                   alignment: Alignment.centerRight,
                   child: TextButton(
@@ -256,12 +313,13 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     child: const Text(
                       "Forgot Password?",
-                      style: TextStyle(color: Color(0xFF128C7E), fontWeight: FontWeight.bold),
+                      style: TextStyle(
+                          color: Color(0xFF128C7E),
+                          fontWeight: FontWeight.bold),
                     ),
                   ),
                 ),
                 const SizedBox(height: 20),
-
                 _isLoading
                     ? const CircularProgressIndicator(color: Color(0xFF128C7E))
                     : Column(
@@ -280,7 +338,8 @@ class _LoginScreenState extends State<LoginScreen> {
                               ),
                               child: const Text(
                                 'Login',
-                                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                                style: TextStyle(
+                                    fontSize: 18, fontWeight: FontWeight.bold),
                               ),
                             ),
                           ),
@@ -290,37 +349,33 @@ class _LoginScreenState extends State<LoginScreen> {
                               Expanded(child: Divider(thickness: 1)),
                               Padding(
                                 padding: EdgeInsets.symmetric(horizontal: 10),
-                                child: Text("OR", style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
+                                child: Text("OR",
+                                    style: TextStyle(
+                                        color: Colors.grey,
+                                        fontWeight: FontWeight.bold)),
                               ),
                               Expanded(child: Divider(thickness: 1)),
                             ],
                           ),
                           const SizedBox(height: 25),
-
                           SizedBox(
                             width: double.infinity,
                             height: 55,
                             child: OutlinedButton.icon(
                               onPressed: _handleGoogleSignIn,
                               style: OutlinedButton.styleFrom(
-                                side: const BorderSide(color: Colors.grey),
+                                side: const BorderSide(color: Color(0xFFE2E8F0)),
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(12),
                                 ),
                               ),
-                              icon: Image.asset(
-                                'assets/images/google_logo.png',
-                                height: 24,
-                                width: 24,
-                                errorBuilder: (context, error, stackTrace) => const Icon(
-                                  Icons.g_mobiledata,
-                                  size: 30,
-                                  color: Colors.red,
-                                ),
-                              ),
+                              icon: _buildGoogleLogo(),
                               label: const Text(
                                 'Continue with Google',
-                                style: TextStyle(fontSize: 16, color: Colors.black87, fontWeight: FontWeight.bold),
+                                style: TextStyle(
+                                    fontSize: 16,
+                                    color: Colors.black87,
+                                    fontWeight: FontWeight.bold),
                               ),
                             ),
                           ),
