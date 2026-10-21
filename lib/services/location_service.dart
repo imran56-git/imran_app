@@ -1,11 +1,9 @@
 import 'dart:async';
 import 'dart:math' as math;
-// ফিক্সড: বিল্ড লগের ১ম এরর অনুযায়ী ইমপোর্টের শেষে সঠিকভাবে .dart যুক্ত করা হলো
 import 'package:geolocator/geolocator.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class LocationService {
-  /// Get Current Location
   static Future<Position> getCurrentLocation() async {
     try {
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
@@ -26,18 +24,23 @@ class LocationService {
         return Future.error('PERMISSION_PERMANENTLY_DENIED');
       }
 
+      try {
+        Position? lastKnown = await Geolocator.getLastKnownPosition();
+        if (lastKnown != null) {
+          return lastKnown;
+        }
+      } catch (_) {}
+
       return await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
+        desiredAccuracy: LocationAccuracy.medium,
       ).timeout(
-        const Duration(seconds: 12),
+        const Duration(seconds: 15),
       );
     } catch (e) {
       return Future.error('SYSTEM_ERROR: $e');
     }
   }
 
-  /// Get Only Latitude & Longitude
-  /// For Teacher / Student Registration
   static Future<Map<String, double>> getLocationCoordinates() async {
     Position position = await getCurrentLocation();
     return {
@@ -46,8 +49,6 @@ class LocationService {
     };
   }
 
-  /// Live Location Tracking
-  /// Future use for live map tracking
   static Stream<Position> getLiveLocationStream() {
     const LocationSettings settings = LocationSettings(
       accuracy: LocationAccuracy.bestForNavigation,
@@ -58,7 +59,6 @@ class LocationService {
     );
   }
 
-  /// Get Latitude Longitude String
   static Future<String> getFormattedLocation() async {
     try {
       Position position = await getCurrentLocation();
@@ -68,8 +68,6 @@ class LocationService {
     }
   }
 
-  /// Distance Calculation using Geolocator
-  /// Returns distance in meters
   static double getDistanceBetween(
     double startLat,
     double startLng,
@@ -84,9 +82,6 @@ class LocationService {
     );
   }
 
-  /// Haversine Formula Implementation
-  /// Returns distance in Kilometers (KM)
-  /// Used for strict Radius verification in Search Logic
   static double calculateHaversineDistance(
     double lat1,
     double lon1,
@@ -112,7 +107,6 @@ class LocationService {
     return degrees * (math.pi / 180.0);
   }
 
-  /// Distance KM Format for UI display
   static String getDistanceInKm(
     double startLat,
     double startLng,
@@ -128,23 +122,19 @@ class LocationService {
     return "${(distance / 1000).toStringAsFixed(1)}km away";
   }
 
-  /// Open external Google Maps Application with Teacher Location
-  /// Launches direct navigation/view for the student
   static Future<void> openGoogleMapsApp(double latitude, double longitude) async {
     final String googleMapsUrl = "https://www.google.com/maps/search/?api=1&query=$latitude,$longitude";
     final Uri uri = Uri.parse(googleMapsUrl);
 
     try {
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
-      } else {
-        throw "Could not launch Google Maps Application";
+      bool launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!launched) {
+        await launchUrl(uri, mode: LaunchMode.platformDefault);
       }
     } catch (e) {
-      // Fallback fallback if external app launch fails
-      if (await canLaunchUrl(uri)) {
+      try {
         await launchUrl(uri);
-      }
+      } catch (_) {}
     }
   }
 }
