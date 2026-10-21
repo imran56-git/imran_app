@@ -89,6 +89,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
   static const Color _scaffoldBg = Color(0xFFF8FAFC);
 
   bool get isOwnProfile =>
+      widget.currentUserId.isEmpty ||
       widget.currentUserId == (_auth.currentUser?.uid ?? "");
 
   @override
@@ -116,37 +117,61 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
     );
   }
 
+  @override
+  void didUpdateWidget(covariant TeacherProfileScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.currentUserId != widget.currentUserId) {
+      setState(() {
+        isLoading = true;
+        teacherData = null;
+        _nameController.clear();
+        _phoneController.clear();
+        _classController.clear();
+        _bioController.clear();
+        _instituteController.clear();
+        _experienceController.clear();
+        selectedSubjects.clear();
+        teacherLocations.clear();
+      });
+      _initCachedStreams();
+      fetchTeacherData();
+      checkUnreadNotifications();
+    }
+  }
+
   void _initCachedStreams() {
-    if (widget.currentUserId.isEmpty) return;
+    final String targetId = widget.currentUserId.isNotEmpty
+        ? widget.currentUserId
+        : (_auth.currentUser?.uid ?? '');
+    if (targetId.isEmpty) return;
 
     _pendingRequestsStream = _firestore
         .collection('follow_requests')
-        .where('teacherId', isEqualTo: widget.currentUserId)
+        .where('teacherId', isEqualTo: targetId)
         .where('status', isEqualTo: 'pending')
         .snapshots();
 
-    _followersCountStream =
-        _followService.streamFollowersCount(widget.currentUserId);
+    _followersCountStream = _followService.streamFollowersCount(targetId);
 
     _acceptedStudentsStream = _firestore
         .collection('follow_requests')
-        .where('teacherId', isEqualTo: widget.currentUserId)
+        .where('teacherId', isEqualTo: targetId)
         .where('status', isEqualTo: 'accepted')
         .snapshots();
 
     _todayClassesStream = _firestore
         .collection('live_classes')
-        .where('teacherId', isEqualTo: widget.currentUserId)
+        .where('teacherId', isEqualTo: targetId)
         .snapshots();
 
     _studentFeesStream = _firestore
         .collection('student_fees')
-        .where('teacherId', isEqualTo: widget.currentUserId)
+        .where('teacherId', isEqualTo: targetId)
         .snapshots();
 
     _activeLiveClassesStream = _firestore
         .collection('live_classes')
-        .where('teacherId', isEqualTo: widget.currentUserId)
+        .where('teacherId', isEqualTo: targetId)
         .where('isLive', isEqualTo: true)
         .snapshots();
   }
@@ -167,12 +192,15 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
   }
 
   Future<void> fetchTeacherData() async {
-    if (widget.currentUserId.isEmpty) return;
+    final String targetId = widget.currentUserId.isNotEmpty
+        ? widget.currentUserId
+        : (_auth.currentUser?.uid ?? '');
+    if (targetId.isEmpty) {
+      if (mounted) setState(() => isLoading = false);
+      return;
+    }
     try {
-      final doc = await _firestore
-          .collection('teachers')
-          .doc(widget.currentUserId)
-          .get();
+      final doc = await _firestore.collection('teachers').doc(targetId).get();
       if (doc.exists && mounted) {
         final data = doc.data();
         final String expVal = (data?['experience'] ??
