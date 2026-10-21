@@ -23,10 +23,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final GoogleSignIn _googleSignIn = GoogleSignIn(
-    scopes: [
-      'email',
-      'profile',
-    ],
+    scopes: <String>['email', 'profile'],
   );
 
   final _formKey = GlobalKey<FormState>();
@@ -84,7 +81,7 @@ class _LoginScreenState extends State<LoginScreen> {
       }
       _showError(errorMessage);
     } catch (e) {
-      _showError('Login failed: ${e.toString()}');
+      _showError('Login failed. Please try again.');
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
@@ -96,7 +93,7 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => _isLoading = true);
 
     try {
-      await _googleSignIn.signOut().catchError((_) {});
+      await _googleSignIn.signOut().catchError((_) => null);
       final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
 
       if (googleUser == null) {
@@ -106,6 +103,11 @@ class _LoginScreenState extends State<LoginScreen> {
 
       final GoogleSignInAuthentication googleAuth =
           await googleUser.authentication;
+
+      if (googleAuth.idToken == null && googleAuth.accessToken == null) {
+        _showError('Failed to retrieve Google authentication token.');
+        return;
+      }
 
       final OAuthCredential credential = GoogleAuthProvider.credential(
         accessToken: googleAuth.accessToken,
@@ -120,11 +122,18 @@ class _LoginScreenState extends State<LoginScreen> {
         await _checkAndNavigateUser(user);
       }
     } on FirebaseAuthException catch (e) {
-      _showError(e.message ?? 'Firebase Google sign-in failed.');
+      _showError(e.message ?? 'Firebase authentication failed.');
     } on PlatformException catch (e) {
-      _showError(e.message ?? 'Google Sign-In failed on this device.');
+      final String msg = e.message ?? '';
+      if (msg.contains('10:') || e.code == 'sign_in_failed') {
+        _showError(
+          'Google Sign-In configuration error (Code 10). Please update google-services.json with your signing key SHA-1 in Firebase.',
+        );
+      } else {
+        _showError(msg.isNotEmpty ? msg : 'Google Sign-In failed.');
+      }
     } catch (e) {
-      _showError('Sign-in error: ${e.toString()}');
+      _showError('Google Sign-In failed. Please try again.');
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
@@ -166,13 +175,13 @@ class _LoginScreenState extends State<LoginScreen> {
           } else {
             userType = 'student';
             final String finalName =
-                user.displayName ?? user.email!.split('@')[0];
+                user.displayName ?? (user.email?.split('@')[0] ?? 'Student');
 
             await _firestore.collection('students').doc(user.uid).set({
               'uid': user.uid,
               'name': finalName,
               'fullName': finalName,
-              'email': user.email,
+              'email': user.email ?? '',
               'userType': 'student',
               'createdAt': FieldValue.serverTimestamp(),
             }, SetOptions(merge: true));
@@ -180,7 +189,7 @@ class _LoginScreenState extends State<LoginScreen> {
             await _firestore.collection('users').doc(user.uid).set({
               'uid': user.uid,
               'name': finalName,
-              'email': user.email,
+              'email': user.email ?? '',
               'role': 'student',
               'userType': 'student',
               'createdAt': FieldValue.serverTimestamp(),
@@ -219,24 +228,13 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  Widget _buildGoogleLogo() {
-    return Image.network(
-      'https://upload.wikimedia.org/wikipedia/commons/thumb/c/c1/Google_%22G%22_logo.svg/480px-Google_%22G%22_logo.svg.png',
-      height: 24,
+  Widget _buildOfficialGoogleLogo() {
+    return const SizedBox(
       width: 24,
-      fit: BoxFit.contain,
-      errorBuilder: (context, error, stackTrace) {
-        return Image.asset(
-          'assets/images/google_logo.png',
-          height: 24,
-          width: 24,
-          errorBuilder: (_, __, ___) => const Icon(
-            Icons.g_mobiledata_rounded,
-            size: 28,
-            color: Color(0xFF4285F4),
-          ),
-        );
-      },
+      height: 24,
+      child: CustomPaint(
+        painter: _GoogleLogoPainter(),
+      ),
     );
   }
 
@@ -364,12 +362,12 @@ class _LoginScreenState extends State<LoginScreen> {
                             child: OutlinedButton.icon(
                               onPressed: _handleGoogleSignIn,
                               style: OutlinedButton.styleFrom(
-                                side: const BorderSide(color: Color(0xFFE2E8F0)),
+                                side: const BorderSide(color: Color(0xFFCBD5E1)),
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(12),
                                 ),
                               ),
-                              icon: _buildGoogleLogo(),
+                              icon: _buildOfficialGoogleLogo(),
                               label: const Text(
                                 'Continue with Google',
                                 style: TextStyle(
@@ -388,4 +386,55 @@ class _LoginScreenState extends State<LoginScreen> {
       ),
     );
   }
+}
+
+class _GoogleLogoPainter extends CustomPainter {
+  const _GoogleLogoPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final double w = size.width;
+    final double h = size.height;
+    final double strokeWidth = w * 0.22;
+    final Rect arcRect = Rect.fromLTWH(
+      strokeWidth / 2,
+      strokeWidth / 2,
+      w - strokeWidth,
+      h - strokeWidth,
+    );
+
+    final Paint paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth
+      ..strokeCap = StrokeCap.butt;
+
+    paint.color = const Color(0xFFEA4335);
+    canvas.drawArc(arcRect, -2.35, 1.55, false, paint);
+
+    paint.color = const Color(0xFFFBBC05);
+    canvas.drawArc(arcRect, 2.35, 1.58, false, paint);
+
+    paint.color = const Color(0xFF34A853);
+    canvas.drawArc(arcRect, 0.75, 1.60, false, paint);
+
+    paint.color = const Color(0xFF4285F4);
+    canvas.drawArc(arcRect, -0.15, 0.90, false, paint);
+
+    final Paint barPaint = Paint()
+      ..color = const Color(0xFF4285F4)
+      ..style = PaintingStyle.fill;
+
+    canvas.drawRect(
+      Rect.fromLTWH(
+        w * 0.50,
+        h * 0.41,
+        w * 0.46,
+        strokeWidth * 0.92,
+      ),
+      barPaint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
