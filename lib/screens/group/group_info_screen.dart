@@ -1254,14 +1254,14 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
                   ),
                 ),
               ),
-              const SizedBox(width: 5),
-              TeacherBadgesRow(
-                teacherName: group.name,
-                isVerified: group.isTeacherVerified,
-                hasGoldenBadge: group.hasGoldenBadge,
-                qualityBadge: BadgeType.verifiedBatch,
-                badgeSize: 20,
-              ),
+              if (group.isTeacherVerified) ...[
+                const SizedBox(width: 5),
+                InteractiveBadgeIcon(
+                  badgeType: BadgeType.verifiedBatch,
+                  holderName: group.name,
+                  size: 20,
+                ),
+              ],
             ],
           ),
           const SizedBox(height: 4),
