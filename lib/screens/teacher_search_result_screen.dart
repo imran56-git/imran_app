@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../widgets/teacher_card_widget.dart';
+import '../widgets/badge_details_sheet.dart';
 import 'chat_screen.dart';
 import 'teacher_profile_screen.dart';
 
@@ -19,13 +20,12 @@ class TeacherSearchResultScreen extends StatefulWidget {
 }
 
 class _TeacherSearchResultScreenState extends State<TeacherSearchResultScreen> {
-  // Student's baseline coordinate parameters (Kolkata Center as default)
   final double _studentLat = 22.5726;
   final double _studentLng = 88.3639;
 
   late final Stream<QuerySnapshot> _teachersStream;
   QuerySnapshot? _lastSnapshot;
-  String _selectedSort = 'best'; // 'best', 'rating', 'experience', 'distance'
+  String _selectedSort = 'best';
 
   static const Color _primaryNavy = Color(0xFF0F172A);
   static const Color _brandBlue = Color(0xFF1E4C7A);
@@ -35,15 +35,13 @@ class _TeacherSearchResultScreenState extends State<TeacherSearchResultScreen> {
   @override
   void initState() {
     super.initState();
-    // Cache Firestore stream once in initState so sorting/UI updates never reload
     _teachersStream =
         FirebaseFirestore.instance.collection('teachers').snapshots();
   }
 
-  /// Haversine formula for coordinate distance calculation
   double _calculateHaversineDistance(
       double lat1, double lon1, double lat2, double lon2) {
-    const double earthRadius = 6371.0; // In Kilometers
+    const double earthRadius = 6371.0;
 
     double dLat = _toRadians(lat2 - lat1);
     double dLon = _toRadians(lon2 - lon1);
@@ -62,7 +60,6 @@ class _TeacherSearchResultScreenState extends State<TeacherSearchResultScreen> {
     return degree * (math.pi / 180.0);
   }
 
-  // Google Maps অ্যাপে টিচারের লোকেশন ওপেন করার মেথড
   Future<void> _openGoogleMap(
       double lat, double lng, String teacherName) async {
     final Uri googleMapsUrl = Uri.parse(
@@ -74,7 +71,6 @@ class _TeacherSearchResultScreenState extends State<TeacherSearchResultScreen> {
     }
   }
 
-  /// Helper to generate a consistent Chat Room ID between student and teacher
   String _getChatRoomId(String id1, String id2) {
     if (id1.compareTo(id2) > 0) {
       return "${id1}_$id2";
@@ -83,7 +79,6 @@ class _TeacherSearchResultScreenState extends State<TeacherSearchResultScreen> {
     }
   }
 
-  /// Parses integer years from strings like "5+ Years", "3 Years", or raw ints
   int _parseExperienceYears(Map<String, dynamic> data) {
     final raw = data['experience'] ??
         data['teachingExperience'] ??
@@ -98,7 +93,6 @@ class _TeacherSearchResultScreenState extends State<TeacherSearchResultScreen> {
     return 0;
   }
 
-  /// Extracts readable location string from single fields or `locations` array
   String _extractLocationDisplay(Map<String, dynamic> data) {
     final direct =
         (data['teachingLocation'] ?? data['location'] ?? data['address'] ?? '')
@@ -119,7 +113,6 @@ class _TeacherSearchResultScreenState extends State<TeacherSearchResultScreen> {
     return 'Location N/A';
   }
 
-  /// Combines all location fields & array items for accurate text filtering
   String _extractAllLocationsSearchable(Map<String, dynamic> data) {
     final buffer = StringBuffer();
     buffer.write('${data['teachingLocation'] ?? ''} ');
@@ -137,7 +130,6 @@ class _TeacherSearchResultScreenState extends State<TeacherSearchResultScreen> {
     return buffer.toString().toLowerCase();
   }
 
-  /// Safe helper to extract latitude and longitude from Firestore document
   Map<String, double> _extractCoordinates(Map<String, dynamic> data) {
     double? lat = double.tryParse(data['latitude']?.toString() ?? '');
     double? lng = double.tryParse(data['longitude']?.toString() ?? '');
@@ -154,7 +146,6 @@ class _TeacherSearchResultScreenState extends State<TeacherSearchResultScreen> {
       }
     }
 
-    // Parse "lat, lng" string from teachingLocation if explicit fields aren't found
     if ((lat == null || lng == null) && data['teachingLocation'] != null) {
       final parts = data['teachingLocation'].toString().split(',');
       if (parts.length == 2) {
@@ -380,7 +371,6 @@ class _TeacherSearchResultScreenState extends State<TeacherSearchResultScreen> {
     final currentUserId = FirebaseAuth.instance.currentUser?.uid ?? '';
     final filters = widget.filters;
 
-    // Extract search query options cleanly
     final String targetId =
         (filters['teacherId'] ?? '').toString().trim().toLowerCase();
     final String targetName =
@@ -472,7 +462,6 @@ class _TeacherSearchResultScreenState extends State<TeacherSearchResultScreen> {
             return _buildNoResultsView();
           }
 
-          // Smart & Resilient Multiplex Filtering Logic
           final matchedDocs = activeData.docs.where((doc) {
             final data = doc.data() as Map<String, dynamic>? ?? {};
             final docId = doc.id.toLowerCase();
@@ -484,7 +473,6 @@ class _TeacherSearchResultScreenState extends State<TeacherSearchResultScreen> {
             final String locationSearchable =
                 _extractAllLocationsSearchable(data);
 
-            // Flexibly extract subject list or string
             List<String> subjects = [];
             if (data['subjects'] is List) {
               subjects = (data['subjects'] as List)
@@ -496,7 +484,6 @@ class _TeacherSearchResultScreenState extends State<TeacherSearchResultScreen> {
 
             final int exp = _parseExperienceYears(data);
 
-            // 1. Text & ID Match Condition
             bool matchesId = targetId.isEmpty || docId.contains(targetId);
             bool matchesName = targetName.isEmpty || name.contains(targetName);
             bool matchesLocation = targetLocation.isEmpty ||
@@ -505,13 +492,11 @@ class _TeacherSearchResultScreenState extends State<TeacherSearchResultScreen> {
                 subjects.any((s) => s.contains(targetSubject));
             bool matchesExperience = exp >= minExperience;
 
-            // 2. Safe Coordinates & Radius Match Condition
             bool matchesRadius = true;
             final coords = _extractCoordinates(data);
             double tLat = coords['lat']!;
             double tLng = coords['lng']!;
 
-            // Only apply strict radius check if coordinates exist and not searching by direct ID
             if (targetId.isEmpty && tLat != 0.0 && tLng != 0.0) {
               double distance = _calculateHaversineDistance(
                   _studentLat, _studentLng, tLat, tLng);
@@ -526,7 +511,6 @@ class _TeacherSearchResultScreenState extends State<TeacherSearchResultScreen> {
                 matchesRadius;
           }).toList();
 
-          // Sort matched teachers based on selected sort pill
           matchedDocs.sort((a, b) {
             final aData = a.data() as Map<String, dynamic>? ?? {};
             final bData = b.data() as Map<String, dynamic>? ?? {};
@@ -562,7 +546,6 @@ class _TeacherSearchResultScreenState extends State<TeacherSearchResultScreen> {
               return dA.compareTo(dB);
             }
 
-            // Default 'best': Verified teachers first, then higher rating
             final bool vA = aData['isVerified'] == true;
             final bool vB = bData['isVerified'] == true;
             if (vA != vB) return vB ? 1 : -1;
@@ -671,7 +654,6 @@ class _TeacherSearchResultScreenState extends State<TeacherSearchResultScreen> {
                             calculatedDistance: distanceText,
                             isVerified: isVerified,
                             highestBadgeType: highestBadgeType,
-                            // Chat Button Click Handling
                             onChatPressed: () {
                               final String chatRoomId =
                                   _getChatRoomId(currentUserId, doc.id);
@@ -689,7 +671,6 @@ class _TeacherSearchResultScreenState extends State<TeacherSearchResultScreen> {
                                 ),
                               );
                             },
-                            // Profile Click Handling
                             onProfilePressed: () {
                               Navigator.push(
                                 context,
@@ -700,7 +681,6 @@ class _TeacherSearchResultScreenState extends State<TeacherSearchResultScreen> {
                                 ),
                               );
                             },
-                            // Map Icon Click Handling
                             onMapPressed: (tLat != 0.0 && tLng != 0.0)
                                 ? () => _openGoogleMap(tLat, tLng, teacherName)
                                 : null,
