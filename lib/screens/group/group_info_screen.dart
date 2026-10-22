@@ -1,4 +1,4 @@
-import 'dart:async';
+Import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -7,7 +7,6 @@ import '../../models/group_model.dart';
 import '../../models/message_model.dart';
 import '../../services/chat_service.dart';
 import '../../services/group_service.dart';
-import '../../widgets/badge_details_sheet.dart';
 
 class GroupInfoScreen extends StatefulWidget {
   final String groupId;
@@ -634,14 +633,11 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
               const SizedBox(height: 12),
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
-                mainAxisSize: MainAxisSize.min,
                 children: [
                   Flexible(
                     child: Text(
                       tName,
                       textAlign: TextAlign.center,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
@@ -649,16 +645,16 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
                       ),
                     ),
                   ),
-                  const SizedBox(width: 5),
-                  TeacherBadgesRow(
-                    teacherName: tName,
-                    isVerified: group.isTeacherVerified,
-                    hasGoldenBadge: group.hasGoldenBadge,
-                    qualityBadge: BadgeTierResolver.resolveAcademicQualityBadge({
-                      'averageRating': tRating,
-                    }),
-                    badgeSize: 18,
-                  ),
+                  if (group.isTeacherVerified) ...[
+                    const SizedBox(width: 5),
+                    const Icon(Icons.verified,
+                        color: Colors.blueAccent, size: 18),
+                  ],
+                  if (group.hasGoldenBadge) ...[
+                    const SizedBox(width: 4),
+                    const Icon(Icons.workspace_premium,
+                        color: Colors.amber, size: 20),
+                  ],
                 ],
               ),
               const SizedBox(height: 4),
@@ -674,17 +670,28 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
                 alignment: WrapAlignment.center,
                 children: [
                   if (group.isTeacherVerified)
-                    InteractiveBadgeIcon(
-                      badgeType: BadgeType.verified,
-                      holderName: tName,
-                      size: 16,
-                      showLabelPill: true,
+                    Chip(
+                      visualDensity: VisualDensity.compact,
+                      backgroundColor: Colors.blue.shade50,
+                      avatar: const Icon(Icons.verified,
+                          color: Colors.blueAccent, size: 15),
+                      label: const Text(
+                        'Verified Teacher',
+                        style: TextStyle(
+                            fontSize: 11.5, fontWeight: FontWeight.bold),
+                      ),
                     ),
                   if (group.hasGoldenBadge)
-                    InteractiveBadgeIcon(
-                      badgeType: BadgeType.golden,
-                      holderName: tName,
-                      size: 16,
+                    Chip(
+                      visualDensity: VisualDensity.compact,
+                      backgroundColor: Colors.amber.shade50,
+                      avatar: const Icon(Icons.workspace_premium,
+                          color: Colors.amber, size: 16),
+                      label: const Text(
+                        'Golden Badge (3+ Yrs)',
+                        style: TextStyle(
+                            fontSize: 11.5, fontWeight: FontWeight.bold),
+                      ),
                     ),
                   if (tRating > 0)
                     Chip(
@@ -1194,7 +1201,6 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
       child: Column(
         children: [
           Stack(
-            clipBehavior: Clip.none,
             children: [
               CircleAvatar(
                 radius: 44,
@@ -1207,16 +1213,6 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
                         color: Colors.blueAccent, size: 46)
                     : null,
               ),
-              if (group.isTeacherVerified)
-                Positioned(
-                  right: -2,
-                  bottom: -2,
-                  child: AvatarCornerBadge(
-                    badgeType: BadgeType.verifiedBatch,
-                    holderName: group.name,
-                    size: 22,
-                  ),
-                ),
               if (_isViewerTeacher)
                 Positioned(
                   right: 0,
@@ -1239,14 +1235,11 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
           const SizedBox(height: 12),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
-            mainAxisSize: MainAxisSize.min,
             children: [
               Flexible(
                 child: Text(
                   group.name,
                   textAlign: TextAlign.center,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.bold,
@@ -1254,14 +1247,15 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
                   ),
                 ),
               ),
-              const SizedBox(width: 5),
-              TeacherBadgesRow(
-                teacherName: group.name,
-                isVerified: group.isTeacherVerified,
-                hasGoldenBadge: group.hasGoldenBadge,
-                qualityBadge: BadgeType.verifiedBatch,
-                badgeSize: 20,
-              ),
+              if (group.isTeacherVerified) ...[
+                const SizedBox(width: 5),
+                const Icon(Icons.verified, color: Colors.blueAccent, size: 19),
+              ],
+              if (group.hasGoldenBadge) ...[
+                const SizedBox(width: 4),
+                const Icon(Icons.workspace_premium,
+                    color: Colors.amber, size: 20),
+              ],
             ],
           ),
           const SizedBox(height: 4),
@@ -1431,7 +1425,6 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Row(
-                        mainAxisSize: MainAxisSize.min,
                         children: [
                           Flexible(
                             child: Text(
@@ -1445,16 +1438,16 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
                               ),
                             ),
                           ),
-                          const SizedBox(width: 4),
-                          TeacherBadgesRow(
-                            teacherName: tName,
-                            isVerified: group.isTeacherVerified,
-                            hasGoldenBadge: group.hasGoldenBadge,
-                            qualityBadge: BadgeTierResolver.resolveAcademicQualityBadge({
-                              'averageRating': group.teacherRating,
-                            }),
-                            badgeSize: 18,
-                          ),
+                          if (group.isTeacherVerified) ...[
+                            const SizedBox(width: 4),
+                            const Icon(Icons.verified,
+                                color: Colors.blueAccent, size: 16),
+                          ],
+                          if (group.hasGoldenBadge) ...[
+                            const SizedBox(width: 4),
+                            const Icon(Icons.workspace_premium,
+                                color: Colors.amber, size: 17),
+                          ],
                         ],
                       ),
                       const SizedBox(height: 2),
