@@ -105,7 +105,7 @@ class _LoginScreenState extends State<LoginScreen> {
           await googleUser.authentication;
 
       if (googleAuth.idToken == null && googleAuth.accessToken == null) {
-        _showError('Failed to retrieve Google authentication token.');
+        _showError('Google Sign-In failed. Please try again.');
         return;
       }
 
@@ -121,17 +121,10 @@ class _LoginScreenState extends State<LoginScreen> {
       if (user != null) {
         await _checkAndNavigateUser(user);
       }
-    } on FirebaseAuthException catch (e) {
-      _showError(e.message ?? 'Firebase authentication failed.');
-    } on PlatformException catch (e) {
-      final String msg = e.message ?? '';
-      if (msg.contains('10:') || e.code == 'sign_in_failed') {
-        _showError(
-          'Google Sign-In configuration error (Code 10). Please update google-services.json with your signing key SHA-1 in Firebase.',
-        );
-      } else {
-        _showError(msg.isNotEmpty ? msg : 'Google Sign-In failed.');
-      }
+    } on FirebaseAuthException {
+      _showError('Google Sign-In failed. Please try again.');
+    } on PlatformException {
+      _showError('Google Sign-In failed. Please try again.');
     } catch (e) {
       _showError('Google Sign-In failed. Please try again.');
     } finally {
