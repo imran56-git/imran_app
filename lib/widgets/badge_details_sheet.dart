@@ -434,7 +434,7 @@ class BadgeDetailsSheet extends StatelessWidget {
     String? subjectName,
   }) {
     final String cleanName =
-        holderName.trim().isEmpty ? 'This Educator' : holderName.trim();
+        holderName.trim().isEmpty ? 'This Group' : holderName.trim();
     return showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -773,7 +773,9 @@ class BadgeDetailsSheet extends StatelessWidget {
                       Align(
                         alignment: Alignment.centerLeft,
                         child: Text(
-                          'WHY ${holderName.toUpperCase()} HOLDS THIS DISTINCTION',
+                          badgeType == BadgeType.verifiedBatch
+                              ? 'WHY ${holderName.toUpperCase()} IS A VERIFIED BATCH'
+                              : 'WHY ${holderName.toUpperCase()} HOLDS THIS DISTINCTION',
                           style: const TextStyle(
                             color: Color(0xFF64748B),
                             fontSize: 11,
@@ -901,6 +903,10 @@ class _BadgeSpec {
     required this.borderTint,
     required this.pillars,
   });
+}
+
+class _Badge_Pillar_Alias {
+  // keeping alias clean
 }
 
 class _BadgePillar {
