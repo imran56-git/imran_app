@@ -266,6 +266,7 @@ class InteractiveBadgeIcon extends StatelessWidget {
       width: size,
       height: size,
       fit: BoxFit.contain,
+      filterQuality: FilterQuality.high,
       errorBuilder: (_, __, ___) => Icon(
         Icons.workspace_premium_rounded,
         color: const Color(0xFFD97706),
@@ -334,7 +335,8 @@ class TeacherBadgesRow extends StatelessWidget {
       return const SizedBox.shrink();
     }
 
-    final bool showPill = showVerifiedTextWhenSingle && totalBadges == 1 && isVerified;
+    final bool showPill =
+        showVerifiedTextWhenSingle && totalBadges == 1 && isVerified;
 
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -659,7 +661,7 @@ class BadgeDetailsSheet extends StatelessWidget {
         filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
         child: Container(
           constraints: BoxConstraints(
-            maxHeight: MediaQuery.of(context).size.height * 0.86,
+            maxHeight: MediaQuery.of(context).size.height * 0.88,
           ),
           decoration: const BoxDecoration(
             color: Colors.white,
@@ -709,24 +711,31 @@ class BadgeDetailsSheet extends StatelessWidget {
                         child: Column(
                           children: [
                             Container(
-                              padding: const EdgeInsets.all(16),
+                              padding: const EdgeInsets.all(12),
                               decoration: BoxDecoration(
                                 shape: BoxShape.circle,
                                 color: Colors.white.withOpacity(0.14),
                                 border: Border.all(
-                                  color: Colors.white.withOpacity(0.32),
-                                  width: 1.5,
+                                  color: Colors.white.withOpacity(0.35),
+                                  width: 1.8,
                                 ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.18),
+                                    blurRadius: 16,
+                                    offset: const Offset(0, 6),
+                                  ),
+                                ],
                               ),
                               child: BottomToTopShimmer(
                                 duration: const Duration(milliseconds: 2200),
                                 child: InteractiveBadgeIcon._buildRawBadgeGraphic(
                                   badgeType,
-                                  58,
+                                  96,
                                 ),
                               ),
                             ),
-                            const SizedBox(height: 14),
+                            const SizedBox(height: 16),
                             Container(
                               padding: const EdgeInsets.symmetric(
                                   horizontal: 11, vertical: 4),
@@ -903,10 +912,6 @@ class _BadgeSpec {
     required this.borderTint,
     required this.pillars,
   });
-}
-
-class _Badge_Pillar_Alias {
-  // keeping alias clean
 }
 
 class _BadgePillar {
