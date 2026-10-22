@@ -1,4 +1,4 @@
-package com.example.fnid_your_best_teacher_today
+package com.imran.findyourbestteacher
 
 import io.flutter.embedding.android.FlutterActivity
 
