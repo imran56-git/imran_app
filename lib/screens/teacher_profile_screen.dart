@@ -17,6 +17,7 @@ import '../services/follow_service.dart';
 import '../utils/image_utils.dart';
 import '../widgets/follow_button.dart';
 import '../widgets/success_toast.dart';
+import '../widgets/badge_details_sheet.dart';
 import 'diary_history_screen.dart';
 import 'live/join_live_screen.dart';
 import 'location_picker_screen.dart';
@@ -1789,6 +1790,20 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
         ? _nameController.text.trim()
         : 'T';
 
+    final bool isVerified = BadgeTierResolver.isTeacherVerified(teacherData);
+    final bool hasGolden = BadgeTierResolver.hasGoldenTenureBadge(teacherData);
+    final BadgeType? qualityBadge =
+        BadgeTierResolver.resolveAcademicQualityBadge(teacherData);
+
+    BadgeType? cornerBadgeType;
+    if (qualityBadge != null) {
+      cornerBadgeType = qualityBadge;
+    } else if (hasGolden) {
+      cornerBadgeType = BadgeType.golden;
+    } else if (isVerified) {
+      cornerBadgeType = BadgeType.verified;
+    }
+
     return GestureDetector(
       onTap: isEditing
           ? () async {
@@ -1855,6 +1870,16 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                   size: 16,
                 ),
               ),
+            )
+          else if (cornerBadgeType != null)
+            Positioned(
+              bottom: 2,
+              right: 4,
+              child: AvatarCornerBadge(
+                badgeType: cornerBadgeType,
+                holderName: nameText,
+                size: 24,
+              ),
             ),
         ],
       ),
@@ -1862,17 +1887,19 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
   }
 
   Widget _buildNameWithBadge() {
-    final bool isVerified = teacherData?['isVerified'] == true ||
-        teacherData?['status'] == 'approved';
-    final bool hasGolden = teacherData?['hasGoldenBadge'] == true;
+    final String teacherName =
+        _nameController.text.isEmpty ? "No Name" : _nameController.text;
 
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
+      mainAxisSize: MainAxisSize.min,
       children: [
         Flexible(
           child: Text(
-            _nameController.text.isEmpty ? "No Name" : _nameController.text,
+            teacherName,
             textAlign: TextAlign.center,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: const TextStyle(
               fontSize: 23,
               fontWeight: FontWeight.w900,
@@ -1881,18 +1908,13 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
             ),
           ),
         ),
-        if (isVerified)
-          const Padding(
-            padding: EdgeInsets.only(left: 6),
-            child: Icon(Icons.verified_rounded,
-                color: Color(0xFF0284C7), size: 22),
-          ),
-        if (hasGolden)
-          const Padding(
-            padding: EdgeInsets.only(left: 4),
-            child: Icon(Icons.workspace_premium_rounded,
-                color: Color(0xFFF59E0B), size: 22),
-          ),
+        const SizedBox(width: 6),
+        TeacherBadgesRow.fromMap(
+          teacherData: teacherData,
+          fallbackName: teacherName,
+          badgeSize: 22,
+          showVerifiedTextWhenSingle: true,
+        ),
       ],
     );
   }
