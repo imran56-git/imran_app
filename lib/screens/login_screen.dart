@@ -22,7 +22,10 @@ class _LoginScreenState extends State<LoginScreen> {
 
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+
   final GoogleSignIn _googleSignIn = GoogleSignIn(
+    serverClientId:
+        '575213013835-6vmhuc5tc13il0fla1ifru2d3a0o7ups.apps.googleusercontent.com',
     scopes: <String>['email', 'profile'],
   );
 
