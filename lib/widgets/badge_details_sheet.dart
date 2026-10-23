@@ -163,6 +163,168 @@ class _BottomToTopShimmerState extends State<BottomToTopShimmer>
   }
 }
 
+class FullscreenBadgeViewer extends StatelessWidget {
+  final BadgeType badgeType;
+  final String title;
+  final String tag;
+
+  const FullscreenBadgeViewer({
+    super.key,
+    required this.badgeType,
+    required this.title,
+    required this.tag,
+  });
+
+  static void show(
+    BuildContext context, {
+    required BadgeType badgeType,
+    required String title,
+    required String tag,
+  }) {
+    Navigator.of(context, rootNavigator: true).push(
+      PageRouteBuilder(
+        opaque: false,
+        barrierDismissible: true,
+        transitionDuration: const Duration(milliseconds: 280),
+        reverseTransitionDuration: const Duration(milliseconds: 240),
+        pageBuilder: (context, animation, secondaryAnimation) {
+          return FullscreenBadgeViewer(
+            badgeType: badgeType,
+            title: title,
+            tag: tag,
+          );
+        },
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          return FadeTransition(
+            opacity: animation,
+            child: child,
+          );
+        },
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      body: Stack(
+        children: [
+          GestureDetector(
+            onTap: () => Navigator.pop(context),
+            child: Container(
+              color: Colors.black.withOpacity(0.92),
+              width: double.infinity,
+              height: double.infinity,
+            ),
+          ),
+          SafeArea(
+            child: Column(
+              children: [
+                Align(
+                  alignment: Alignment.topRight,
+                  child: Padding(
+                    padding: const EdgeInsets.only(top: 10, right: 14),
+                    child: Material(
+                      color: Colors.transparent,
+                      child: IconButton(
+                        icon: const Icon(
+                          Icons.close_rounded,
+                          color: Colors.white,
+                          size: 30,
+                        ),
+                        onPressed: () => Navigator.pop(context),
+                      ),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: Center(
+                    child: InteractiveViewer(
+                      panEnabled: true,
+                      boundaryMargin: const EdgeInsets.all(40),
+                      minScale: 0.8,
+                      maxScale: 3.5,
+                      child: Hero(
+                        tag: 'fullscreen_badge_${badgeType.name}',
+                        child: Container(
+                          padding: const EdgeInsets.all(24),
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.65),
+                                blurRadius: 40,
+                                spreadRadius: 10,
+                              ),
+                            ],
+                          ),
+                          child: InteractiveBadgeIcon._buildRawBadgeGraphic(
+                            badgeType,
+                            240,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 0, 24, 30),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.14),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: Colors.white.withOpacity(0.24),
+                          ),
+                        ),
+                        child: Text(
+                          tag,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.8,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        title,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 22,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: -0.3,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Pinch to zoom • Tap anywhere to close',
+                        style: TextStyle(
+                          color: Colors.white.withOpacity(0.65),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class InteractiveBadgeIcon extends StatelessWidget {
   final BadgeType badgeType;
   final String holderName;
@@ -710,28 +872,45 @@ class BadgeDetailsSheet extends StatelessWidget {
                         ),
                         child: Column(
                           children: [
-                            Container(
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: Colors.white.withOpacity(0.14),
-                                border: Border.all(
-                                  color: Colors.white.withOpacity(0.35),
-                                  width: 1.8,
-                                ),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withOpacity(0.18),
-                                    blurRadius: 16,
-                                    offset: const Offset(0, 6),
+                            GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onTap: () {
+                                HapticFeedback.mediumImpact();
+                                FullscreenBadgeViewer.show(
+                                  context,
+                                  badgeType: badgeType,
+                                  title: spec.title,
+                                  tag: spec.tag,
+                                );
+                              },
+                              child: Hero(
+                                tag: 'fullscreen_badge_${badgeType.name}',
+                                child: Container(
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: Colors.white.withOpacity(0.14),
+                                    border: Border.all(
+                                      color: Colors.white.withOpacity(0.35),
+                                      width: 1.8,
+                                    ),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.black.withOpacity(0.18),
+                                        blurRadius: 16,
+                                        offset: const Offset(0, 6),
+                                      ),
+                                    ],
                                   ),
-                                ],
-                              ),
-                              child: BottomToTopShimmer(
-                                duration: const Duration(milliseconds: 2200),
-                                child: InteractiveBadgeIcon._buildRawBadgeGraphic(
-                                  badgeType,
-                                  96,
+                                  child: BottomToTopShimmer(
+                                    duration:
+                                        const Duration(milliseconds: 2200),
+                                    child: InteractiveBadgeIcon
+                                        ._buildRawBadgeGraphic(
+                                      badgeType,
+                                      96,
+                                    ),
+                                  ),
                                 ),
                               ),
                             ),
