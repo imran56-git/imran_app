@@ -60,6 +60,7 @@ class _ChatScreenState extends State<ChatScreen>
   Stream<List<MessageModel>>? _messageStream;
   Stream<Map<String, dynamic>>? _userStatusStream;
   Stream<DocumentSnapshot>? _typingDocStream;
+  Stream<BlockStatus>? _blockStatusStream;
   List<MessageModel> _latestMessages = [];
 
   String? _replyToMessageId;
@@ -108,6 +109,10 @@ class _ChatScreenState extends State<ChatScreen>
           .doc(_activeChatRoomId)
           .snapshots()
           .handleError((error) => log('Typing Stream Error: $error'));
+      _blockStatusStream = _chatMenuService.getBlockStatusStream(
+        widget.currentUserId,
+        widget.receiverId,
+      );
     }
 
     _bounceController = AnimationController(
@@ -691,6 +696,114 @@ class _ChatScreenState extends State<ChatScreen>
     }
   }
 
+  void _confirmUnblockUser() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Row(
+          children: [
+            Icon(Icons.lock_open_rounded, color: Color(0xFF10B981), size: 22),
+            SizedBox(width: 8),
+            Text(
+              'Unblock User?',
+              style: TextStyle(
+                fontWeight: FontWeight.w800,
+                fontSize: 18,
+                color: _primaryNavy,
+              ),
+            ),
+          ],
+        ),
+        content: Text(
+          'Are you sure you want to unblock ${widget.receiverName}? You will be able to send and receive messages again.',
+          style: const TextStyle(
+            color: Color(0xFF475569),
+            fontSize: 14,
+            height: 1.4,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text(
+              'Cancel',
+              style: TextStyle(
+                color: Color(0xFF64748B),
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF10B981),
+              foregroundColor: Colors.white,
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            onPressed: () async {
+              Navigator.pop(ctx);
+              await _chatMenuService.unblockUser(
+                widget.currentUserId,
+                widget.receiverId,
+              );
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('User unblocked successfully'),
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+              }
+            },
+            child: const Text(
+              'Unblock',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _confirmBlockUser() {
+    showDialog(
+      context: context,
+      builder: (context) => BlockDialog(
+        userName: widget.receiverName,
+        onConfirm: () async {
+          await _chatMenuService.blockUser(
+            widget.currentUserId,
+            widget.receiverId,
+          );
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('User blocked successfully'),
+                behavior: SnackBarBehavior.floating,
+              ),
+            );
+          }
+        },
+      ),
+    );
+  }
+
+  void _handleMenuActionWithBlock(ChatMenuAction action, bool isBlockedByMe) {
+    if (action == ChatMenuAction.blockUser) {
+      if (isBlockedByMe) {
+        _confirmUnblockUser();
+      } else {
+        _confirmBlockUser();
+      }
+    } else {
+      _handleMenuAction(action);
+    }
+  }
+
   void _handleMenuAction(ChatMenuAction action) {
     switch (action) {
       case ChatMenuAction.viewProfile:
@@ -698,21 +811,7 @@ class _ChatScreenState extends State<ChatScreen>
         break;
 
       case ChatMenuAction.blockUser:
-        showDialog(
-          context: context,
-          builder: (context) => BlockDialog(
-            userName: widget.receiverName,
-            onConfirm: () async {
-              await _chatMenuService.blockUser(
-                  widget.currentUserId, widget.receiverId);
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('User blocked successfully')),
-                );
-              }
-            },
-          ),
-        );
+        _confirmBlockUser();
         break;
 
       case ChatMenuAction.reportUser:
@@ -1320,7 +1419,27 @@ class _ChatScreenState extends State<ChatScreen>
               onPressed: _changeChatThemeFromGallery,
             ),
             if (!_isOfficialChannel)
-              ChatPopupMenu(onSelected: _handleMenuAction),
+              StreamBuilder<BlockStatus>(
+                stream: _blockStatusStream,
+                initialData: const BlockStatus(
+                  isBlockedByMe: false,
+                  isBlockedByOther: false,
+                ),
+                builder: (context, blockSnap) {
+                  final blockStatus = blockSnap.data ??
+                      const BlockStatus(
+                        isBlockedByMe: false,
+                        isBlockedByOther: false,
+                      );
+                  return ChatPopupMenu(
+                    isBlockedByMe: blockStatus.isBlockedByMe,
+                    onSelected: (action) => _handleMenuActionWithBlock(
+                      action,
+                      blockStatus.isBlockedByMe,
+                    ),
+                  );
+                },
+              ),
             const SizedBox(width: 4),
           ],
         ),
@@ -1720,98 +1839,213 @@ class _ChatScreenState extends State<ChatScreen>
                       ),
                     )
                   else
-                    DragTarget<MessageModel>(
-                      onWillAcceptWithDetails: (details) {
-                        HapticFeedback.selectionClick();
-                        setState(() => _isDragHoveringInput = true);
-                        return true;
-                      },
-                      onLeave: (_) {
-                        setState(() => _isDragHoveringInput = false);
-                      },
-                      onAcceptWithDetails: (details) {
-                        _didDropOnTarget = true;
-                        setState(() => _isDragHoveringInput = false);
-                        _triggerReply(details.data);
-                      },
-                      builder: (context, candidateData, rejectedData) {
-                        return Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            AnimatedContainer(
-                              duration: const Duration(milliseconds: 180),
-                              height: _isDragHoveringInput ? 34 : 0,
-                              width: double.infinity,
-                              color: _primaryNavy,
-                              alignment: Alignment.center,
-                              child: _isDragHoveringInput
-                                  ? const Row(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.center,
-                                      children: [
-                                        Icon(Icons.reply_rounded,
-                                            color: Colors.white, size: 17),
-                                        SizedBox(width: 6),
-                                        Text(
-                                          'Release here to Reply',
-                                          style: TextStyle(
-                                            color: Colors.white,
-                                            fontWeight: FontWeight.bold,
-                                            fontSize: 12.5,
-                                          ),
-                                        ),
-                                      ],
-                                    )
-                                  : null,
-                            ),
-                            AnimatedScale(
-                              scale: _isDragHoveringInput ? 1.04 : 1.0,
-                              duration: const Duration(milliseconds: 220),
-                              curve: Curves.elasticOut,
-                              child: ScaleTransition(
-                                scale: _bounceAnimation,
-                                child: AnimatedContainer(
-                                  duration: const Duration(milliseconds: 200),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white,
-                                    border: _isDragHoveringInput
-                                        ? Border.all(
-                                            color: _accentBlue, width: 2.2)
-                                        : null,
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: _isDragHoveringInput
-                                            ? _accentBlue.withOpacity(0.28)
-                                            : Colors.black.withOpacity(0.04),
-                                        blurRadius:
-                                            _isDragHoveringInput ? 18 : 10,
-                                        offset: const Offset(0, -3),
-                                      ),
-                                    ],
-                                  ),
-                                  child: ChatInputBar(
-                                    chatRoomId: _activeChatRoomId,
-                                    senderId: widget.currentUserId,
-                                    receiverId: widget.receiverId,
-                                    replyToMessageId: _replyToMessageId,
-                                    replyToText: _replyToText,
-                                    onCancelReply: () {
-                                      setState(() {
-                                        _replyToMessageId = null;
-                                        _replyToText = null;
-                                      });
-                                    },
-                                    onTypingChanged: (isTyping) {
-                                      _chatService.updateTypingStatus(
-                                          _activeChatRoomId,
-                                          widget.currentUserId,
-                                          isTyping);
-                                    },
-                                  ),
+                    StreamBuilder<BlockStatus>(
+                      stream: _blockStatusStream,
+                      initialData: const BlockStatus(
+                        isBlockedByMe: false,
+                        isBlockedByOther: false,
+                      ),
+                      builder: (context, blockSnap) {
+                        final status = blockSnap.data ??
+                            const BlockStatus(
+                              isBlockedByMe: false,
+                              isBlockedByOther: false,
+                            );
+
+                        if (status.isBlockedByMe) {
+                          return Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 16, vertical: 14),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFEF2F2),
+                              border: const Border(
+                                top: BorderSide(color: Color(0xFFFECACA)),
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.04),
+                                  blurRadius: 8,
+                                  offset: const Offset(0, -2),
                                 ),
+                              ],
+                            ),
+                            child: SafeArea(
+                              top: false,
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  const Icon(Icons.block_rounded,
+                                      size: 19, color: Color(0xFFDC2626)),
+                                  const SizedBox(width: 8),
+                                  const Flexible(
+                                    child: Text(
+                                      'You blocked this contact.',
+                                      style: TextStyle(
+                                        color: Color(0xFF991B1B),
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  InkWell(
+                                    borderRadius: BorderRadius.circular(10),
+                                    onTap: _confirmUnblockUser,
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 12, vertical: 6),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFDC2626),
+                                        borderRadius:
+                                            BorderRadius.circular(10),
+                                      ),
+                                      child: const Text(
+                                        'Unblock',
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 12.5,
+                                          fontWeight: FontWeight.w800,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
-                          ],
+                          );
+                        }
+
+                        if (status.isBlockedByOther) {
+                          return Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 16, vertical: 14),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF1F5F9),
+                              border: const Border(
+                                top: BorderSide(color: Color(0xFFE2E8F0)),
+                              ),
+                            ),
+                            child: const SafeArea(
+                              top: false,
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(Icons.info_outline_rounded,
+                                      size: 18, color: Color(0xFF64748B)),
+                                  SizedBox(width: 8),
+                                  Text(
+                                    'You cannot send messages to this contact.',
+                                    style: TextStyle(
+                                      color: Color(0xFF475569),
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        }
+
+                        return DragTarget<MessageModel>(
+                          onWillAcceptWithDetails: (details) {
+                            HapticFeedback.selectionClick();
+                            setState(() => _isDragHoveringInput = true);
+                            return true;
+                          },
+                          onLeave: (_) {
+                            setState(() => _isDragHoveringInput = false);
+                          },
+                          onAcceptWithDetails: (details) {
+                            _didDropOnTarget = true;
+                            setState(() => _isDragHoveringInput = false);
+                            _triggerReply(details.data);
+                          },
+                          builder: (context, candidateData, rejectedData) {
+                            return Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                AnimatedContainer(
+                                  duration: const Duration(milliseconds: 180),
+                                  height: _isDragHoveringInput ? 34 : 0,
+                                  width: double.infinity,
+                                  color: _primaryNavy,
+                                  alignment: Alignment.center,
+                                  child: _isDragHoveringInput
+                                      ? const Row(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
+                                          children: [
+                                            Icon(Icons.reply_rounded,
+                                                color: Colors.white, size: 17),
+                                            SizedBox(width: 6),
+                                            Text(
+                                              'Release here to Reply',
+                                              style: TextStyle(
+                                                color: Colors.white,
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 12.5,
+                                              ),
+                                            ),
+                                          ],
+                                        )
+                                      : null,
+                                ),
+                                AnimatedScale(
+                                  scale: _isDragHoveringInput ? 1.04 : 1.0,
+                                  duration: const Duration(milliseconds: 220),
+                                  curve: Curves.elasticOut,
+                                  child: ScaleTransition(
+                                    scale: _bounceAnimation,
+                                    child: AnimatedContainer(
+                                      duration:
+                                          const Duration(milliseconds: 200),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white,
+                                        border: _isDragHoveringInput
+                                            ? Border.all(
+                                                color: _accentBlue, width: 2.2)
+                                            : null,
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: _isDragHoveringInput
+                                                ? _accentBlue.withOpacity(0.28)
+                                                : Colors.black
+                                                    .withOpacity(0.04),
+                                            blurRadius:
+                                                _isDragHoveringInput ? 18 : 10,
+                                            offset: const Offset(0, -3),
+                                          ),
+                                        ],
+                                      ),
+                                      child: ChatInputBar(
+                                        chatRoomId: _activeChatRoomId,
+                                        senderId: widget.currentUserId,
+                                        receiverId: widget.receiverId,
+                                        replyToMessageId: _replyToMessageId,
+                                        replyToText: _replyToText,
+                                        onCancelReply: () {
+                                          setState(() {
+                                            _replyToMessageId = null;
+                                            _replyToText = null;
+                                          });
+                                        },
+                                        onTypingChanged: (isTyping) {
+                                          _chatService.updateTypingStatus(
+                                              _activeChatRoomId,
+                                              widget.currentUserId,
+                                              isTyping);
+                                        },
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            );
+                          },
                         );
                       },
                     ),
