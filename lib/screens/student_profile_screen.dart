@@ -15,6 +15,7 @@ import '../animations/screen_pull_controller.dart';
 import '../routes/app_routes.dart';
 import '../utils/image_utils.dart';
 import '../widgets/success_toast.dart';
+import 'blocked_users_screen.dart';
 import 'notification_screen.dart';
 import 'privacy_policy_screen.dart';
 import 'help_center_screen.dart';
@@ -48,8 +49,12 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
       _customSubjectController = TextEditingController();
 
   late AnimationController _menuAnimController;
+  late Animation<double> _menuScaleAnimation;
+  late Animation<double> _menuFadeAnimation;
+
   StreamSubscription<QuerySnapshot>? _notifSubscription;
   bool _isMenuExpanded = false;
+  bool _isMoreExpanded = false;
   bool hasUnreadNotifications = false;
 
   Map<String, dynamic>? studentData;
@@ -108,7 +113,17 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
 
     _menuAnimController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 320),
+      duration: const Duration(milliseconds: 240),
+    );
+
+    _menuScaleAnimation = CurvedAnimation(
+      parent: _menuAnimController,
+      curve: Curves.easeOutBack,
+    );
+
+    _menuFadeAnimation = CurvedAnimation(
+      parent: _menuAnimController,
+      curve: Curves.easeIn,
     );
   }
 
@@ -407,7 +422,10 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
 
   void _openMenu() {
     if (_isMenuExpanded) return;
-    setState(() => _isMenuExpanded = true);
+    setState(() {
+      _isMenuExpanded = true;
+      _isMoreExpanded = false;
+    });
     _menuAnimController.forward();
   }
 
@@ -415,7 +433,10 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
     if (!_isMenuExpanded) return;
     _menuAnimController.reverse().then((_) {
       if (mounted) {
-        setState(() => _isMenuExpanded = false);
+        setState(() {
+          _isMenuExpanded = false;
+          _isMoreExpanded = false;
+        });
       }
     });
   }
@@ -439,24 +460,251 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
     );
   }
 
-  Widget _buildStaggeredMenuItem({
-    required int index,
-    required int totalItems,
-    required Widget child,
+  Widget _buildDropdownActionRow({
+    required IconData icon,
+    required String title,
+    required VoidCallback onTap,
+    Color iconColor = Colors.white,
+    Color textColor = Colors.white,
+    Widget? trailing,
   }) {
-    final double start = (index * 0.08).clamp(0.0, 0.6);
-    final double end = (start + 0.35).clamp(0.0, 1.0);
-
-    final Animation<double> itemAnimation = CurvedAnimation(
-      parent: _menuAnimController,
-      curve: Interval(start, end, curve: Curves.easeOutBack),
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+          child: Row(
+            children: [
+              Icon(icon, color: iconColor, size: 20),
+              const SizedBox(width: 13),
+              Expanded(
+                child: Text(
+                  title,
+                  style: TextStyle(
+                    color: textColor,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.1,
+                  ),
+                ),
+              ),
+              if (trailing != null) trailing,
+            ],
+          ),
+        ),
+      ),
     );
+  }
 
-    return ScaleTransition(
-      scale: itemAnimation,
-      child: FadeTransition(
-        opacity: itemAnimation,
-        child: child,
+  Widget _buildVerticalGlassDropdown() {
+    final String targetUid = widget.currentUserId.isNotEmpty
+        ? widget.currentUserId
+        : (_auth.currentUser?.uid ?? "");
+
+    return Positioned(
+      top: 6,
+      right: 14,
+      child: ScaleTransition(
+        alignment: Alignment.topRight,
+        scale: _menuScaleAnimation,
+        child: FadeTransition(
+          opacity: _menuFadeAnimation,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(22),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+              child: Container(
+                width: 240,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0F172A).withOpacity(0.88),
+                  borderRadius: BorderRadius.circular(22),
+                  border: Border.all(
+                    color: Colors.white.withOpacity(0.24),
+                    width: 1.2,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.35),
+                      blurRadius: 22,
+                      offset: const Offset(0, 10),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          _buildDropdownActionRow(
+                            icon: Icons.notifications_none_rounded,
+                            title: 'Notifications',
+                            trailing: hasUnreadNotifications
+                                ? Container(
+                                    width: 8,
+                                    height: 8,
+                                    decoration: const BoxDecoration(
+                                      color: Color(0xFFEF4444),
+                                      shape: BoxShape.circle,
+                                    ),
+                                  )
+                                : null,
+                            onTap: () {
+                              _closeMenu();
+                              Navigator.pushNamed(
+                                context,
+                                AppRoutes.notification,
+                                arguments: {
+                                  'destination': const NotificationScreen(),
+                                },
+                              );
+                            },
+                          ),
+                          _buildDropdownActionRow(
+                            icon: Icons.edit_rounded,
+                            title: 'Edit Profile',
+                            onTap: () {
+                              _closeMenu();
+                              setState(() {
+                                isEditing = true;
+                                _triggerAnimation = !_triggerAnimation;
+                              });
+                            },
+                          ),
+                          _buildDropdownActionRow(
+                            icon: Icons.payment_rounded,
+                            title: 'Payment Ticket',
+                            onTap: () {
+                              _closeMenu();
+                              _showServiceUnavailableDialog();
+                            },
+                          ),
+                          Divider(
+                            height: 1,
+                            color: Colors.white.withOpacity(0.14),
+                            indent: 14,
+                            endIndent: 14,
+                          ),
+                          _buildDropdownActionRow(
+                            icon: Icons.tune_rounded,
+                            title: 'More',
+                            trailing: Icon(
+                              _isMoreExpanded
+                                  ? Icons.keyboard_arrow_up_rounded
+                                  : Icons.keyboard_arrow_down_rounded,
+                              color: Colors.white70,
+                              size: 20,
+                            ),
+                            onTap: () {
+                              setState(() {
+                                _isMoreExpanded = !_isMoreExpanded;
+                              });
+                            },
+                          ),
+                          AnimatedCrossFade(
+                            firstChild: const SizedBox.shrink(),
+                            secondChild: Container(
+                              margin: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 3),
+                              padding: const EdgeInsets.symmetric(vertical: 2),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.06),
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  _buildDropdownActionRow(
+                                    icon: Icons.person_off_rounded,
+                                    title: 'Blocked List',
+                                    iconColor: const Color(0xFFF87171),
+                                    onTap: () {
+                                      _closeMenu();
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) => BlockedUsersScreen(
+                                            currentUserId: targetUid,
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                  _buildDropdownActionRow(
+                                    icon: Icons.support_agent_rounded,
+                                    title: 'Help Center',
+                                    onTap: () {
+                                      _closeMenu();
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) =>
+                                              const HelpCenterScreen(),
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                  _buildDropdownActionRow(
+                                    icon: Icons.privacy_tip_outlined,
+                                    title: 'Privacy Policy',
+                                    onTap: () {
+                                      _closeMenu();
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) =>
+                                              const PrivacyPolicyScreen(),
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                  _buildDropdownActionRow(
+                                    icon: Icons.delete_forever_rounded,
+                                    title: 'Delete Account',
+                                    iconColor: const Color(0xFFEF4444),
+                                    textColor: const Color(0xFFEF4444),
+                                    onTap: () {
+                                      _closeMenu();
+                                      _handleDeleteAccount();
+                                    },
+                                  ),
+                                ],
+                              ),
+                            ),
+                            crossFadeState: _isMoreExpanded
+                                ? CrossFadeState.showSecond
+                                : CrossFadeState.showFirst,
+                            duration: const Duration(milliseconds: 200),
+                          ),
+                          Divider(
+                            height: 1,
+                            color: Colors.white.withOpacity(0.14),
+                            indent: 14,
+                            endIndent: 14,
+                          ),
+                          _buildDropdownActionRow(
+                            icon: Icons.logout_rounded,
+                            title: 'Sign Out',
+                            iconColor: const Color(0xFFFBBF24),
+                            textColor: const Color(0xFFFBBF24),
+                            onTap: () {
+                              _closeMenu();
+                              _handleSignOut();
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -514,229 +762,112 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
           ),
         ),
         actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 12),
-            child: _buildActionHeaderBar(),
-          ),
+          if (isOwnProfile)
+            Padding(
+              padding: const EdgeInsets.only(right: 14),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: _isMenuExpanded
+                      ? Colors.white.withOpacity(0.18)
+                      : Colors.black.withOpacity(0.28),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.white.withOpacity(0.22)),
+                ),
+                child: IconButton(
+                  visualDensity: VisualDensity.compact,
+                  icon: Icon(
+                    _isMenuExpanded
+                        ? Icons.close_rounded
+                        : Icons.more_vert_rounded,
+                    color: Colors.white,
+                    size: 22,
+                  ),
+                  tooltip: 'Menu',
+                  onPressed: () {
+                    if (_isMenuExpanded) {
+                      _closeMenu();
+                    } else {
+                      _openMenu();
+                    }
+                  },
+                ),
+              ),
+            )
+          else
+            Padding(
+              padding: const EdgeInsets.only(right: 14),
+              child: GestureDetector(
+                onTapDown: (details) =>
+                    _openNotifications(details.globalPosition),
+                child: const Icon(
+                  Icons.notifications_none_rounded,
+                  color: Colors.white,
+                  size: 22,
+                ),
+              ),
+            ),
         ],
       ),
-      body: GestureDetector(
-        behavior: HitTestBehavior.translucent,
-        onTapDown: (_) {
-          if (_isMenuExpanded) _closeMenu();
-        },
-        child: isLoading
-            ? const Center(
-                child: CircularProgressIndicator(
-                  color: _brandBlue,
-                  strokeWidth: 3.5,
-                ),
-              )
-            : NotificationListener<ScrollNotification>(
-                onNotification: (notification) {
-                  if (_isMenuExpanded &&
-                      notification is ScrollStartNotification) {
-                    _closeMenu();
-                  }
-                  return false;
-                },
-                child: SingleChildScrollView(
-                  physics: const ClampingScrollPhysics(),
-                  child: AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 300),
-                    child: Container(
-                      key: ValueKey(_triggerAnimation),
-                      color: _scaffoldBg,
-                      child: Column(
-                        children: [
-                          _buildHeader(),
-                          Padding(
-                            padding: const EdgeInsets.fromLTRB(18, 16, 18, 28),
-                            child: isEditing
-                                ? _buildEditForm()
-                                : _buildProfileDetails(),
+      body: Stack(
+        children: [
+          GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onTapDown: (_) {
+              if (_isMenuExpanded) _closeMenu();
+            },
+            child: isLoading
+                ? const Center(
+                    child: CircularProgressIndicator(
+                      color: _brandBlue,
+                      strokeWidth: 3.5,
+                    ),
+                  )
+                : NotificationListener<ScrollNotification>(
+                    onNotification: (notification) {
+                      if (_isMenuExpanded &&
+                          notification is ScrollStartNotification) {
+                        _closeMenu();
+                      }
+                      return false;
+                    },
+                    child: SingleChildScrollView(
+                      physics: const ClampingScrollPhysics(),
+                      child: AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 300),
+                        child: Container(
+                          key: ValueKey(_triggerAnimation),
+                          color: _scaffoldBg,
+                          child: Column(
+                            children: [
+                              _buildHeader(),
+                              Padding(
+                                padding:
+                                    const EdgeInsets.fromLTRB(18, 16, 18, 28),
+                                child: isEditing
+                                    ? _buildEditForm()
+                                    : _buildProfileDetails(),
+                              ),
+                            ],
                           ),
-                        ],
+                        ),
                       ),
                     ),
                   ),
-                ),
-              ),
-      ),
-    );
-  }
-
-  Widget _buildNotificationBellIcon() {
-    return GestureDetector(
-      onTapDown: (details) => _openNotifications(details.globalPosition),
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: const BoxDecoration(
-              color: Colors.transparent,
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(
-              Icons.notifications_none_rounded,
-              color: Colors.white,
-              size: 21,
-            ),
           ),
-          if (hasUnreadNotifications)
-            Positioned(
-              right: 6,
-              top: 6,
-              child: Container(
-                width: 8.5,
-                height: 8.5,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFEF4444),
-                  shape: BoxShape.circle,
-                  border: Border.all(color: _primaryNavy, width: 1.5),
+          if (_isMenuExpanded) ...[
+            Positioned.fill(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: _closeMenu,
+                child: Container(
+                  color: Colors.black.withOpacity(0.25),
                 ),
               ),
             ),
+            _buildVerticalGlassDropdown(),
+          ],
         ],
       ),
-    );
-  }
-
-  Widget _buildActionHeaderBar() {
-    if (!isOwnProfile) {
-      return _buildNotificationBellIcon();
-    }
-
-    if (!_isMenuExpanded) {
-      return Container(
-        decoration: BoxDecoration(
-          color: Colors.black.withOpacity(0.28),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.white.withOpacity(0.22)),
-        ),
-        child: IconButton(
-          visualDensity: VisualDensity.compact,
-          icon: const Icon(
-            Icons.more_vert_rounded,
-            color: Colors.white,
-            size: 22,
-          ),
-          tooltip: 'Menu',
-          onPressed: _openMenu,
-        ),
-      );
-    }
-
-    final List<Widget> menuItems = [
-      _buildNotificationBellIcon(),
-      _buildGlassIconButton(
-        icon: Icons.edit_rounded,
-        tooltip: 'Edit Profile',
-        onTap: () {
-          _closeMenu();
-          setState(() {
-            isEditing = true;
-            _triggerAnimation = !_triggerAnimation;
-          });
-        },
-      ),
-      _buildGlassIconButton(
-        icon: Icons.payment_rounded,
-        tooltip: 'Payment Ticket',
-        onTap: () {
-          _closeMenu();
-          _showServiceUnavailableDialog();
-        },
-      ),
-      _buildGlassIconButton(
-        icon: Icons.privacy_tip_outlined,
-        tooltip: 'Privacy Policy',
-        onTap: () {
-          _closeMenu();
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const PrivacyPolicyScreen()),
-          );
-        },
-      ),
-      _buildGlassIconButton(
-        icon: Icons.support_agent_rounded,
-        tooltip: 'Help Center',
-        onTap: () {
-          _closeMenu();
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const HelpCenterScreen()),
-          );
-        },
-      ),
-      _buildGlassIconButton(
-        icon: Icons.logout_rounded,
-        iconColor: Colors.orangeAccent,
-        tooltip: 'Sign Out',
-        onTap: () {
-          _closeMenu();
-          _handleSignOut();
-        },
-      ),
-      _buildGlassIconButton(
-        icon: Icons.delete_forever_rounded,
-        iconColor: Colors.redAccent,
-        tooltip: 'Delete Account',
-        onTap: () {
-          _closeMenu();
-          _handleDeleteAccount();
-        },
-      ),
-    ];
-
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(24),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-          decoration: BoxDecoration(
-            color: Colors.black.withOpacity(0.6),
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(
-              color: Colors.white.withOpacity(0.35),
-              width: 1.1,
-            ),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: List.generate(
-              menuItems.length,
-              (index) => Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 2.0),
-                child: _buildStaggeredMenuItem(
-                  index: index,
-                  totalItems: menuItems.length,
-                  child: menuItems[index],
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildGlassIconButton({
-    required IconData icon,
-    required VoidCallback onTap,
-    required String tooltip,
-    Color iconColor = Colors.white,
-  }) {
-    return IconButton(
-      icon: Icon(icon, color: iconColor, size: 19),
-      tooltip: tooltip,
-      onPressed: onTap,
-      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 4),
-      constraints: const BoxConstraints(minWidth: 32, minHeight: 30),
-      visualDensity: VisualDensity.compact,
     );
   }
 
