@@ -32,6 +32,7 @@ class _GroupListScreenState extends State<GroupListScreen> {
   String _searchQuery = "";
   String _selectedFilter = "all";
   bool _isTeacherRole = false;
+  late String _currentUserName;
 
   StreamSubscription<List<Map<String, dynamic>>>? _noticesSubscription;
   StreamSubscription<QuerySnapshot>? _groupStatusSubscription;
@@ -41,6 +42,7 @@ class _GroupListScreenState extends State<GroupListScreen> {
   @override
   void initState() {
     super.initState();
+    _currentUserName = widget.currentUserName.trim().isEmpty ? 'User' : widget.currentUserName;
     _checkUserRole();
     _listenForRealtimeAndDelayedGroupNotices();
   }
@@ -59,9 +61,16 @@ class _GroupListScreenState extends State<GroupListScreen> {
           .collection('teachers')
           .doc(widget.currentUserId)
           .get();
-      if (teacherDoc.exists) {
+      if (teacherDoc.exists && teacherDoc.data() != null) {
+        final tData = teacherDoc.data()!;
+        final name = (tData['name'] ?? tData['fullName'] ?? tData['displayName'])?.toString();
         if (mounted) {
-          setState(() => _isTeacherRole = true);
+          setState(() {
+            _isTeacherRole = true;
+            if (name != null && name.trim().isNotEmpty && (_currentUserName.isEmpty || _currentUserName == 'User')) {
+              _currentUserName = name.trim();
+            }
+          });
         }
         return;
       }
@@ -71,8 +80,14 @@ class _GroupListScreenState extends State<GroupListScreen> {
       if (userDoc.exists && userDoc.data() != null) {
         final data = userDoc.data()!;
         final role = (data['role'] ?? data['type'] ?? '').toString();
-        if (role == 'teacher' && mounted) {
-          setState(() => _isTeacherRole = true);
+        final name = (data['name'] ?? data['fullName'] ?? data['displayName'])?.toString();
+        if (mounted) {
+          setState(() {
+            if (role == 'teacher') _isTeacherRole = true;
+            if (name != null && name.trim().isNotEmpty && (_currentUserName.isEmpty || _currentUserName == 'User')) {
+              _currentUserName = name.trim();
+            }
+          });
         }
       }
     } catch (_) {}
@@ -483,6 +498,15 @@ class _GroupListScreenState extends State<GroupListScreen> {
                 return searchable.contains(_searchQuery);
               }).toList();
 
+              filteredGroups.sort((a, b) {
+                final aTime = a.lastMessageTime ?? a.createdAt;
+                final bTime = b.lastMessageTime ?? b.createdAt;
+                if (aTime == null && bTime == null) return 0;
+                if (aTime == null) return 1;
+                if (bTime == null) return -1;
+                return bTime.compareTo(aTime);
+              });
+
               if (filteredGroups.isEmpty) {
                 return _buildEmptyPlaceholder();
               }
@@ -510,6 +534,7 @@ class _GroupListScreenState extends State<GroupListScreen> {
                   ];
 
                   return ListTile(
+                    key: ValueKey('group_tile_${group.id}'),
                     contentPadding:
                         const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
                     leading: Stack(
@@ -686,7 +711,7 @@ class _GroupListScreenState extends State<GroupListScreen> {
                             groupId: group.id,
                             groupName: group.name,
                             currentUserId: widget.currentUserId,
-                            currentUserName: widget.currentUserName,
+                            currentUserName: _currentUserName,
                           ),
                         ),
                       );
