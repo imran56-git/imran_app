@@ -101,7 +101,7 @@ class _ChatScreenState extends State<ChatScreen>
     if (!_isOfficialChannel) {
       _userStatusStream = _chatService.getUserStatusStream(
         widget.receiverId,
-        widget.isTeacher,
+        !widget.isTeacher,
       );
       _typingDocStream = FirebaseFirestore.instance
           .collection('typing')
@@ -199,18 +199,49 @@ class _ChatScreenState extends State<ChatScreen>
     }
 
     try {
+      String myName = 'User';
+      String myImage = '';
+      try {
+        final profile = await _chatService.getUserProfile(
+          widget.currentUserId,
+          widget.isTeacher,
+        );
+        if (profile != null) {
+          myName = (profile['fullName'] ??
+                  profile['name'] ??
+                  profile['displayName'] ??
+                  'User')
+              .toString();
+          myImage = (profile['profileImageUrl'] ??
+                  profile['profilePic'] ??
+                  profile['profileUrl'] ??
+                  '')
+              .toString();
+        }
+      } catch (_) {}
+
       final String teacherId =
           widget.isTeacher ? widget.currentUserId : widget.receiverId;
       final String studentId =
           widget.isTeacher ? widget.receiverId : widget.currentUserId;
 
+      final String teacherName =
+          widget.isTeacher ? myName : widget.receiverName;
+      final String studentName =
+          widget.isTeacher ? widget.receiverName : myName;
+
+      final String teacherImage =
+          widget.isTeacher ? myImage : widget.receiverProfilePic;
+      final String studentImage =
+          widget.isTeacher ? widget.receiverProfilePic : myImage;
+
       await _chatService.createOrInitializeChat(
         teacherId: teacherId,
         studentId: studentId,
-        teacherName: widget.isTeacher ? 'Me' : widget.receiverName,
-        studentName: widget.isTeacher ? widget.receiverName : 'Me',
-        teacherImage: widget.isTeacher ? '' : widget.receiverProfilePic,
-        studentImage: widget.isTeacher ? widget.receiverProfilePic : '',
+        teacherName: teacherName,
+        studentName: studentName,
+        teacherImage: teacherImage,
+        studentImage: studentImage,
       );
 
       if (mounted) {
@@ -414,6 +445,26 @@ class _ChatScreenState extends State<ChatScreen>
       return 'Yesterday';
     }
     return DateFormat('dd MMM yyyy').format(date);
+  }
+
+  String _formatLastSeen(DateTime date) {
+    final now = DateTime.now();
+    final isToday =
+        date.year == now.year && date.month == now.month && date.day == now.day;
+    final hour = date.hour % 12 == 0 ? 12 : date.hour % 12;
+    final minute = date.minute.toString().padLeft(2, '0');
+    final amPm = date.hour >= 12 ? 'PM' : 'AM';
+
+    if (isToday) {
+      return '$hour:$minute $amPm';
+    }
+    final yesterday = now.subtract(const Duration(days: 1));
+    if (date.year == yesterday.year &&
+        date.month == yesterday.month &&
+        date.day == yesterday.day) {
+      return 'yesterday at $hour:$minute $amPm';
+    }
+    return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')} at $hour:$minute $amPm';
   }
 
   bool _isSameCalendarDay(DateTime? a, DateTime? b) {
@@ -1015,23 +1066,37 @@ class _ChatScreenState extends State<ChatScreen>
         String displayPic = widget.receiverProfilePic;
         bool isOnline = false;
         bool isVerified = false;
+        DateTime? lastSeenDate;
 
         if (statusSnapshot.hasData && statusSnapshot.data != null) {
           final data = statusSnapshot.data!;
-          isOnline = data['isOnline'] == true;
           isVerified =
               data['isVerified'] == true || data['status'] == 'approved';
 
           final extractedName =
               (data['fullName'] ?? data['name'] ?? data['displayName'])
                   ?.toString();
-          if (extractedName != null && extractedName.isNotEmpty) {
-            displayName = extractedName;
+          if (extractedName != null && extractedName.trim().isNotEmpty) {
+            displayName = extractedName.trim();
           }
-          final extractedPic =
-              (data['profileImageUrl'] ?? data['profilePic'])?.toString();
-          if (extractedPic != null && extractedPic.isNotEmpty) {
-            displayPic = extractedPic;
+          final extractedPic = (data['profileImageUrl'] ??
+                  data['profilePic'] ??
+                  data['profileUrl'])
+              ?.toString();
+          if (extractedPic != null && extractedPic.trim().isNotEmpty) {
+            displayPic = extractedPic.trim();
+          }
+
+          final bool rawIsOnline = data['isOnline'] == true;
+          final dynamic lastSeenRaw = data['lastSeen'];
+          if (lastSeenRaw is Timestamp) {
+            lastSeenDate = lastSeenRaw.toDate();
+            if (rawIsOnline) {
+              final diff = DateTime.now().difference(lastSeenDate);
+              isOnline = diff.inMinutes <= 3;
+            }
+          } else if (rawIsOnline) {
+            isOnline = true;
           }
         }
 
@@ -1040,8 +1105,9 @@ class _ChatScreenState extends State<ChatScreen>
               widget.receiverName.isNotEmpty ? widget.receiverName : 'User';
         }
 
-        final String initial =
-            displayName.trim().isNotEmpty ? displayName.trim()[0].toUpperCase() : 'U';
+        final String initial = displayName.trim().isNotEmpty
+            ? displayName.trim()[0].toUpperCase()
+            : 'U';
 
         return Row(
           children: [
@@ -1168,10 +1234,16 @@ class _ChatScreenState extends State<ChatScreen>
                                 );
                               }
 
+                              String statusSubtitle = 'Tap to view profile';
+                              if (isOnline) {
+                                statusSubtitle = 'Online • Tap for profile';
+                              } else if (lastSeenDate != null) {
+                                statusSubtitle =
+                                    'Last seen ${_formatLastSeen(lastSeenDate!)} • Tap for profile';
+                              }
+
                               return Text(
-                                isOnline
-                                    ? 'Online • Tap for profile'
-                                    : 'Tap to view profile',
+                                statusSubtitle,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
