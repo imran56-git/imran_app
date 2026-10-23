@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -46,6 +47,9 @@ class _FindYourBestTeacherTodayAppState
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseMessaging _messaging = FirebaseMessaging.instance;
 
+  StreamSubscription<User?>? _authSubscription;
+  Timer? _heartbeatTimer;
+
   @override
   void initState() {
     super.initState();
@@ -53,9 +57,17 @@ class _FindYourBestTeacherTodayAppState
     _initializeAppData();
   }
 
-  Future<void> _initializeAppData() async {
-    await _setupNotifications();
-    await _setUserOnlineStatusAndToken(true);
+  void _initializeAppData() {
+    _setupNotifications();
+
+    _authSubscription = _auth.authStateChanges().listen((user) {
+      if (user != null) {
+        _setUserOnlineStatusAndToken(true);
+        _startHeartbeat();
+      } else {
+        _stopHeartbeat();
+      }
+    });
   }
 
   Future<void> _setupNotifications() async {
@@ -77,9 +89,23 @@ class _FindYourBestTeacherTodayAppState
     });
   }
 
+  void _startHeartbeat() {
+    _heartbeatTimer?.cancel();
+    _heartbeatTimer = Timer.periodic(const Duration(seconds: 90), (_) {
+      _setUserOnlineStatusAndToken(true);
+    });
+  }
+
+  void _stopHeartbeat() {
+    _heartbeatTimer?.cancel();
+    _heartbeatTimer = null;
+  }
+
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _authSubscription?.cancel();
+    _stopHeartbeat();
     super.dispose();
   }
 
@@ -87,8 +113,10 @@ class _FindYourBestTeacherTodayAppState
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       _setUserOnlineStatusAndToken(true);
+      _startHeartbeat();
       NotificationService.instance.consumePendingMediaActionIfNeeded(context);
     } else {
+      _stopHeartbeat();
       _setUserOnlineStatusAndToken(false);
     }
   }
