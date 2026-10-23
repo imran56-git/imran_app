@@ -11,8 +11,6 @@ import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../animations/animation_constants.dart';
-import '../animations/screen_pull_controller.dart';
-import '../routes/app_routes.dart';
 import '../utils/image_utils.dart';
 import '../widgets/success_toast.dart';
 import 'blocked_users_screen.dart';
@@ -284,46 +282,240 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
     );
   }
 
-  Future<void> _handleDeleteAccount() async {
+  void _showPasswordConfirmationDialog() {
+    final TextEditingController passwordController = TextEditingController();
+    bool isVerifying = false;
+    bool obscure = true;
+    String? errorMessage;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogCtx) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          backgroundColor: Colors.white,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+          title: const Row(
+            children: [
+              Icon(Icons.shield_outlined, color: Color(0xFFDC2626), size: 24),
+              SizedBox(width: 10),
+              Text(
+                'Verify Password',
+                style: TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 18,
+                  color: _primaryNavy,
+                ),
+              ),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'To permanently delete your student account, please enter your current account password.',
+                style: TextStyle(
+                  fontSize: 13.5,
+                  color: Color(0xFF475569),
+                  height: 1.4,
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: passwordController,
+                obscureText: obscure,
+                enabled: !isVerifying,
+                style: const TextStyle(
+                  fontSize: 14.5,
+                  fontWeight: FontWeight.w600,
+                  color: _primaryNavy,
+                ),
+                decoration: InputDecoration(
+                  labelText: 'Password',
+                  prefixIcon: const Icon(Icons.lock_outline_rounded,
+                      color: _brandBlue, size: 20),
+                  suffixIcon: IconButton(
+                    icon: Icon(
+                      obscure
+                          ? Icons.visibility_off_rounded
+                          : Icons.visibility_rounded,
+                      color: const Color(0xFF64748B),
+                      size: 20,
+                    ),
+                    onPressed: () =>
+                        setDialogState(() => obscure = !obscure),
+                  ),
+                  filled: true,
+                  fillColor: const Color(0xFFF8FAFC),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide:
+                        const BorderSide(color: _accentBlue, width: 1.5),
+                  ),
+                ),
+              ),
+              if (errorMessage != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  errorMessage!,
+                  style: const TextStyle(
+                    color: Color(0xFFDC2626),
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: isVerifying
+                  ? null
+                  : () {
+                      passwordController.dispose();
+                      Navigator.pop(dialogCtx);
+                    },
+              child: const Text(
+                'Cancel',
+                style: TextStyle(
+                  color: Color(0xFF64748B),
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14.5,
+                ),
+              ),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFDC2626),
+                foregroundColor: Colors.white,
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              onPressed: isVerifying
+                  ? null
+                  : () async {
+                      final enteredPassword = passwordController.text.trim();
+                      if (enteredPassword.isEmpty) {
+                        setDialogState(() {
+                          errorMessage = 'Please enter your password';
+                        });
+                        return;
+                      }
+
+                      setDialogState(() {
+                        isVerifying = true;
+                        errorMessage = null;
+                      });
+
+                      try {
+                        final user = _auth.currentUser;
+                        if (user == null || user.email == null) {
+                          throw Exception('User authentication not found');
+                        }
+
+                        final credential = EmailAuthProvider.credential(
+                          email: user.email!,
+                          password: enteredPassword,
+                        );
+
+                        await user.reauthenticateWithCredential(credential);
+
+                        final String uid = user.uid;
+
+                        await _firestore.collection('students').doc(uid).delete();
+                        await _firestore
+                            .collection('users')
+                            .doc(uid)
+                            .delete()
+                            .catchError((_) {});
+                        await _firestore
+                            .collection('usernames')
+                            .doc(uid)
+                            .delete()
+                            .catchError((_) {});
+
+                        await _storage
+                            .ref('students/$uid/profile.jpg')
+                            .delete()
+                            .catchError((_) {});
+
+                        await user.delete();
+
+                        passwordController.dispose();
+                        Navigator.pop(dialogCtx);
+
+                        await _clearLocalSession();
+
+                        if (mounted) {
+                          Navigator.pushNamedAndRemoveUntil(
+                              context, '/login', (_) => false);
+                        }
+                      } on FirebaseAuthException catch (e) {
+                        setDialogState(() {
+                          isVerifying = false;
+                          if (e.code == 'wrong-password' ||
+                              e.code == 'invalid-credential') {
+                            errorMessage =
+                                'Incorrect password. Please try again.';
+                          } else if (e.code == 'too-many-requests') {
+                            errorMessage =
+                                'Too many failed attempts. Try again later.';
+                          } else {
+                            errorMessage =
+                                e.message ?? 'Verification failed.';
+                          }
+                        });
+                      } catch (e) {
+                        setDialogState(() {
+                          isVerifying = false;
+                          errorMessage = 'Verification error: ${e.toString()}';
+                        });
+                      }
+                    },
+              child: isVerifying
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Text(
+                      'Confirm Delete',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14.5,
+                      ),
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _handleDeleteAccountInitiation() {
     _showAnimatedPopup(
       title: 'Delete Account',
-      message: 'This will permanently delete your account.\n\nAre you sure?',
-      confirmText: 'Delete',
+      message:
+          'This will permanently delete your student account, interested subjects, and all profile data.\n\nAre you sure you want to proceed?',
+      confirmText: 'Continue',
       isDelete: true,
       onConfirm: () async {
-        try {
-          final user = _auth.currentUser;
-          if (user == null) return;
-          final uid = user.uid;
-          setState(() => isLoading = true);
-
-          await _firestore.collection('students').doc(uid).delete();
-          await _firestore
-              .collection('usernames')
-              .doc(uid)
-              .delete()
-              .catchError((_) {});
-          await _storage
-              .ref('students/$uid/profile.jpg')
-              .delete()
-              .catchError((_) {});
-
-          await _clearLocalSession();
-          await user.delete();
-
-          if (mounted) {
-            Navigator.pushNamedAndRemoveUntil(context, '/login', (_) => false);
-          }
-        } catch (e) {
-          if (mounted) setState(() => isLoading = false);
-          if (e is FirebaseAuthException && e.code == 'requires-recent-login') {
-            _snack(
-                'Security Error: Please logout and sign back in to delete your account.',
-                isError: true);
-          } else {
-            _snack('Delete Failed: $e', isError: true);
-          }
-        }
+        _showPasswordConfirmationDialog();
       },
     );
   }
@@ -441,22 +633,13 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
     });
   }
 
-  void _openNotifications(Offset tapPos) {
+  void _navigateToNotifications() {
     if (_isMenuExpanded) _closeMenu();
-    ScreenPullController.executeSafeNavigation(
-      context: context,
-      navigationAction: () async {
-        Navigator.pushNamed(
-          context,
-          AppRoutes.notification,
-          arguments: {
-            'useScreenPull': true,
-            'destination': const NotificationScreen(),
-            'currentScreen': widget,
-            'pullPoint': tapPos,
-          },
-        );
-      },
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const NotificationScreen(),
+      ),
     );
   }
 
@@ -553,16 +736,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
                                     ),
                                   )
                                 : null,
-                            onTap: () {
-                              _closeMenu();
-                              Navigator.pushNamed(
-                                context,
-                                AppRoutes.notification,
-                                arguments: {
-                                  'destination': const NotificationScreen(),
-                                },
-                              );
-                            },
+                            onTap: _navigateToNotifications,
                           ),
                           _buildDropdownActionRow(
                             icon: Icons.edit_rounded,
@@ -669,7 +843,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
                                     textColor: const Color(0xFFEF4444),
                                     onTap: () {
                                       _closeMenu();
-                                      _handleDeleteAccount();
+                                      _handleDeleteAccountInitiation();
                                     },
                                   ),
                                 ],
@@ -797,8 +971,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
             Padding(
               padding: const EdgeInsets.only(right: 14),
               child: GestureDetector(
-                onTapDown: (details) =>
-                    _openNotifications(details.globalPosition),
+                onTap: _navigateToNotifications,
                 child: const Icon(
                   Icons.notifications_none_rounded,
                   color: Colors.white,
