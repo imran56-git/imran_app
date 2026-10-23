@@ -108,7 +108,7 @@ class _LoginScreenState extends State<LoginScreen> {
           await googleUser.authentication;
 
       if (googleAuth.idToken == null && googleAuth.accessToken == null) {
-        _showError('Google Sign-In failed. Please try again.');
+        _showError('Google Sign-In failed: idToken and accessToken are both null.');
         return;
       }
 
@@ -124,12 +124,12 @@ class _LoginScreenState extends State<LoginScreen> {
       if (user != null) {
         await _checkAndNavigateUser(user);
       }
-    } on FirebaseAuthException {
-      _showError('Google Sign-In failed. Please try again.');
-    } on PlatformException {
-      _showError('Google Sign-In failed. Please try again.');
+    } on FirebaseAuthException catch (e) {
+      _showError('Firebase Auth Error [${e.code}]: ${e.message}');
+    } on PlatformException catch (e) {
+      _showError('Google Platform Error [${e.code}]: ${e.message}');
     } catch (e) {
-      _showError('Google Sign-In failed. Please try again.');
+      _showError('Google Sign-In Error: ${e.toString()}');
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
@@ -220,6 +220,7 @@ class _LoginScreenState extends State<LoginScreen> {
         content: Text(message),
         backgroundColor: Colors.redAccent,
         behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 6),
       ),
     );
   }
