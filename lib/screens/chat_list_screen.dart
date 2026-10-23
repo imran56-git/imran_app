@@ -37,7 +37,6 @@ class _ChatListScreenState extends State<ChatListScreen>
   QuerySnapshot? _lastChatsSnapshot;
 
   final Map<String, Stream<Map<String, dynamic>>> _userStatusStreams = {};
-  final Map<String, Map<String, dynamic>> _userProfileCache = {};
   final Map<String, Stream<bool>> _typingStreams = {};
 
   String _searchText = '';
@@ -574,7 +573,7 @@ class _ChatListScreenState extends State<ChatListScreen>
               }
 
               return _ChatCard(
-                key: ValueKey('official_${doc.id}'),
+                key: ValueKey('chat_tile_${doc.id}'),
                 name: officialName,
                 lastMessage: lastMessage.isEmpty
                     ? 'Official Communication Desk'
@@ -613,88 +612,105 @@ class _ChatListScreenState extends State<ChatListScreen>
             }
             final String receiverId = participantsList.first;
 
-            final String fallbackName = (chatData['receiverName'] ??
-                    chatData['teacherName'] ??
-                    chatData['studentName'] ??
-                    'User')
-                .toString();
+            final String fallbackName = widget.isTeacher
+                ? (chatData['studentName'] ??
+                        chatData['receiverName'] ??
+                        'Student')
+                    .toString()
+                : (chatData['teacherName'] ??
+                        chatData['receiverName'] ??
+                        'Teacher')
+                    .toString();
 
-            return StreamBuilder<Map<String, dynamic>>(
-              stream: _getCachedUserStatusStream(receiverId),
-              initialData: _userProfileCache[receiverId],
-              builder: (context, userSnapshot) {
-                if (userSnapshot.hasData && userSnapshot.data != null) {
-                  _userProfileCache[receiverId] = userSnapshot.data!;
-                }
-                final mapData = _userProfileCache[receiverId];
+            return KeyedSubtree(
+              key: ValueKey('chat_tile_${doc.id}'),
+              child: StreamBuilder<Map<String, dynamic>>(
+                stream: _getCachedUserStatusStream(receiverId),
+                builder: (context, userSnapshot) {
+                  final mapData = userSnapshot.data;
 
-                String finalName = fallbackName;
-                String finalImageUrl = '';
-                bool isOnline = false;
-                bool isVerifiedUser = false;
+                  String finalName = fallbackName;
+                  String finalImageUrl = '';
+                  bool isOnline = false;
+                  bool isVerifiedUser = false;
 
-                if (mapData != null) {
-                  final extractedName = (mapData['fullName'] ??
-                          mapData['name'] ??
-                          mapData['displayName'] ??
-                          mapData['teacherName'] ??
-                          mapData['studentName'])
-                      ?.toString();
+                  if (mapData != null && mapData.isNotEmpty) {
+                    final extractedName = (mapData['fullName'] ??
+                            mapData['name'] ??
+                            mapData['displayName'] ??
+                            (widget.isTeacher
+                                ? mapData['studentName']
+                                : mapData['teacherName']))
+                        ?.toString();
 
-                  if (extractedName != null && extractedName.isNotEmpty) {
-                    finalName = extractedName;
+                    if (extractedName != null &&
+                        extractedName.trim().isNotEmpty) {
+                      finalName = extractedName.trim();
+                    }
+
+                    finalImageUrl = (mapData['profileImageUrl'] ??
+                            mapData['profilePic'] ??
+                            mapData['profileUrl'] ??
+                            '')
+                        .toString();
+
+                    final bool rawIsOnline = mapData['isOnline'] == true;
+                    if (rawIsOnline) {
+                      final dynamic lastSeenRaw = mapData['lastSeen'];
+                      if (lastSeenRaw is Timestamp) {
+                        final diff =
+                            DateTime.now().difference(lastSeenRaw.toDate());
+                        isOnline = diff.inMinutes <= 3;
+                      } else {
+                        isOnline = true;
+                      }
+                    }
+
+                    isVerifiedUser = mapData['isVerified'] == true ||
+                        mapData['status'] == 'approved';
                   }
 
-                  finalImageUrl = (mapData['profileImageUrl'] ??
-                          mapData['profilePic'] ??
-                          mapData['profileUrl'] ??
-                          '')
-                      .toString();
-                  isOnline = mapData['isOnline'] == true;
-                  isVerifiedUser = mapData['isVerified'] == true ||
-                      mapData['status'] == 'approved';
-                }
+                  if (!_matchesSearch(chatData, finalName)) {
+                    return const SizedBox.shrink();
+                  }
 
-                if (!_matchesSearch(chatData, finalName)) {
-                  return const SizedBox.shrink();
-                }
-
-                return StreamBuilder<bool>(
-                  stream: _getCachedTypingStream(doc.id, receiverId),
-                  initialData: false,
-                  builder: (context, typingSnap) {
-                    final bool isTyping = typingSnap.data == true;
-                    return _ChatCard(
-                      key: ValueKey('chat_${doc.id}'),
-                      name: finalName,
-                      lastMessage: isTyping ? 'typing a message...' : lastMessage,
-                      isTyping: isTyping,
-                      timeText: _formatTime(lastTime),
-                      unreadCount: unreadCount,
-                      imageUrl: finalImageUrl,
-                      isOnline: isOnline,
-                      isGroup: false,
-                      isOfficial: false,
-                      isVerified: isVerifiedUser,
-                      isSelected: isSelected,
-                      onLongPress: () => _toggleSelection(doc.id),
-                      onTap: () {
-                        if (_isSelectionMode) {
-                          _toggleSelection(doc.id);
-                        } else {
-                          _openChat(
-                            chatData: chatData,
-                            chatDocId: doc.id,
-                            receiverName: finalName,
-                            receiverId: receiverId,
-                            receiverImage: finalImageUrl,
-                          );
-                        }
-                      },
-                    );
-                  },
-                );
-              },
+                  return StreamBuilder<bool>(
+                    stream: _getCachedTypingStream(doc.id, receiverId),
+                    initialData: false,
+                    builder: (context, typingSnap) {
+                      final bool isTyping = typingSnap.data == true;
+                      return _ChatCard(
+                        name: finalName,
+                        lastMessage:
+                            isTyping ? 'typing a message...' : lastMessage,
+                        isTyping: isTyping,
+                        timeText: _formatTime(lastTime),
+                        unreadCount: unreadCount,
+                        imageUrl: finalImageUrl,
+                        isOnline: isOnline,
+                        isGroup: false,
+                        isOfficial: false,
+                        isVerified: isVerifiedUser,
+                        isSelected: isSelected,
+                        onLongPress: () => _toggleSelection(doc.id),
+                        onTap: () {
+                          if (_isSelectionMode) {
+                            _toggleSelection(doc.id);
+                          } else {
+                            _openChat(
+                              chatData: chatData,
+                              chatDocId: doc.id,
+                              receiverName: finalName,
+                              receiverId: receiverId,
+                              receiverImage: finalImageUrl,
+                            );
+                          }
+                        },
+                      );
+                    },
+                  );
+                },
+              ),
             );
           },
         );
@@ -904,7 +920,9 @@ class _ChatListScreenState extends State<ChatListScreen>
                                     ),
                                   ),
                                   child: Text(
-                                    widget.isTeacher ? 'Educator Hub' : 'Student Hub',
+                                    widget.isTeacher
+                                        ? 'Educator Hub'
+                                        : 'Student Hub',
                                     style: const TextStyle(
                                       color: Colors.white,
                                       fontSize: 10,
