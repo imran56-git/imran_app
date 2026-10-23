@@ -18,6 +18,7 @@ import '../utils/image_utils.dart';
 import '../widgets/follow_button.dart';
 import '../widgets/success_toast.dart';
 import '../widgets/badge_details_sheet.dart';
+import 'blocked_users_screen.dart';
 import 'diary_history_screen.dart';
 import 'live/join_live_screen.dart';
 import 'location_picker_screen.dart';
@@ -51,6 +52,8 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
   late AnimationController _glowController;
   late Animation<double> _glowAnimation;
   late AnimationController _menuMenuAnimController;
+  late Animation<double> _menuScaleAnimation;
+  late Animation<double> _menuFadeAnimation;
 
   Stream<QuerySnapshot>? _pendingRequestsStream;
   Stream<int>? _followersCountStream;
@@ -61,6 +64,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
 
   StreamSubscription<QuerySnapshot>? _notifSubscription;
   bool _isMenuExpanded = false;
+  bool _isMoreExpanded = false;
 
   Map<String, dynamic>? teacherData;
   bool isLoading = true;
@@ -114,7 +118,17 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
 
     _menuMenuAnimController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 260),
+      duration: const Duration(milliseconds: 240),
+    );
+
+    _menuScaleAnimation = CurvedAnimation(
+      parent: _menuMenuAnimController,
+      curve: Curves.easeOutBack,
+    );
+
+    _menuFadeAnimation = CurvedAnimation(
+      parent: _menuMenuAnimController,
+      curve: Curves.easeIn,
     );
   }
 
@@ -585,7 +599,10 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
 
   void _openMenu() {
     if (_isMenuExpanded) return;
-    setState(() => _isMenuExpanded = true);
+    setState(() {
+      _isMenuExpanded = true;
+      _isMoreExpanded = false;
+    });
     _menuMenuAnimController.forward();
   }
 
@@ -593,29 +610,328 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
     if (!_isMenuExpanded) return;
     _menuMenuAnimController.reverse().then((_) {
       if (mounted) {
-        setState(() => _isMenuExpanded = false);
+        setState(() {
+          _isMenuExpanded = false;
+          _isMoreExpanded = false;
+        });
       }
     });
   }
 
-  Widget _buildStaggeredMenuItem({
-    required int index,
-    required int totalItems,
-    required Widget child,
+  Widget _buildDropdownActionRow({
+    required IconData icon,
+    required String title,
+    required VoidCallback onTap,
+    Color iconColor = Colors.white,
+    Color textColor = Colors.white,
+    Widget? trailing,
   }) {
-    final double start = (index * 0.08).clamp(0.0, 0.6);
-    final double end = (start + 0.35).clamp(0.0, 1.0);
-
-    final Animation<double> itemAnimation = CurvedAnimation(
-      parent: _menuMenuAnimController,
-      curve: Interval(start, end, curve: Curves.easeOutBack),
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+          child: Row(
+            children: [
+              Icon(icon, color: iconColor, size: 20),
+              const SizedBox(width: 13),
+              Expanded(
+                child: Text(
+                  title,
+                  style: TextStyle(
+                    color: textColor,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.1,
+                  ),
+                ),
+              ),
+              if (trailing != null) trailing,
+            ],
+          ),
+        ),
+      ),
     );
+  }
 
-    return ScaleTransition(
-      scale: itemAnimation,
-      child: FadeTransition(
-        opacity: itemAnimation,
-        child: child,
+  Widget _buildVerticalGlassDropdown() {
+    final String targetId = widget.currentUserId.isNotEmpty
+        ? widget.currentUserId
+        : (_auth.currentUser?.uid ?? '');
+
+    return Positioned(
+      top: MediaQuery.of(context).padding.top + 54,
+      right: 14,
+      child: ScaleTransition(
+        alignment: Alignment.topRight,
+        scale: _menuScaleAnimation,
+        child: FadeTransition(
+          opacity: _menuFadeAnimation,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(22),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+              child: Container(
+                width: 244,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0F172A).withOpacity(0.88),
+                  borderRadius: BorderRadius.circular(22),
+                  border: Border.all(
+                    color: Colors.white.withOpacity(0.24),
+                    width: 1.2,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.35),
+                      blurRadius: 22,
+                      offset: const Offset(0, 10),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (isOwnProfile)
+                            StreamBuilder<QuerySnapshot>(
+                              stream: _pendingRequestsStream,
+                              builder: (context, snapshot) {
+                                final int pendingCount = snapshot.hasData
+                                    ? snapshot.data!.docs.length
+                                    : 0;
+                                return _buildDropdownActionRow(
+                                  icon: Icons.person_add_alt_1_rounded,
+                                  title: 'Pending Requests',
+                                  trailing: pendingCount > 0
+                                      ? Container(
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 7, vertical: 2),
+                                          decoration: BoxDecoration(
+                                            color: Colors.orangeAccent,
+                                            borderRadius:
+                                                BorderRadius.circular(10),
+                                          ),
+                                          child: Text(
+                                            '$pendingCount',
+                                            style: const TextStyle(
+                                              color: Colors.black,
+                                              fontSize: 10.5,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        )
+                                      : null,
+                                  onTap: () {
+                                    _closeMenu();
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) =>
+                                            TeacherFollowRequestsScreen(
+                                          teacherId: targetId,
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                );
+                              },
+                            ),
+                          _buildDropdownActionRow(
+                            icon: Icons.notifications_none_rounded,
+                            title: 'Notifications',
+                            trailing: hasUnreadNotifications
+                                ? Container(
+                                    width: 8,
+                                    height: 8,
+                                    decoration: const BoxDecoration(
+                                      color: Color(0xFFEF4444),
+                                      shape: BoxShape.circle,
+                                    ),
+                                  )
+                                : null,
+                            onTap: () {
+                              _closeMenu();
+                              Navigator.pushNamed(
+                                context,
+                                AppRoutes.notification,
+                                arguments: {
+                                  'destination': const NotificationScreen(),
+                                },
+                              );
+                            },
+                          ),
+                          if (isOwnProfile)
+                            _buildDropdownActionRow(
+                              icon: Icons.edit_rounded,
+                              title: 'Edit Profile',
+                              onTap: () {
+                                _closeMenu();
+                                setState(() => isEditing = true);
+                              },
+                            ),
+                          _buildDropdownActionRow(
+                            icon: Icons.share_outlined,
+                            title: 'Share Profile',
+                            onTap: () {
+                              _closeMenu();
+                              Clipboard.setData(
+                                ClipboardData(
+                                  text:
+                                      "Check out this teacher profile on FYBTT. UID: $targetId",
+                                ),
+                              );
+                              SuccessToast.show(
+                                  context, 'Profile link copied!');
+                            },
+                          ),
+                          if (isOwnProfile) ...[
+                            Divider(
+                              height: 1,
+                              color: Colors.white.withOpacity(0.14),
+                              indent: 14,
+                              endIndent: 14,
+                            ),
+                            _buildDropdownActionRow(
+                              icon: Icons.tune_rounded,
+                              title: 'More',
+                              trailing: Icon(
+                                _isMoreExpanded
+                                    ? Icons.keyboard_arrow_up_rounded
+                                    : Icons.keyboard_arrow_down_rounded,
+                                color: Colors.white70,
+                                size: 20,
+                              ),
+                              onTap: () {
+                                setState(() {
+                                  _isMoreExpanded = !_isMoreExpanded;
+                                });
+                              },
+                            ),
+                            AnimatedCrossFade(
+                              firstChild: const SizedBox.shrink(),
+                              secondChild: Container(
+                                margin: const EdgeInsets.symmetric(
+                                    horizontal: 8, vertical: 3),
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withOpacity(0.06),
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    _buildDropdownActionRow(
+                                      icon: Icons.person_off_rounded,
+                                      title: 'Blocked List',
+                                      iconColor: const Color(0xFFF87171),
+                                      onTap: () {
+                                        _closeMenu();
+                                        Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (_) => BlockedUsersScreen(
+                                              currentUserId: targetId,
+                                            ),
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                    _buildDropdownActionRow(
+                                      icon: Icons.support_agent_rounded,
+                                      title: 'Help Center',
+                                      onTap: () {
+                                        _closeMenu();
+                                        Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (_) =>
+                                                const HelpCenterScreen(),
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                    _buildDropdownActionRow(
+                                      icon: Icons.privacy_tip_outlined,
+                                      title: 'Privacy Policy',
+                                      onTap: () {
+                                        _closeMenu();
+                                        Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (_) =>
+                                                const PrivacyPolicyScreen(),
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                    _buildDropdownActionRow(
+                                      icon: Icons.delete_forever_rounded,
+                                      title: 'Delete Account',
+                                      iconColor: const Color(0xFFEF4444),
+                                      textColor: const Color(0xFFEF4444),
+                                      onTap: () {
+                                        _closeMenu();
+                                        _showAnimatedPopup(
+                                          title: 'Delete Account',
+                                          message:
+                                              'This will permanently delete your account. Are you sure?',
+                                          confirmText: 'Delete',
+                                          isDelete: true,
+                                          onConfirm: () async {
+                                            await _deleteAccount();
+                                          },
+                                        );
+                                      },
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              crossFadeState: _isMoreExpanded
+                                  ? CrossFadeState.showSecond
+                                  : CrossFadeState.showFirst,
+                              duration: const Duration(milliseconds: 200),
+                            ),
+                            Divider(
+                              height: 1,
+                              color: Colors.white.withOpacity(0.14),
+                              indent: 14,
+                              endIndent: 14,
+                            ),
+                            _buildDropdownActionRow(
+                              icon: Icons.logout_rounded,
+                              title: 'Sign Out',
+                              iconColor: const Color(0xFFFBBF24),
+                              textColor: const Color(0xFFFBBF24),
+                              onTap: () {
+                                _closeMenu();
+                                _showAnimatedPopup(
+                                  title: 'Sign Out',
+                                  message: 'Are you sure you want to sign out?',
+                                  confirmText: 'Confirm',
+                                  onConfirm: () async {
+                                    await _auth.signOut();
+                                    await _clearLocalSessionAndNavigate();
+                                  },
+                                );
+                              },
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -958,574 +1274,347 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
             ? const Center(
                 child: CircularProgressIndicator(color: _brandBlue),
               )
-            : GestureDetector(
-                behavior: HitTestBehavior.translucent,
-                onTap: () {
-                  if (_isMenuExpanded) _closeMenu();
-                },
-                child: NotificationListener<ScrollNotification>(
-                  onNotification: (notification) {
-                    if (_isMenuExpanded &&
-                        notification is ScrollStartNotification) {
-                      _closeMenu();
-                    }
-                    return false;
-                  },
-                  child: SingleChildScrollView(
-                    physics: const ClampingScrollPhysics(),
-                    child: Container(
-                      color: _scaffoldBg,
-                      child: Column(
-                        children: [
-                          Stack(
-                            clipBehavior: Clip.none,
-                            alignment: Alignment.center,
+            : Stack(
+                children: [
+                  GestureDetector(
+                    behavior: HitTestBehavior.translucent,
+                    onTap: () {
+                      if (_isMenuExpanded) _closeMenu();
+                    },
+                    child: NotificationListener<ScrollNotification>(
+                      onNotification: (notification) {
+                        if (_isMenuExpanded &&
+                            notification is ScrollStartNotification) {
+                          _closeMenu();
+                        }
+                        return false;
+                      },
+                      child: SingleChildScrollView(
+                        physics: const ClampingScrollPhysics(),
+                        child: Container(
+                          color: _scaffoldBg,
+                          child: Column(
                             children: [
-                              Container(
-                                height: bannerHeight,
-                                width: double.infinity,
-                                decoration: BoxDecoration(
-                                  gradient: const LinearGradient(
-                                    colors: [
-                                      Color(0xFF0F172A),
-                                      Color(0xFF1E3A8A),
-                                      Color(0xFF1E4C7A),
-                                    ],
-                                    begin: Alignment.topLeft,
-                                    end: Alignment.bottomRight,
-                                  ),
-                                  image: bannerProvider != null
-                                      ? DecorationImage(
-                                          image: bannerProvider,
-                                          fit: BoxFit.cover,
-                                        )
-                                      : null,
-                                  borderRadius: const BorderRadius.vertical(
-                                    bottom: Radius.circular(30),
-                                  ),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: _primaryNavy.withOpacity(0.16),
-                                      blurRadius: 20,
-                                      offset: const Offset(0, 8),
+                              Stack(
+                                clipBehavior: Clip.none,
+                                alignment: Alignment.center,
+                                children: [
+                                  Container(
+                                    height: bannerHeight,
+                                    width: double.infinity,
+                                    decoration: BoxDecoration(
+                                      gradient: const LinearGradient(
+                                        colors: [
+                                          Color(0xFF0F172A),
+                                          Color(0xFF1E3A8A),
+                                          Color(0xFF1E4C7A),
+                                        ],
+                                        begin: Alignment.topLeft,
+                                        end: Alignment.bottomRight,
+                                      ),
+                                      image: bannerProvider != null
+                                          ? DecorationImage(
+                                              image: bannerProvider,
+                                              fit: BoxFit.cover,
+                                            )
+                                          : null,
+                                      borderRadius: const BorderRadius.vertical(
+                                        bottom: Radius.circular(30),
+                                      ),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: _primaryNavy.withOpacity(0.16),
+                                          blurRadius: 20,
+                                          offset: const Offset(0, 8),
+                                        ),
+                                      ],
                                     ),
-                                  ],
-                                ),
-                                child: Stack(
-                                  fit: StackFit.expand,
-                                  children: [
-                                    if (bannerProvider == null)
-                                      Positioned(
-                                        right: -30,
-                                        top: -20,
-                                        child: Container(
-                                          width: 170,
-                                          height: 170,
+                                    child: Stack(
+                                      fit: StackFit.expand,
+                                      children: [
+                                        if (bannerProvider == null)
+                                          Positioned(
+                                            right: -30,
+                                            top: -20,
+                                            child: Container(
+                                              width: 170,
+                                              height: 170,
+                                              decoration: BoxDecoration(
+                                                shape: BoxShape.circle,
+                                                color: Colors.white
+                                                    .withOpacity(0.05),
+                                              ),
+                                            ),
+                                          ),
+                                        Container(
                                           decoration: BoxDecoration(
-                                            shape: BoxShape.circle,
-                                            color:
-                                                Colors.white.withOpacity(0.05),
+                                            borderRadius:
+                                                const BorderRadius.vertical(
+                                              bottom: Radius.circular(30),
+                                            ),
+                                            gradient: LinearGradient(
+                                              begin: Alignment.topCenter,
+                                              end: Alignment.bottomCenter,
+                                              colors: [
+                                                Colors.black.withOpacity(0.48),
+                                                Colors.transparent,
+                                                Colors.black.withOpacity(0.42),
+                                              ],
+                                            ),
                                           ),
                                         ),
-                                      ),
-                                    Container(
-                                      decoration: BoxDecoration(
-                                        borderRadius: const BorderRadius.vertical(
-                                          bottom: Radius.circular(30),
+                                        Positioned(
+                                          top: topInset + 10,
+                                          left: 14,
+                                          right: 14,
+                                          child: Row(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.spaceBetween,
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.center,
+                                            children: [
+                                              Expanded(
+                                                child: Row(
+                                                  mainAxisSize:
+                                                      MainAxisSize.min,
+                                                  children: [
+                                                    if (canPopScreen)
+                                                      Container(
+                                                        margin:
+                                                            const EdgeInsets
+                                                                .only(right: 8),
+                                                        decoration:
+                                                            BoxDecoration(
+                                                          color: Colors.black
+                                                              .withOpacity(
+                                                                  0.28),
+                                                          borderRadius:
+                                                              BorderRadius
+                                                                  .circular(12),
+                                                        ),
+                                                        child: IconButton(
+                                                          icon: const Icon(
+                                                            Icons
+                                                                .arrow_back_ios_new_rounded,
+                                                            color: Colors.white,
+                                                            size: 18,
+                                                          ),
+                                                          onPressed: () =>
+                                                              Navigator.pop(
+                                                                  context),
+                                                        ),
+                                                      )
+                                                    else
+                                                      const SizedBox(width: 4),
+                                                    Flexible(
+                                                      child: Text(
+                                                        isOwnProfile
+                                                            ? (isEditing
+                                                                ? 'Edit Profile'
+                                                                : 'My Profile')
+                                                            : 'Educator Profile',
+                                                        maxLines: 1,
+                                                        overflow: TextOverflow
+                                                            .ellipsis,
+                                                        style: const TextStyle(
+                                                          fontWeight:
+                                                              FontWeight.w900,
+                                                          color: Colors.white,
+                                                          fontSize: 20,
+                                                          letterSpacing: 0.2,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                              const SizedBox(width: 8),
+                                              Container(
+                                                decoration: BoxDecoration(
+                                                  color: _isMenuExpanded
+                                                      ? Colors.white
+                                                          .withOpacity(0.18)
+                                                      : Colors.black
+                                                          .withOpacity(0.28),
+                                                  borderRadius:
+                                                      BorderRadius.circular(12),
+                                                  border: Border.all(
+                                                      color: Colors.white
+                                                          .withOpacity(0.22)),
+                                                ),
+                                                child: IconButton(
+                                                  visualDensity:
+                                                      VisualDensity.compact,
+                                                  icon: Icon(
+                                                    _isMenuExpanded
+                                                        ? Icons.close_rounded
+                                                        : Icons
+                                                            .more_vert_rounded,
+                                                    color: Colors.white,
+                                                    size: 22,
+                                                  ),
+                                                  tooltip: 'Menu',
+                                                  onPressed: () {
+                                                    if (_isMenuExpanded) {
+                                                      _closeMenu();
+                                                    } else {
+                                                      _openMenu();
+                                                    }
+                                                  },
+                                                ),
+                                              ),
+                                            ],
+                                          ),
                                         ),
-                                        gradient: LinearGradient(
-                                          begin: Alignment.topCenter,
-                                          end: Alignment.bottomCenter,
-                                          colors: [
-                                            Colors.black.withOpacity(0.48),
-                                            Colors.transparent,
-                                            Colors.black.withOpacity(0.42),
-                                          ],
-                                        ),
-                                      ),
-                                    ),
-                                    Positioned(
-                                      top: topInset + 10,
-                                      left: 14,
-                                      right: 14,
-                                      child: Row(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.spaceBetween,
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.center,
-                                        children: [
-                                          if (!_isMenuExpanded)
-                                            Expanded(
-                                              child: Row(
-                                                mainAxisSize: MainAxisSize.min,
-                                                children: [
-                                                  if (canPopScreen)
-                                                    Container(
-                                                      margin:
-                                                          const EdgeInsets.only(
-                                                              right: 8),
+                                        if (isOwnProfile)
+                                          Positioned(
+                                            right: 16,
+                                            bottom: 14,
+                                            child: Material(
+                                              color: Colors.transparent,
+                                              child: InkWell(
+                                                borderRadius:
+                                                    BorderRadius.circular(20),
+                                                onTap: _isUploadingBanner
+                                                    ? null
+                                                    : _pickAndUploadBanner,
+                                                child: ClipRRect(
+                                                  borderRadius:
+                                                      BorderRadius.circular(20),
+                                                  child: BackdropFilter(
+                                                    filter: ImageFilter.blur(
+                                                        sigmaX: 10, sigmaY: 10),
+                                                    child: Container(
+                                                      padding: const EdgeInsets
+                                                          .symmetric(
+                                                        horizontal: 12,
+                                                        vertical: 7,
+                                                      ),
                                                       decoration: BoxDecoration(
                                                         color: Colors.black
-                                                            .withOpacity(0.28),
+                                                            .withOpacity(0.45),
                                                         borderRadius:
                                                             BorderRadius
-                                                                .circular(12),
-                                                      ),
-                                                      child: IconButton(
-                                                        icon: const Icon(
-                                                          Icons
-                                                              .arrow_back_ios_new_rounded,
-                                                          color: Colors.white,
-                                                          size: 18,
+                                                                .circular(20),
+                                                        border: Border.all(
+                                                          color: Colors.white
+                                                              .withOpacity(
+                                                                  0.35),
+                                                          width: 1,
                                                         ),
-                                                        onPressed: () =>
-                                                            Navigator.pop(
-                                                                context),
                                                       ),
-                                                    )
-                                                  else
-                                                    const SizedBox(width: 4),
-                                                  Flexible(
-                                                    child: Text(
-                                                      isOwnProfile
-                                                          ? (isEditing
-                                                              ? 'Edit Profile'
-                                                              : 'My Profile')
-                                                          : 'Educator Profile',
-                                                      maxLines: 1,
-                                                      overflow:
-                                                          TextOverflow.ellipsis,
-                                                      style: const TextStyle(
-                                                        fontWeight:
-                                                            FontWeight.w900,
-                                                        color: Colors.white,
-                                                        fontSize: 20,
-                                                        letterSpacing: 0.2,
-                                                      ),
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                            )
-                                          else
-                                            const Spacer(),
-                                          const SizedBox(width: 8),
-                                          _buildActionHeaderBar(),
-                                        ],
-                                      ),
-                                    ),
-                                    if (isOwnProfile)
-                                      Positioned(
-                                        right: 16,
-                                        bottom: 14,
-                                        child: Material(
-                                          color: Colors.transparent,
-                                          child: InkWell(
-                                            borderRadius:
-                                                BorderRadius.circular(20),
-                                            onTap: _isUploadingBanner
-                                                ? null
-                                                : _pickAndUploadBanner,
-                                            child: ClipRRect(
-                                              borderRadius:
-                                                  BorderRadius.circular(20),
-                                              child: BackdropFilter(
-                                                filter: ImageFilter.blur(
-                                                    sigmaX: 10, sigmaY: 10),
-                                                child: Container(
-                                                  padding:
-                                                      const EdgeInsets.symmetric(
-                                                    horizontal: 12,
-                                                    vertical: 7,
-                                                  ),
-                                                  decoration: BoxDecoration(
-                                                    color: Colors.black
-                                                        .withOpacity(0.45),
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                            20),
-                                                    border: Border.all(
-                                                      color: Colors.white
-                                                          .withOpacity(0.35),
-                                                      width: 1,
-                                                    ),
-                                                  ),
-                                                  child: Row(
-                                                    mainAxisSize:
-                                                        MainAxisSize.min,
-                                                    children: [
-                                                      if (_isUploadingBanner)
-                                                        const SizedBox(
-                                                          width: 14,
-                                                          height: 14,
-                                                          child:
-                                                              CircularProgressIndicator(
-                                                            strokeWidth: 2,
-                                                            color: Colors.white,
+                                                      child: Row(
+                                                        mainAxisSize:
+                                                            MainAxisSize.min,
+                                                        children: [
+                                                          if (_isUploadingBanner)
+                                                            const SizedBox(
+                                                              width: 14,
+                                                              height: 14,
+                                                              child:
+                                                                  CircularProgressIndicator(
+                                                                strokeWidth: 2,
+                                                                color: Colors
+                                                                    .white,
+                                                              ),
+                                                            )
+                                                          else
+                                                            const Icon(
+                                                              Icons
+                                                                  .photo_camera_back_rounded,
+                                                              color:
+                                                                  Colors.white,
+                                                              size: 15,
+                                                            ),
+                                                          const SizedBox(
+                                                              width: 6),
+                                                          Text(
+                                                            _isUploadingBanner
+                                                                ? 'Uploading...'
+                                                                : (bannerProvider !=
+                                                                        null
+                                                                    ? 'Change Cover'
+                                                                    : 'Add Cover'),
+                                                            style:
+                                                                const TextStyle(
+                                                              color:
+                                                                  Colors.white,
+                                                              fontSize: 11.5,
+                                                              fontWeight:
+                                                                  FontWeight
+                                                                      .w700,
+                                                            ),
                                                           ),
-                                                        )
-                                                      else
-                                                        const Icon(
-                                                          Icons
-                                                              .photo_camera_back_rounded,
-                                                          color: Colors.white,
-                                                          size: 15,
-                                                        ),
-                                                      const SizedBox(width: 6),
-                                                      Text(
-                                                        _isUploadingBanner
-                                                            ? 'Uploading...'
-                                                            : (bannerProvider !=
-                                                                    null
-                                                                ? 'Change Cover'
-                                                                : 'Add Cover'),
-                                                        style: const TextStyle(
-                                                          color: Colors.white,
-                                                          fontSize: 11.5,
-                                                          fontWeight:
-                                                              FontWeight.w700,
-                                                        ),
+                                                        ],
                                                       ),
-                                                    ],
+                                                    ),
                                                   ),
                                                 ),
                                               ),
                                             ),
                                           ),
-                                        ),
-                                      ),
+                                      ],
+                                    ),
+                                  ),
+                                  Positioned(
+                                    top: bannerHeight - profileRadius - 6,
+                                    child: _buildProfileImage(profileRadius),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: profileRadius + 14),
+                              Padding(
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 16),
+                                child: Column(
+                                  children: [
+                                    _buildNameWithBadge(),
+                                    const SizedBox(height: 10),
+                                    _buildUidIdentityCard(),
+                                    const SizedBox(height: 14),
+                                    _buildRatingSummaryCard(),
+                                    const SizedBox(height: 12),
+                                    if (!isEditing) _buildFollowStats(),
+                                    if (!isOwnProfile)
+                                      const SizedBox(height: 12),
+                                    if (!isOwnProfile)
+                                      _buildFollowButtonWidget(),
+                                    if (!isOwnProfile)
+                                      _buildStudentRatingActionButton(),
+                                    const SizedBox(height: 22),
+                                    isEditing
+                                        ? _buildEditForm()
+                                        : _buildViewProfile(),
+                                    if (isOwnProfile && !isEditing)
+                                      _buildDashboardSection(),
+                                    if (isOwnProfile && !isEditing)
+                                      _buildToolsAndPayment(),
+                                    if (isEditing) _buildSaveCancelButtons(),
                                   ],
                                 ),
                               ),
-                              Positioned(
-                                top: bannerHeight - profileRadius - 6,
-                                child: _buildProfileImage(profileRadius),
-                              ),
+                              const SizedBox(height: 40),
                             ],
-                          ),
-                          const SizedBox(height: profileRadius + 14),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 16),
-                            child: Column(
-                              children: [
-                                _buildNameWithBadge(),
-                                const SizedBox(height: 10),
-                                _buildUidIdentityCard(),
-                                const SizedBox(height: 14),
-                                _buildRatingSummaryCard(),
-                                const SizedBox(height: 12),
-                                if (!isEditing) _buildFollowStats(),
-                                if (!isOwnProfile) const SizedBox(height: 12),
-                                if (!isOwnProfile) _buildFollowButtonWidget(),
-                                if (!isOwnProfile)
-                                  _buildStudentRatingActionButton(),
-                                const SizedBox(height: 22),
-                                isEditing
-                                    ? _buildEditForm()
-                                    : _buildViewProfile(),
-                                if (isOwnProfile && !isEditing)
-                                  _buildDashboardSection(),
-                                if (isOwnProfile && !isEditing)
-                                  _buildToolsAndPayment(),
-                                if (isEditing) _buildSaveCancelButtons(),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(height: 40),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-      ),
-    );
-  }
-
-  Widget _buildActionHeaderBar() {
-    if (!_isMenuExpanded) {
-      return Container(
-        decoration: BoxDecoration(
-          color: Colors.black.withOpacity(0.28),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.white.withOpacity(0.22)),
-        ),
-        child: IconButton(
-          visualDensity: VisualDensity.compact,
-          icon: const Icon(
-            Icons.more_vert_rounded,
-            color: Colors.white,
-            size: 22,
-          ),
-          tooltip: 'Menu',
-          onPressed: _openMenu,
-        ),
-      );
-    }
-
-    final List<Widget> menuItems = [];
-
-    if (isOwnProfile) {
-      menuItems.add(
-        StreamBuilder<QuerySnapshot>(
-          stream: _pendingRequestsStream,
-          builder: (context, snapshot) {
-            final int pendingCount =
-                snapshot.hasData ? snapshot.data!.docs.length : 0;
-            return GestureDetector(
-              onTapDown: (details) {
-                _closeMenu();
-                Navigator.push(
-                  context,
-                  _createGenieRoute(
-                    TeacherFollowRequestsScreen(
-                        teacherId: widget.currentUserId),
-                    details.globalPosition,
-                  ),
-                );
-              },
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    const Icon(
-                      Icons.person_add_alt_1_rounded,
-                      color: Colors.white,
-                      size: 19,
-                    ),
-                    if (pendingCount > 0)
-                      Positioned(
-                        right: -4,
-                        top: -3,
-                        child: Container(
-                          padding: const EdgeInsets.all(3),
-                          decoration: const BoxDecoration(
-                            color: Colors.orangeAccent,
-                            shape: BoxShape.circle,
-                          ),
-                          constraints: const BoxConstraints(
-                              minWidth: 15, minHeight: 15),
-                          child: Text(
-                            '$pendingCount',
-                            style: const TextStyle(
-                              color: Colors.black,
-                              fontSize: 9,
-                              fontWeight: FontWeight.bold,
-                            ),
-                            textAlign: TextAlign.center,
                           ),
                         ),
                       ),
-                  ],
-                ),
-              ),
-            );
-          },
-        ),
-      );
-    }
-
-    menuItems.add(
-      GestureDetector(
-        onTapDown: (details) {
-          final Offset tapPos = details.globalPosition;
-          _closeMenu();
-          ScreenPullController.executeSafeNavigation(
-            context: context,
-            navigationAction: () async {
-              Navigator.pushNamed(
-                context,
-                AppRoutes.notification,
-                arguments: {
-                  'useScreenPull': true,
-                  'destination': const NotificationScreen(),
-                  'currentScreen': widget,
-                  'pullPoint': tapPos,
-                },
-              );
-            },
-          );
-        },
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: [
-              const Icon(
-                Icons.notifications_none_rounded,
-                color: Colors.white,
-                size: 19,
-              ),
-              if (hasUnreadNotifications)
-                Positioned(
-                  right: 0,
-                  top: -1,
-                  child: Container(
-                    width: 8,
-                    height: 8,
-                    decoration: const BoxDecoration(
-                      color: Colors.redAccent,
-                      shape: BoxShape.circle,
                     ),
                   ),
-                ),
-            ],
-          ),
-        ),
+                  if (_isMenuExpanded) ...[
+                    Positioned.fill(
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: _closeMenu,
+                        child: Container(
+                          color: Colors.black.withOpacity(0.25),
+                        ),
+                      ),
+                    ),
+                    _buildVerticalGlassDropdown(),
+                  ],
+                ],
+              ),
       ),
-    );
-
-    if (isOwnProfile) {
-      menuItems.addAll([
-        _buildGlassIconButton(
-          icon: Icons.edit_outlined,
-          tooltip: 'Edit Profile',
-          onTap: () {
-            _closeMenu();
-            setState(() => isEditing = true);
-          },
-        ),
-        _buildGlassIconButton(
-          icon: Icons.share_outlined,
-          tooltip: 'Share Profile',
-          onTap: () {
-            _closeMenu();
-            Clipboard.setData(
-              ClipboardData(
-                text:
-                    "Check out this teacher profile on FYBTT. UID: ${widget.currentUserId}",
-              ),
-            );
-            SuccessToast.show(context, 'Profile link copied!');
-          },
-        ),
-        _buildGlassIconButton(
-          icon: Icons.privacy_tip_outlined,
-          tooltip: 'Privacy Policy',
-          onTap: () {
-            _closeMenu();
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const PrivacyPolicyScreen()),
-            );
-          },
-        ),
-        _buildGlassIconButton(
-          icon: Icons.support_agent_rounded,
-          tooltip: 'Help Center',
-          onTap: () {
-            _closeMenu();
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const HelpCenterScreen()),
-            );
-          },
-        ),
-        _buildGlassIconButton(
-          icon: Icons.logout_rounded,
-          iconColor: Colors.orangeAccent,
-          tooltip: 'Sign Out',
-          onTap: () {
-            _closeMenu();
-            _showAnimatedPopup(
-              title: 'Sign Out',
-              message: 'Are you sure you want to sign out?',
-              confirmText: 'Confirm',
-              onConfirm: () async {
-                await _auth.signOut();
-                await _clearLocalSessionAndNavigate();
-              },
-            );
-          },
-        ),
-        _buildGlassIconButton(
-          icon: Icons.delete_forever_rounded,
-          iconColor: Colors.redAccent,
-          tooltip: 'Delete Account',
-          onTap: () {
-            _closeMenu();
-            _showAnimatedPopup(
-              title: 'Delete Account',
-              message:
-                  'This will permanently delete your account. Are you sure?',
-              confirmText: 'Delete',
-              isDelete: true,
-              onConfirm: () async {
-                await _deleteAccount();
-              },
-            );
-          },
-        ),
-      ]);
-    } else {
-      menuItems.add(
-        _buildGlassIconButton(
-          icon: Icons.share_outlined,
-          tooltip: 'Share Profile',
-          onTap: () {
-            _closeMenu();
-            Clipboard.setData(
-              ClipboardData(
-                text:
-                    "Check out this teacher profile on FYBTT. UID: ${widget.currentUserId}",
-              ),
-            );
-            SuccessToast.show(context, 'Profile link copied!');
-          },
-        ),
-      );
-    }
-
-    return GestureDetector(
-      onTap: () {},
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(24),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-            decoration: BoxDecoration(
-              color: Colors.black.withOpacity(0.6),
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(
-                color: Colors.white.withOpacity(0.35),
-                width: 1.1,
-              ),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: List.generate(
-                menuItems.length,
-                (index) => Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 2.0),
-                  child: _buildStaggeredMenuItem(
-                    index: index,
-                    totalItems: menuItems.length,
-                    child: menuItems[index],
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildGlassIconButton({
-    required IconData icon,
-    required VoidCallback onTap,
-    required String tooltip,
-    Color iconColor = Colors.white,
-  }) {
-    return IconButton(
-      icon: Icon(icon, color: iconColor, size: 19),
-      tooltip: tooltip,
-      onPressed: onTap,
-      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 4),
-      constraints: const BoxConstraints(minWidth: 32, minHeight: 30),
-      visualDensity: VisualDensity.compact,
     );
   }
 
