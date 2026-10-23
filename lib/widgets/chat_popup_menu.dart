@@ -4,10 +4,12 @@ import 'popup_menu_item_tile.dart';
 
 class ChatPopupMenu extends StatelessWidget {
   final Function(ChatMenuAction) onSelected;
+  final bool isBlockedByMe;
 
   const ChatPopupMenu({
     super.key,
     required this.onSelected,
+    this.isBlockedByMe = false,
   });
 
   @override
@@ -21,9 +23,9 @@ class ChatPopupMenu extends StatelessWidget {
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
       ),
-      elevation: 6,
+      elevation: 8,
       color: Colors.white,
-      offset: const Offset(0, 40),
+      offset: const Offset(0, 42),
       onSelected: onSelected,
       itemBuilder: (context) => [
         PopupMenuItem<ChatMenuAction>(
@@ -38,10 +40,10 @@ class ChatPopupMenu extends StatelessWidget {
         PopupMenuItem<ChatMenuAction>(
           value: ChatMenuAction.blockUser,
           padding: EdgeInsets.zero,
-          child: const PopupMenuItemTile(
-            icon: Icons.block_rounded,
-            title: 'Block User',
-            textColor: Colors.redAccent,
+          child: PopupMenuItemTile(
+            icon: isBlockedByMe ? Icons.lock_open_rounded : Icons.block_rounded,
+            title: isBlockedByMe ? 'Unblock User' : 'Block User',
+            textColor: isBlockedByMe ? const Color(0xFF10B981) : Colors.redAccent,
           ),
         ),
         PopupMenuItem<ChatMenuAction>(
