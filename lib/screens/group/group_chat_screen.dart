@@ -52,6 +52,7 @@ class _GroupChatScreenState extends State<GroupChatScreen>
   StreamSubscription<GroupModel?>? _groupSubscription;
   GroupModel? _currentGroup;
   List<MessageModel> _latestMessages = [];
+  late String _activeUserName;
 
   String? _replyToMessageId;
   String? _replyToText;
@@ -109,6 +110,12 @@ class _GroupChatScreenState extends State<GroupChatScreen>
   @override
   void initState() {
     super.initState();
+    _activeUserName = widget.currentUserName.trim().isEmpty
+        ? 'User'
+        : widget.currentUserName.trim();
+
+    _resolveActiveUserName();
+
     _messagesStream = _chatService.getGroupMessagesStream(
       widget.groupId,
       categoryFilter: _selectedCategory,
@@ -140,6 +147,26 @@ class _GroupChatScreenState extends State<GroupChatScreen>
         );
       }
     });
+  }
+
+  Future<void> _resolveActiveUserName() async {
+    if (_activeUserName != 'User') return;
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(widget.currentUserId)
+          .get();
+      if (doc.exists && doc.data() != null && mounted) {
+        final data = doc.data()!;
+        final name = (data['name'] ?? data['fullName'] ?? data['displayName'])
+            ?.toString();
+        if (name != null && name.trim().isNotEmpty) {
+          setState(() {
+            _activeUserName = name.trim();
+          });
+        }
+      }
+    } catch (_) {}
   }
 
   void _updateCategoryFilter(String newCategory) {
@@ -319,6 +346,7 @@ class _GroupChatScreenState extends State<GroupChatScreen>
     _scrollController.dispose();
     _showScrollToBottomBtnNotifier.dispose();
     _searchController.dispose();
+    _chatService.markGroupMessagesAsSeen(widget.groupId, widget.currentUserId);
     super.dispose();
   }
 
@@ -1066,7 +1094,7 @@ class _GroupChatScreenState extends State<GroupChatScreen>
         builder: (_) => GroupInfoScreen(
           groupId: widget.groupId,
           currentUserId: widget.currentUserId,
-          currentUserName: widget.currentUserName,
+          currentUserName: _activeUserName,
           onOpenMediaDocsLinks: () {
             Navigator.push(
               context,
@@ -1213,6 +1241,7 @@ class _GroupChatScreenState extends State<GroupChatScreen>
           : int.tryParse(votes[widget.currentUserId]?.toString() ?? '');
 
       return Container(
+        key: ValueKey('poll_${message.messageId}'),
         margin: const EdgeInsets.symmetric(vertical: 6),
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
@@ -1353,6 +1382,7 @@ class _GroupChatScreenState extends State<GroupChatScreen>
           : int.tryParse(submissions[widget.currentUserId]?.toString() ?? '');
 
       return Container(
+        key: ValueKey('quiz_${message.messageId}'),
         margin: const EdgeInsets.symmetric(vertical: 6),
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
@@ -1865,6 +1895,9 @@ class _GroupChatScreenState extends State<GroupChatScreen>
       onPopInvokedWithResult: (didPop, result) {
         if (!didPop && _isSelectionMode) {
           _clearMessageSelection();
+        } else if (didPop) {
+          _chatService.markGroupMessagesAsSeen(
+              widget.groupId, widget.currentUserId);
         }
       },
       child: Scaffold(
@@ -1880,6 +1913,8 @@ class _GroupChatScreenState extends State<GroupChatScreen>
               if (_isSelectionMode) {
                 _clearMessageSelection();
               } else {
+                _chatService.markGroupMessagesAsSeen(
+                    widget.groupId, widget.currentUserId);
                 Navigator.pop(context);
               }
             },
@@ -2187,7 +2222,7 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                                           index == _initialUnreadCount - 1;
 
                                   return Column(
-                                    key: ValueKey(message.messageId),
+                                    key: ValueKey('grp_msg_${message.messageId}'),
                                     crossAxisAlignment: isMe
                                         ? CrossAxisAlignment.end
                                         : CrossAxisAlignment.start,
@@ -2388,8 +2423,8 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                                                           isMe: isMe,
                                                           chatRoomId:
                                                               widget.groupId,
-                                                          currentUserId: widget
-                                                              .currentUserId,
+                                                          currentUserId:
+                                                              widget.currentUserId,
                                                           onReplyPressed:
                                                               (_) {},
                                                         ),
