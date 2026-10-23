@@ -99,7 +99,6 @@ class ChatService {
       String userId, bool isOnline, bool isTeacher) async {
     if (userId.trim().isEmpty) return;
     try {
-      final String collectionPath = isTeacher ? 'teachers' : 'students';
       final Map<String, dynamic> statusData = {
         'isOnline': isOnline,
         'status': isOnline ? 'Online' : 'Offline',
@@ -107,11 +106,15 @@ class ChatService {
       };
 
       await _firestore
-          .collection(collectionPath)
+          .collection('users')
           .doc(userId)
           .set(statusData, SetOptions(merge: true));
       await _firestore
-          .collection('users')
+          .collection('teachers')
+          .doc(userId)
+          .set(statusData, SetOptions(merge: true));
+      await _firestore
+          .collection('students')
           .doc(userId)
           .set(statusData, SetOptions(merge: true));
     } catch (e) {
@@ -164,27 +167,47 @@ class ChatService {
         .asyncMap((doc) async {
       if (doc.exists && doc.data() != null) {
         final data = doc.data()!;
-        return {
-          'status':
-              data['status'] ?? (data['isOnline'] == true ? 'Online' : 'Offline'),
-          'isOnline': data['isOnline'] == true,
-          'lastSeen': data['lastSeen'] as Timestamp?,
-          'fullName': data['fullName'] ?? data['name'] ?? data['displayName'],
-          'profileImageUrl': data['profileImageUrl'] ?? data['profilePic'],
-        };
+        final map = Map<String, dynamic>.from(data);
+        map['status'] =
+            data['status'] ?? (data['isOnline'] == true ? 'Online' : 'Offline');
+        map['isOnline'] = data['isOnline'] == true;
+        map['lastSeen'] = data['lastSeen'] as Timestamp?;
+        map['fullName'] = data['fullName'] ??
+            data['name'] ??
+            data['displayName'] ??
+            data['teacherName'] ??
+            data['studentName'];
+        map['profileImageUrl'] = data['profileImageUrl'] ??
+            data['profilePic'] ??
+            data['profileUrl'] ??
+            '';
+        map['isVerified'] = data['isVerified'] == true ||
+            data['status'] == 'approved' ||
+            data['verificationStatus'] == 'verified';
+        return map;
       }
 
       final userDoc = await _firestore.collection('users').doc(userId).get();
       if (userDoc.exists && userDoc.data() != null) {
         final data = userDoc.data()!;
-        return {
-          'status':
-              data['status'] ?? (data['isOnline'] == true ? 'Online' : 'Offline'),
-          'isOnline': data['isOnline'] == true,
-          'lastSeen': data['lastSeen'] as Timestamp?,
-          'fullName': data['fullName'] ?? data['name'] ?? data['displayName'],
-          'profileImageUrl': data['profileImageUrl'] ?? data['profilePic'],
-        };
+        final map = Map<String, dynamic>.from(data);
+        map['status'] =
+            data['status'] ?? (data['isOnline'] == true ? 'Online' : 'Offline');
+        map['isOnline'] = data['isOnline'] == true;
+        map['lastSeen'] = data['lastSeen'] as Timestamp?;
+        map['fullName'] = data['fullName'] ??
+            data['name'] ??
+            data['displayName'] ??
+            data['teacherName'] ??
+            data['studentName'];
+        map['profileImageUrl'] = data['profileImageUrl'] ??
+            data['profilePic'] ??
+            data['profileUrl'] ??
+            '';
+        map['isVerified'] = data['isVerified'] == true ||
+            data['status'] == 'approved' ||
+            data['verificationStatus'] == 'verified';
+        return map;
       }
 
       final String altCollection = isTeacher ? 'students' : 'teachers';
@@ -192,14 +215,24 @@ class ChatService {
           await _firestore.collection(altCollection).doc(userId).get();
       if (altDoc.exists && altDoc.data() != null) {
         final data = altDoc.data()!;
-        return {
-          'status':
-              data['status'] ?? (data['isOnline'] == true ? 'Online' : 'Offline'),
-          'isOnline': data['isOnline'] == true,
-          'lastSeen': data['lastSeen'] as Timestamp?,
-          'fullName': data['fullName'] ?? data['name'] ?? data['displayName'],
-          'profileImageUrl': data['profileImageUrl'] ?? data['profilePic'],
-        };
+        final map = Map<String, dynamic>.from(data);
+        map['status'] =
+            data['status'] ?? (data['isOnline'] == true ? 'Online' : 'Offline');
+        map['isOnline'] = data['isOnline'] == true;
+        map['lastSeen'] = data['lastSeen'] as Timestamp?;
+        map['fullName'] = data['fullName'] ??
+            data['name'] ??
+            data['displayName'] ??
+            data['teacherName'] ??
+            data['studentName'];
+        map['profileImageUrl'] = data['profileImageUrl'] ??
+            data['profilePic'] ??
+            data['profileUrl'] ??
+            '';
+        map['isVerified'] = data['isVerified'] == true ||
+            data['status'] == 'approved' ||
+            data['verificationStatus'] == 'verified';
+        return map;
       }
 
       return {'status': 'Offline', 'lastSeen': null, 'isOnline': false};
@@ -231,7 +264,7 @@ class ChatService {
         'chatId': chatId,
         'teacherId': teacherId,
         'studentId': studentId,
-        'participants': [teacherId, studentId],
+        'participants': [teacherId, studentId]..sort(),
         'isGroup': false,
       };
 
@@ -441,6 +474,8 @@ class ChatService {
         }
       }
 
+      final List<String> sortedParticipants = [senderId, receiverId]..sort();
+
       batch.set(
           chatRef,
           {
@@ -452,7 +487,8 @@ class ChatService {
             'unreadCount': currentUnread + 1,
             'unreadFor': receiverId,
             'unreadCount_$receiverId': currentUnread + 1,
-            'participants': [senderId, receiverId],
+            'participants': sortedParticipants,
+            'deletedBy': FieldValue.arrayRemove([senderId, receiverId]),
           },
           SetOptions(merge: true));
 
