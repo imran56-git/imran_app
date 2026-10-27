@@ -61,6 +61,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
   void initState() {
     super.initState();
     _checkUserRole();
+    _purgeExpiredNotifications();
   }
 
   Future<void> _checkUserRole() async {
@@ -83,6 +84,44 @@ class _NotificationScreenState extends State<NotificationScreen> {
         setState(() => isLoading = false);
       }
     }
+  }
+
+  Future<void> _purgeExpiredNotifications() async {
+    final uid = _auth.currentUser?.uid;
+    if (uid == null) return;
+
+    try {
+      final snap = await _firestore
+          .collection('notifications')
+          .where('receiverId', isEqualTo: uid)
+          .get();
+
+      final now = DateTime.now();
+      final batch = _firestore.batch();
+      bool hasDeletes = false;
+
+      for (final doc in snap.docs) {
+        final data = doc.data();
+        final Timestamp? expireAt = data['expireAt'] as Timestamp?;
+        final Timestamp? seenAt = data['seenAt'] as Timestamp?;
+
+        bool isExpired = false;
+        if (expireAt != null && expireAt.toDate().isBefore(now)) {
+          isExpired = true;
+        } else if (seenAt != null && now.difference(seenAt.toDate()).inHours >= 48) {
+          isExpired = true;
+        }
+
+        if (isExpired) {
+          batch.delete(doc.reference);
+          hasDeletes = true;
+        }
+      }
+
+      if (hasDeletes) {
+        await batch.commit();
+      }
+    } catch (_) {}
   }
 
   bool _isChatMessageNotification(Map<String, dynamic> data) {
@@ -386,6 +425,8 @@ class _NotificationScreenState extends State<NotificationScreen> {
           'message': 'accepted your connect request.',
           'type': 'request_accepted',
           'isRead': false,
+          'status': 'unread',
+          'createdAt': FieldValue.serverTimestamp(),
           'timestamp': FieldValue.serverTimestamp(),
         });
 
@@ -582,9 +623,23 @@ class _NotificationScreenState extends State<NotificationScreen> {
                       }
 
                       final allDocs = snapshot.data?.docs ?? const [];
+                      final now = DateTime.now();
 
                       final activityDocs = allDocs.where((doc) {
                         final data = doc.data() as Map<String, dynamic>;
+
+                        final Timestamp? expireAt = data['expireAt'] as Timestamp?;
+                        if (expireAt != null && expireAt.toDate().isBefore(now)) {
+                          doc.reference.delete().catchError((_) {});
+                          return false;
+                        }
+
+                        final Timestamp? seenAt = data['seenAt'] as Timestamp?;
+                        if (seenAt != null && now.difference(seenAt.toDate()).inHours >= 48) {
+                          doc.reference.delete().catchError((_) {});
+                          return false;
+                        }
+
                         if (_isChatMessageNotification(data)) return false;
                         return _matchesSelectedFilter(data);
                       }).toList();
@@ -710,8 +765,14 @@ class _NotificationScreenState extends State<NotificationScreen> {
                                     _firestore
                                         .collection('notifications')
                                         .doc(docId)
-                                        .update({'isRead': true}).catchError(
-                                            (_) {});
+                                        .update({
+                                      'isRead': true,
+                                      'status': 'read',
+                                      'seenAt': FieldValue.serverTimestamp(),
+                                      'expireAt': Timestamp.fromDate(
+                                        DateTime.now().add(const Duration(days: 2)),
+                                      ),
+                                    }).catchError((_) {});
                                   });
                                 }
 
