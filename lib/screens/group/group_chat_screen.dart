@@ -1373,7 +1373,7 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                 decoration: BoxDecoration(
                   color: bgColor,
                   borderRadius: BorderRadius.circular(10),
-                  border: Border.all(borderColor),
+                  border: Border.all(color: borderColor),
                 ),
                 child: Row(
                   children: [
