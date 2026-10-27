@@ -70,10 +70,22 @@ class RatingService {
       final status = validationResult['status'] ?? 'verified';
       final isVerified = validationResult['isVerified'] ?? true;
       final flagReason = validationResult['flagReason'];
-      final resolvedConnectionId = validationResult['connectionId'] ?? connectionId;
-      final seasonId = validationResult['seasonId'] ?? ReviewModel.getCurrentSeasonId(DateTime.now());
+      final resolvedConnectionId =
+          validationResult['connectionId'] ?? connectionId;
+      final seasonId = validationResult['seasonId'] ??
+          ReviewModel.getCurrentSeasonId(DateTime.now());
 
-      final reviewRef = _firestore.collection('reviews').doc();
+      final existingReviewSnap = await _firestore
+          .collection('reviews')
+          .where('teacherId', isEqualTo: teacherId)
+          .where('studentId', isEqualTo: studentId)
+          .limit(1)
+          .get();
+
+      final DocumentReference reviewRef = existingReviewSnap.docs.isNotEmpty
+          ? existingReviewSnap.docs.first.reference
+          : _firestore.collection('reviews').doc();
+
       final reviewModel = ReviewModel(
         id: reviewRef.id,
         teacherId: teacherId,
@@ -93,13 +105,38 @@ class RatingService {
       );
 
       final batch = _firestore.batch();
-      batch.set(reviewRef, reviewModel.toMap());
+      batch.set(reviewRef, reviewModel.toMap(), SetOptions(merge: true));
 
-      final followDocId = resolvedConnectionId.isNotEmpty ? resolvedConnectionId : '${teacherId}_$studentId';
-      final followRef = _firestore.collection('follow_requests').doc(followDocId);
-      batch.set(followRef, {
-        'lastRatedSeasonId': seasonId,
-      }, SetOptions(merge: true));
+      final ratingDocRef =
+          _firestore.collection('ratings').doc('${teacherId}_$studentId');
+      batch.set(
+        ratingDocRef,
+        {
+          'teacherId': teacherId,
+          'studentId': studentId,
+          'studentName': studentName,
+          'studentPhotoUrl': studentPhotoUrl,
+          'overallRating': stars,
+          'categories': categories.toMap(),
+          'comment': reviewText,
+          'seasonId': seasonId,
+          'updatedAt': FieldValue.serverTimestamp(),
+        },
+        SetOptions(merge: true),
+      );
+
+      final followDocId = resolvedConnectionId.isNotEmpty
+          ? resolvedConnectionId
+          : '${teacherId}_$studentId';
+      final followRef =
+          _firestore.collection('follow_requests').doc(followDocId);
+      batch.set(
+        followRef,
+        {
+          'lastRatedSeasonId': seasonId,
+        },
+        SetOptions(merge: true),
+      );
 
       await batch.commit();
 
@@ -142,12 +179,23 @@ class RatingService {
           .get();
 
       final docs = reviewsQuery.docs;
+      final currentSeasonId = ReviewModel.getCurrentSeasonId(DateTime.now());
+
       if (docs.isEmpty) {
         final initialSummary = RatingSummaryModel.initial(teacherId);
         await _firestore
             .collection('teacher_rating_summary')
             .doc(teacherId)
             .set(initialSummary.toMap());
+
+        await _firestore.collection('teachers').doc(teacherId).set({
+          'averageRating': 0.0,
+          'allTimeRating': 0.0,
+          'reviewCount': 0,
+          'ratingCount': 0,
+          'currentSeasonRating': 0.0,
+          'currentSeason': currentSeasonId,
+        }, SetOptions(merge: true));
         return;
       }
 
@@ -160,7 +208,6 @@ class RatingService {
       double sumKnowledge = 0;
       double sumPunctuality = 0;
 
-      final currentSeasonId = ReviewModel.getCurrentSeasonId(DateTime.now());
       double seasonTotalStars = 0;
       int seasonReviewsCount = 0;
 
@@ -184,21 +231,29 @@ class RatingService {
           seasonReviewsCount++;
         }
 
-        final subId = review.subjectId.isNotEmpty ? review.subjectId : 'general';
+        final subId =
+            review.subjectId.isNotEmpty ? review.subjectId : 'general';
         subjectReviewsMap.putIfAbsent(subId, () => []).add(review);
       }
 
-      final avgRating = double.parse((totalStars / totalReviewsCount).toStringAsFixed(2));
+      final avgRating =
+          double.parse((totalStars / totalReviewsCount).toStringAsFixed(2));
       final seasonAvgRating = seasonReviewsCount > 0
-          ? double.parse((seasonTotalStars / seasonReviewsCount).toStringAsFixed(2))
+          ? double.parse(
+              (seasonTotalStars / seasonReviewsCount).toStringAsFixed(2))
           : 0.0;
 
       final categoryAverages = {
-        'teaching': double.parse((sumTeaching / totalReviewsCount).toStringAsFixed(1)),
-        'behaviour': double.parse((sumBehaviour / totalReviewsCount).toStringAsFixed(1)),
-        'communication': double.parse((sumCommunication / totalReviewsCount).toStringAsFixed(1)),
-        'knowledge': double.parse((sumKnowledge / totalReviewsCount).toStringAsFixed(1)),
-        'punctuality': double.parse((sumPunctuality / totalReviewsCount).toStringAsFixed(1)),
+        'teaching':
+            double.parse((sumTeaching / totalReviewsCount).toStringAsFixed(1)),
+        'behaviour':
+            double.parse((sumBehaviour / totalReviewsCount).toStringAsFixed(1)),
+        'communication': double.parse(
+            (sumCommunication / totalReviewsCount).toStringAsFixed(1)),
+        'knowledge':
+            double.parse((sumKnowledge / totalReviewsCount).toStringAsFixed(1)),
+        'punctuality': double.parse(
+            (sumPunctuality / totalReviewsCount).toStringAsFixed(1)),
       };
 
       final Map<String, SubjectRatingSummary> subjectSummaries = {};
@@ -207,17 +262,24 @@ class RatingService {
         for (var r in subReviews) {
           subStars += r.overallRating;
         }
-        final subAvg = double.parse((subStars / subReviews.length).toStringAsFixed(2));
-        
+        final subAvg =
+            double.parse((subStars / subReviews.length).toStringAsFixed(2));
+
         final vCount = subReviews.length;
-        final compScore = ((vCount * subAvg) + (AlgorithmConfig.bayesianPriorStrengthM * AlgorithmConfig.defaultSubjectGroupAverageC)) / (vCount + AlgorithmConfig.bayesianPriorStrengthM);
+        final compScore = ((vCount * subAvg) +
+                (AlgorithmConfig.bayesianPriorStrengthM *
+                    AlgorithmConfig.defaultSubjectGroupAverageC)) /
+            (vCount + AlgorithmConfig.bayesianPriorStrengthM);
 
         String badge = 'NONE';
-        if (vCount >= AlgorithmConfig.kBadgeMinVerifiedReviews && subAvg >= AlgorithmConfig.kBadgeMinPublicRating) {
+        if (vCount >= AlgorithmConfig.kBadgeMinVerifiedReviews &&
+            subAvg >= AlgorithmConfig.kBadgeMinPublicRating) {
           badge = 'K';
-        } else if (vCount >= AlgorithmConfig.bBadgeMinVerifiedReviews && subAvg >= AlgorithmConfig.bBadgeMinPublicRating) {
+        } else if (vCount >= AlgorithmConfig.bBadgeMinVerifiedReviews &&
+            subAvg >= AlgorithmConfig.bBadgeMinPublicRating) {
           badge = 'B';
-        } else if (vCount >= AlgorithmConfig.mBadgeMinVerifiedReviews && subAvg >= AlgorithmConfig.mBadgeMinPublicRating) {
+        } else if (vCount >= AlgorithmConfig.mBadgeMinVerifiedReviews &&
+            subAvg >= AlgorithmConfig.mBadgeMinPublicRating) {
           badge = 'M';
         }
 
@@ -228,19 +290,28 @@ class RatingService {
           verifiedReviews: vCount,
           competitionScore: double.parse(compScore.toStringAsFixed(2)),
           awardedBadge: badge,
-          eligibilityStatus: vCount >= AlgorithmConfig.tierLimitedCompMinReviews ? 'Eligible' : AlgorithmConfig.insufficientEvidenceText,
+          eligibilityStatus:
+              vCount >= AlgorithmConfig.tierLimitedCompMinReviews
+                  ? 'Eligible'
+                  : AlgorithmConfig.insufficientEvidenceText,
           isSubjectVerified: true,
         );
       });
 
-      final competitionScore = ((totalReviewsCount * avgRating) + (AlgorithmConfig.bayesianPriorStrengthM * AlgorithmConfig.defaultSubjectGroupAverageC)) / (totalReviewsCount + AlgorithmConfig.bayesianPriorStrengthM);
+      final competitionScore = ((totalReviewsCount * avgRating) +
+              (AlgorithmConfig.bayesianPriorStrengthM *
+                  AlgorithmConfig.defaultSubjectGroupAverageC)) /
+          (totalReviewsCount + AlgorithmConfig.bayesianPriorStrengthM);
 
       String overallBadge = 'NONE';
-      if (totalReviewsCount >= AlgorithmConfig.kBadgeMinVerifiedReviews && avgRating >= AlgorithmConfig.kBadgeMinPublicRating) {
+      if (totalReviewsCount >= AlgorithmConfig.kBadgeMinVerifiedReviews &&
+          avgRating >= AlgorithmConfig.kBadgeMinPublicRating) {
         overallBadge = 'K';
-      } else if (totalReviewsCount >= AlgorithmConfig.bBadgeMinVerifiedReviews && avgRating >= AlgorithmConfig.bBadgeMinPublicRating) {
+      } else if (totalReviewsCount >= AlgorithmConfig.bBadgeMinVerifiedReviews &&
+          avgRating >= AlgorithmConfig.bBadgeMinPublicRating) {
         overallBadge = 'B';
-      } else if (totalReviewsCount >= AlgorithmConfig.mBadgeMinVerifiedReviews && avgRating >= AlgorithmConfig.mBadgeMinPublicRating) {
+      } else if (totalReviewsCount >= AlgorithmConfig.mBadgeMinVerifiedReviews &&
+          avgRating >= AlgorithmConfig.mBadgeMinPublicRating) {
         overallBadge = 'M';
       }
 
@@ -254,9 +325,13 @@ class RatingService {
         currentSeasonId: currentSeasonId,
         currentSeasonAverageRating: seasonAvgRating,
         currentSeasonVerifiedReviews: seasonReviewsCount,
-        currentSeasonCompetitionScore: seasonReviewsCount > 0 ? seasonAvgRating : 0.0,
+        currentSeasonCompetitionScore:
+            seasonReviewsCount > 0 ? seasonAvgRating : 0.0,
         currentBadge: overallBadge,
-        eligibilityStatus: totalReviewsCount >= AlgorithmConfig.tierLimitedCompMinReviews ? 'Eligible' : AlgorithmConfig.insufficientEvidenceText,
+        eligibilityStatus:
+            totalReviewsCount >= AlgorithmConfig.tierLimitedCompMinReviews
+                ? 'Eligible'
+                : AlgorithmConfig.insufficientEvidenceText,
         starDistribution: starDist,
         categoryAverages: categoryAverages,
         subjectSummaries: subjectSummaries,
@@ -267,6 +342,16 @@ class RatingService {
           .collection('teacher_rating_summary')
           .doc(teacherId)
           .set(summaryModel.toMap());
+
+      await _firestore.collection('teachers').doc(teacherId).set({
+        'averageRating': avgRating,
+        'allTimeRating': avgRating,
+        'reviewCount': totalReviewsCount,
+        'ratingCount': totalReviewsCount,
+        'currentSeasonRating': seasonAvgRating,
+        'currentSeason': currentSeasonId,
+        'qualityBadge': overallBadge,
+      }, SetOptions(merge: true));
     } catch (e) {
       debugPrint("Error recalculating teacher ratings: $e");
     }
