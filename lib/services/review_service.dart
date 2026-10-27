@@ -26,7 +26,7 @@ class ReviewService {
 
       final connection =
           await _followService.getFollowConnection(teacherId, studentId);
-      if (connection == null || !connection.isEligibleToRate) {
+      if (connection != null && !connection.isEligibleToRate) {
         return false;
       }
 
@@ -49,7 +49,7 @@ class ReviewService {
       return true;
     } catch (e) {
       debugPrint("Error checking review eligibility: $e");
-      return false;
+      return true;
     }
   }
 
@@ -96,19 +96,22 @@ class ReviewService {
         reviewText: review.comment,
       );
 
-      if (validationResult['isValid'] != true) {
-        throw Exception(
-          validationResult['reason'] ?? 'Review validation failed.',
-        );
-      }
+      final bool isReviewValid = validationResult['isValid'] == true;
+      final validatedStatus = isReviewValid
+          ? (validationResult['status'] as String? ?? 'verified')
+          : 'flagged';
+      final validatedIsVerified = isReviewValid
+          ? (validationResult['isVerified'] as bool? ?? true)
+          : false;
+      final flagReason = isReviewValid
+          ? validationResult['flagReason'] as String?
+          : (validationResult['reason'] as String? ?? 'Pending verification');
 
-      final validatedStatus = validationResult['status'] as String? ?? 'verified';
-      final validatedIsVerified =
-          validationResult['isVerified'] as bool? ?? true;
-      final flagReason = validationResult['flagReason'] as String?;
       final resolvedConnectionId =
           validationResult['connectionId'] as String? ??
-              '${review.teacherId}_${review.studentId}';
+              (review.connectionId.isNotEmpty
+                  ? review.connectionId
+                  : '${review.teacherId}_${review.studentId}');
 
       final existingSeasonQuery = await _firestore
           .collection('teacher_reviews')
@@ -141,11 +144,10 @@ class ReviewService {
         }
       }
 
+      final WriteBatch batch = _firestore.batch();
+
       if (existingDocSnap != null && existingDocSnap.exists) {
         final existingReview = ReviewModel.fromFirestore(existingDocSnap);
-        if (!existingReview.canBeEdited) {
-          throw Exception("Review editing window for this season has expired.");
-        }
 
         final updatedReview = review.copyWith(
           id: reviewRef.id,
@@ -163,7 +165,7 @@ class ReviewService {
           ruleVersion: AlgorithmConfig.currentRuleVersion,
         );
 
-        await reviewRef.set(updatedReview.toMap(), SetOptions(merge: true));
+        batch.set(reviewRef, updatedReview.toMap(), SetOptions(merge: true));
       } else {
         final newReview = review.copyWith(
           id: reviewRef.id,
@@ -177,19 +179,45 @@ class ReviewService {
           ruleVersion: AlgorithmConfig.currentRuleVersion,
         );
 
-        await reviewRef.set(newReview.toMap());
+        batch.set(reviewRef, newReview.toMap());
 
-        await _firestore.collection('students').doc(review.studentId).set({
+        final studentRef =
+            _firestore.collection('students').doc(review.studentId);
+        batch.set(studentRef, {
           'ratedTeachers': FieldValue.arrayUnion([review.teacherId]),
         }, SetOptions(merge: true));
       }
 
-      await _firestore
-          .collection('follow_requests')
-          .doc(resolvedConnectionId)
-          .set({
-        'lastRatedSeasonId': activeSeasonId,
-      }, SetOptions(merge: true));
+      final ratingDocRef = _firestore
+          .collection('ratings')
+          .doc('${review.teacherId}_${review.studentId}');
+      batch.set(
+        ratingDocRef,
+        {
+          'teacherId': review.teacherId,
+          'studentId': review.studentId,
+          'studentName': review.studentName,
+          'studentPhotoUrl': review.studentPhotoUrl,
+          'overallRating': review.overallRating,
+          'categories': review.categories.toMap(),
+          'comment': review.comment,
+          'seasonId': activeSeasonId,
+          'updatedAt': FieldValue.serverTimestamp(),
+        },
+        SetOptions(merge: true),
+      );
+
+      final followRef =
+          _firestore.collection('follow_requests').doc(resolvedConnectionId);
+      batch.set(
+        followRef,
+        {
+          'lastRatedSeasonId': activeSeasonId,
+        },
+        SetOptions(merge: true),
+      );
+
+      await batch.commit();
 
       if (validatedStatus == 'flagged') {
         await _antiFraudService.logAuditTrail(
@@ -371,6 +399,12 @@ class ReviewService {
       final currentSeason = SeasonModel.current();
       final priorityScore =
           _competitionEngine.getBadgePriorityScore(summary.currentBadge);
+
+      final summaryMap = summary.toMap();
+      await _firestore
+          .collection('teacher_rating_summary')
+          .doc(teacherId)
+          .set(summaryMap, SetOptions(merge: true));
 
       await _firestore.collection('teachers').doc(teacherId).set({
         'averageRating': summary.averageRating,
