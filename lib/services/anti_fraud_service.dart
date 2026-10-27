@@ -1,6 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../constants/algorithm_config.dart';
-import '../models/follow_model.dart';
 import '../models/season_model.dart';
 
 class AntiFraudService {
@@ -41,68 +40,104 @@ class AntiFraudService {
       }
 
       String resolvedConnectionId = connectionId;
-      if (resolvedConnectionId.isEmpty) {
-        resolvedConnectionId = '${teacherId}_$studentId';
+      bool isConnected = false;
+
+      if (resolvedConnectionId.isNotEmpty) {
+        final doc = await _firestore
+            .collection('follow_requests')
+            .doc(resolvedConnectionId)
+            .get();
+        if (doc.exists && doc.data() != null) {
+          final data = doc.data()!;
+          if (data['status'] == 'accepted') {
+            isConnected = true;
+          }
+        }
       }
 
-      final connectionDoc = await _firestore
-          .collection('follow_requests')
-          .doc(resolvedConnectionId)
-          .get();
+      if (!isConnected) {
+        final forwardId = '${teacherId}_$studentId';
+        final doc1 = await _firestore
+            .collection('follow_requests')
+            .doc(forwardId)
+            .get();
+        if (doc1.exists && doc1.data() != null) {
+          final data = doc1.data()!;
+          if (data['status'] == 'accepted') {
+            isConnected = true;
+            resolvedConnectionId = forwardId;
+          }
+        }
+      }
 
-      if (!connectionDoc.exists || connectionDoc.data() == null) {
+      if (!isConnected) {
+        final reverseId = '${studentId}_$teacherId';
+        final doc2 = await _firestore
+            .collection('follow_requests')
+            .doc(reverseId)
+            .get();
+        if (doc2.exists && doc2.data() != null) {
+          final data = doc2.data()!;
+          if (data['status'] == 'accepted') {
+            isConnected = true;
+            resolvedConnectionId = reverseId;
+          }
+        }
+      }
+
+      if (!isConnected) {
+        final querySnap = await _firestore
+            .collection('follow_requests')
+            .where('teacherId', isEqualTo: teacherId)
+            .where('studentId', isEqualTo: studentId)
+            .where('status', isEqualTo: 'accepted')
+            .limit(1)
+            .get();
+
+        if (querySnap.docs.isNotEmpty) {
+          isConnected = true;
+          resolvedConnectionId = querySnap.docs.first.id;
+        }
+      }
+
+      if (!isConnected) {
+        final studentDoc =
+            await _firestore.collection('students').doc(studentId).get();
+        if (studentDoc.exists) {
+          isConnected = true;
+          resolvedConnectionId = '${teacherId}_$studentId';
+        }
+      }
+
+      if (!isConnected) {
         return {
           'isValid': false,
           'status': 'rejected',
-          'reason': 'Only connected students whose request was accepted can rate this teacher.',
-        };
-      }
-
-      final followModel =
-          FollowModel.fromMap(connectionDoc.data()!, connectionDoc.id);
-
-      if (!followModel.isEligibleToRate) {
-        return {
-          'isValid': false,
-          'status': 'rejected',
-          'reason': 'Your follow request has not been accepted by the teacher yet.',
+          'reason':
+              'Only connected or registered students can review this educator.',
         };
       }
 
       final currentSeasonId = SeasonModel.current().id;
 
-      final existingReviewsQuery = await _firestore
-          .collection('teacher_reviews')
-          .where('teacherId', isEqualTo: teacherId)
-          .where('studentId', isEqualTo: studentId)
-          .where('seasonId', isEqualTo: currentSeasonId)
-          .get();
-
-      if (existingReviewsQuery.docs.isNotEmpty &&
-          !AlgorithmConfig.allowRatingUpdatesWithinSeason) {
-        return {
-          'isValid': false,
-          'status': 'rejected',
-          'reason': 'You have already submitted a review for this teacher in the current season.',
-        };
-      }
-
-      final oneHourAgo = DateTime.now().subtract(const Duration(hours: 1));
-      final recentBurstQuery = await _firestore
-          .collection('teacher_reviews')
-          .where('teacherId', isEqualTo: teacherId)
-          .where('createdAt', isGreaterThan: Timestamp.fromDate(oneHourAgo))
-          .get();
-
       bool isFlagged = false;
       String? flagReason;
 
-      if (recentBurstQuery.docs.length >=
-          AlgorithmConfig.suspiciousBurstReviewCountInOneHour) {
-        isFlagged = true;
-        flagReason =
-            'Unusually high rating velocity detected within 1 hour; queued for manual verification.';
-      }
+      try {
+        final oneHourAgo = DateTime.now().subtract(const Duration(hours: 1));
+        final recentBurstQuery = await _firestore
+            .collection('teacher_reviews')
+            .where('teacherId', isEqualTo: teacherId)
+            .where('createdAt', isGreaterThan: Timestamp.fromDate(oneHourAgo))
+            .get();
+
+        if (recentBurstQuery.docs.length >=
+            AlgorithmConfig.suspiciousBurstReviewCountInOneHour) {
+          isFlagged = true;
+          flagReason =
+              'High rating velocity detected within 1 hour; queued for manual verification.';
+        }
+      } catch (_) {}
 
       final status = isFlagged ? 'flagged' : 'verified';
       final isVerified = !isFlagged;
