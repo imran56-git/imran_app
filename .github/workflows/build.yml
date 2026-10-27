@@ -27,8 +27,9 @@ jobs:
         run: |
           keytool -genkey -v -keystore android/app/upload-keystore.jks \
           -keyalg RSA -keysize 2048 -validity 10000 \
-          -alias upload -passin pass:${{ secrets.KEYSTORE_STORE_PASSWORD }} \
-          -passout pass:${{ secrets.KEYSTORE_STORE_PASSWORD }} \
+          -alias upload \
+          -storepass "${{ secrets.KEYSTORE_STORE_PASSWORD }}" \
+          -keypass "${{ secrets.KEYSTORE_STORE_PASSWORD }}" \
           -dname "CN=Imran, OU=FYBTT, O=FYBTT, L=Kalsara, ST=WB, C=IN"
           
           echo "storePassword=${{ secrets.KEYSTORE_STORE_PASSWORD }}" > android/key.properties
