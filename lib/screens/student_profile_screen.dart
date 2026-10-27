@@ -200,6 +200,64 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
     }
   }
 
+  void _openFullScreenImageViewer(String imageUrl, String title) {
+    if (imageUrl.isEmpty) return;
+    Navigator.of(context).push(
+      PageRouteBuilder(
+        opaque: false,
+        barrierDismissible: true,
+        pageBuilder: (context, _, __) {
+          return Scaffold(
+            backgroundColor: Colors.black.withOpacity(0.96),
+            appBar: AppBar(
+              backgroundColor: Colors.transparent,
+              elevation: 0,
+              leading: IconButton(
+                icon: const Icon(Icons.arrow_back_ios_new_rounded,
+                    color: Colors.white),
+                onPressed: () => Navigator.pop(context),
+              ),
+              title: Text(
+                title,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 17,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+            body: SizedBox.expand(
+              child: Center(
+                child: InteractiveViewer(
+                  panEnabled: true,
+                  boundaryMargin: const EdgeInsets.all(120),
+                  minScale: 0.5,
+                  maxScale: 5.0,
+                  child: Image.network(
+                    imageUrl,
+                    fit: BoxFit.contain,
+                    loadingBuilder: (context, child, progress) {
+                      if (progress == null) return child;
+                      return const Center(
+                        child: CircularProgressIndicator(color: Colors.white),
+                      );
+                    },
+                    errorBuilder: (context, error, stackTrace) {
+                      return const Center(
+                        child: Icon(Icons.broken_image_rounded,
+                            color: Colors.white54, size: 48),
+                      );
+                    },
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   Future<void> _pickProfileImage() async {
     final picked =
         await _picker.pickImage(source: ImageSource.gallery, imageQuality: 75);
@@ -1050,6 +1108,9 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
         : (_auth.currentUser?.uid ?? 'N/A');
     final String initial =
         _name.text.trim().isNotEmpty ? _name.text.trim()[0].toUpperCase() : 'S';
+    final String? profilePicUrl =
+        (studentData?['profileImageUrl'] ?? studentData?['photoUrl'])
+            ?.toString();
 
     return FadeInDown(
       duration: const Duration(milliseconds: 380),
@@ -1085,43 +1146,55 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
               alignment: Alignment.center,
               clipBehavior: Clip.none,
               children: [
-                Container(
-                  padding: const EdgeInsets.all(3.5),
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFF2DD4BF), Color(0xFF38BDF8)],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.22),
-                        blurRadius: 16,
-                        offset: const Offset(0, 6),
-                      ),
-                    ],
-                  ),
+                GestureDetector(
+                  onTap: () {
+                    if (!isEditing &&
+                        profilePicUrl != null &&
+                        profilePicUrl.isNotEmpty) {
+                      _openFullScreenImageViewer(
+                        profilePicUrl,
+                        _name.text.isEmpty ? "Student Profile" : _name.text,
+                      );
+                    }
+                  },
                   child: Container(
-                    padding: const EdgeInsets.all(2.5),
-                    decoration: const BoxDecoration(
-                      color: _primaryNavy,
+                    padding: const EdgeInsets.all(3.5),
+                    decoration: BoxDecoration(
                       shape: BoxShape.circle,
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF2DD4BF), Color(0xFF38BDF8)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.22),
+                          blurRadius: 16,
+                          offset: const Offset(0, 6),
+                        ),
+                      ],
                     ),
-                    child: CircleAvatar(
-                      radius: 50,
-                      backgroundColor: const Color(0xFF1E293B),
-                      backgroundImage: _profileImage,
-                      child: _profileImage == null
-                          ? Text(
-                              initial,
-                              style: const TextStyle(
-                                fontSize: 36,
-                                fontWeight: FontWeight.w900,
-                                color: Color(0xFF5EEAD4),
-                              ),
-                            )
-                          : null,
+                    child: Container(
+                      padding: const EdgeInsets.all(2.5),
+                      decoration: const BoxDecoration(
+                        color: _primaryNavy,
+                        shape: BoxShape.circle,
+                      ),
+                      child: CircleAvatar(
+                        radius: 50,
+                        backgroundColor: const Color(0xFF1E293B),
+                        backgroundImage: _profileImage,
+                        child: _profileImage == null
+                            ? Text(
+                                initial,
+                                style: const TextStyle(
+                                  fontSize: 36,
+                                  fontWeight: FontWeight.w900,
+                                  color: Color(0xFF5EEAD4),
+                                ),
+                              )
+                            : null,
+                      ),
                     ),
                   ),
                 ),
