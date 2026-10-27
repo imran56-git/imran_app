@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import '../models/review_model.dart';
 import '../models/rating_summary_model.dart';
@@ -26,6 +27,7 @@ class TeacherReviewsScreen extends StatefulWidget {
 class _TeacherReviewsScreenState extends State<TeacherReviewsScreen> {
   final ReviewService _reviewService = ReviewService();
   final RatingService _ratingService = RatingService();
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   List<ReviewModel> _reviews = [];
   bool _isLoadingReviews = true;
@@ -50,10 +52,12 @@ class _TeacherReviewsScreenState extends State<TeacherReviewsScreen> {
         onlyVerified: true,
       );
 
-      setState(() {
-        _canWriteReview = canReview;
-        _reviews = reviews;
-      });
+      if (mounted) {
+        setState(() {
+          _canWriteReview = canReview;
+          _reviews = reviews;
+        });
+      }
     } catch (e) {
       debugPrint("Error fetching reviews screen data: $e");
     } finally {
@@ -63,32 +67,104 @@ class _TeacherReviewsScreenState extends State<TeacherReviewsScreen> {
     }
   }
 
-  void _openRatingDialog() {
+  void _openFullScreenImage(String url, String title) {
+    if (url.isEmpty) return;
+    Navigator.of(context).push(
+      PageRouteBuilder(
+        opaque: false,
+        barrierDismissible: true,
+        pageBuilder: (context, _, __) {
+          return Scaffold(
+            backgroundColor: Colors.black.withOpacity(0.96),
+            appBar: AppBar(
+              backgroundColor: Colors.transparent,
+              elevation: 0,
+              leading: IconButton(
+                icon: const Icon(Icons.arrow_back_ios_new_rounded,
+                    color: Colors.white),
+                onPressed: () => Navigator.pop(context),
+              ),
+              title: Text(
+                title,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 17,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+            body: SizedBox.expand(
+              child: Center(
+                child: InteractiveViewer(
+                  panEnabled: true,
+                  boundaryMargin: const EdgeInsets.all(100),
+                  minScale: 0.5,
+                  maxScale: 5.0,
+                  child: Image.network(
+                    url,
+                    fit: BoxFit.contain,
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _openRatingDialog() async {
+    String studentName = 'Student';
+    String studentPhotoUrl = '';
+
+    try {
+      var studentDoc = await _firestore
+          .collection('students')
+          .doc(widget.currentStudentId)
+          .get();
+      if (!studentDoc.exists || studentDoc.data() == null) {
+        studentDoc = await _firestore
+            .collection('users')
+            .doc(widget.currentStudentId)
+            .get();
+      }
+
+      if (studentDoc.exists && studentDoc.data() != null) {
+        final data = studentDoc.data()!;
+        studentName =
+            (data['fullName'] ?? data['name'] ?? 'Student').toString();
+        studentPhotoUrl = (data['profileImageUrl'] ??
+                data['profilePic'] ??
+                data['photoUrl'] ??
+                '')
+            .toString();
+      }
+    } catch (_) {}
+
+    if (!mounted) return;
+
     RatingDialogWidget.show(
       context,
       teacherName: widget.teacherName,
       teacherProfileUrl: widget.teacherProfileUrl,
-      onSubmit: (rating, comment) async {
+      onSubmit: (overallRating, categories, comment) async {
         final review = ReviewModel(
           id: '',
           teacherId: widget.teacherId,
           studentId: widget.currentStudentId,
-          studentName: 'Verified Student',
-          studentPhotoUrl: '',
-          overallRating: rating,
-          categories: CategoryRating(
-            teaching: rating,
-            behaviour: rating,
-            communication: rating,
-            knowledge: rating,
-            punctuality: rating,
-          ),
+          studentName: studentName,
+          studentPhotoUrl: studentPhotoUrl,
+          overallRating: overallRating,
+          categories: categories,
           comment: comment,
           createdAt: DateTime.now(),
         );
 
-        await _reviewService.submitOrUpdateReview(review: review);
-        await _fetchData();
+        final success =
+            await _reviewService.submitOrUpdateReview(review: review);
+        if (success) {
+          await _fetchData();
+        }
       },
     );
   }
@@ -369,23 +445,31 @@ class _TeacherReviewsScreenState extends State<TeacherReviewsScreen> {
             children: [
               Row(
                 children: [
-                  CircleAvatar(
-                    radius: 18,
-                    backgroundColor: const Color(0xFFF1F5F9),
-                    backgroundImage: (review.studentPhotoUrl.isNotEmpty)
-                        ? NetworkImage(review.studentPhotoUrl)
-                        : null,
-                    child: (review.studentPhotoUrl.isEmpty)
-                        ? Text(
-                            review.studentName.isNotEmpty
-                                ? review.studentName[0].toUpperCase()
-                                : 'S',
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: Color(0xFF1E4C7A),
-                            ),
-                          )
-                        : null,
+                  GestureDetector(
+                    onTap: () {
+                      if (review.studentPhotoUrl.isNotEmpty) {
+                        _openFullScreenImage(
+                            review.studentPhotoUrl, review.studentName);
+                      }
+                    },
+                    child: CircleAvatar(
+                      radius: 18,
+                      backgroundColor: const Color(0xFFF1F5F9),
+                      backgroundImage: (review.studentPhotoUrl.isNotEmpty)
+                          ? NetworkImage(review.studentPhotoUrl)
+                          : null,
+                      child: (review.studentPhotoUrl.isEmpty)
+                          ? Text(
+                              review.studentName.isNotEmpty
+                                  ? review.studentName[0].toUpperCase()
+                                  : 'S',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFF1E4C7A),
+                              ),
+                            )
+                          : null,
+                    ),
                   ),
                   const SizedBox(width: 10),
                   Column(
