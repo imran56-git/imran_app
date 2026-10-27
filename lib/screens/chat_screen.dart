@@ -316,6 +316,64 @@ class _ChatScreenState extends State<ChatScreen>
     }
   }
 
+  void _openFullScreenImageViewer(String imageUrl, String title) {
+    if (imageUrl.isEmpty) return;
+    Navigator.of(context).push(
+      PageRouteBuilder(
+        opaque: false,
+        barrierDismissible: true,
+        pageBuilder: (context, _, __) {
+          return Scaffold(
+            backgroundColor: Colors.black.withOpacity(0.96),
+            appBar: AppBar(
+              backgroundColor: Colors.transparent,
+              elevation: 0,
+              leading: IconButton(
+                icon: const Icon(Icons.arrow_back_ios_new_rounded,
+                    color: Colors.white),
+                onPressed: () => Navigator.pop(context),
+              ),
+              title: Text(
+                title,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 17,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+            body: SizedBox.expand(
+              child: Center(
+                child: InteractiveViewer(
+                  panEnabled: true,
+                  boundaryMargin: const EdgeInsets.all(100),
+                  minScale: 0.5,
+                  maxScale: 5.0,
+                  child: Image.network(
+                    imageUrl,
+                    fit: BoxFit.contain,
+                    loadingBuilder: (context, child, progress) {
+                      if (progress == null) return child;
+                      return const Center(
+                        child: CircularProgressIndicator(color: Colors.white),
+                      );
+                    },
+                    errorBuilder: (context, error, stackTrace) {
+                      return const Center(
+                        child: Icon(Icons.broken_image_rounded,
+                            color: Colors.white54, size: 48),
+                      );
+                    },
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   bool _canEditSingleMessage(MessageModel msg) {
     if (msg.senderId != widget.currentUserId) return false;
     if (msg.type.toLowerCase() != 'text') return false;
@@ -1220,143 +1278,146 @@ class _ChatScreenState extends State<ChatScreen>
                 if (context.mounted) Navigator.pop(context);
               },
             ),
+            GestureDetector(
+              onTap: () {
+                if (displayPic.isNotEmpty) {
+                  _openFullScreenImageViewer(displayPic, displayName);
+                } else {
+                  _openReceiverProfile();
+                }
+              },
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(1.5),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: isOnline
+                            ? const Color(0xFF4ADE80)
+                            : Colors.white.withOpacity(0.35),
+                        width: 1.5,
+                      ),
+                    ),
+                    child: CircleAvatar(
+                      radius: 18,
+                      backgroundColor: const Color(0xFF1E293B),
+                      backgroundImage: displayPic.isNotEmpty
+                          ? NetworkImage(displayPic)
+                          : null,
+                      child: displayPic.isEmpty
+                          ? Text(
+                              initial,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w800,
+                                fontSize: 15,
+                              ),
+                            )
+                          : null,
+                    ),
+                  ),
+                  if (isOnline)
+                    Positioned(
+                      right: 0,
+                      bottom: 0,
+                      child: Container(
+                        width: 10.5,
+                        height: 10.5,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF22C55E),
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                              color: _primaryNavy, width: 1.8),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 10),
             Expanded(
               child: InkWell(
                 borderRadius: BorderRadius.circular(12),
                 onTap: _openReceiverProfile,
-                child: Row(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Stack(
-                      clipBehavior: Clip.none,
+                    Row(
                       children: [
-                        Container(
-                          padding: const EdgeInsets.all(1.5),
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: isOnline
-                                  ? const Color(0xFF4ADE80)
-                                  : Colors.white.withOpacity(0.35),
-                              width: 1.5,
+                        Flexible(
+                          child: Text(
+                            displayName,
+                            style: const TextStyle(
+                              fontSize: 15.8,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.white,
+                              letterSpacing: 0.2,
                             ),
-                          ),
-                          child: CircleAvatar(
-                            radius: 18,
-                            backgroundColor: const Color(0xFF1E293B),
-                            backgroundImage: displayPic.isNotEmpty
-                                ? NetworkImage(displayPic)
-                                : null,
-                            child: displayPic.isEmpty
-                                ? Text(
-                                    initial,
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.w800,
-                                      fontSize: 15,
-                                    ),
-                                  )
-                                : null,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                        if (isOnline)
-                          Positioned(
-                            right: 0,
-                            bottom: 0,
-                            child: Container(
-                              width: 10.5,
-                              height: 10.5,
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF22C55E),
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                    color: _primaryNavy, width: 1.8),
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Row(
-                            children: [
-                              Flexible(
-                                child: Text(
-                                  displayName,
-                                  style: const TextStyle(
-                                    fontSize: 15.8,
-                                    fontWeight: FontWeight.w800,
-                                    color: Colors.white,
-                                    letterSpacing: 0.2,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                              if (isVerified) ...[
-                                const SizedBox(width: 4),
-                                const Icon(
-                                  Icons.verified_rounded,
-                                  color: Color(0xFF38BDF8),
-                                  size: 15,
-                                ),
-                              ],
-                            ],
-                          ),
-                          const SizedBox(height: 2),
-                          StreamBuilder<DocumentSnapshot>(
-                            stream: _typingDocStream,
-                            builder: (context, typingSnapshot) {
-                              bool isTyping = false;
-                              if (typingSnapshot.hasData &&
-                                  typingSnapshot.data!.exists) {
-                                final data = typingSnapshot.data!.data()
-                                    as Map<String, dynamic>?;
-                                isTyping = data?[widget.receiverId] == true;
-                              }
-
-                              if (isTyping) {
-                                return const Row(
-                                  children: [
-                                    Text(
-                                      'typing...',
-                                      style: TextStyle(
-                                        fontSize: 11.5,
-                                        color: Color(0xFF5EEAD4),
-                                        fontWeight: FontWeight.w800,
-                                        fontStyle: FontStyle.italic,
-                                      ),
-                                    ),
-                                  ],
-                                );
-                              }
-
-                              String statusSubtitle = 'Tap to view profile';
-                              if (isOnline) {
-                                statusSubtitle = 'Online • Tap for profile';
-                              } else if (lastSeenDate != null) {
-                                statusSubtitle =
-                                    'Last seen ${_formatLastSeen(lastSeenDate!)} • Tap for profile';
-                              }
-
-                              return Text(
-                                statusSubtitle,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w500,
-                                  color: isOnline
-                                      ? const Color(0xFF86EFAC)
-                                      : Colors.white70,
-                                ),
-                              );
-                            },
+                        if (isVerified) ...[
+                          const SizedBox(width: 4),
+                          const Icon(
+                            Icons.verified_rounded,
+                            color: Color(0xFF38BDF8),
+                            size: 15,
                           ),
                         ],
-                      ),
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                    StreamBuilder<DocumentSnapshot>(
+                      stream: _typingDocStream,
+                      builder: (context, typingSnapshot) {
+                        bool isTyping = false;
+                        if (typingSnapshot.hasData &&
+                            typingSnapshot.data!.exists) {
+                          final data = typingSnapshot.data!.data()
+                              as Map<String, dynamic>?;
+                          isTyping = data?[widget.receiverId] == true;
+                        }
+
+                        if (isTyping) {
+                          return const Row(
+                            children: [
+                              Text(
+                                'typing...',
+                                style: TextStyle(
+                                  fontSize: 11.5,
+                                  color: Color(0xFF5EEAD4),
+                                  fontWeight: FontWeight.w800,
+                                  fontStyle: FontStyle.italic,
+                                ),
+                              ),
+                            ],
+                          );
+                        }
+
+                        String statusSubtitle = 'Tap to view profile';
+                        if (isOnline) {
+                          statusSubtitle = 'Online • Tap for profile';
+                        } else if (lastSeenDate != null) {
+                          statusSubtitle =
+                              'Last seen ${_formatLastSeen(lastSeenDate!)} • Tap for profile';
+                        }
+
+                        return Text(
+                          statusSubtitle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w500,
+                            color: isOnline
+                                ? const Color(0xFF86EFAC)
+                                : Colors.white70,
+                          ),
+                        );
+                      },
                     ),
                   ],
                 ),
