@@ -266,6 +266,64 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
     });
   }
 
+  void _openFullScreenImageViewer(String imageUrl, String title) {
+    if (imageUrl.isEmpty) return;
+    Navigator.of(context).push(
+      PageRouteBuilder(
+        opaque: false,
+        barrierDismissible: true,
+        pageBuilder: (context, _, __) {
+          return Scaffold(
+            backgroundColor: Colors.black.withOpacity(0.96),
+            appBar: AppBar(
+              backgroundColor: Colors.transparent,
+              elevation: 0,
+              leading: IconButton(
+                icon: const Icon(Icons.arrow_back_ios_new_rounded,
+                    color: Colors.white),
+                onPressed: () => Navigator.pop(context),
+              ),
+              title: Text(
+                title,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 17,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+            body: SizedBox.expand(
+              child: Center(
+                child: InteractiveViewer(
+                  panEnabled: true,
+                  boundaryMargin: const EdgeInsets.all(120),
+                  minScale: 0.5,
+                  maxScale: 5.0,
+                  child: Image.network(
+                    imageUrl,
+                    fit: BoxFit.contain,
+                    loadingBuilder: (context, child, progress) {
+                      if (progress == null) return child;
+                      return const Center(
+                        child: CircularProgressIndicator(color: Colors.white),
+                      );
+                    },
+                    errorBuilder: (context, error, stackTrace) {
+                      return const Center(
+                        child: Icon(Icons.broken_image_rounded,
+                            color: Colors.white54, size: 48),
+                      );
+                    },
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   Future<void> _pickAndUploadBanner() async {
     if (!isOwnProfile) return;
     try {
@@ -1451,6 +1509,9 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
     const double profileRadius = 56.0;
     final bool canPopScreen = Navigator.canPop(context) && !isOwnProfile;
     final ImageProvider? bannerProvider = _resolveBannerImageProvider();
+    final String? currentBannerUrl =
+        (teacherData?['bannerImageUrl'] ?? teacherData?['coverImageUrl'])
+            ?.toString();
 
     return PopScope(
       canPop: canPopScreen && !_isMenuExpanded,
@@ -1493,261 +1554,290 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                                 clipBehavior: Clip.none,
                                 alignment: Alignment.center,
                                 children: [
-                                  Container(
-                                    height: bannerHeight,
-                                    width: double.infinity,
-                                    decoration: BoxDecoration(
-                                      gradient: const LinearGradient(
-                                        colors: [
-                                          Color(0xFF0F172A),
-                                          Color(0xFF1E3A8A),
-                                          Color(0xFF1E4C7A),
-                                        ],
-                                        begin: Alignment.topLeft,
-                                        end: Alignment.bottomRight,
-                                      ),
-                                      image: bannerProvider != null
-                                          ? DecorationImage(
-                                              image: bannerProvider,
-                                              fit: BoxFit.cover,
-                                            )
-                                          : null,
-                                      borderRadius: const BorderRadius.vertical(
-                                        bottom: Radius.circular(30),
-                                      ),
-                                      boxShadow: [
-                                        BoxShadow(
-                                          color: _primaryNavy.withOpacity(0.16),
-                                          blurRadius: 20,
-                                          offset: const Offset(0, 8),
+                                  GestureDetector(
+                                    behavior: HitTestBehavior.opaque,
+                                    onTap: () {
+                                      if (!isEditing &&
+                                          currentBannerUrl != null &&
+                                          currentBannerUrl.isNotEmpty) {
+                                        _openFullScreenImageViewer(
+                                            currentBannerUrl, 'Cover Banner');
+                                      }
+                                    },
+                                    child: Container(
+                                      height: bannerHeight,
+                                      width: double.infinity,
+                                      decoration: BoxDecoration(
+                                        gradient: const LinearGradient(
+                                          colors: [
+                                            Color(0xFF0F172A),
+                                            Color(0xFF1E3A8A),
+                                            Color(0xFF1E4C7A),
+                                          ],
+                                          begin: Alignment.topLeft,
+                                          end: Alignment.bottomRight,
                                         ),
-                                      ],
-                                    ),
-                                    child: Stack(
-                                      fit: StackFit.expand,
-                                      children: [
-                                        if (bannerProvider == null)
-                                          Positioned(
-                                            right: -30,
-                                            top: -20,
-                                            child: Container(
-                                              width: 170,
-                                              height: 170,
-                                              decoration: BoxDecoration(
-                                                shape: BoxShape.circle,
-                                                color: Colors.white
-                                                    .withOpacity(0.05),
+                                        image: bannerProvider != null
+                                            ? DecorationImage(
+                                                image: bannerProvider,
+                                                fit: BoxFit.cover,
+                                              )
+                                            : null,
+                                        borderRadius:
+                                            const BorderRadius.vertical(
+                                          bottom: Radius.circular(30),
+                                        ),
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color:
+                                                _primaryNavy.withOpacity(0.16),
+                                            blurRadius: 20,
+                                            offset: const Offset(0, 8),
+                                          ),
+                                        ],
+                                      ),
+                                      child: Stack(
+                                        fit: StackFit.expand,
+                                        children: [
+                                          if (bannerProvider == null)
+                                            Positioned(
+                                              right: -30,
+                                              top: -20,
+                                              child: Container(
+                                                width: 170,
+                                                height: 170,
+                                                decoration: BoxDecoration(
+                                                  shape: BoxShape.circle,
+                                                  color: Colors.white
+                                                      .withOpacity(0.05),
+                                                ),
+                                              ),
+                                            ),
+                                          Container(
+                                            decoration: BoxDecoration(
+                                              borderRadius:
+                                                  const BorderRadius.vertical(
+                                                bottom: Radius.circular(30),
+                                              ),
+                                              gradient: LinearGradient(
+                                                begin: Alignment.topCenter,
+                                                end: Alignment.bottomCenter,
+                                                colors: [
+                                                  Colors.black
+                                                      .withOpacity(0.48),
+                                                  Colors.transparent,
+                                                  Colors.black
+                                                      .withOpacity(0.42),
+                                                ],
                                               ),
                                             ),
                                           ),
-                                        Container(
-                                          decoration: BoxDecoration(
-                                            borderRadius:
-                                                const BorderRadius.vertical(
-                                              bottom: Radius.circular(30),
-                                            ),
-                                            gradient: LinearGradient(
-                                              begin: Alignment.topCenter,
-                                              end: Alignment.bottomCenter,
-                                              colors: [
-                                                Colors.black.withOpacity(0.48),
-                                                Colors.transparent,
-                                                Colors.black.withOpacity(0.42),
+                                          Positioned(
+                                            top: topInset + 10,
+                                            left: 14,
+                                            right: 14,
+                                            child: Row(
+                                              mainAxisAlignment:
+                                                  MainAxisAlignment
+                                                      .spaceBetween,
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.center,
+                                              children: [
+                                                Expanded(
+                                                  child: Row(
+                                                    mainAxisSize:
+                                                        MainAxisSize.min,
+                                                    children: [
+                                                      if (canPopScreen)
+                                                        Container(
+                                                          margin:
+                                                              const EdgeInsets
+                                                                  .only(
+                                                                  right: 8),
+                                                          decoration:
+                                                              BoxDecoration(
+                                                            color: Colors.black
+                                                                .withOpacity(
+                                                                    0.28),
+                                                            borderRadius:
+                                                                BorderRadius
+                                                                    .circular(
+                                                                        12),
+                                                          ),
+                                                          child: IconButton(
+                                                            icon: const Icon(
+                                                              Icons
+                                                                  .arrow_back_ios_new_rounded,
+                                                              color:
+                                                                  Colors.white,
+                                                              size: 18,
+                                                            ),
+                                                            onPressed: () =>
+                                                                Navigator.pop(
+                                                                    context),
+                                                          ),
+                                                        )
+                                                      else
+                                                        const SizedBox(
+                                                            width: 4),
+                                                      Flexible(
+                                                        child: Text(
+                                                          isOwnProfile
+                                                              ? (isEditing
+                                                                  ? 'Edit Profile'
+                                                                  : 'My Profile')
+                                                              : 'Educator Profile',
+                                                          maxLines: 1,
+                                                          overflow:
+                                                              TextOverflow
+                                                                  .ellipsis,
+                                                          style:
+                                                              const TextStyle(
+                                                            fontWeight:
+                                                                FontWeight.w900,
+                                                            color: Colors.white,
+                                                            fontSize: 20,
+                                                            letterSpacing: 0.2,
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 8),
+                                                Container(
+                                                  decoration: BoxDecoration(
+                                                    color: _isMenuExpanded
+                                                        ? Colors.white
+                                                            .withOpacity(0.18)
+                                                        : Colors.black
+                                                            .withOpacity(0.28),
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                            12),
+                                                    border: Border.all(
+                                                        color: Colors.white
+                                                            .withOpacity(0.22)),
+                                                  ),
+                                                  child: IconButton(
+                                                    visualDensity:
+                                                        VisualDensity.compact,
+                                                    icon: Icon(
+                                                      _isMenuExpanded
+                                                          ? Icons.close_rounded
+                                                          : Icons
+                                                              .more_vert_rounded,
+                                                      color: Colors.white,
+                                                      size: 22,
+                                                    ),
+                                                    tooltip: 'Menu',
+                                                    onPressed: () {
+                                                      if (_isMenuExpanded) {
+                                                        _closeMenu();
+                                                      } else {
+                                                        _openMenu();
+                                                      }
+                                                    },
+                                                  ),
+                                                ),
                                               ],
                                             ),
                                           ),
-                                        ),
-                                        Positioned(
-                                          top: topInset + 10,
-                                          left: 14,
-                                          right: 14,
-                                          child: Row(
-                                            mainAxisAlignment:
-                                                MainAxisAlignment.spaceBetween,
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.center,
-                                            children: [
-                                              Expanded(
-                                                child: Row(
-                                                  mainAxisSize:
-                                                      MainAxisSize.min,
-                                                  children: [
-                                                    if (canPopScreen)
-                                                      Container(
-                                                        margin:
+                                          if (isOwnProfile)
+                                            Positioned(
+                                              right: 16,
+                                              bottom: 14,
+                                              child: Material(
+                                                color: Colors.transparent,
+                                                child: InkWell(
+                                                  borderRadius:
+                                                      BorderRadius.circular(20),
+                                                  onTap: _isUploadingBanner
+                                                      ? null
+                                                      : _pickAndUploadBanner,
+                                                  child: ClipRRect(
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                            20),
+                                                    child: BackdropFilter(
+                                                      filter: ImageFilter.blur(
+                                                          sigmaX: 10,
+                                                          sigmaY: 10),
+                                                      child: Container(
+                                                        padding:
                                                             const EdgeInsets
-                                                                .only(right: 8),
+                                                                .symmetric(
+                                                          horizontal: 12,
+                                                          vertical: 7,
+                                                        ),
                                                         decoration:
                                                             BoxDecoration(
                                                           color: Colors.black
                                                               .withOpacity(
-                                                                  0.28),
+                                                                  0.45),
                                                           borderRadius:
                                                               BorderRadius
-                                                                  .circular(12),
-                                                        ),
-                                                        child: IconButton(
-                                                          icon: const Icon(
-                                                            Icons
-                                                                .arrow_back_ios_new_rounded,
-                                                            color: Colors.white,
-                                                            size: 18,
+                                                                  .circular(20),
+                                                          border: Border.all(
+                                                            color: Colors.white
+                                                                .withOpacity(
+                                                                    0.35),
+                                                            width: 1,
                                                           ),
-                                                          onPressed: () =>
-                                                              Navigator.pop(
-                                                                  context),
                                                         ),
-                                                      )
-                                                    else
-                                                      const SizedBox(width: 4),
-                                                    Flexible(
-                                                      child: Text(
-                                                        isOwnProfile
-                                                            ? (isEditing
-                                                                ? 'Edit Profile'
-                                                                : 'My Profile')
-                                                            : 'Educator Profile',
-                                                        maxLines: 1,
-                                                        overflow: TextOverflow
-                                                            .ellipsis,
-                                                        style: const TextStyle(
-                                                          fontWeight:
-                                                              FontWeight.w900,
-                                                          color: Colors.white,
-                                                          fontSize: 20,
-                                                          letterSpacing: 0.2,
-                                                        ),
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                              ),
-                                              const SizedBox(width: 8),
-                                              Container(
-                                                decoration: BoxDecoration(
-                                                  color: _isMenuExpanded
-                                                      ? Colors.white
-                                                          .withOpacity(0.18)
-                                                      : Colors.black
-                                                          .withOpacity(0.28),
-                                                  borderRadius:
-                                                      BorderRadius.circular(12),
-                                                  border: Border.all(
-                                                      color: Colors.white
-                                                          .withOpacity(0.22)),
-                                                ),
-                                                child: IconButton(
-                                                  visualDensity:
-                                                      VisualDensity.compact,
-                                                  icon: Icon(
-                                                    _isMenuExpanded
-                                                        ? Icons.close_rounded
-                                                        : Icons
-                                                            .more_vert_rounded,
-                                                    color: Colors.white,
-                                                    size: 22,
-                                                  ),
-                                                  tooltip: 'Menu',
-                                                  onPressed: () {
-                                                    if (_isMenuExpanded) {
-                                                      _closeMenu();
-                                                    } else {
-                                                      _openMenu();
-                                                    }
-                                                  },
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                        if (isOwnProfile)
-                                          Positioned(
-                                            right: 16,
-                                            bottom: 14,
-                                            child: Material(
-                                              color: Colors.transparent,
-                                              child: InkWell(
-                                                borderRadius:
-                                                    BorderRadius.circular(20),
-                                                onTap: _isUploadingBanner
-                                                    ? null
-                                                    : _pickAndUploadBanner,
-                                                child: ClipRRect(
-                                                  borderRadius:
-                                                      BorderRadius.circular(20),
-                                                  child: BackdropFilter(
-                                                    filter: ImageFilter.blur(
-                                                        sigmaX: 10, sigmaY: 10),
-                                                    child: Container(
-                                                      padding: const EdgeInsets
-                                                          .symmetric(
-                                                        horizontal: 12,
-                                                        vertical: 7,
-                                                      ),
-                                                      decoration: BoxDecoration(
-                                                        color: Colors.black
-                                                            .withOpacity(0.45),
-                                                        borderRadius:
-                                                            BorderRadius
-                                                                .circular(20),
-                                                        border: Border.all(
-                                                          color: Colors.white
-                                                              .withOpacity(
-                                                                  0.35),
-                                                          width: 1,
-                                                        ),
-                                                      ),
-                                                      child: Row(
-                                                        mainAxisSize:
-                                                            MainAxisSize.min,
-                                                        children: [
-                                                          if (_isUploadingBanner)
-                                                            const SizedBox(
-                                                              width: 14,
-                                                              height: 14,
-                                                              child:
-                                                                  CircularProgressIndicator(
-                                                                strokeWidth: 2,
+                                                        child: Row(
+                                                          mainAxisSize:
+                                                              MainAxisSize.min,
+                                                          children: [
+                                                            if (_isUploadingBanner)
+                                                              const SizedBox(
+                                                                width: 14,
+                                                                height: 14,
+                                                                child:
+                                                                    CircularProgressIndicator(
+                                                                  strokeWidth:
+                                                                      2,
+                                                                  color: Colors
+                                                                      .white,
+                                                                ),
+                                                              )
+                                                            else
+                                                              const Icon(
+                                                                Icons
+                                                                    .photo_camera_back_rounded,
                                                                 color: Colors
                                                                     .white,
+                                                                size: 15,
+                                                             ),
+                                                            const SizedBox(
+                                                                width: 6),
+                                                            Text(
+                                                              _isUploadingBanner
+                                                                  ? 'Uploading...'
+                                                                  : (bannerProvider !=
+                                                                          null
+                                                                      ? 'Change Cover'
+                                                                      : 'Add Cover'),
+                                                              style:
+                                                                  const TextStyle(
+                                                                color: Colors
+                                                                    .white,
+                                                                fontSize: 11.5,
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .w700,
                                                               ),
-                                                            )
-                                                          else
-                                                            const Icon(
-                                                              Icons
-                                                                  .photo_camera_back_rounded,
-                                                              color:
-                                                                  Colors.white,
-                                                              size: 15,
                                                             ),
-                                                          const SizedBox(
-                                                              width: 6),
-                                                          Text(
-                                                            _isUploadingBanner
-                                                                ? 'Uploading...'
-                                                                : (bannerProvider !=
-                                                                        null
-                                                                    ? 'Change Cover'
-                                                                    : 'Add Cover'),
-                                                            style:
-                                                                const TextStyle(
-                                                              color:
-                                                                  Colors.white,
-                                                              fontSize: 11.5,
-                                                              fontWeight:
-                                                                  FontWeight
-                                                                      .w700,
-                                                            ),
-                                                          ),
-                                                        ],
+                                                          ],
+                                                        ),
                                                       ),
                                                     ),
                                                   ),
                                                 ),
                                               ),
                                             ),
-                                          ),
-                                      ],
+                                        ],
+                                      ),
                                     ),
                                   ),
                                   Positioned(
@@ -2068,7 +2158,11 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
   }
 
   Widget _buildProfileImage(double radius) {
-    final url = teacherData?['profileImageUrl'];
+    final rawUrl = teacherData?['profileImageUrl'];
+    final String? url =
+        (rawUrl != null && rawUrl.toString().trim().isNotEmpty)
+            ? rawUrl.toString().trim()
+            : null;
     final String nameText = _nameController.text.trim().isNotEmpty
         ? _nameController.text.trim()
         : 'T';
@@ -2096,7 +2190,11 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                 setState(() => _selectedImage = File(picked.path));
               }
             }
-          : null,
+          : () {
+              if (url != null && url.isNotEmpty) {
+                _openFullScreenImageViewer(url, nameText);
+              }
+            },
       child: Stack(
         clipBehavior: Clip.none,
         children: [
@@ -2118,11 +2216,8 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
               backgroundColor: const Color(0xFFE0F2FE),
               backgroundImage: _selectedImage != null
                   ? FileImage(_selectedImage!)
-                  : (url != null && url.toString().isNotEmpty
-                      ? NetworkImage(url.toString())
-                      : null) as ImageProvider?,
-              child: (_selectedImage == null &&
-                      (url == null || url.toString().isEmpty))
+                  : (url != null ? NetworkImage(url) : null) as ImageProvider?,
+              child: (_selectedImage == null && url == null)
                   ? Text(
                       nameText[0].toUpperCase(),
                       style: const TextStyle(
