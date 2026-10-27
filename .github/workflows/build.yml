@@ -25,17 +25,27 @@ jobs:
 
       - name: Generate Keystore Automatically
         run: |
+          KEYSTORE_PASS="${{ secrets.KEYSTORE_STORE_PASSWORD }}"
+          
+          if [ -z "$KEYSTORE_PASS" ]; then
+            KEYSTORE_PASS="ImranSecret123"
+          fi
+
           keytool -genkey -v -keystore android/app/upload-keystore.jks \
           -keyalg RSA -keysize 2048 -validity 10000 \
           -alias upload \
-          -storepass "${{ secrets.KEYSTORE_STORE_PASSWORD }}" \
-          -keypass "${{ secrets.KEYSTORE_STORE_PASSWORD }}" \
+          -storepass "$KEYSTORE_PASS" \
+          -keypass "$KEYSTORE_PASS" \
           -dname "CN=Imran, OU=FYBTT, O=FYBTT, L=Kalsara, ST=WB, C=IN"
           
-          echo "storePassword=${{ secrets.KEYSTORE_STORE_PASSWORD }}" > android/key.properties
-          echo "keyPassword=${{ secrets.KEYSTORE_STORE_PASSWORD }}" >> android/key.properties
+          echo "storePassword=$KEYSTORE_PASS" > android/key.properties
+          echo "keyPassword=$KEYSTORE_PASS" >> android/key.properties
           echo "keyAlias=upload" >> android/key.properties
           echo "storeFile=upload-keystore.jks" >> android/key.properties
+
+      - name: Print SHA-1 Fingerprint for Firebase
+        run: |
+          keytool -list -v -keystore android/app/upload-keystore.jks -alias upload -storepass "${{ secrets.KEYSTORE_STORE_PASSWORD }}"
 
       - uses: subosito/flutter-action@v2
         with:
