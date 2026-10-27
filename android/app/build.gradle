@@ -41,6 +41,17 @@ android {
         jvmTarget = "17"
     }
 
+    signingConfigs {
+        release {
+            if (project.hasProperty('storeFile')) {
+                storeFile file(storeFile)
+                storePassword storePassword
+                keyPassword keyPassword
+                keyAlias keyAlias
+            }
+        }
+    }
+
     defaultConfig {
         applicationId = "com.imran.findyourbestteacher"
 
@@ -57,7 +68,7 @@ android {
 
     buildTypes {
         release {
-            signingConfig = signingConfigs.debug
+            signingConfig signingConfigs.release
             minifyEnabled false
             shrinkResources false
         }
