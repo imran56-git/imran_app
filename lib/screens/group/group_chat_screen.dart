@@ -994,79 +994,6 @@ class _GroupChatScreenState extends State<GroupChatScreen>
     );
   }
 
-  void _confirmDismissGroup() {
-    if (!_isViewerTeacher) return;
-    showDialog(
-      context: context,
-      builder: (ctx) {
-        return AlertDialog(
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-          title: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.red.shade50,
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.warning_amber_rounded,
-                    color: Colors.redAccent, size: 24),
-              ),
-              const SizedBox(width: 10),
-              const Expanded(
-                child: Text(
-                  "Dismiss Group Permanently",
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 17,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          content: const Text(
-            "Once dismissed, this group will be permanently closed. Every student in this group will receive a real-time dismissal popup and no further messages can be sent.",
-            style: TextStyle(fontSize: 14.5, color: Color(0xFF475569)),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text("Cancel"),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.redAccent,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10)),
-              ),
-              onPressed: () async {
-                Navigator.pop(ctx);
-                try {
-                  await _groupService.dismissGroup(
-                    groupId: widget.groupId,
-                    teacherId: widget.currentUserId,
-                  );
-                  if (mounted) {
-                    Navigator.pop(context);
-                    _showSnackBar("Group has been permanently dismissed.");
-                  }
-                } catch (e) {
-                  _showSnackBar("Failed to dismiss group: $e");
-                }
-              },
-              child: const Text(
-                "Dismiss Group",
-                style:
-                    TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-              ),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
   void _openAcademicComposerSheet() {
     AcademicComposerSheet.show(
       context,
@@ -1446,7 +1373,7 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                 decoration: BoxDecoration(
                   color: bgColor,
                   borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: borderColor),
+                  border: Border.all(borderColor),
                 ),
                 child: Row(
                   children: [
@@ -2061,8 +1988,6 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                     await Clipboard.setData(ClipboardData(text: transcript));
                     _showSnackBar("Chat transcript copied to clipboard!");
                   }
-                } else if (value == 'dismiss') {
-                  _confirmDismissGroup();
                 }
               },
               itemBuilder: (context) => [
@@ -2088,15 +2013,6 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                   value: 'export',
                   child: Text('Export Chat Copy'),
                 ),
-                if (_isViewerTeacher)
-                  const PopupMenuItem(
-                    value: 'dismiss',
-                    child: Text(
-                      'Dismiss Group Permanently',
-                      style: TextStyle(
-                          color: Colors.redAccent, fontWeight: FontWeight.bold),
-                    ),
-                  ),
               ],
             ),
           ],
