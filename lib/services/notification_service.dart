@@ -245,123 +245,130 @@ class NotificationService {
         .collection('chats')
         .where('participants', arrayContains: uid)
         .snapshots()
-        .listen((snapshot) {
-      for (final change in snapshot.docChanges) {
-        if (change.type == DocumentChangeType.modified ||
-            change.type == DocumentChangeType.added) {
-          final data = change.doc.data();
-          if (data == null) continue;
+        .listen(
+      (snapshot) {
+        for (final change in snapshot.docChanges) {
+          if (change.type == DocumentChangeType.modified ||
+              change.type == DocumentChangeType.added) {
+            final data = change.doc.data();
+            if (data == null) continue;
 
-          final String chatRoomId = change.doc.id;
-          if (_activeChatRoomId != null && _activeChatRoomId == chatRoomId) {
-            continue;
-          }
+            final String chatRoomId = change.doc.id;
+            if (_activeChatRoomId != null && _activeChatRoomId == chatRoomId) {
+              continue;
+            }
 
-          final String lastSenderId = (data['lastSenderId'] ??
-                  data['lastMessageSenderId'] ??
-                  data['senderId'] ??
-                  '')
-              .toString();
-          if (lastSenderId.isEmpty || lastSenderId == uid) continue;
+            final String lastSenderId = (data['lastSenderId'] ??
+                    data['lastMessageSenderId'] ??
+                    data['senderId'] ??
+                    '')
+                .toString();
+            if (lastSenderId.isEmpty || lastSenderId == uid) continue;
 
-          final Timestamp? lastTime = data['lastMessageTime'] as Timestamp?;
-          if (lastTime == null) continue;
-          if (lastTime.toDate().isBefore(_sessionStartTime)) continue;
+            final Timestamp? lastTime = data['lastMessageTime'] as Timestamp?;
+            if (lastTime == null) continue;
+            if (lastTime.toDate().isBefore(_sessionStartTime)) continue;
 
-          final String uniqueKey =
-              'chat_${change.doc.id}_${lastTime.millisecondsSinceEpoch}';
-          if (_shownNotificationIds.contains(uniqueKey)) continue;
-          _shownNotificationIds.add(uniqueKey);
+            final String uniqueKey =
+                'chat_${change.doc.id}_${lastTime.millisecondsSinceEpoch}';
+            if (_shownNotificationIds.contains(uniqueKey)) continue;
+            _shownNotificationIds.add(uniqueKey);
 
-          final bool isGroup = data['isGroup'] == true;
-          final String senderName = _resolveSenderDisplayName(data, uid);
-          final String messagePreview =
-              (data['lastMessage'] ?? data['lastMessageContent'] ?? 'New message')
-                  .toString();
-          final String lastMessageType =
-              (data['lastMessageType'] ?? 'text').toString();
+            final bool isGroup = data['isGroup'] == true;
+            final String senderName = _resolveSenderDisplayName(data, uid);
+            final String messagePreview = (data['lastMessage'] ??
+                    data['lastMessageContent'] ??
+                    'New message')
+                .toString();
+            final String lastMessageType =
+                (data['lastMessageType'] ?? 'text').toString();
 
-          if (lastMessageType == AlgorithmConfig.seasonRatingMessageType) {
-            showActivityAlertNotification(
-              notificationId: change.doc.id.hashCode,
-              title: '$senderName • New Rating Season',
-              body: messagePreview,
-              payloadData: {
-                'notificationType': AlgorithmConfig.seasonRatingMessageType,
-                'teacherId': lastSenderId,
-                'teacherName': senderName,
-                'seasonId': SeasonModel.current().id,
-                'connectionId': '${lastSenderId}_$uid',
-                'chatRoomId': change.doc.id,
-              },
-            );
-          } else {
-            showInteractiveChatNotification(
-              chatRoomId: change.doc.id,
-              senderId: lastSenderId,
-              senderName: senderName,
-              messageText: messagePreview,
-              isGroup: isGroup,
-            );
+            if (lastMessageType == AlgorithmConfig.seasonRatingMessageType) {
+              showActivityAlertNotification(
+                notificationId: change.doc.id.hashCode,
+                title: '$senderName • New Rating Season',
+                body: messagePreview,
+                payloadData: {
+                  'notificationType': AlgorithmConfig.seasonRatingMessageType,
+                  'teacherId': lastSenderId,
+                  'teacherName': senderName,
+                  'seasonId': SeasonModel.current().id,
+                  'connectionId': '${lastSenderId}_$uid',
+                  'chatRoomId': change.doc.id,
+                },
+              );
+            } else {
+              showInteractiveChatNotification(
+                chatRoomId: change.doc.id,
+                senderId: lastSenderId,
+                senderName: senderName,
+                messageText: messagePreview,
+                isGroup: isGroup,
+              );
+            }
           }
         }
-      }
-    });
+      },
+      onError: (_) {},
+    );
 
     _eventsSubscription = _firestore
         .collection('notifications')
         .where('receiverId', isEqualTo: uid)
         .snapshots()
-        .listen((snapshot) {
-      for (final change in snapshot.docChanges) {
-        if (change.type == DocumentChangeType.added) {
-          final data = change.doc.data();
-          if (data == null) continue;
+        .listen(
+      (snapshot) {
+        for (final change in snapshot.docChanges) {
+          if (change.type == DocumentChangeType.added) {
+            final data = change.doc.data();
+            if (data == null) continue;
 
-          final String type = (data['type'] ?? '').toString().toLowerCase();
-          if (type == 'chat' || type == 'group_message') {
-            continue;
+            final String type = (data['type'] ?? '').toString().toLowerCase();
+            if (type == 'chat' || type == 'group_message') {
+              continue;
+            }
+
+            final Timestamp? createdAt =
+                (data['createdAt'] ?? data['timestamp']) as Timestamp?;
+            if (createdAt != null &&
+                createdAt.toDate().isBefore(_sessionStartTime)) {
+              continue;
+            }
+
+            final String uniqueKey = 'event_${change.doc.id}';
+            if (_shownNotificationIds.contains(uniqueKey)) continue;
+            _shownNotificationIds.add(uniqueKey);
+
+            final String title =
+                (data['title'] ?? data['senderName'] ?? 'FYBTT Notification')
+                    .toString();
+            final String body =
+                (data['body'] ?? data['message'] ?? 'You have a new update')
+                    .toString();
+
+            showActivityAlertNotification(
+              notificationId: change.doc.id.hashCode,
+              title: title,
+              body: body,
+              payloadData: {
+                'notificationType': type,
+                'notificationDocId': change.doc.id,
+                'senderId': (data['senderId'] ?? '').toString(),
+                'teacherId':
+                    (data['teacherId'] ?? data['senderId'] ?? '').toString(),
+                'teacherName': (data['senderName'] ?? 'Teacher').toString(),
+                'seasonId':
+                    (data['seasonId'] ?? SeasonModel.current().id).toString(),
+                'connectionId': (data['connectionId'] ?? '').toString(),
+                'subjectId': (data['subjectId'] ?? 'general').toString(),
+                'groupId': (data['groupId'] ?? '').toString(),
+              },
+            );
           }
-
-          final Timestamp? createdAt =
-              (data['timestamp'] ?? data['createdAt']) as Timestamp?;
-          if (createdAt != null &&
-              createdAt.toDate().isBefore(_sessionStartTime)) {
-            continue;
-          }
-
-          final String uniqueKey = 'event_${change.doc.id}';
-          if (_shownNotificationIds.contains(uniqueKey)) continue;
-          _shownNotificationIds.add(uniqueKey);
-
-          final String title =
-              (data['title'] ?? data['senderName'] ?? 'FYBTT Notification')
-                  .toString();
-          final String body =
-              (data['body'] ?? data['message'] ?? 'You have a new update')
-                  .toString();
-
-          showActivityAlertNotification(
-            notificationId: change.doc.id.hashCode,
-            title: title,
-            body: body,
-            payloadData: {
-              'notificationType': type,
-              'notificationDocId': change.doc.id,
-              'senderId': (data['senderId'] ?? '').toString(),
-              'teacherId':
-                  (data['teacherId'] ?? data['senderId'] ?? '').toString(),
-              'teacherName': (data['senderName'] ?? 'Teacher').toString(),
-              'seasonId':
-                  (data['seasonId'] ?? SeasonModel.current().id).toString(),
-              'connectionId': (data['connectionId'] ?? '').toString(),
-              'subjectId': (data['subjectId'] ?? 'general').toString(),
-              'groupId': (data['groupId'] ?? '').toString(),
-            },
-          );
         }
-      }
-    });
+      },
+      onError: (_) {},
+    );
   }
 
   String _resolveSenderDisplayName(
@@ -1341,20 +1348,24 @@ class NotificationService {
   }) async {
     if (receiverId.trim().isEmpty || type == 'chat') return;
 
-    await _firestore.collection('notifications').add({
-      'receiverId': receiverId,
-      'senderId': senderId,
-      'senderName': senderName,
-      'senderPhoto': senderPhoto,
-      'type': type,
-      'title': title,
-      'body': body,
-      'message': body,
-      'groupId': groupId ?? '',
-      'groupName': groupName ?? '',
-      'isRead': false,
-      'timestamp': FieldValue.serverTimestamp(),
-    });
+    try {
+      await _firestore.collection('notifications').add({
+        'receiverId': receiverId,
+        'senderId': senderId,
+        'senderName': senderName,
+        'senderPhoto': senderPhoto,
+        'type': type,
+        'title': title,
+        'body': body,
+        'message': body,
+        'groupId': groupId ?? '',
+        'groupName': groupName ?? '',
+        'isRead': false,
+        'status': 'unread',
+        'createdAt': FieldValue.serverTimestamp(),
+        'timestamp': FieldValue.serverTimestamp(),
+      });
+    } catch (_) {}
   }
 
   Future<bool> sendPushNotification({
