@@ -1,12 +1,18 @@
 import 'dart:async';
+import 'dart:io';
+import 'dart:ui';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../models/group_model.dart';
 import '../../models/message_model.dart';
 import '../../services/chat_service.dart';
 import '../../services/group_service.dart';
+import '../../utils/image_utils.dart';
 import '../../widgets/badge_details_sheet.dart';
 
 class GroupInfoScreen extends StatefulWidget {
@@ -31,6 +37,9 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
   final GroupService _groupService = GroupService();
   final ChatService _chatService = ChatService();
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final FirebaseStorage _storage = FirebaseStorage.instance;
+  final ImagePicker _picker = ImagePicker();
   final TextEditingController _memberSearchController = TextEditingController();
 
   StreamSubscription<GroupModel?>? _groupSubscription;
@@ -176,12 +185,136 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
+  void _openFullScreenImageViewer(String imageUrl, String title) {
+    if (imageUrl.isEmpty) return;
+    Navigator.of(context).push(
+      PageRouteBuilder(
+        opaque: false,
+        barrierDismissible: true,
+        pageBuilder: (context, _, __) {
+          return Scaffold(
+            backgroundColor: Colors.black.withOpacity(0.95),
+            appBar: AppBar(
+              backgroundColor: Colors.transparent,
+              elevation: 0,
+              leading: IconButton(
+                icon: const Icon(Icons.arrow_back_ios_new_rounded,
+                    color: Colors.white),
+                onPressed: () => Navigator.pop(context),
+              ),
+              title: Text(
+                title,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 17,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+            body: Center(
+              child: InteractiveViewer(
+                minScale: 0.5,
+                maxScale: 4.0,
+                child: Image.network(
+                  imageUrl,
+                  fit: BoxFit.contain,
+                  loadingBuilder: (context, child, progress) {
+                    if (progress == null) return child;
+                    return const Center(
+                      child: CircularProgressIndicator(color: Colors.white),
+                    );
+                  },
+                  errorBuilder: (context, error, stackTrace) {
+                    return const Center(
+                      child: Icon(Icons.broken_image_rounded,
+                          color: Colors.white54, size: 48),
+                    );
+                  },
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  void _showTeacherIdBlockedDialog() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Row(
+          children: [
+            Icon(Icons.warning_amber_rounded,
+                color: Color(0xFFDC2626), size: 26),
+            SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Invalid Student ID',
+                style: TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 17,
+                  color: Color(0xFF0F172A),
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: const Text(
+          'This ID belongs to an Educator/Teacher. Only students can be enrolled in this batch.',
+          style: TextStyle(
+            fontSize: 14,
+            color: Color(0xFF475569),
+            height: 1.4,
+          ),
+        ),
+        actions: [
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF0F172A),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
+            ),
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('OK', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _pickAndUploadGroupPicture() async {
+    final picked = await _picker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 80,
+    );
+    if (picked == null) return;
+
+    final file = File(picked.path);
+    _showSnackBar('Uploading group picture...');
+
+    try {
+      File? compressed = await ImageHelper.compressImage(file);
+      final ref = _storage.ref().child('groups/${widget.groupId}/profile.jpg');
+      await ref.putFile(compressed ?? file);
+      final downloadUrl = await ref.getDownloadURL();
+
+      await _firestore.collection('groups').doc(widget.groupId).update({
+        'imageUrl': downloadUrl,
+      });
+
+      _showSnackBar('Group picture updated successfully!');
+    } catch (e) {
+      _showSnackBar('Failed to upload picture: $e');
+    }
+  }
+
   void _showEditGroupModal() {
     final group = _group;
     if (group == null || !_isViewerTeacher) return;
 
     final nameCtrl = TextEditingController(text: group.name);
-    final imageCtrl = TextEditingController(text: group.imageUrl);
     final descCtrl = TextEditingController(text: group.description);
     final batchCtrl = TextEditingController(text: group.batchName);
     final classCtrl = TextEditingController(text: group.className);
@@ -218,10 +351,45 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
                     color: Color(0xFF0F172A),
                   ),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 14),
+                Center(
+                  child: Stack(
+                    children: [
+                      CircleAvatar(
+                        radius: 36,
+                        backgroundColor: const Color(0xFFEFF6FF),
+                        backgroundImage: group.imageUrl.isNotEmpty
+                            ? NetworkImage(group.imageUrl)
+                            : null,
+                        child: group.imageUrl.isEmpty
+                            ? const Icon(Icons.groups_rounded,
+                                color: Colors.blueAccent, size: 36)
+                            : null,
+                      ),
+                      Positioned(
+                        bottom: 0,
+                        right: 0,
+                        child: InkWell(
+                          onTap: () {
+                            Navigator.pop(ctx);
+                            _pickAndUploadGroupPicture();
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.all(6),
+                            decoration: const BoxDecoration(
+                              color: Colors.blueAccent,
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(Icons.camera_alt_rounded,
+                                color: Colors.white, size: 16),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
                 _buildEditField(nameCtrl, 'Group Name *', Icons.groups_rounded),
-                _buildEditField(
-                    imageCtrl, 'Group Picture URL', Icons.image_outlined),
                 _buildEditField(
                   descCtrl,
                   'Group Description & Purpose',
@@ -290,7 +458,6 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
                           groupId: widget.groupId,
                           teacherId: widget.currentUserId,
                           name: nameCtrl.text.trim(),
-                          imageUrl: imageCtrl.text.trim(),
                           description: descCtrl.text.trim(),
                           batchName: batchCtrl.text.trim(),
                           className: classCtrl.text.trim(),
@@ -392,7 +559,8 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
                         ),
                       ),
                       IconButton(
-                        icon: const Icon(Icons.close_rounded, color: Colors.grey),
+                        icon: const Icon(Icons.close_rounded,
+                            color: Colors.grey),
                         onPressed: () => Navigator.pop(bottomSheetCtx),
                       ),
                     ],
@@ -414,7 +582,8 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
                       decoration: const InputDecoration(
                         hintText: 'Search student by name or UID...',
                         hintStyle: TextStyle(fontSize: 13, color: Colors.grey),
-                        prefixIcon: Icon(Icons.search_rounded, size: 20, color: Colors.grey),
+                        prefixIcon: Icon(Icons.search_rounded,
+                            size: 20, color: Colors.grey),
                         border: InputBorder.none,
                         contentPadding: EdgeInsets.symmetric(vertical: 12),
                       ),
@@ -426,7 +595,8 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
                     dense: true,
                     title: const Text(
                       'Send Official Invitation',
-                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                      style:
+                          TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
                     ),
                     subtitle: Text(
                       sendInviteMode
@@ -443,140 +613,220 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
                   const Divider(height: 16),
                   Expanded(
                     child: StreamBuilder<QuerySnapshot>(
-                      stream: _firestore
-                          .collection('student_fees')
-                          .where('teacherId', isEqualTo: widget.currentUserId)
-                          .snapshots(),
-                      builder: (context, feeSnap) {
-                        final Set<String> connectedStudentIds = {};
-                        if (feeSnap.hasData) {
-                          for (var d in feeSnap.data!.docs) {
-                            final m = d.data() as Map<String, dynamic>;
-                            final sid = m['studentId']?.toString();
-                            if (sid != null && sid.isNotEmpty) {
-                              connectedStudentIds.add(sid);
-                            }
+                      stream: _firestore.collection('teachers').snapshots(),
+                      builder: (context, teachersSnap) {
+                        final Set<String> teacherUids = {widget.currentUserId};
+                        if (teachersSnap.hasData) {
+                          for (var doc in teachersSnap.data!.docs) {
+                            teacherUids.add(doc.id);
                           }
                         }
 
                         return StreamBuilder<QuerySnapshot>(
-                          stream: _firestore.collection('students').snapshots(),
-                          builder: (context, studentsSnap) {
-                            if (studentsSnap.connectionState == ConnectionState.waiting) {
-                              return const Center(child: CircularProgressIndicator());
+                          stream: _firestore
+                              .collection('student_fees')
+                              .where('teacherId',
+                                  isEqualTo: widget.currentUserId)
+                              .snapshots(),
+                          builder: (context, feeSnap) {
+                            final Set<String> connectedStudentIds = {};
+                            if (feeSnap.hasData) {
+                              for (var d in feeSnap.data!.docs) {
+                                final m = d.data() as Map<String, dynamic>;
+                                final sid = m['studentId']?.toString();
+                                if (sid != null && sid.isNotEmpty) {
+                                  connectedStudentIds.add(sid);
+                                }
+                              }
                             }
 
-                            final allStudents = studentsSnap.hasData ? studentsSnap.data!.docs : [];
-                            final existingMembers = _group?.members ?? [];
+                            return StreamBuilder<QuerySnapshot>(
+                              stream:
+                                  _firestore.collection('students').snapshots(),
+                              builder: (context, studentsSnap) {
+                                if (studentsSnap.connectionState ==
+                                    ConnectionState.waiting) {
+                                  return const Center(
+                                      child: CircularProgressIndicator());
+                                }
 
-                            final filteredList = allStudents.where((doc) {
-                              final data = doc.data() as Map<String, dynamic>;
-                              final sId = doc.id;
-                              final name = (data['fullName'] ?? data['name'] ?? 'Student').toString().toLowerCase();
+                                final allStudents = studentsSnap.hasData
+                                    ? studentsSnap.data!.docs
+                                    : [];
+                                final existingMembers = _group?.members ?? [];
 
-                              final matchesSearch = searchKeyword.isEmpty ||
-                                  name.contains(searchKeyword) ||
-                                  sId.toLowerCase().contains(searchKeyword);
+                                final filteredList = allStudents.where((doc) {
+                                  final sId = doc.id;
+                                  if (teacherUids.contains(sId)) {
+                                    return false;
+                                  }
 
-                              final isConnectedOrMatched = connectedStudentIds.contains(sId) || searchKeyword.isNotEmpty;
-                              return matchesSearch && isConnectedOrMatched;
-                            }).toList();
+                                  final data =
+                                      doc.data() as Map<String, dynamic>;
+                                  final name = (data['fullName'] ??
+                                          data['name'] ??
+                                          'Student')
+                                      .toString()
+                                      .toLowerCase();
 
-                            if (filteredList.isEmpty) {
-                              return Center(
-                                child: Text(
-                                  searchKeyword.isEmpty
-                                      ? 'No connected students found. Type UID in search.'
-                                      : 'No matching student found.',
-                                  style: const TextStyle(color: Colors.grey, fontSize: 13),
-                                ),
-                              );
-                            }
+                                  final matchesSearch = searchKeyword.isEmpty ||
+                                      name.contains(searchKeyword) ||
+                                      sId.toLowerCase().contains(searchKeyword);
 
-                            return ListView.separated(
-                              physics: const BouncingScrollPhysics(),
-                              itemCount: filteredList.length,
-                              separatorBuilder: (_, __) => const Divider(height: 1),
-                              itemBuilder: (context, idx) {
-                                final sDoc = filteredList[idx];
-                                final sData = sDoc.data() as Map<String, dynamic>;
-                                final sId = sDoc.id;
-                                final sName = (sData['fullName'] ?? sData['name'] ?? 'Student').toString();
-                                final sPic = (sData['profileImageUrl'] ?? sData['profilePic'] ?? '').toString();
-                                final bool alreadyInGroup = existingMembers.contains(sId);
+                                  final isConnectedOrMatched =
+                                      connectedStudentIds.contains(sId) ||
+                                          searchKeyword.isNotEmpty;
+                                  return matchesSearch && isConnectedOrMatched;
+                                }).toList();
 
-                                return ListTile(
-                                  contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-                                  leading: CircleAvatar(
-                                    backgroundColor: Colors.blue.shade50,
-                                    backgroundImage: sPic.isNotEmpty ? NetworkImage(sPic) : null,
-                                    child: sPic.isEmpty
-                                        ? Text(
-                                            sName.isNotEmpty ? sName[0].toUpperCase() : 'S',
-                                            style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blueAccent),
-                                          )
-                                        : null,
-                                  ),
-                                  title: Text(
-                                    sName,
-                                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14.5),
-                                  ),
-                                  subtitle: Text(
-                                    'UID: $sId',
-                                    style: const TextStyle(fontSize: 11, color: Colors.grey, fontFamily: 'monospace'),
-                                  ),
-                                  trailing: alreadyInGroup
-                                      ? Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                          decoration: BoxDecoration(
-                                            color: Colors.green.shade50,
-                                            borderRadius: BorderRadius.circular(12),
-                                          ),
-                                          child: Text(
-                                            'Added',
-                                            style: TextStyle(
-                                              color: Colors.green.shade700,
-                                              fontWeight: FontWeight.bold,
-                                              fontSize: 12,
+                                if (filteredList.isEmpty) {
+                                  return Center(
+                                    child: Text(
+                                      searchKeyword.isEmpty
+                                          ? 'No connected students found. Type UID in search.'
+                                          : 'No matching student found.',
+                                      style: const TextStyle(
+                                          color: Colors.grey, fontSize: 13),
+                                    ),
+                                  );
+                                }
+
+                                return ListView.separated(
+                                  physics: const BouncingScrollPhysics(),
+                                  itemCount: filteredList.length,
+                                  separatorBuilder: (_, __) =>
+                                      const Divider(height: 1),
+                                  itemBuilder: (context, idx) {
+                                    final sDoc = filteredList[idx];
+                                    final sData =
+                                        sDoc.data() as Map<String, dynamic>;
+                                    final sId = sDoc.id;
+                                    final sName = (sData['fullName'] ??
+                                            sData['name'] ??
+                                            'Student')
+                                        .toString();
+                                    final sPic = (sData['profileImageUrl'] ??
+                                            sData['profilePic'] ??
+                                            '')
+                                        .toString();
+                                    final bool alreadyInGroup =
+                                        existingMembers.contains(sId);
+
+                                    return ListTile(
+                                      contentPadding:
+                                          const EdgeInsets.symmetric(
+                                              horizontal: 4, vertical: 4),
+                                      leading: CircleAvatar(
+                                        backgroundColor: Colors.blue.shade50,
+                                        backgroundImage: sPic.isNotEmpty
+                                            ? NetworkImage(sPic)
+                                            : null,
+                                        child: sPic.isEmpty
+                                            ? Text(
+                                                sName.isNotEmpty
+                                                    ? sName[0].toUpperCase()
+                                                    : 'S',
+                                                style: const TextStyle(
+                                                    fontWeight: FontWeight.bold,
+                                                    color: Colors.blueAccent),
+                                              )
+                                            : null,
+                                      ),
+                                      title: Text(
+                                        sName,
+                                        style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 14.5),
+                                      ),
+                                      subtitle: Text(
+                                        'UID: $sId',
+                                        style: const TextStyle(
+                                            fontSize: 11,
+                                            color: Colors.grey,
+                                            fontFamily: 'monospace'),
+                                      ),
+                                      trailing: alreadyInGroup
+                                          ? Container(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                      horizontal: 10,
+                                                      vertical: 4),
+                                              decoration: BoxDecoration(
+                                                color: Colors.green.shade50,
+                                                borderRadius:
+                                                    BorderRadius.circular(12),
+                                              ),
+                                              child: Text(
+                                                'Added',
+                                                style: TextStyle(
+                                                  color: Colors.green.shade700,
+                                                  fontWeight: FontWeight.bold,
+                                                  fontSize: 12,
+                                                ),
+                                              ),
+                                            )
+                                          : ElevatedButton(
+                                              style: ElevatedButton.styleFrom(
+                                                backgroundColor:
+                                                    Colors.blueAccent,
+                                                foregroundColor: Colors.white,
+                                                elevation: 0,
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                        horizontal: 14,
+                                                        vertical: 8),
+                                                shape: RoundedRectangleBorder(
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                            10)),
+                                              ),
+                                              onPressed: () async {
+                                                if (teacherUids.contains(sId)) {
+                                                  _showTeacherIdBlockedDialog();
+                                                  return;
+                                                }
+
+                                                Navigator.pop(bottomSheetCtx);
+                                                try {
+                                                  if (sendInviteMode) {
+                                                    await _groupService
+                                                        .sendInvitation(
+                                                      groupId: widget.groupId,
+                                                      groupName:
+                                                          _group?.name ??
+                                                              'Group',
+                                                      invitedUserId: sId,
+                                                      invitedByUserId: widget
+                                                          .currentUserId,
+                                                    );
+                                                    _showSnackBar(
+                                                        'Invitation sent to $sName!');
+                                                  } else {
+                                                    await _groupService
+                                                        .addStudentDirectlyByTeacher(
+                                                      groupId: widget.groupId,
+                                                      teacherId: widget
+                                                          .currentUserId,
+                                                      studentId: sId,
+                                                    );
+                                                    _showSnackBar(
+                                                        '$sName added to group!');
+                                                  }
+                                                } catch (e) {
+                                                  _showSnackBar('Failed: $e');
+                                                }
+                                              },
+                                              child: Text(
+                                                sendInviteMode
+                                                    ? 'Invite'
+                                                    : 'Add',
+                                                style: const TextStyle(
+                                                    fontWeight: FontWeight.bold,
+                                                    fontSize: 12.5),
+                                              ),
                                             ),
-                                          ),
-                                        )
-                                      : ElevatedButton(
-                                          style: ElevatedButton.styleFrom(
-                                            backgroundColor: Colors.blueAccent,
-                                            foregroundColor: Colors.white,
-                                            elevation: 0,
-                                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                          ),
-                                          onPressed: () async {
-                                            Navigator.pop(bottomSheetCtx);
-                                            try {
-                                              if (sendInviteMode) {
-                                                await _groupService.sendInvitation(
-                                                  groupId: widget.groupId,
-                                                  groupName: _group?.name ?? 'Group',
-                                                  invitedUserId: sId,
-                                                  invitedByUserId: widget.currentUserId,
-                                                );
-                                                _showSnackBar('Invitation sent to $sName!');
-                                              } else {
-                                                await _groupService.addStudentDirectlyByTeacher(
-                                                  groupId: widget.groupId,
-                                                  teacherId: widget.currentUserId,
-                                                  studentId: sId,
-                                                );
-                                                _showSnackBar('$sName added to group!');
-                                              }
-                                            } catch (e) {
-                                              _showSnackBar('Failed: $e');
-                                            }
-                                          },
-                                          child: Text(
-                                            sendInviteMode ? 'Invite' : 'Add',
-                                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5),
-                                          ),
-                                        ),
+                                    );
+                                  },
                                 );
                               },
                             );
@@ -616,20 +866,28 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              CircleAvatar(
-                radius: 38,
-                backgroundColor: Colors.blue.shade50,
-                backgroundImage: tPic.isNotEmpty ? NetworkImage(tPic) : null,
-                child: tPic.isEmpty
-                    ? Text(
-                        tName[0].toUpperCase(),
-                        style: const TextStyle(
-                          fontSize: 28,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.blueAccent,
-                        ),
-                      )
-                    : null,
+              GestureDetector(
+                onTap: () {
+                  if (tPic.isNotEmpty) {
+                    Navigator.pop(ctx);
+                    _openFullScreenImageViewer(tPic, tName);
+                  }
+                },
+                child: CircleAvatar(
+                  radius: 38,
+                  backgroundColor: Colors.blue.shade50,
+                  backgroundImage: tPic.isNotEmpty ? NetworkImage(tPic) : null,
+                  child: tPic.isEmpty
+                      ? Text(
+                          tName[0].toUpperCase(),
+                          style: const TextStyle(
+                            fontSize: 28,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.blueAccent,
+                          ),
+                        )
+                      : null,
+                ),
               ),
               const SizedBox(height: 12),
               Row(
@@ -864,7 +1122,8 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
       context: context,
       builder: (dialogCtx) {
         return AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 10),
           contentPadding: const EdgeInsets.symmetric(horizontal: 20),
           actionsPadding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
@@ -876,7 +1135,8 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
                   color: Colors.red.shade50,
                   shape: BoxShape.circle,
                 ),
-                child: Icon(Icons.exit_to_app_rounded, color: Colors.red.shade600, size: 24),
+                child: Icon(Icons.exit_to_app_rounded,
+                    color: Colors.red.shade600, size: 24),
               ),
               const SizedBox(width: 10),
               const Expanded(
@@ -893,7 +1153,8 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
           ),
           content: const Text(
             'Are you sure you want to leave this batch? You will no longer receive announcements, assignments, or group messages.',
-            style: TextStyle(fontSize: 13.5, color: Color(0xFF475569), height: 1.4),
+            style: TextStyle(
+                fontSize: 13.5, color: Color(0xFF475569), height: 1.4),
           ),
           actions: [
             Row(
@@ -903,12 +1164,15 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
                     style: OutlinedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 12),
                       side: const BorderSide(color: Color(0xFFCBD5E1)),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
                     ),
                     onPressed: () => Navigator.pop(dialogCtx),
                     child: const Text(
                       'Cancel',
-                      style: TextStyle(color: Color(0xFF64748B), fontWeight: FontWeight.bold),
+                      style: TextStyle(
+                          color: Color(0xFF64748B),
+                          fontWeight: FontWeight.bold),
                     ),
                   ),
                 ),
@@ -920,7 +1184,8 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
                       foregroundColor: Colors.white,
                       elevation: 0,
                       padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
                     ),
                     onPressed: () async {
                       Navigator.pop(dialogCtx);
@@ -930,7 +1195,8 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
                           studentId: widget.currentUserId,
                         );
                         if (mounted) {
-                          Navigator.of(context).popUntil((route) => route.isFirst);
+                          Navigator.of(context)
+                              .popUntil((route) => route.isFirst);
                           _showSnackBar('You have left the group.');
                         }
                       } catch (e) {
@@ -948,6 +1214,206 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
           ],
         );
       },
+    );
+  }
+
+  void _showDismissPasswordVerificationDialog() {
+    final TextEditingController passwordController = TextEditingController();
+    bool isVerifying = false;
+    bool obscure = true;
+    String? errorMessage;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogCtx) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          backgroundColor: Colors.white,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+          title: const Row(
+            children: [
+              Icon(Icons.shield_outlined,
+                  color: Color(0xFFDC2626), size: 24),
+              SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Verify Teacher Password',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 17,
+                    color: Color(0xFF0F172A),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'To permanently dismiss this batch group and remove all group records, please enter your educator account password.',
+                style: TextStyle(
+                  fontSize: 13.5,
+                  color: Color(0xFF475569),
+                  height: 1.4,
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: passwordController,
+                obscureText: obscure,
+                enabled: !isVerifying,
+                style: const TextStyle(
+                  fontSize: 14.5,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF0F172A),
+                ),
+                decoration: InputDecoration(
+                  labelText: 'Password',
+                  prefixIcon: const Icon(Icons.lock_outline_rounded,
+                      color: Colors.blueAccent, size: 20),
+                  suffixIcon: IconButton(
+                    icon: Icon(
+                      obscure
+                          ? Icons.visibility_off_rounded
+                          : Icons.visibility_rounded,
+                      color: const Color(0xFF64748B),
+                      size: 20,
+                    ),
+                    onPressed: () => setDialogState(() => obscure = !obscure),
+                  ),
+                  filled: true,
+                  fillColor: const Color(0xFFF8FAFC),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                  ),
+                ),
+              ),
+              if (errorMessage != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  errorMessage!,
+                  style: const TextStyle(
+                    color: Color(0xFFDC2626),
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: isVerifying
+                  ? null
+                  : () {
+                      passwordController.dispose();
+                      Navigator.pop(dialogCtx);
+                    },
+              child: const Text(
+                'Cancel',
+                style: TextStyle(
+                  color: Color(0xFF64748B),
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14.5,
+                ),
+              ),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFDC2626),
+                foregroundColor: Colors.white,
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              onPressed: isVerifying
+                  ? null
+                  : () async {
+                      final enteredPassword = passwordController.text.trim();
+                      if (enteredPassword.isEmpty) {
+                        setDialogState(() {
+                          errorMessage = 'Please enter your password';
+                        });
+                        return;
+                      }
+
+                      setDialogState(() {
+                        isVerifying = true;
+                        errorMessage = null;
+                      });
+
+                      try {
+                        final user = _auth.currentUser;
+                        if (user == null || user.email == null) {
+                          throw Exception('User authentication not found');
+                        }
+
+                        final credential = EmailAuthProvider.credential(
+                          email: user.email!,
+                          password: enteredPassword,
+                        );
+
+                        await user.reauthenticateWithCredential(credential);
+
+                        await _groupService.dismissGroup(
+                          groupId: widget.groupId,
+                          teacherId: widget.currentUserId,
+                        );
+
+                        passwordController.dispose();
+                        Navigator.pop(dialogCtx);
+
+                        if (mounted) {
+                          Navigator.of(context)
+                              .popUntil((route) => route.isFirst);
+                          _showSnackBar('Group dismissed permanently.');
+                        }
+                      } on FirebaseAuthException catch (e) {
+                        setDialogState(() {
+                          isVerifying = false;
+                          if (e.code == 'wrong-password' ||
+                              e.code == 'invalid-credential') {
+                            errorMessage =
+                                'Incorrect password. Please try again.';
+                          } else if (e.code == 'too-many-requests') {
+                            errorMessage =
+                                'Too many failed attempts. Try again later.';
+                          } else {
+                            errorMessage = e.message ?? 'Verification failed.';
+                          }
+                        });
+                      } catch (e) {
+                        setDialogState(() {
+                          isVerifying = false;
+                          errorMessage = 'Verification error: ${e.toString()}';
+                        });
+                      }
+                    },
+              child: isVerifying
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Text(
+                      'Confirm Dismiss',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14.5,
+                      ),
+                    ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -982,23 +1448,12 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
             ElevatedButton(
               style:
                   ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
-              onPressed: () async {
+              onPressed: () {
                 Navigator.pop(ctx);
-                try {
-                  await _groupService.dismissGroup(
-                    groupId: widget.groupId,
-                    teacherId: widget.currentUserId,
-                  );
-                  if (mounted) {
-                    Navigator.of(context).popUntil((route) => route.isFirst);
-                    _showSnackBar('Group dismissed permanently.');
-                  }
-                } catch (e) {
-                  _showSnackBar('Failed to dismiss group: $e');
-                }
+                _showDismissPasswordVerificationDialog();
               },
               child: const Text(
-                'Dismiss Group',
+                'Continue',
                 style:
                     TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
               ),
@@ -1069,11 +1524,17 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
                               itemBuilder: (context, index) {
                                 final item = mediaItems[index];
                                 return InkWell(
-                                  onTap: () async {
-                                    final uri = Uri.tryParse(item.content);
-                                    if (uri != null) {
-                                      await launchUrl(uri,
-                                          mode: LaunchMode.externalApplication);
+                                  onTap: () {
+                                    if (item.type == 'image') {
+                                      _openFullScreenImageViewer(
+                                          item.content, 'Shared Photo');
+                                    } else {
+                                      final uri = Uri.tryParse(item.content);
+                                      if (uri != null) {
+                                        launchUrl(uri,
+                                            mode:
+                                                LaunchMode.externalApplication);
+                                      }
                                     }
                                   },
                                   child: ClipRRect(
@@ -1196,16 +1657,23 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
           Stack(
             clipBehavior: Clip.none,
             children: [
-              CircleAvatar(
-                radius: 44,
-                backgroundColor: const Color(0xFFEFF6FF),
-                backgroundImage: group.imageUrl.isNotEmpty
-                    ? NetworkImage(group.imageUrl)
-                    : null,
-                child: group.imageUrl.isEmpty
-                    ? const Icon(Icons.groups_rounded,
-                        color: Colors.blueAccent, size: 46)
-                    : null,
+              GestureDetector(
+                onTap: () {
+                  if (group.imageUrl.isNotEmpty) {
+                    _openFullScreenImageViewer(group.imageUrl, group.name);
+                  }
+                },
+                child: CircleAvatar(
+                  radius: 44,
+                  backgroundColor: const Color(0xFFEFF6FF),
+                  backgroundImage: group.imageUrl.isNotEmpty
+                      ? NetworkImage(group.imageUrl)
+                      : null,
+                  child: group.imageUrl.isEmpty
+                      ? const Icon(Icons.groups_rounded,
+                          color: Colors.blueAccent, size: 46)
+                      : null,
+                ),
               ),
               if (group.isTeacherVerified)
                 Positioned(
@@ -1222,14 +1690,14 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
                   right: 0,
                   bottom: 0,
                   child: InkWell(
-                    onTap: _showEditGroupModal,
+                    onTap: _pickAndUploadGroupPicture,
                     child: Container(
                       padding: const EdgeInsets.all(6),
                       decoration: const BoxDecoration(
                         color: Colors.blueAccent,
                         shape: BoxShape.circle,
                       ),
-                      child: const Icon(Icons.edit,
+                      child: const Icon(Icons.camera_alt_rounded,
                           color: Colors.white, size: 15),
                     ),
                   ),
@@ -1327,7 +1795,8 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
                 children: [
                   const Row(
                     children: [
-                      Icon(Icons.gavel_rounded, size: 16, color: Colors.brown),
+                      Icon(Icons.gavel_rounded,
+                          size: 16, color: Colors.brown),
                       SizedBox(width: 6),
                       Text(
                         'Batch Rules & Guidelines',
@@ -1413,7 +1882,8 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
                 CircleAvatar(
                   radius: 26,
                   backgroundColor: Colors.blue.shade50,
-                  backgroundImage: tPic.isNotEmpty ? NetworkImage(tPic) : null,
+                  backgroundImage:
+                      tPic.isNotEmpty ? NetworkImage(tPic) : null,
                   child: tPic.isEmpty
                       ? Text(
                           tName[0].toUpperCase(),
@@ -1450,7 +1920,8 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
                             teacherName: tName,
                             isVerified: group.isTeacherVerified,
                             hasGoldenBadge: group.hasGoldenBadge,
-                            qualityBadge: BadgeTierResolver.resolveAcademicQualityBadge({
+                            qualityBadge:
+                                BadgeTierResolver.resolveAcademicQualityBadge({
                               'averageRating': group.teacherRating,
                             }),
                             badgeSize: 18,
@@ -1533,8 +2004,8 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
                     _buildCounterBox(Icons.photo_library_rounded,
                         'Photos & Videos', mediaCount, Colors.purple),
                     const SizedBox(width: 8),
-                    _buildCounterBox(Icons.picture_as_pdf_rounded, 'Study Docs',
-                        docsCount, Colors.redAccent),
+                    _buildCounterBox(Icons.picture_as_pdf_rounded,
+                        'Study Docs', docsCount, Colors.redAccent),
                     const SizedBox(width: 8),
                     _buildCounterBox(Icons.link_rounded, 'Shared Links',
                         linksCount, Colors.blueAccent),
@@ -1635,7 +2106,8 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
           const Divider(height: 1),
           ListTile(
             contentPadding: EdgeInsets.zero,
-            leading: const Icon(Icons.timer_outlined, color: Colors.blueAccent),
+            leading:
+                const Icon(Icons.timer_outlined, color: Colors.blueAccent),
             title: const Text(
               'Disappearing Messages',
               style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14.5),
@@ -1647,7 +2119,8 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
               style: const TextStyle(fontSize: 12),
             ),
             trailing: DropdownButton<int>(
-              value: [0, 24, 168, 720].contains(group.disappearingDurationHours)
+              value: [0, 24, 168, 720]
+                      .contains(group.disappearingDurationHours)
                   ? group.disappearingDurationHours
                   : 0,
               underline: const SizedBox.shrink(),
@@ -1772,12 +2245,13 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
               ),
               child: TextField(
                 controller: _memberSearchController,
-                onChanged: (val) =>
-                    setState(() => _memberSearchQuery = val.trim().toLowerCase()),
+                onChanged: (val) => setState(
+                    () => _memberSearchQuery = val.trim().toLowerCase()),
                 decoration: const InputDecoration(
                   hintText: 'Search student in group by name or UID...',
                   hintStyle: TextStyle(fontSize: 13, color: Colors.grey),
-                  prefixIcon: Icon(Icons.search, size: 18, color: Colors.grey),
+                  prefixIcon:
+                      Icon(Icons.search, size: 18, color: Colors.grey),
                   border: InputBorder.none,
                   contentPadding: EdgeInsets.symmetric(vertical: 10),
                 ),
@@ -1809,25 +2283,34 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
               itemBuilder: (context, index) {
                 final student = filteredStudents[index];
                 final String sUid = (student['uid'] ?? '').toString();
-                final String sName = (student['name'] ?? 'Student').toString();
-                final String sPic = (student['profilePic'] ?? '').toString();
+                final String sName =
+                    (student['name'] ?? 'Student').toString();
+                final String sPic =
+                    (student['profilePic'] ?? '').toString();
                 final bool isMuted = group.isStudentMuted(sUid);
 
                 return ListTile(
                   contentPadding: EdgeInsets.zero,
-                  leading: CircleAvatar(
-                    backgroundColor: Colors.blue.shade50,
-                    backgroundImage:
-                        sPic.isNotEmpty ? NetworkImage(sPic) : null,
-                    child: sPic.isEmpty
-                        ? Text(
-                            sName.isNotEmpty ? sName[0].toUpperCase() : 'S',
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: Colors.blueAccent,
-                            ),
-                          )
-                        : null,
+                  leading: GestureDetector(
+                    onTap: () {
+                      if (sPic.isNotEmpty) {
+                        _openFullScreenImageViewer(sPic, sName);
+                      }
+                    },
+                    child: CircleAvatar(
+                      backgroundColor: Colors.blue.shade50,
+                      backgroundImage:
+                          sPic.isNotEmpty ? NetworkImage(sPic) : null,
+                      child: sPic.isEmpty
+                          ? Text(
+                              sName.isNotEmpty ? sName[0].toUpperCase() : 'S',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: Colors.blueAccent,
+                              ),
+                            )
+                          : null,
+                    ),
                   ),
                   title: Row(
                     children: [
@@ -1865,7 +2348,8 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
                   ),
                   subtitle: Text(
                     'UID: $sUid',
-                    style: const TextStyle(fontSize: 11.5, color: Colors.grey),
+                    style: const TextStyle(
+                        fontSize: 11.5, color: Colors.grey),
                   ),
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
@@ -1876,7 +2360,9 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
                           isMuted
                               ? Icons.mic_off_rounded
                               : Icons.mic_none_rounded,
-                          color: isMuted ? Colors.redAccent : Colors.blueGrey,
+                          color: isMuted
+                              ? Colors.redAccent
+                              : Colors.blueGrey,
                         ),
                         onPressed: () async {
                           try {
@@ -1902,7 +2388,8 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
                           Icons.person_remove_alt_1_outlined,
                           color: Colors.redAccent,
                         ),
-                        onPressed: () => _confirmRemoveStudent(sUid, sName),
+                        onPressed: () =>
+                            _confirmRemoveStudent(sUid, sName),
                       ),
                       IconButton(
                         tooltip: 'Report Student',
@@ -2021,8 +2508,7 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
             const Divider(height: 1),
             ListTile(
               contentPadding: EdgeInsets.zero,
-              leading:
-                  const Icon(Icons.flag_outlined, color: Colors.orange),
+              leading: const Icon(Icons.flag_outlined, color: Colors.orange),
               title: const Text(
                 'Report Group or Abuse',
                 style: TextStyle(
@@ -2040,7 +2526,8 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
             const Divider(height: 1),
             ListTile(
               contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.exit_to_app_rounded, color: Colors.redAccent),
+              leading: const Icon(Icons.exit_to_app_rounded,
+                  color: Colors.redAccent),
               title: const Text(
                 'Leave Group',
                 style: TextStyle(
@@ -2075,7 +2562,8 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
                 icon: const Icon(Icons.cancel_outlined),
                 label: const Text(
                   'Dismiss Group Permanently',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14.5),
+                  style: TextStyle(
+                      fontWeight: FontWeight.bold, fontSize: 14.5),
                 ),
               ),
             ),
