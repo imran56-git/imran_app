@@ -233,6 +233,57 @@ class NotificationService {
     } catch (_) {}
   }
 
+  Future<void> markNotificationAsRead(String docId) async {
+    if (docId.trim().isEmpty) return;
+    try {
+      await _firestore.collection('notifications').doc(docId).update({
+        'isRead': true,
+        'status': 'read',
+        'seenAt': FieldValue.serverTimestamp(),
+        'expireAt': Timestamp.fromDate(
+          DateTime.now().add(const Duration(days: 2)),
+        ),
+      });
+    } catch (_) {}
+  }
+
+  Future<void> purgeExpiredNotifications(String userId) async {
+    if (userId.trim().isEmpty) return;
+    try {
+      final now = DateTime.now();
+      final snap = await _firestore
+          .collection('notifications')
+          .where('receiverId', isEqualTo: userId)
+          .get();
+
+      final batch = _firestore.batch();
+      bool hasDeletes = false;
+
+      for (final doc in snap.docs) {
+        final data = doc.data();
+        final Timestamp? expireAt = data['expireAt'] as Timestamp?;
+        final Timestamp? seenAt = data['seenAt'] as Timestamp?;
+
+        bool isExpired = false;
+        if (expireAt != null && expireAt.toDate().isBefore(now)) {
+          isExpired = true;
+        } else if (seenAt != null &&
+            now.difference(seenAt.toDate()).inHours >= 48) {
+          isExpired = true;
+        }
+
+        if (isExpired) {
+          batch.delete(doc.reference);
+          hasDeletes = true;
+        }
+      }
+
+      if (hasDeletes) {
+        await batch.commit();
+      }
+    } catch (_) {}
+  }
+
   void _bindRealtimeListenersForCurrentUser({String? uidOverride}) {
     final String? uid = uidOverride ?? FirebaseAuth.instance.currentUser?.uid;
     if (uid == null || uid.isEmpty) return;
@@ -240,6 +291,8 @@ class NotificationService {
 
     _disposeRealtimeListeners();
     _listeningUserId = uid;
+
+    purgeExpiredNotifications(uid);
 
     _chatsSubscription = _firestore
         .collection('chats')
