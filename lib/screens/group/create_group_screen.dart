@@ -1,6 +1,11 @@
+import 'dart:async';
+import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../services/group_service.dart';
+import '../../utils/image_utils.dart';
 
 class CreateGroupScreen extends StatefulWidget {
   final String teacherId;
@@ -13,7 +18,9 @@ class CreateGroupScreen extends StatefulWidget {
 class _CreateGroupScreenState extends State<CreateGroupScreen>
     with SingleTickerProviderStateMixin {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseStorage _storage = FirebaseStorage.instance;
   final GroupService _groupService = GroupService();
+  final ImagePicker _picker = ImagePicker();
 
   late TabController _tabController;
 
@@ -28,13 +35,17 @@ class _CreateGroupScreenState extends State<CreateGroupScreen>
   final TextEditingController _groupRulesController = TextEditingController();
   final TextEditingController _welcomeMessageController =
       TextEditingController();
-  final TextEditingController _imageUrlController = TextEditingController();
   final TextEditingController _searchController = TextEditingController();
   final TextEditingController _uidSearchController = TextEditingController();
 
   List<Map<String, dynamic>> selectedStudents = [];
   List<Map<String, dynamic>> connectedStudents = [];
   Set<String> connectedStudentIds = {};
+  Set<String> allTeacherUids = {};
+
+  File? _selectedGroupImageFile;
+  String? _uploadedGroupImageUrl;
+  bool _isUploadingImage = false;
 
   bool isLoading = true;
   bool isSearchingUid = false;
@@ -76,6 +87,12 @@ class _CreateGroupScreenState extends State<CreateGroupScreen>
 
   Future<void> _loadTeacherInfoAndConnections() async {
     try {
+      allTeacherUids.add(widget.teacherId);
+      final teachersSnapshot = await _firestore.collection('teachers').get();
+      for (final doc in teachersSnapshot.docs) {
+        allTeacherUids.add(doc.id);
+      }
+
       final teacherDoc =
           await _firestore.collection('teachers').doc(widget.teacherId).get();
       if (teacherDoc.exists && teacherDoc.data() != null) {
@@ -92,7 +109,10 @@ class _CreateGroupScreenState extends State<CreateGroupScreen>
                 (data['connectedStudents'] as List<dynamic>?) ??
                 const [];
         for (final id in followers) {
-          connectedStudentIds.add(id.toString());
+          final s = id.toString();
+          if (!allTeacherUids.contains(s)) {
+            connectedStudentIds.add(s);
+          }
         }
       }
 
@@ -104,7 +124,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen>
       for (final doc in followSnap.docs) {
         final data = doc.data();
         final String sId = (data['studentId'] ?? '').toString();
-        if (sId.isNotEmpty) {
+        if (sId.isNotEmpty && !allTeacherUids.contains(sId)) {
           connectedStudentIds.add(sId);
         }
       }
@@ -118,7 +138,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen>
             (doc.data()['participants'] as List<dynamic>?) ?? const [];
         for (final p in parts) {
           final pid = p.toString();
-          if (pid.isNotEmpty && pid != widget.teacherId) {
+          if (pid.isNotEmpty && !allTeacherUids.contains(pid)) {
             connectedStudentIds.add(pid);
           }
         }
@@ -131,7 +151,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen>
       final Map<String, Map<String, dynamic>> studentMap = {};
 
       for (final studentId in connectedStudentIds) {
-        if (studentId == widget.teacherId || studentId.isEmpty) continue;
+        if (allTeacherUids.contains(studentId) || studentId.isEmpty) continue;
 
         DocumentSnapshot<Map<String, dynamic>> userDoc =
             await _firestore.collection('students').doc(studentId).get();
@@ -177,6 +197,87 @@ class _CreateGroupScreenState extends State<CreateGroupScreen>
     }
   }
 
+  void _showTeacherIdBlockedDialog() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Row(
+          children: [
+            Icon(Icons.warning_amber_rounded,
+                color: Color(0xFFDC2626), size: 26),
+            SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Invalid Student ID',
+                style: TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 17,
+                  color: Color(0xFF0F172A),
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: const Text(
+          'This is a Teacher ID, not a Student ID. Only students can be added to this group.',
+          style: TextStyle(
+            fontSize: 14,
+            color: Color(0xFF475569),
+            height: 1.4,
+          ),
+        ),
+        actions: [
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF0F172A),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
+            ),
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('OK', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _pickGroupImage() async {
+    try {
+      final picked = await _picker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 80,
+      );
+      if (picked == null) return;
+
+      setState(() {
+        _selectedGroupImageFile = File(picked.path);
+        _isUploadingImage = true;
+      });
+
+      File? compressed =
+          await ImageHelper.compressImage(_selectedGroupImageFile!);
+      final String tempRefPath =
+          'groups/temp_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final ref = _storage.ref().child(tempRefPath);
+      await ref.putFile(compressed ?? _selectedGroupImageFile!);
+      final url = await ref.getDownloadURL();
+
+      if (mounted) {
+        setState(() {
+          _uploadedGroupImageUrl = url;
+          _isUploadingImage = false;
+        });
+        _showSnackBar("Group picture selected!");
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isUploadingImage = false);
+        _showSnackBar("Failed to upload group photo: $e");
+      }
+    }
+  }
+
   Future<void> _searchAndAddByUid() async {
     final String rawUid = _uidSearchController.text.trim();
     if (rawUid.isEmpty) {
@@ -184,8 +285,23 @@ class _CreateGroupScreenState extends State<CreateGroupScreen>
       return;
     }
 
+    if (allTeacherUids.contains(rawUid) || rawUid == widget.teacherId) {
+      _uidSearchController.clear();
+      _showTeacherIdBlockedDialog();
+      return;
+    }
+
     setState(() => isSearchingUid = true);
     try {
+      final teacherCheck =
+          await _firestore.collection('teachers').doc(rawUid).get();
+      if (teacherCheck.exists) {
+        allTeacherUids.add(rawUid);
+        _uidSearchController.clear();
+        _showTeacherIdBlockedDialog();
+        return;
+      }
+
       final existingIndex = connectedStudents.indexWhere((s) =>
           s['id'].toString().toLowerCase() == rawUid.toLowerCase() ||
           s['uid'].toString().toLowerCase() == rawUid.toLowerCase());
@@ -199,7 +315,6 @@ class _CreateGroupScreenState extends State<CreateGroupScreen>
         }
         _uidSearchController.clear();
         _showSnackBar("${foundStudent['name']} selected for invitation!");
-        setState(() => isSearchingUid = false);
         return;
       }
 
@@ -213,6 +328,15 @@ class _CreateGroupScreenState extends State<CreateGroupScreen>
       if (docSnap.exists && docSnap.data() != null) {
         final data = docSnap.data()!;
         final String docId = docSnap.id;
+        final String role =
+            (data['role'] ?? data['userType'] ?? '').toString().toLowerCase();
+
+        if (role == 'teacher') {
+          allTeacherUids.add(docId);
+          _uidSearchController.clear();
+          _showTeacherIdBlockedDialog();
+          return;
+        }
 
         final Map<String, dynamic> studentObj = {
           'id': docId,
@@ -262,57 +386,6 @@ class _CreateGroupScreenState extends State<CreateGroupScreen>
     });
   }
 
-  void _showImageUrlDialog() {
-    showDialog(
-      context: context,
-      builder: (ctx) {
-        return AlertDialog(
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          title: const Text(
-            "Group Profile Photo",
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
-          ),
-          content: TextField(
-            controller: _imageUrlController,
-            decoration: InputDecoration(
-              hintText: "Paste image URL (optional)...",
-              filled: true,
-              fillColor: const Color(0xFFF1F5F9),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide.none,
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                _imageUrlController.clear();
-                setState(() {});
-                Navigator.pop(ctx);
-              },
-              child: const Text("Clear"),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.blueAccent,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
-              ),
-              onPressed: () {
-                setState(() {});
-                Navigator.pop(ctx);
-              },
-              child: const Text("Save", style: TextStyle(color: Colors.white)),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
   void _showSnackBar(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context)
@@ -342,7 +415,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen>
       await _groupService.createGroup(
         name: groupName,
         createdBy: widget.teacherId,
-        imageUrl: _imageUrlController.text.trim(),
+        imageUrl: _uploadedGroupImageUrl ?? '',
         teacherName: teacherName,
         description: _descriptionController.text.trim(),
         batchName: _batchNameController.text.trim(),
@@ -357,7 +430,8 @@ class _CreateGroupScreenState extends State<CreateGroupScreen>
 
       if (!mounted) return;
       Navigator.pop(context);
-      _showSnackBar("Group created & invitations sent to ${invitedIds.length} connected student(s)!");
+      _showSnackBar(
+          "Group created & invitations sent to ${invitedIds.length} connected student(s)!");
     } catch (e) {
       _showSnackBar("Failed to create group: $e");
     } finally {
@@ -406,7 +480,13 @@ class _CreateGroupScreenState extends State<CreateGroupScreen>
   }
 
   Widget _buildGroupDetailsTab() {
-    final String imgUrl = _imageUrlController.text.trim();
+    ImageProvider? imageProvider;
+    if (_selectedGroupImageFile != null) {
+      imageProvider = FileImage(_selectedGroupImageFile!);
+    } else if (_uploadedGroupImageUrl != null &&
+        _uploadedGroupImageUrl!.isNotEmpty) {
+      imageProvider = NetworkImage(_uploadedGroupImageUrl!);
+    }
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
@@ -432,30 +512,38 @@ class _CreateGroupScreenState extends State<CreateGroupScreen>
                 Row(
                   children: [
                     GestureDetector(
-                      onTap: _showImageUrlDialog,
+                      onTap: _isUploadingImage ? null : _pickGroupImage,
                       child: Stack(
                         children: [
                           CircleAvatar(
-                            radius: 32,
+                            radius: 34,
                             backgroundColor: const Color(0xFFEFF6FF),
-                            backgroundImage:
-                                imgUrl.isNotEmpty ? NetworkImage(imgUrl) : null,
-                            child: imgUrl.isEmpty
-                                ? const Icon(Icons.groups_rounded,
-                                    color: Colors.blueAccent, size: 32)
-                                : null,
+                            backgroundImage: imageProvider,
+                            child: _isUploadingImage
+                                ? const SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.blueAccent,
+                                    ),
+                                  )
+                                : (imageProvider == null
+                                    ? const Icon(Icons.groups_rounded,
+                                        color: Colors.blueAccent, size: 34)
+                                    : null),
                           ),
                           Positioned(
                             right: 0,
                             bottom: 0,
                             child: Container(
-                              padding: const EdgeInsets.all(5),
+                              padding: const EdgeInsets.all(6),
                               decoration: const BoxDecoration(
                                 color: Colors.blueAccent,
                                 shape: BoxShape.circle,
                               ),
-                              child: const Icon(Icons.camera_alt,
-                                  color: Colors.white, size: 13),
+                              child: const Icon(Icons.camera_alt_rounded,
+                                  color: Colors.white, size: 14),
                             ),
                           ),
                         ],
@@ -717,13 +805,15 @@ class _CreateGroupScreenState extends State<CreateGroupScreen>
 
   Widget _buildStudentSelectionTab() {
     final filteredList = connectedStudents.where((student) {
+      final sId = (student['id'] ?? '').toString();
+      if (allTeacherUids.contains(sId)) return false;
+
       if (searchQuery.isEmpty) return true;
       final name = (student['name'] ?? '').toString().toLowerCase();
       final uid = (student['uid'] ?? '').toString().toLowerCase();
-      final id = (student['id'] ?? '').toString().toLowerCase();
       return name.contains(searchQuery) ||
           uid.contains(searchQuery) ||
-          id.contains(searchQuery);
+          sId.toLowerCase().contains(searchQuery);
     }).toList();
 
     return Column(
@@ -813,7 +903,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen>
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
                 child: Text(
-                  "Showing My Connected Students (${connectedStudents.length})",
+                  "Showing My Connected Students (${filteredList.length})",
                   style: const TextStyle(
                     fontSize: 12.5,
                     fontWeight: FontWeight.w700,
@@ -1072,7 +1162,6 @@ class _CreateGroupScreenState extends State<CreateGroupScreen>
     _descriptionController.dispose();
     _groupRulesController.dispose();
     _welcomeMessageController.dispose();
-    _imageUrlController.dispose();
     _searchController.dispose();
     _uidSearchController.dispose();
     super.dispose();
