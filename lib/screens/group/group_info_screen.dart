@@ -514,11 +514,110 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
     );
   }
 
+  Future<List<Map<String, dynamic>>> _fetchConnectedStudentsForTeacher() async {
+    final Set<String> connectedStudentIds = {};
+
+    try {
+      final connSnap = await _firestore
+          .collection('teachers')
+          .doc(widget.currentUserId)
+          .collection('connected_students')
+          .get();
+      for (var d in connSnap.docs) {
+        connectedStudentIds.add(d.id);
+      }
+    } catch (_) {}
+
+    try {
+      final followSnap = await _firestore
+          .collection('teachers')
+          .doc(widget.currentUserId)
+          .collection('followers')
+          .get();
+      for (var d in followSnap.docs) {
+        connectedStudentIds.add(d.id);
+      }
+    } catch (_) {}
+
+    try {
+      final reqSnap = await _firestore
+          .collection('follow_requests')
+          .where('teacherId', isEqualTo: widget.currentUserId)
+          .where('status', isEqualTo: 'accepted')
+          .get();
+      for (var d in reqSnap.docs) {
+        final data = d.data();
+        final sid = (data['studentId'] ?? data['senderId'] ?? '').toString();
+        if (sid.isNotEmpty) connectedStudentIds.add(sid);
+      }
+    } catch (_) {}
+
+    try {
+      final feeSnap = await _firestore
+          .collection('student_fees')
+          .where('teacherId', isEqualTo: widget.currentUserId)
+          .get();
+      for (var d in feeSnap.docs) {
+        final sid = (d.data()['studentId'] ?? '').toString();
+        if (sid.isNotEmpty) connectedStudentIds.add(sid);
+      }
+    } catch (_) {}
+
+    final List<Map<String, dynamic>> resultList = [];
+
+    for (String sId in connectedStudentIds) {
+      if (sId == widget.currentUserId) continue;
+
+      try {
+        var sDoc = await _firestore.collection('students').doc(sId).get();
+        if (!sDoc.exists || sDoc.data() == null) {
+          sDoc = await _firestore.collection('users').doc(sId).get();
+        }
+
+        if (sDoc.exists && sDoc.data() != null) {
+          final data = sDoc.data()!;
+          final rawName =
+              (data['fullName'] ?? data['name'] ?? '').toString().trim();
+
+          if (rawName.isEmpty || rawName.toLowerCase() == 'student') {
+            continue;
+          }
+
+          final role = (data['role'] ?? data['userType'] ?? '')
+              .toString()
+              .toLowerCase();
+          if (role == 'teacher') continue;
+
+          resultList.add({
+            'id': sDoc.id,
+            'uid': (data['uid'] ?? data['fybttUid'] ?? sDoc.id).toString(),
+            'name': rawName,
+            'photoUrl': (data['profileImageUrl'] ??
+                    data['profilePic'] ??
+                    data['photoUrl'] ??
+                    '')
+                .toString(),
+            'className':
+                (data['className'] ?? data['studentClass'] ?? '').toString(),
+          });
+        }
+      } catch (_) {}
+    }
+
+    resultList.sort((a, b) => (a['name'] as String)
+        .toLowerCase()
+        .compareTo((b['name'] as String).toLowerCase()));
+
+    return resultList;
+  }
+
   void _showAddOrInviteStudentDialog() {
     if (!_isViewerTeacher) return;
     final TextEditingController searchCtrl = TextEditingController();
     bool sendInviteMode = true;
     String searchKeyword = '';
+    bool isLoading = true;
+    List<Map<String, dynamic>> connectedStudents = [];
 
     showModalBottomSheet(
       context: context,
@@ -530,6 +629,28 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
       builder: (bottomSheetCtx) {
         return StatefulBuilder(
           builder: (context, setModalState) {
+            if (isLoading) {
+              _fetchConnectedStudentsForTeacher().then((list) {
+                if (bottomSheetCtx.mounted) {
+                  setModalState(() {
+                    connectedStudents = list;
+                    isLoading = false;
+                  });
+                }
+              });
+            }
+
+            final existingMembers = _group?.members ?? [];
+            final filteredList = connectedStudents.where((student) {
+              if (searchKeyword.isEmpty) return true;
+              final name = (student['name'] ?? '').toString().toLowerCase();
+              final uid = (student['uid'] ?? '').toString().toLowerCase();
+              final id = (student['id'] ?? '').toString().toLowerCase();
+              return name.contains(searchKeyword) ||
+                  uid.contains(searchKeyword) ||
+                  id.contains(searchKeyword);
+            }).toList();
+
             return Container(
               height: MediaQuery.of(context).size.height * 0.85,
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
@@ -611,229 +732,159 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
                     },
                   ),
                   const Divider(height: 16),
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Text(
+                      'Connected Students (${filteredList.length})',
+                      style: const TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF1E4C7A),
+                      ),
+                    ),
+                  ),
                   Expanded(
-                    child: StreamBuilder<QuerySnapshot>(
-                      stream: _firestore.collection('teachers').snapshots(),
-                      builder: (context, teachersSnap) {
-                        final Set<String> teacherUids = {widget.currentUserId};
-                        if (teachersSnap.hasData) {
-                          for (var doc in teachersSnap.data!.docs) {
-                            teacherUids.add(doc.id);
-                          }
-                        }
+                    child: isLoading
+                        ? const Center(
+                            child: CircularProgressIndicator(
+                                color: Colors.blueAccent),
+                          )
+                        : filteredList.isEmpty
+                            ? Center(
+                                child: Text(
+                                  searchKeyword.isEmpty
+                                      ? 'No connected students found.'
+                                      : 'No connected student found matching "$searchKeyword".',
+                                  style: const TextStyle(
+                                      color: Colors.grey, fontSize: 13),
+                                ),
+                              )
+                            : ListView.separated(
+                                physics: const BouncingScrollPhysics(),
+                                itemCount: filteredList.length,
+                                separatorBuilder: (_, __) =>
+                                    const Divider(height: 1),
+                                itemBuilder: (context, idx) {
+                                  final student = filteredList[idx];
+                                  final sId = student['id'].toString();
+                                  final sUid = student['uid'].toString();
+                                  final sName = student['name'].toString();
+                                  final sPic =
+                                      student['photoUrl'].toString();
+                                  final bool alreadyInGroup =
+                                      existingMembers.contains(sId);
 
-                        return StreamBuilder<QuerySnapshot>(
-                          stream: _firestore
-                              .collection('student_fees')
-                              .where('teacherId',
-                                  isEqualTo: widget.currentUserId)
-                              .snapshots(),
-                          builder: (context, feeSnap) {
-                            final Set<String> connectedStudentIds = {};
-                            if (feeSnap.hasData) {
-                              for (var d in feeSnap.data!.docs) {
-                                final m = d.data() as Map<String, dynamic>;
-                                final sid = m['studentId']?.toString();
-                                if (sid != null && sid.isNotEmpty) {
-                                  connectedStudentIds.add(sid);
-                                }
-                              }
-                            }
-
-                            return StreamBuilder<QuerySnapshot>(
-                              stream:
-                                  _firestore.collection('students').snapshots(),
-                              builder: (context, studentsSnap) {
-                                if (studentsSnap.connectionState ==
-                                    ConnectionState.waiting) {
-                                  return const Center(
-                                      child: CircularProgressIndicator());
-                                }
-
-                                final allStudents = studentsSnap.hasData
-                                    ? studentsSnap.data!.docs
-                                    : [];
-                                final existingMembers = _group?.members ?? [];
-
-                                final filteredList = allStudents.where((doc) {
-                                  final sId = doc.id;
-                                  if (teacherUids.contains(sId)) {
-                                    return false;
-                                  }
-
-                                  final data =
-                                      doc.data() as Map<String, dynamic>;
-                                  final name = (data['fullName'] ??
-                                          data['name'] ??
-                                          'Student')
-                                      .toString()
-                                      .toLowerCase();
-
-                                  final matchesSearch = searchKeyword.isEmpty ||
-                                      name.contains(searchKeyword) ||
-                                      sId.toLowerCase().contains(searchKeyword);
-
-                                  final isConnectedOrMatched =
-                                      connectedStudentIds.contains(sId) ||
-                                          searchKeyword.isNotEmpty;
-                                  return matchesSearch && isConnectedOrMatched;
-                                }).toList();
-
-                                if (filteredList.isEmpty) {
-                                  return Center(
-                                    child: Text(
-                                      searchKeyword.isEmpty
-                                          ? 'No connected students found. Type UID in search.'
-                                          : 'No matching student found.',
-                                      style: const TextStyle(
-                                          color: Colors.grey, fontSize: 13),
-                                    ),
-                                  );
-                                }
-
-                                return ListView.separated(
-                                  physics: const BouncingScrollPhysics(),
-                                  itemCount: filteredList.length,
-                                  separatorBuilder: (_, __) =>
-                                      const Divider(height: 1),
-                                  itemBuilder: (context, idx) {
-                                    final sDoc = filteredList[idx];
-                                    final sData =
-                                        sDoc.data() as Map<String, dynamic>;
-                                    final sId = sDoc.id;
-                                    final sName = (sData['fullName'] ??
-                                            sData['name'] ??
-                                            'Student')
-                                        .toString();
-                                    final sPic = (sData['profileImageUrl'] ??
-                                            sData['profilePic'] ??
-                                            '')
-                                        .toString();
-                                    final bool alreadyInGroup =
-                                        existingMembers.contains(sId);
-
-                                    return ListTile(
-                                      contentPadding:
-                                          const EdgeInsets.symmetric(
-                                              horizontal: 4, vertical: 4),
-                                      leading: CircleAvatar(
-                                        backgroundColor: Colors.blue.shade50,
-                                        backgroundImage: sPic.isNotEmpty
-                                            ? NetworkImage(sPic)
-                                            : null,
-                                        child: sPic.isEmpty
-                                            ? Text(
-                                                sName.isNotEmpty
-                                                    ? sName[0].toUpperCase()
-                                                    : 'S',
-                                                style: const TextStyle(
-                                                    fontWeight: FontWeight.bold,
-                                                    color: Colors.blueAccent),
-                                              )
-                                            : null,
-                                      ),
-                                      title: Text(
-                                        sName,
-                                        style: const TextStyle(
-                                            fontWeight: FontWeight.bold,
-                                            fontSize: 14.5),
-                                      ),
-                                      subtitle: Text(
-                                        'UID: $sId',
-                                        style: const TextStyle(
-                                            fontSize: 11,
-                                            color: Colors.grey,
-                                            fontFamily: 'monospace'),
-                                      ),
-                                      trailing: alreadyInGroup
-                                          ? Container(
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                      horizontal: 10,
-                                                      vertical: 4),
-                                              decoration: BoxDecoration(
-                                                color: Colors.green.shade50,
-                                                borderRadius:
-                                                    BorderRadius.circular(12),
-                                              ),
-                                              child: Text(
-                                                'Added',
-                                                style: TextStyle(
-                                                  color: Colors.green.shade700,
+                                  return ListTile(
+                                    contentPadding:
+                                        const EdgeInsets.symmetric(
+                                            horizontal: 4, vertical: 4),
+                                    leading: CircleAvatar(
+                                      backgroundColor: Colors.blue.shade50,
+                                      backgroundImage: sPic.isNotEmpty
+                                          ? NetworkImage(sPic)
+                                          : null,
+                                      child: sPic.isEmpty
+                                          ? Text(
+                                              sName.isNotEmpty
+                                                  ? sName[0].toUpperCase()
+                                                  : 'S',
+                                              style: const TextStyle(
                                                   fontWeight: FontWeight.bold,
-                                                  fontSize: 12,
-                                                ),
-                                              ),
+                                                  color: Colors.blueAccent),
                                             )
-                                          : ElevatedButton(
-                                              style: ElevatedButton.styleFrom(
-                                                backgroundColor:
-                                                    Colors.blueAccent,
-                                                foregroundColor: Colors.white,
-                                                elevation: 0,
-                                                padding:
-                                                    const EdgeInsets.symmetric(
-                                                        horizontal: 14,
-                                                        vertical: 8),
-                                                shape: RoundedRectangleBorder(
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                            10)),
-                                              ),
-                                              onPressed: () async {
-                                                if (teacherUids.contains(sId)) {
-                                                  _showTeacherIdBlockedDialog();
-                                                  return;
-                                                }
-
-                                                Navigator.pop(bottomSheetCtx);
-                                                try {
-                                                  if (sendInviteMode) {
-                                                    await _groupService
-                                                        .sendInvitation(
-                                                      groupId: widget.groupId,
-                                                      groupName:
-                                                          _group?.name ??
-                                                              'Group',
-                                                      invitedUserId: sId,
-                                                      invitedByUserId: widget
-                                                          .currentUserId,
-                                                    );
-                                                    _showSnackBar(
-                                                        'Invitation sent to $sName!');
-                                                  } else {
-                                                    await _groupService
-                                                        .addStudentDirectlyByTeacher(
-                                                      groupId: widget.groupId,
-                                                      teacherId: widget
-                                                          .currentUserId,
-                                                      studentId: sId,
-                                                    );
-                                                    _showSnackBar(
-                                                        '$sName added to group!');
-                                                  }
-                                                } catch (e) {
-                                                  _showSnackBar('Failed: $e');
-                                                }
-                                              },
-                                              child: Text(
-                                                sendInviteMode
-                                                    ? 'Invite'
-                                                    : 'Add',
-                                                style: const TextStyle(
-                                                    fontWeight: FontWeight.bold,
-                                                    fontSize: 12.5),
+                                          : null,
+                                    ),
+                                    title: Text(
+                                      sName,
+                                      style: const TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 14.5),
+                                    ),
+                                    subtitle: Text(
+                                      'UID: $sUid',
+                                      style: const TextStyle(
+                                          fontSize: 11,
+                                          color: Colors.grey,
+                                          fontFamily: 'monospace'),
+                                    ),
+                                    trailing: alreadyInGroup
+                                        ? Container(
+                                            padding:
+                                                const EdgeInsets.symmetric(
+                                                    horizontal: 10,
+                                                    vertical: 4),
+                                            decoration: BoxDecoration(
+                                              color: Colors.green.shade50,
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
+                                            ),
+                                            child: Text(
+                                              'Added',
+                                              style: TextStyle(
+                                                color: Colors.green.shade700,
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 12,
                                               ),
                                             ),
-                                    );
-                                  },
-                                );
-                              },
-                            );
-                          },
-                        );
-                      },
-                    ),
+                                          )
+                                        : ElevatedButton(
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor:
+                                                  Colors.blueAccent,
+                                              foregroundColor: Colors.white,
+                                              elevation: 0,
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                      horizontal: 14,
+                                                      vertical: 8),
+                                              shape: RoundedRectangleBorder(
+                                                  borderRadius:
+                                                      BorderRadius.circular(
+                                                          10)),
+                                            ),
+                                            onPressed: () async {
+                                              Navigator.pop(bottomSheetCtx);
+                                              try {
+                                                if (sendInviteMode) {
+                                                  await _groupService
+                                                      .sendInvitation(
+                                                    groupId: widget.groupId,
+                                                    groupName:
+                                                        _group?.name ??
+                                                            'Group',
+                                                    invitedUserId: sId,
+                                                    invitedByUserId: widget
+                                                        .currentUserId,
+                                                  );
+                                                  _showSnackBar(
+                                                      'Invitation sent to $sName!');
+                                                } else {
+                                                  await _groupService
+                                                      .addStudentDirectlyByTeacher(
+                                                    groupId: widget.groupId,
+                                                    teacherId: widget
+                                                        .currentUserId,
+                                                    studentId: sId,
+                                                  );
+                                                  _showSnackBar(
+                                                      '$sName added to group!');
+                                                }
+                                              } catch (e) {
+                                                _showSnackBar('Failed: $e');
+                                              }
+                                            },
+                                            child: Text(
+                                              sendInviteMode
+                                                  ? 'Invite'
+                                                  : 'Add',
+                                              style: const TextStyle(
+                                                  fontWeight: FontWeight.bold,
+                                                  fontSize: 12.5),
+                                            ),
+                                          ),
+                                  );
+                                },
+                              ),
                   ),
                 ],
               ),
