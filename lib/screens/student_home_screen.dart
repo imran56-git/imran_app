@@ -42,7 +42,6 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
   @override
   void initState() {
     super.initState();
-    // Keep each screen isolated in memory so tab switches never trigger reloads
     _screens = [
       RepaintBoundary(
         key: const PageStorageKey<String>('student_tab_chats'),
@@ -69,7 +68,6 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
       ),
     ];
 
-    // Cached stream in initState so switching tabs never recreates the listener
     _unreadNotificationsStream = FirebaseFirestore.instance
         .collection('notifications')
         .where('receiverId', isEqualTo: widget.currentUserId)
@@ -309,49 +307,6 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
 
   List<Widget> _buildAppBarActions() {
     return [
-      if (_selectedIndex == 0)
-        Padding(
-          padding: const EdgeInsets.only(right: 4),
-          child: InkWell(
-            borderRadius: BorderRadius.circular(12),
-            onTap: () {
-              HapticFeedback.lightImpact();
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: const Row(
-                    children: [
-                      Icon(Icons.check_circle_rounded,
-                          color: Colors.white, size: 18),
-                      SizedBox(width: 8),
-                      Text('All messages marked as read'),
-                    ],
-                  ),
-                  behavior: SnackBarBehavior.floating,
-                  backgroundColor: _primaryNavy,
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
-                ),
-              );
-            },
-            child: Tooltip(
-              message: 'Mark all as read',
-              child: Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF1F5F9),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFFE2E8F0)),
-                ),
-                child: const Icon(
-                  Icons.mark_chat_read_outlined,
-                  color: _brandBlue,
-                  size: 20,
-                ),
-              ),
-            ),
-          ),
-        ),
       _buildNotificationActionButton(),
       const SizedBox(width: 12),
     ];
@@ -429,210 +384,216 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
   @override
   Widget build(BuildContext context) {
     final bool showFab = _selectedIndex == 0 || _selectedIndex == 2;
-    final bool showAppBar =
-        _selectedIndex == 0 || _selectedIndex == 1 || _selectedIndex == 2;
+    final bool showAppBar = _selectedIndex == 1 || _selectedIndex == 2;
 
-    return Scaffold(
-      backgroundColor: _scaffoldBg,
-      appBar: showAppBar
-          ? AppBar(
-              backgroundColor: Colors.white,
-              elevation: 0,
-              scrolledUnderElevation: 0.5,
-              centerTitle: false,
-              titleSpacing: 16,
-              bottom: PreferredSize(
-                preferredSize: const Size.fromHeight(1),
-                child: Container(
-                  height: 1,
-                  color: const Color(0xFFE2E8F0),
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness:
+            _selectedIndex == 0 ? Brightness.light : Brightness.dark,
+      ),
+      child: Scaffold(
+        backgroundColor: _scaffoldBg,
+        appBar: showAppBar
+            ? AppBar(
+                backgroundColor: Colors.white,
+                elevation: 0,
+                scrolledUnderElevation: 0.5,
+                centerTitle: false,
+                titleSpacing: 16,
+                bottom: PreferredSize(
+                  preferredSize: const Size.fromHeight(1),
+                  child: Container(
+                    height: 1,
+                    color: const Color(0xFFE2E8F0),
+                  ),
                 ),
-              ),
-              title: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(2),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(11),
-                      gradient: const LinearGradient(
-                        colors: [_brandBlue, _accentBlue],
+                title: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(2),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(11),
+                        gradient: const LinearGradient(
+                          colors: [_brandBlue, _accentBlue],
+                        ),
                       ),
-                    ),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(9),
-                      child: Container(
-                        color: Colors.white,
-                        child: Image.asset(
-                          'assets/images/app_logo.png',
-                          width: 32,
-                          height: 32,
-                          fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) =>
-                              const Padding(
-                            padding: EdgeInsets.all(4.0),
-                            child: Icon(
-                              Icons.school_rounded,
-                              color: _brandBlue,
-                              size: 24,
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(9),
+                        child: Container(
+                          color: Colors.white,
+                          child: Image.asset(
+                            'assets/images/app_logo.png',
+                            width: 32,
+                            height: 32,
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) =>
+                                const Padding(
+                              padding: EdgeInsets.all(4.0),
+                              child: Icon(
+                                Icons.school_rounded,
+                                color: _brandBlue,
+                                size: 24,
+                              ),
                             ),
                           ),
                         ),
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 11),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Row(
-                          children: [
-                            const Text(
-                              'FYBTT',
-                              style: TextStyle(
-                                color: _primaryNavy,
-                                fontWeight: FontWeight.w900,
-                                fontSize: 18.5,
-                                letterSpacing: 0.4,
-                              ),
-                            ),
-                            const SizedBox(width: 6),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 6,
-                                vertical: 1.5,
-                              ),
-                              decoration: BoxDecoration(
-                                color: _accentBlue.withOpacity(0.1),
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: const Text(
-                                'STUDENT',
+                    const SizedBox(width: 11),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Row(
+                            children: [
+                              const Text(
+                                'FYBTT',
                                 style: TextStyle(
-                                  color: _accentBlue,
-                                  fontSize: 9,
-                                  fontWeight: FontWeight.w800,
-                                  letterSpacing: 0.5,
+                                  color: _primaryNavy,
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 18.5,
+                                  letterSpacing: 0.4,
                                 ),
                               ),
-                            ),
-                          ],
-                        ),
-                        Text(
-                          _tabSubtitles[_selectedIndex],
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Color(0xFF64748B),
-                            fontSize: 11.2,
-                            fontWeight: FontWeight.w500,
+                              const SizedBox(width: 6),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 1.5,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: _accentBlue.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: const Text(
+                                  'STUDENT',
+                                  style: TextStyle(
+                                    color: _accentBlue,
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: 0.5,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
-                        ),
-                      ],
+                          Text(
+                            _tabSubtitles[_selectedIndex],
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Color(0xFF64748B),
+                              fontSize: 11.2,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                actions: _buildAppBarActions(),
+              )
+            : null,
+        body: IndexedStack(
+          index: _selectedIndex,
+          children: _screens,
+        ),
+        floatingActionButton: showFab
+            ? Container(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(18),
+                  gradient: const LinearGradient(
+                    colors: [_brandBlue, _accentBlue],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: _brandBlue.withOpacity(0.32),
+                      blurRadius: 14,
+                      offset: const Offset(0, 6),
+                    ),
+                  ],
+                ),
+                child: FloatingActionButton(
+                  backgroundColor: Colors.transparent,
+                  elevation: 0,
+                  highlightElevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(18),
+                  ),
+                  onPressed: _handleFabPressed,
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 220),
+                    transitionBuilder: (child, animation) =>
+                        ScaleTransition(scale: animation, child: child),
+                    child: Icon(
+                      _selectedIndex == 0
+                          ? Icons.person_search_rounded
+                          : Icons.tune_rounded,
+                      key: ValueKey<int>(_selectedIndex),
+                      color: Colors.white,
+                      size: 24,
                     ),
                   ),
-                ],
-              ),
-              actions: _buildAppBarActions(),
-            )
-          : null,
-      body: IndexedStack(
-        index: _selectedIndex,
-        children: _screens,
-      ),
-      floatingActionButton: showFab
-          ? Container(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(18),
-                gradient: const LinearGradient(
-                  colors: [_brandBlue, _accentBlue],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
                 ),
-                boxShadow: [
-                  BoxShadow(
-                    color: _brandBlue.withOpacity(0.32),
-                    blurRadius: 14,
-                    offset: const Offset(0, 6),
-                  ),
-                ],
-              ),
-              child: FloatingActionButton(
-                backgroundColor: Colors.transparent,
-                elevation: 0,
-                highlightElevation: 0,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(18),
-                ),
-                onPressed: _handleFabPressed,
-                child: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 220),
-                  transitionBuilder: (child, animation) =>
-                      ScaleTransition(scale: animation, child: child),
-                  child: Icon(
-                    _selectedIndex == 0
-                        ? Icons.person_search_rounded
-                        : Icons.tune_rounded,
-                    key: ValueKey<int>(_selectedIndex),
-                    color: Colors.white,
-                    size: 24,
-                  ),
-                ),
-              ),
-            )
-          : null,
-      bottomNavigationBar: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          border: const Border(
-            top: BorderSide(color: Color(0xFFE2E8F0), width: 1),
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: _primaryNavy.withOpacity(0.05),
-              blurRadius: 20,
-              offset: const Offset(0, -4),
+              )
+            : null,
+        bottomNavigationBar: Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            border: const Border(
+              top: BorderSide(color: Color(0xFFE2E8F0), width: 1),
             ),
-          ],
-        ),
-        child: SafeArea(
-          top: false,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-            child: Row(
-              children: [
-                _buildModernBottomNavItem(
-                  index: 0,
-                  icon: Icons.chat_bubble_outline_rounded,
-                  activeIcon: Icons.chat_bubble_rounded,
-                  label: 'Messages',
-                ),
-                _buildModernBottomNavItem(
-                  index: 1,
-                  icon: Icons.school_outlined,
-                  activeIcon: Icons.school_rounded,
-                  label: 'Teachers',
-                ),
-                _buildModernBottomNavItem(
-                  index: 2,
-                  icon: Icons.search_rounded,
-                  activeIcon: Icons.manage_search_rounded,
-                  label: 'Search',
-                ),
-                _buildModernBottomNavItem(
-                  index: 3,
-                  icon: Icons.auto_awesome_outlined,
-                  activeIcon: Icons.auto_awesome_rounded,
-                  label: 'AI Assistant',
-                ),
-                _buildModernBottomNavItem(
-                  index: 4,
-                  icon: Icons.person_outline_rounded,
-                  activeIcon: Icons.person_rounded,
-                  label: 'Profile',
-                ),
-              ],
+            boxShadow: [
+              BoxShadow(
+                color: _primaryNavy.withOpacity(0.05),
+                blurRadius: 20,
+                offset: const Offset(0, -4),
+              ),
+            ],
+          ),
+          child: SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              child: Row(
+                children: [
+                  _buildModernBottomNavItem(
+                    index: 0,
+                    icon: Icons.chat_bubble_outline_rounded,
+                    activeIcon: Icons.chat_bubble_rounded,
+                    label: 'Messages',
+                  ),
+                  _buildModernBottomNavItem(
+                    index: 1,
+                    icon: Icons.school_outlined,
+                    activeIcon: Icons.school_rounded,
+                    label: 'Teachers',
+                  ),
+                  _buildModernBottomNavItem(
+                    index: 2,
+                    icon: Icons.search_rounded,
+                    activeIcon: Icons.manage_search_rounded,
+                    label: 'Search',
+                  ),
+                  _buildModernBottomNavItem(
+                    index: 3,
+                    icon: Icons.auto_awesome_outlined,
+                    activeIcon: Icons.auto_awesome_rounded,
+                    label: 'AI Assistant',
+                  ),
+                  _buildModernBottomNavItem(
+                    index: 4,
+                    icon: Icons.person_outline_rounded,
+                    activeIcon: Icons.person_rounded,
+                    label: 'Profile',
+                  ),
+                ],
+              ),
             ),
           ),
         ),
