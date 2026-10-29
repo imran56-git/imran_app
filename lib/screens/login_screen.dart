@@ -47,6 +47,145 @@ class _LoginScreenState extends State<LoginScreen> {
     await prefs.setString('userType', role);
   }
 
+  Future<String?> _resolveVerifiedRole(String uid) async {
+    try {
+      final userDoc = await _firestore.collection('users').doc(uid).get();
+      if (userDoc.exists && userDoc.data() != null) {
+        final role = userDoc.data()!['role']?.toString().trim().toLowerCase();
+        if (role == 'teacher' || role == 'student') {
+          return role;
+        }
+      }
+
+      final studentDoc = await _firestore.collection('students').doc(uid).get();
+      final teacherDoc = await _firestore.collection('teachers').doc(uid).get();
+
+      final bool hasStudent = studentDoc.exists &&
+          studentDoc.data() != null &&
+          (studentDoc.data()!['name']?.toString().trim().isNotEmpty == true ||
+              studentDoc.data()!['role'] == 'student');
+
+      final bool hasTeacher = teacherDoc.exists &&
+          teacherDoc.data() != null &&
+          (teacherDoc.data()!['name']?.toString().trim().isNotEmpty == true ||
+              teacherDoc.data()!['role'] == 'teacher');
+
+      if (hasStudent && !hasTeacher) return 'student';
+      if (hasTeacher && !hasStudent) return 'teacher';
+      if (hasStudent) return 'student';
+      if (hasTeacher) return 'teacher';
+
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  void _showUnregisteredAccountDialog(String email) {
+    if (!mounted) return;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Row(
+          children: [
+            Icon(Icons.person_off_rounded, color: Color(0xFFDC2626), size: 28),
+            SizedBox(width: 10),
+            Text(
+              "Account Not Found",
+              style: TextStyle(
+                fontSize: 19,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF0F172A),
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              "No account is registered with $email.",
+              style: const TextStyle(
+                fontSize: 14.5,
+                color: Color(0xFF334155),
+                height: 1.4,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF1F5F9),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              child: const Text(
+                "Please register your account first. If you are an Educator, choose Teacher registration; otherwise, choose Student registration.",
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  color: Color(0xFF475569),
+                ),
+              ),
+            ),
+          ],
+        ),
+        actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        actions: [
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  child: const Text(
+                    "OK",
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF475569),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: ElevatedButton(
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    Navigator.pop(context);
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF128C7E),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  child: const Text(
+                    "Register Now",
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _loginUser() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -60,7 +199,13 @@ class _LoginScreenState extends State<LoginScreen> {
 
       final user = userCredential.user ?? _auth.currentUser;
       if (user != null) {
-        await _checkAndNavigateUser(user);
+        final role = await _resolveVerifiedRole(user.uid);
+        if (role == null) {
+          await _auth.signOut();
+          _showUnregisteredAccountDialog(user.email ?? _emailController.text.trim());
+          return;
+        }
+        await _navigateWithRole(user.uid, role);
       }
     } on FirebaseAuthException catch (e) {
       String errorMessage;
@@ -108,7 +253,7 @@ class _LoginScreenState extends State<LoginScreen> {
           await googleUser.authentication;
 
       if (googleAuth.idToken == null && googleAuth.accessToken == null) {
-        _showError('Google Sign-In failed: idToken and accessToken are both null.');
+        _showError('Google Sign-In failed: Authentication tokens missing.');
         return;
       }
 
@@ -122,7 +267,20 @@ class _LoginScreenState extends State<LoginScreen> {
       final User? user = userCredential.user;
 
       if (user != null) {
-        await _checkAndNavigateUser(user);
+        final role = await _resolveVerifiedRole(user.uid);
+
+        if (role == null) {
+          final String attemptedEmail = user.email ?? googleUser.email;
+          if (userCredential.additionalUserInfo?.isNewUser == true) {
+            await user.delete().catchError((_) {});
+          }
+          await _googleSignIn.signOut().catchError((_) => null);
+          await _auth.signOut();
+          _showUnregisteredAccountDialog(attemptedEmail);
+          return;
+        }
+
+        await _navigateWithRole(user.uid, role);
       }
     } on FirebaseAuthException catch (e) {
       _showError('Firebase Auth Error [${e.code}]: ${e.message}');
@@ -137,76 +295,17 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  Future<void> _checkAndNavigateUser(User user) async {
-    String userType = 'student';
-
-    try {
-      final DocumentSnapshot teacherDoc = await _firestore
-          .collection('teachers')
-          .doc(user.uid)
-          .get(const GetOptions(source: Source.serverAndCache));
-
-      if (teacherDoc.exists) {
-        userType = 'teacher';
-      } else {
-        final DocumentSnapshot studentDoc = await _firestore
-            .collection('students')
-            .doc(user.uid)
-            .get(const GetOptions(source: Source.serverAndCache));
-
-        if (studentDoc.exists) {
-          userType = 'student';
-        } else {
-          final DocumentSnapshot userDoc = await _firestore
-              .collection('users')
-              .doc(user.uid)
-              .get(const GetOptions(source: Source.serverAndCache));
-
-          if (userDoc.exists && userDoc.data() != null) {
-            final uData = userDoc.data() as Map<String, dynamic>;
-            final String role = (uData['role'] ?? uData['userType'] ?? 'student')
-                .toString()
-                .toLowerCase();
-            userType = role == 'teacher' ? 'teacher' : 'student';
-          } else {
-            userType = 'student';
-            final String finalName =
-                user.displayName ?? (user.email?.split('@')[0] ?? 'Student');
-
-            await _firestore.collection('students').doc(user.uid).set({
-              'uid': user.uid,
-              'name': finalName,
-              'fullName': finalName,
-              'email': user.email ?? '',
-              'userType': 'student',
-              'createdAt': FieldValue.serverTimestamp(),
-            }, SetOptions(merge: true));
-
-            await _firestore.collection('users').doc(user.uid).set({
-              'uid': user.uid,
-              'name': finalName,
-              'email': user.email ?? '',
-              'role': 'student',
-              'userType': 'student',
-              'createdAt': FieldValue.serverTimestamp(),
-            }, SetOptions(merge: true));
-          }
-        }
-      }
-    } catch (_) {
-      userType = 'student';
-    }
-
-    await _saveUserSession(user.uid, userType);
+  Future<void> _navigateWithRole(String uid, String role) async {
+    await _saveUserSession(uid, role);
 
     if (!mounted) return;
 
     Navigator.pushAndRemoveUntil(
       context,
       MaterialPageRoute(
-        builder: (_) => userType == 'teacher'
-            ? TeacherHomeScreen(currentUserId: user.uid)
-            : StudentHomeScreen(currentUserId: user.uid),
+        builder: (_) => role == 'teacher'
+            ? TeacherHomeScreen(currentUserId: uid)
+            : StudentHomeScreen(currentUserId: uid),
       ),
       (route) => false,
     );
@@ -220,7 +319,7 @@ class _LoginScreenState extends State<LoginScreen> {
         content: Text(message),
         backgroundColor: Colors.redAccent,
         behavior: SnackBarBehavior.floating,
-        duration: const Duration(seconds: 6),
+        duration: const Duration(seconds: 5),
       ),
     );
   }
