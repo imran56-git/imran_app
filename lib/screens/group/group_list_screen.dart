@@ -42,7 +42,8 @@ class _GroupListScreenState extends State<GroupListScreen> {
   @override
   void initState() {
     super.initState();
-    _currentUserName = widget.currentUserName.trim().isEmpty ? 'User' : widget.currentUserName;
+    _currentUserName =
+        widget.currentUserName.trim().isEmpty ? 'User' : widget.currentUserName;
     _checkUserRole();
     _listenForRealtimeAndDelayedGroupNotices();
   }
@@ -63,11 +64,14 @@ class _GroupListScreenState extends State<GroupListScreen> {
           .get();
       if (teacherDoc.exists && teacherDoc.data() != null) {
         final tData = teacherDoc.data()!;
-        final name = (tData['name'] ?? tData['fullName'] ?? tData['displayName'])?.toString();
+        final name = (tData['name'] ?? tData['fullName'] ?? tData['displayName'])
+            ?.toString();
         if (mounted) {
           setState(() {
             _isTeacherRole = true;
-            if (name != null && name.trim().isNotEmpty && (_currentUserName.isEmpty || _currentUserName == 'User')) {
+            if (name != null &&
+                name.trim().isNotEmpty &&
+                (_currentUserName.isEmpty || _currentUserName == 'User')) {
               _currentUserName = name.trim();
             }
           });
@@ -80,11 +84,14 @@ class _GroupListScreenState extends State<GroupListScreen> {
       if (userDoc.exists && userDoc.data() != null) {
         final data = userDoc.data()!;
         final role = (data['role'] ?? data['type'] ?? '').toString();
-        final name = (data['name'] ?? data['fullName'] ?? data['displayName'])?.toString();
+        final name = (data['name'] ?? data['fullName'] ?? data['displayName'])
+            ?.toString();
         if (mounted) {
           setState(() {
             if (role == 'teacher') _isTeacherRole = true;
-            if (name != null && name.trim().isNotEmpty && (_currentUserName.isEmpty || _currentUserName == 'User')) {
+            if (name != null &&
+                name.trim().isNotEmpty &&
+                (_currentUserName.isEmpty || _currentUserName == 'User')) {
               _currentUserName = name.trim();
             }
           });
@@ -104,9 +111,9 @@ class _GroupListScreenState extends State<GroupListScreen> {
             (notice['groupId'] ?? notice['docId'] ?? '').toString();
         if (groupId.isEmpty || _processingNoticeIds.contains(groupId)) continue;
 
-        final String noticeType = (notice['noticeType'] ?? 'dismissed').toString();
-        final String groupName =
-            (notice['groupName'] ?? 'Group').toString();
+        final String noticeType =
+            (notice['noticeType'] ?? 'dismissed').toString();
+        final String groupName = (notice['groupName'] ?? 'Group').toString();
         final String teacherName =
             (notice['teacherName'] ?? 'Teacher').toString();
 
@@ -167,7 +174,8 @@ class _GroupListScreenState extends State<GroupListScreen> {
       barrierDismissible: false,
       builder: (dialogContext) {
         return AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
           title: Row(
             children: [
               Container(
@@ -177,7 +185,9 @@ class _GroupListScreenState extends State<GroupListScreen> {
                   shape: BoxShape.circle,
                 ),
                 child: Icon(
-                  isDismissal ? Icons.cancel_outlined : Icons.person_remove_alt_1,
+                  isDismissal
+                      ? Icons.cancel_outlined
+                      : Icons.person_remove_alt_1,
                   color: Colors.red.shade600,
                   size: 24,
                 ),
@@ -280,7 +290,8 @@ class _GroupListScreenState extends State<GroupListScreen> {
 
   void _showGroupOptionsSheet(GroupModel group) {
     final bool isMuted = group.mutedByUsers.contains(widget.currentUserId);
-    final bool isArchived = group.archivedByUsers.contains(widget.currentUserId);
+    final bool isArchived =
+        group.archivedByUsers.contains(widget.currentUserId);
 
     showModalBottomSheet(
       context: context,
@@ -303,11 +314,15 @@ class _GroupListScreenState extends State<GroupListScreen> {
               ),
               ListTile(
                 leading: Icon(
-                  isMuted ? Icons.notifications_active : Icons.notifications_off,
+                  isMuted
+                      ? Icons.notifications_active
+                      : Icons.notifications_off,
                   color: ChatColors.primaryApp,
                 ),
                 title: Text(
-                  isMuted ? "Unmute Group Notifications" : "Mute Group Notifications",
+                  isMuted
+                      ? "Unmute Group Notifications"
+                      : "Mute Group Notifications",
                 ),
                 onTap: () async {
                   Navigator.pop(ctx);
@@ -320,10 +335,13 @@ class _GroupListScreenState extends State<GroupListScreen> {
               ),
               ListTile(
                 leading: Icon(
-                  isArchived ? Icons.unarchive_outlined : Icons.archive_outlined,
+                  isArchived
+                      ? Icons.unarchive_outlined
+                      : Icons.archive_outlined,
                   color: ChatColors.primaryApp,
                 ),
-                title: Text(isArchived ? "Unarchive Group" : "Archive Group"),
+                title:
+                    Text(isArchived ? "Unarchive Group" : "Archive Group"),
                 onTap: () async {
                   Navigator.pop(ctx);
                   await _groupService.toggleGroupArchive(
@@ -365,7 +383,7 @@ class _GroupListScreenState extends State<GroupListScreen> {
             );
           },
           child: Container(
-            margin: const EdgeInsets.fromLTRB(12, 4, 12, 6),
+            margin: const EdgeInsets.fromLTRB(14, 4, 14, 8),
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             decoration: BoxDecoration(
               color: Colors.blue.shade50,
@@ -405,7 +423,7 @@ class _GroupListScreenState extends State<GroupListScreen> {
     ];
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
       child: Row(
         children: filters.map((f) {
           final bool isSelected = _selectedFilter == f['key'];
@@ -414,19 +432,19 @@ class _GroupListScreenState extends State<GroupListScreen> {
             child: ChoiceChip(
               label: Text(f['label']!),
               selected: isSelected,
-              selectedColor: ChatColors.primaryApp.withOpacity(0.15),
-              backgroundColor: const Color(0xFFF0F2F5),
+              selectedColor: ChatColors.primaryApp.withOpacity(0.12),
+              backgroundColor: const Color(0xFFF1F5F9),
               labelStyle: TextStyle(
-                color: isSelected ? ChatColors.primaryApp : Colors.black54,
-                fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                fontSize: 12.5,
+                color: isSelected ? ChatColors.primaryApp : const Color(0xFF64748B),
+                fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                fontSize: 12,
               ),
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20),
+                borderRadius: BorderRadius.circular(16),
                 side: BorderSide(
                   color: isSelected
                       ? ChatColors.primaryApp
-                      : Colors.transparent,
+                      : const Color(0xFFE2E8F0),
                 ),
               ),
               onSelected: (_) {
@@ -443,22 +461,25 @@ class _GroupListScreenState extends State<GroupListScreen> {
     return Column(
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
+          padding: const EdgeInsets.fromLTRB(14, 8, 14, 6),
           child: Container(
-            height: 44,
+            height: 42,
             decoration: BoxDecoration(
-              color: const Color(0xFFF0F2F5),
-              borderRadius: BorderRadius.circular(24),
+              color: const Color(0xFFF1F5F9),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
             ),
             child: TextField(
               onChanged: (value) =>
                   setState(() => _searchQuery = value.toLowerCase()),
+              style: const TextStyle(fontSize: 13.5, color: Color(0xFF0F172A)),
               decoration: const InputDecoration(
                 hintText: "Search groups, batch or subject...",
-                hintStyle: TextStyle(color: Colors.grey, fontSize: 14.5),
-                prefixIcon: Icon(Icons.search, color: Colors.grey, size: 20),
+                hintStyle: TextStyle(color: Color(0xFF94A3B8), fontSize: 13.5),
+                prefixIcon:
+                    Icon(Icons.search_rounded, color: Color(0xFF94A3B8), size: 19),
                 border: InputBorder.none,
-                contentPadding: EdgeInsets.symmetric(vertical: 10),
+                contentPadding: EdgeInsets.symmetric(vertical: 11),
               ),
             ),
           ),
@@ -467,7 +488,8 @@ class _GroupListScreenState extends State<GroupListScreen> {
         _buildPendingInvitesBanner(),
         Expanded(
           child: StreamBuilder<List<GroupModel>>(
-            stream: _groupService.getUserActiveGroupsStream(widget.currentUserId),
+            stream:
+                _groupService.getUserActiveGroupsStream(widget.currentUserId),
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
                 return const Center(
@@ -512,11 +534,13 @@ class _GroupListScreenState extends State<GroupListScreen> {
               }
 
               return ListView.separated(
+                padding: const EdgeInsets.only(top: 4, bottom: 85),
+                physics: const BouncingScrollPhysics(),
                 itemCount: filteredGroups.length,
                 separatorBuilder: (context, index) => const Divider(
                   height: 1,
-                  indent: 78,
-                  color: Color(0xFFEEEEEE),
+                  indent: 74,
+                  color: Color(0xFFF1F5F9),
                 ),
                 itemBuilder: (context, index) {
                   final group = filteredGroups[index];
@@ -536,18 +560,18 @@ class _GroupListScreenState extends State<GroupListScreen> {
                   return ListTile(
                     key: ValueKey('group_tile_${group.id}'),
                     contentPadding:
-                        const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                        const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                     leading: Stack(
                       children: [
                         CircleAvatar(
-                          radius: 26,
+                          radius: 24,
                           backgroundColor: Colors.blue.shade50,
                           backgroundImage: group.imageUrl.isNotEmpty
                               ? NetworkImage(group.imageUrl)
                               : null,
                           child: group.imageUrl.isEmpty
                               ? const Icon(Icons.groups_rounded,
-                                  color: ChatColors.primaryApp, size: 28)
+                                  color: ChatColors.primaryApp, size: 26)
                               : null,
                         ),
                         if (group.isTeacherVerified)
@@ -563,7 +587,7 @@ class _GroupListScreenState extends State<GroupListScreen> {
                               child: const Icon(
                                 Icons.verified,
                                 color: Colors.blueAccent,
-                                size: 15,
+                                size: 14,
                               ),
                             ),
                           ),
@@ -578,27 +602,27 @@ class _GroupListScreenState extends State<GroupListScreen> {
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                               fontWeight: unreadCount > 0
-                                  ? FontWeight.bold
-                                  : FontWeight.w600,
-                              fontSize: 16,
-                              color: Colors.black87,
+                                  ? FontWeight.w800
+                                  : FontWeight.w700,
+                              fontSize: 15.5,
+                              color: const Color(0xFF0F172A),
                             ),
                           ),
                         ),
                         if (group.isTeacherVerified) ...[
                           const SizedBox(width: 4),
                           const Icon(Icons.verified,
-                              color: Colors.blueAccent, size: 16),
+                              color: Colors.blueAccent, size: 15),
                         ],
                         if (group.hasGoldenBadge) ...[
                           const SizedBox(width: 4),
                           const Icon(Icons.workspace_premium,
-                              color: Colors.amber, size: 17),
+                              color: Colors.amber, size: 16),
                         ],
                         if (isNotificationMuted) ...[
                           const SizedBox(width: 4),
                           const Icon(Icons.volume_off_rounded,
-                              color: Colors.grey, size: 15),
+                              color: Colors.grey, size: 14),
                         ],
                       ],
                     ),
@@ -614,30 +638,30 @@ class _GroupListScreenState extends State<GroupListScreen> {
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
                                 color: Colors.blueAccent,
-                                fontSize: 11.5,
-                                fontWeight: FontWeight.w500,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
                           ),
                         Padding(
-                          padding: const EdgeInsets.only(top: 3.0),
+                          padding: const EdgeInsets.only(top: 2.0),
                           child: Row(
                             children: [
                               if (isMutedByTeacher) ...[
                                 Container(
                                   margin: const EdgeInsets.only(right: 6),
                                   padding: const EdgeInsets.symmetric(
-                                      horizontal: 6, vertical: 1),
+                                      horizontal: 5, vertical: 1),
                                   decoration: BoxDecoration(
                                     color: Colors.red.shade50,
-                                    borderRadius: BorderRadius.circular(6),
+                                    borderRadius: BorderRadius.circular(5),
                                   ),
                                   child: Text(
                                     "Muted by teacher",
                                     style: TextStyle(
                                       color: Colors.red.shade700,
-                                      fontSize: 10.5,
-                                      fontWeight: FontWeight.w600,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w700,
                                     ),
                                   ),
                                 ),
@@ -651,12 +675,12 @@ class _GroupListScreenState extends State<GroupListScreen> {
                                   overflow: TextOverflow.ellipsis,
                                   style: TextStyle(
                                     color: unreadCount > 0
-                                        ? Colors.black87
-                                        : Colors.grey.shade600,
+                                        ? const Color(0xFF1E293B)
+                                        : const Color(0xFF64748B),
                                     fontWeight: unreadCount > 0
-                                        ? FontWeight.w600
+                                        ? FontWeight.w700
                                         : FontWeight.normal,
-                                    fontSize: 13.5,
+                                    fontSize: 13,
                                   ),
                                 ),
                               ),
@@ -676,27 +700,27 @@ class _GroupListScreenState extends State<GroupListScreen> {
                             fontSize: 11,
                             color: unreadCount > 0
                                 ? ChatColors.primaryApp
-                                : Colors.grey,
+                                : const Color(0xFF94A3B8),
                             fontWeight: unreadCount > 0
-                                ? FontWeight.bold
-                                : FontWeight.normal,
+                                ? FontWeight.w800
+                                : FontWeight.w500,
                           ),
                         ),
-                        const SizedBox(height: 5),
+                        const SizedBox(height: 4),
                         if (unreadCount > 0)
                           Container(
                             padding: const EdgeInsets.symmetric(
-                                horizontal: 7, vertical: 3),
+                                horizontal: 6.5, vertical: 2),
                             decoration: BoxDecoration(
                               color: ChatColors.primaryApp,
-                              borderRadius: BorderRadius.circular(12),
+                              borderRadius: BorderRadius.circular(10),
                             ),
                             child: Text(
                               unreadCount > 99 ? '99+' : '$unreadCount',
                               style: const TextStyle(
                                 color: Colors.white,
-                                fontSize: 10.5,
-                                fontWeight: FontWeight.bold,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w900,
                               ),
                             ),
                           ),
@@ -789,16 +813,16 @@ class _GroupListScreenState extends State<GroupListScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.groups_outlined, size: 64, color: Colors.grey.shade300),
-          const SizedBox(height: 12),
+          Icon(Icons.groups_outlined, size: 60, color: Colors.grey.shade300),
+          const SizedBox(height: 10),
           Text(
             _selectedFilter == 'archived'
                 ? "No archived groups"
                 : "No active groups found",
             style: const TextStyle(
-              color: Colors.grey,
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
+              color: Color(0xFF64748B),
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
             ),
           ),
         ],
