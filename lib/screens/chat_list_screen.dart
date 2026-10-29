@@ -66,6 +66,7 @@ class _ChatListScreenState extends State<ChatListScreen>
       if (_tabController.index == 1 && _isSelectionMode) {
         _clearSelection();
       }
+      if (mounted) setState(() {});
     });
 
     _loadCurrentUserName();
@@ -374,7 +375,7 @@ class _ChatListScreenState extends State<ChatListScreen>
   Widget _buildAdvancedSegmentedTabs() {
     return Container(
       color: Colors.white,
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
       child: Container(
         height: 46,
         padding: const EdgeInsets.all(4),
@@ -825,11 +826,18 @@ class _ChatListScreenState extends State<ChatListScreen>
   }
 
   Widget _buildTopHeader() {
+    final double statusBarHeight = MediaQuery.of(context).padding.top;
+
     return AnimatedSwitcher(
       duration: const Duration(milliseconds: 220),
       child: Container(
         key: ValueKey<bool>(_isSelectionMode),
-        padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
+        padding: EdgeInsets.fromLTRB(
+          18,
+          statusBarHeight > 0 ? statusBarHeight + 8 : 16,
+          18,
+          16,
+        ),
         decoration: BoxDecoration(
           gradient: _isSelectionMode
               ? const LinearGradient(
@@ -1052,8 +1060,34 @@ class _ChatListScreenState extends State<ChatListScreen>
                       ),
                     ],
                   ),
-                  const SizedBox(height: 14),
-                  _buildSearchBar(),
+                  AnimatedBuilder(
+                    animation: _tabController.animation ?? _tabController,
+                    builder: (context, child) {
+                      final double animValue = _tabController.animation?.value ??
+                          _tabController.index.toDouble();
+                      final double chatVisibilityFactor =
+                          (1.0 - animValue).clamp(0.0, 1.0);
+
+                      if (chatVisibilityFactor <= 0.001) {
+                        return const SizedBox.shrink();
+                      }
+
+                      return Opacity(
+                        opacity: chatVisibilityFactor,
+                        child: Align(
+                          heightFactor: chatVisibilityFactor,
+                          alignment: Alignment.topCenter,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              SizedBox(height: 14 * chatVisibilityFactor),
+                              _buildSearchBar(),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
                 ],
               ),
       ),
