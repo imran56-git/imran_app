@@ -100,28 +100,81 @@ class _CreateGroupScreenState extends State<CreateGroupScreen>
 
   Future<void> fetchAllStudents() async {
     try {
-      final snapshot = await _firestore.collection('students').get();
+      final Set<String> connectedStudentIds = {};
+
+      final connectionsSnap = await _firestore
+          .collection('teachers')
+          .doc(widget.teacherId)
+          .collection('connected_students')
+          .get();
+
+      for (var doc in connectionsSnap.docs) {
+        connectedStudentIds.add(doc.id);
+      }
+
+      final followersSnap = await _firestore
+          .collection('teachers')
+          .doc(widget.teacherId)
+          .collection('followers')
+          .get();
+
+      for (var doc in followersSnap.docs) {
+        connectedStudentIds.add(doc.id);
+      }
+
+      final followReqSnap = await _firestore
+          .collection('follow_requests')
+          .where('teacherId', isEqualTo: widget.teacherId)
+          .where('status', isEqualTo: 'accepted')
+          .get();
+
+      for (var doc in followReqSnap.docs) {
+        final data = doc.data();
+        final sId = (data['studentId'] ?? data['senderId'] ?? '').toString();
+        if (sId.isNotEmpty) {
+          connectedStudentIds.add(sId);
+        }
+      }
+
       final List<Map<String, dynamic>> list = [];
 
-      for (var doc in snapshot.docs) {
-        final docId = doc.id;
-        if (docId == widget.teacherId) continue;
+      for (String studentId in connectedStudentIds) {
+        if (studentId == widget.teacherId) continue;
 
-        final data = doc.data();
-        final String role = (data['role'] ?? data['userType'] ?? '').toString().toLowerCase();
-        if (role == 'teacher') continue;
+        var studentDoc =
+            await _firestore.collection('students').doc(studentId).get();
+        if (!studentDoc.exists || studentDoc.data() == null) {
+          studentDoc =
+              await _firestore.collection('users').doc(studentId).get();
+        }
 
-        list.add({
-          'id': docId,
-          'uid': (data['uid'] ?? data['fybttUid'] ?? docId).toString(),
-          'name': (data['fullName'] ?? data['name'] ?? 'Student').toString(),
-          'photoUrl': (data['profileImageUrl'] ??
-                  data['profilePic'] ??
-                  data['photoUrl'] ??
-                  '')
-              .toString(),
-          'className': (data['className'] ?? data['studentClass'] ?? '').toString(),
-        });
+        if (studentDoc.exists && studentDoc.data() != null) {
+          final data = studentDoc.data()!;
+          final String rawName =
+              (data['fullName'] ?? data['name'] ?? '').toString().trim();
+
+          if (rawName.isEmpty || rawName.toLowerCase() == 'student') {
+            continue;
+          }
+
+          final String role = (data['role'] ?? data['userType'] ?? '')
+              .toString()
+              .toLowerCase();
+          if (role == 'teacher') continue;
+
+          list.add({
+            'id': studentDoc.id,
+            'uid': (data['uid'] ?? data['fybttUid'] ?? studentDoc.id).toString(),
+            'name': rawName,
+            'photoUrl': (data['profileImageUrl'] ??
+                    data['profilePic'] ??
+                    data['photoUrl'] ??
+                    '')
+                .toString(),
+            'className':
+                (data['className'] ?? data['studentClass'] ?? '').toString(),
+          });
+        }
       }
 
       list.sort((a, b) => (a['name'] as String)
@@ -138,7 +191,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen>
       if (mounted) {
         setState(() => isLoading = false);
       }
-      _showSnackBar("Error loading students: $e");
+      _showSnackBar("Error loading connected students: $e");
     }
   }
 
@@ -254,47 +307,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen>
         return;
       }
 
-      var docSnap = await _firestore.collection('students').doc(rawUid).get();
-      if (!docSnap.exists || docSnap.data() == null) {
-        docSnap = await _firestore.collection('users').doc(rawUid).get();
-      }
-
-      if (docSnap.exists && docSnap.data() != null) {
-        final data = docSnap.data()!;
-        final String docId = docSnap.id;
-        final String role = (data['role'] ?? data['userType'] ?? '').toString().toLowerCase();
-
-        if (docId == widget.teacherId || role == 'teacher') {
-          _uidSearchController.clear();
-          _showSelfOrTeacherIdBlockedDialog();
-          return;
-        }
-
-        final Map<String, dynamic> studentObj = {
-          'id': docId,
-          'uid': (data['uid'] ?? data['fybttUid'] ?? docId).toString(),
-          'name': (data['fullName'] ?? data['name'] ?? 'Student').toString(),
-          'photoUrl': (data['profileImageUrl'] ??
-                  data['profilePic'] ??
-                  data['photoUrl'] ??
-                  '')
-              .toString(),
-          'className': (data['className'] ?? data['studentClass'] ?? '').toString(),
-        };
-
-        setState(() {
-          if (!allStudentsList.any((s) => s['id'] == docId)) {
-            allStudentsList.insert(0, studentObj);
-          }
-          if (!selectedStudents.any((s) => s['id'] == docId)) {
-            selectedStudents.add(studentObj);
-          }
-        });
-        _uidSearchController.clear();
-        _showSnackBar("${studentObj['name']} added to invite list!");
-      } else {
-        _showSnackBar("No student found with UID: $rawUid");
-      }
+      _showSnackBar("No connected student found with UID: $rawUid");
     } catch (e) {
       _showSnackBar("UID search error: $e");
     } finally {
@@ -818,7 +831,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen>
                   onChanged: (val) =>
                       setState(() => searchQuery = val.trim().toLowerCase()),
                   decoration: const InputDecoration(
-                    hintText: "Filter students by name or UID...",
+                    hintText: "Filter connected students by name or UID...",
                     hintStyle: TextStyle(fontSize: 13.5, color: Colors.grey),
                     prefixIcon:
                         Icon(Icons.search, color: Colors.grey, size: 20),
@@ -831,7 +844,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen>
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
                 child: Text(
-                  "Enrolled / Registered Students (${filteredList.length})",
+                  "Connected Students (${filteredList.length})",
                   style: const TextStyle(
                     fontSize: 12.5,
                     fontWeight: FontWeight.w700,
@@ -923,7 +936,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen>
               : filteredList.isEmpty
                   ? const Center(
                       child: Text(
-                        "No students found",
+                        "No connected students found",
                         style: TextStyle(color: Colors.grey, fontSize: 15),
                       ),
                     )
