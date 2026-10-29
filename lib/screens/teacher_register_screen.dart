@@ -15,10 +15,12 @@ class TeacherRegistrationScreen extends StatefulWidget {
   const TeacherRegistrationScreen({super.key});
 
   @override
-  State<TeacherRegistrationScreen> createState() => _TeacherRegistrationScreenState();
+  State<TeacherRegistrationScreen> createState() =>
+      _TeacherRegistrationScreenState();
 }
 
-class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
+class _TeacherRegistrationScreenState
+    extends State<TeacherRegistrationScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
@@ -47,7 +49,8 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
   String _analysisStatusText = "";
 
   final GeminiService _geminiService = GeminiService();
-  final String _policyUrl = "https://docs.google.com/document/d/1pLnjsGpdQwmbdytG7ZC5Nro7LHaOmgy8nSLCKGEgy0E/edit?usp=drivesdk";
+  final String _policyUrl =
+      "https://docs.google.com/document/d/1pLnjsGpdQwmbdytG7ZC5Nro7LHaOmgy8nSLCKGEgy0E/edit?usp=drivesdk";
 
   @override
   void dispose() {
@@ -63,7 +66,8 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
   }
 
   Future<void> _pickImage(Function(File) onPicked) async {
-    final picked = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 85);
+    final picked = await ImagePicker()
+        .pickImage(source: ImageSource.gallery, imageQuality: 85);
     if (picked != null) onPicked(File(picked.path));
   }
 
@@ -82,7 +86,10 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Location error: $e"), backgroundColor: Colors.red.shade600),
+          SnackBar(
+            content: Text("Location error: $e"),
+            backgroundColor: Colors.red.shade600,
+          ),
         );
       }
     } finally {
@@ -111,7 +118,9 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
   void _showIdProofSelector() {
     showModalBottomSheet(
       context: context,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(22))),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      ),
       backgroundColor: Colors.white,
       builder: (ctx) => Padding(
         padding: const EdgeInsets.all(22.0),
@@ -119,9 +128,19 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text("Select Government ID Type", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
+            const Text(
+              "Select Government ID Type",
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF0F172A),
+              ),
+            ),
             const SizedBox(height: 6),
-            const Text("Choose the official document you wish to upload for verification.", style: TextStyle(fontSize: 13, color: Colors.grey)),
+            const Text(
+              "Choose the official document you wish to upload for verification.",
+              style: TextStyle(fontSize: 13, color: Colors.grey),
+            ),
             const SizedBox(height: 16),
             _idTypeTile("Aadhaar Card", Icons.fingerprint_rounded),
             _idTypeTile("PAN Card", Icons.credit_card_rounded),
@@ -135,8 +154,13 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
   Widget _idTypeTile(String title, IconData icon) {
     return ListTile(
       leading: Icon(icon, color: Colors.blueAccent),
-      title: Text(title, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
-      trailing: _selectedIdType == title ? const Icon(Icons.check_circle, color: Colors.green) : null,
+      title: Text(
+        title,
+        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+      ),
+      trailing: _selectedIdType == title
+          ? const Icon(Icons.check_circle, color: Colors.green)
+          : null,
       onTap: () {
         Navigator.pop(context);
         setState(() => _selectedIdType = title);
@@ -146,7 +170,8 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
   }
 
   Future<void> _pickAndVerifyIdProof() async {
-    final picked = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 85);
+    final picked = await ImagePicker()
+        .pickImage(source: ImageSource.gallery, imageQuality: 85);
     if (picked == null) return;
 
     final File idFile = File(picked.path);
@@ -171,11 +196,17 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
           _isAnalyzingDoc = false;
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("$_selectedIdType verified successfully!"), backgroundColor: Colors.green),
+          SnackBar(
+            content: Text("$_selectedIdType verified successfully!"),
+            backgroundColor: Colors.green,
+          ),
         );
       } else {
         setState(() => _isAnalyzingDoc = false);
-        _showErrorDialog("ID Verification Failed", result['errorMessage'] ?? "Document verification failed.");
+        _showErrorDialog(
+          "ID Verification Failed",
+          result['errorMessage'] ?? "Document verification failed.",
+        );
       }
     } catch (e) {
       if (mounted) {
@@ -186,7 +217,8 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
   }
 
   Future<void> _pickAndVerifyCertificate() async {
-    final picked = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 85);
+    final picked = await ImagePicker()
+        .pickImage(source: ImageSource.gallery, imageQuality: 85);
     if (picked == null) return;
 
     final File certFile = File(picked.path);
@@ -214,7 +246,11 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
         });
       } else {
         setState(() => _isAnalyzingDoc = false);
-        _showErrorDialog("Invalid Certificate", result['errorMessage'] ?? "Could not scan valid educational certificate.");
+        _showErrorDialog(
+          "Invalid Certificate",
+          result['errorMessage'] ??
+              "Could not scan valid educational certificate.",
+        );
       }
     } catch (e) {
       if (mounted) {
@@ -227,7 +263,10 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
   Future<void> _startFaceLivenessCheck() async {
     if (_idProofImage == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Please upload and verify your ID proof first."), backgroundColor: Colors.red),
+        const SnackBar(
+          content: Text("Please upload and verify your ID proof first."),
+          backgroundColor: Colors.red,
+        ),
       );
       return;
     }
@@ -246,7 +285,8 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
 
       setState(() {
         _isAnalyzingDoc = true;
-        _analysisStatusText = "Performing 85%+ biometric face match with ID proof...";
+        _analysisStatusText =
+            "Performing 85%+ biometric face match with ID proof...";
       });
 
       try {
@@ -265,11 +305,19 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
             _isAnalyzingDoc = false;
           });
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text("Biometric Face Match Verified (85%+) Successfully!"), backgroundColor: Colors.green),
+            const SnackBar(
+              content: Text(
+                "Biometric Face Match Verified (85%+) Successfully!",
+              ),
+              backgroundColor: Colors.green,
+            ),
           );
         } else {
           setState(() => _isAnalyzingDoc = false);
-          _showErrorDialog("Face Match Failed", matchResult['message'] ?? "Face does not match ID proof.");
+          _showErrorDialog(
+            "Face Match Failed",
+            matchResult['message'] ?? "Face does not match ID proof.",
+          );
         }
       } catch (e) {
         if (mounted) {
@@ -284,13 +332,21 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Text(title, style: const TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(
+          title,
+          style: const TextStyle(
+            color: Colors.redAccent,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
         content: Text(message),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text("OK", style: TextStyle(fontWeight: FontWeight.bold)),
+            child:
+                const Text("OK", style: TextStyle(fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -300,35 +356,54 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Please fill all required fields correctly."), backgroundColor: Colors.red),
+        const SnackBar(
+          content: Text("Please fill all required fields correctly."),
+          backgroundColor: Colors.red,
+        ),
       );
       return;
     }
 
     if (_selectedSubjects.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please add at least one subject.'), backgroundColor: Colors.red),
+        const SnackBar(
+          content: Text('Please add at least one subject.'),
+          backgroundColor: Colors.red,
+        ),
       );
       return;
     }
 
     if (_qualificationCertificate == null || !_isCertificateConfirmed) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please upload and confirm your Qualification Certificate.'), backgroundColor: Colors.red),
+        const SnackBar(
+          content: Text(
+            'Please upload and confirm your Qualification Certificate.',
+          ),
+          backgroundColor: Colors.red,
+        ),
       );
       return;
     }
 
     if (_idProofImage == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Government ID Proof is mandatory.'), backgroundColor: Colors.red),
+        const SnackBar(
+          content: Text('Government ID Proof is mandatory.'),
+          backgroundColor: Colors.red,
+        ),
       );
       return;
     }
 
     if (!_isLivenessVerified) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please complete Face Liveness & Biometric Verification.'), backgroundColor: Colors.red),
+        const SnackBar(
+          content: Text(
+            'Please complete Face Liveness & Biometric Verification.',
+          ),
+          backgroundColor: Colors.red,
+        ),
       );
       return;
     }
@@ -336,74 +411,144 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
     setState(() => _isLoading = true);
 
     try {
-      final UserCredential userCredential = await FirebaseAuth.instance
-          .createUserWithEmailAndPassword(
-              email: _emailController.text.trim(),
-              password: _passwordController.text.trim());
+      final UserCredential userCredential =
+          await FirebaseAuth.instance.createUserWithEmailAndPassword(
+        email: _emailController.text.trim(),
+        password: _passwordController.text.trim(),
+      );
 
-      await userCredential.user!.sendEmailVerification();
-      final String uid = userCredential.user!.uid;
+      final user = userCredential.user;
+      if (user == null) throw Exception("User creation failed.");
+
+      await user.sendEmailVerification();
+      await user.updateDisplayName(_nameController.text.trim());
+
+      final String uid = user.uid;
 
       String profileUrl = "";
       if (_profileImage != null) {
         try {
-          profileUrl = await _processAndUpload(_profileImage!, 'teachers/$uid/profile.jpg');
+          profileUrl = await _processAndUpload(
+            _profileImage!,
+            'teachers/$uid/profile.jpg',
+          );
+          await user.updatePhotoURL(profileUrl);
         } catch (_) {}
       }
 
       String certUrl = "";
       try {
-        certUrl = await _processAndUpload(_qualificationCertificate!, 'teachers/$uid/certificate.jpg');
+        certUrl = await _processAndUpload(
+          _qualificationCertificate!,
+          'teachers/$uid/certificate.jpg',
+        );
       } catch (_) {}
 
       String idProofUrl = "";
       try {
-        idProofUrl = await _processAndUpload(_idProofImage!, 'teachers/$uid/id_proof.jpg');
+        idProofUrl = await _processAndUpload(
+          _idProofImage!,
+          'teachers/$uid/id_proof.jpg',
+        );
       } catch (_) {}
 
-      await FirebaseFirestore.instance.collection('teachers').doc(uid).set({
+      final String fullName = _nameController.text.trim();
+      final String email = _emailController.text.trim();
+      final String phone = _phoneController.text.trim();
+      final String tuitionName = _tuitionNameController.text.trim();
+      final String experience = _experienceController.text.trim().isEmpty
+          ? '0'
+          : _experienceController.text.trim();
+      final String teachingLocation = _locationController.text.trim();
+
+      final String degreeTitle =
+          _scannedCertificateData?['qualificationTitle']?.toString() ?? '';
+      final String institution =
+          _scannedCertificateData?['institutionOrCollege']?.toString() ?? '';
+      final String university =
+          _scannedCertificateData?['boardOrUniversity']?.toString() ?? '';
+
+      final Map<String, dynamic> teacherData = {
         'uid': uid,
-        'name': _nameController.text.trim(),
-        'email': _emailController.text.trim(),
-        'phone': _phoneController.text.trim(),
-        'tuitionName': _tuitionNameController.text.trim(),
-        'experience': _experienceController.text.trim().isEmpty ? '0' : _experienceController.text.trim(),
-        'teachingLocation': _locationController.text.trim(),
+        'fybttUid': uid,
+        'name': fullName,
+        'fullName': fullName,
+        'displayName': fullName,
+        'email': email,
+        'phone': phone,
+        'tuitionName': tuitionName,
+        'instituteName': tuitionName,
+        'coachingName': tuitionName,
+        'experience': experience,
+        'experienceYears': int.tryParse(experience) ?? 0,
+        'teachingLocation': teachingLocation,
+        'address': teachingLocation,
+        'location': teachingLocation,
         'subjects': _selectedSubjects,
+        'subject': _selectedSubjects.isNotEmpty ? _selectedSubjects.first : '',
         'profileUrl': profileUrl,
+        'profileImageUrl': profileUrl,
+        'profilePic': profileUrl,
+        'photoUrl': profileUrl,
         'certUrl': certUrl,
+        'certificateUrl': certUrl,
         'idProofUrl': idProofUrl,
         'idProofType': _selectedIdType,
         'qualificationDetails': _scannedCertificateData ?? {},
+        'degree': degreeTitle,
+        'qualification': degreeTitle,
+        'credentials': degreeTitle.isNotEmpty
+            ? "$degreeTitle, $institution"
+            : "Verified Educator on FYBTT",
+        'college': institution,
+        'university': university,
         'isVerified': true,
         'status': 'approved',
         'role': 'teacher',
+        'userType': 'teacher',
+        'hasGoldenBadge': false,
+        'studentCount': 0,
+        'averageRating': 5.0,
+        'rating': 5.0,
+        'isOnline': false,
+        'fcmToken': '',
         'createdAt': FieldValue.serverTimestamp(),
-      });
+        'lastSeen': FieldValue.serverTimestamp(),
+      };
 
-      await FirebaseFirestore.instance.collection('users').doc(uid).set({
-        'uid': uid,
-        'email': _emailController.text.trim(),
-        'role': 'teacher',
-        'createdAt': FieldValue.serverTimestamp(),
-      });
+      await FirebaseFirestore.instance
+          .collection('teachers')
+          .doc(uid)
+          .set(teacherData, SetOptions(merge: true));
+
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .set(teacherData, SetOptions(merge: true));
 
       if (mounted) {
         showDialog(
           context: context,
           barrierDismissible: false,
           builder: (ctx) => AlertDialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
             title: const Text("Registration Successful"),
-            content: const Text("Your academic credentials, ID proof, and biometric face match have been verified successfully. Please check your email to verify your account."),
+            content: const Text(
+              "Your academic credentials, ID proof, and biometric face match have been verified successfully. Please check your email to verify your account.",
+            ),
             actions: [
               TextButton(
                 onPressed: () {
                   Navigator.pop(ctx);
                   Navigator.pop(context);
                 },
-                child: const Text("OK", style: TextStyle(fontWeight: FontWeight.bold)),
-              )
+                child: const Text(
+                  "OK",
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ),
             ],
           ),
         );
@@ -411,13 +556,19 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
     } on FirebaseAuthException catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.message ?? "Registration failed."), backgroundColor: Colors.red),
+          SnackBar(
+            content: Text(e.message ?? "Registration failed."),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Error: ${e.toString()}"), backgroundColor: Colors.red),
+          SnackBar(
+            content: Text("Error: ${e.toString()}"),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     } finally {
@@ -425,17 +576,31 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
     }
   }
 
-  InputDecoration _buildInputDecoration(String label, IconData icon, {Widget? suffix}) {
+  InputDecoration _buildInputDecoration(String label, IconData icon,
+      {Widget? suffix}) {
     return InputDecoration(
       labelText: label,
       labelStyle: TextStyle(color: Colors.grey.shade600, fontSize: 14),
       prefixIcon: Icon(icon, color: Colors.blueAccent, size: 22),
       suffixIcon: suffix,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
-      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: Colors.grey.shade200, width: 1)),
-      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Colors.blueAccent, width: 2)),
-      errorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Colors.red, width: 1.5)),
+      contentPadding:
+          const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: BorderSide.none,
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: BorderSide(color: Colors.grey.shade200, width: 1),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: const BorderSide(color: Colors.blueAccent, width: 2),
+      ),
+      errorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: const BorderSide(color: Colors.red, width: 1.5),
+      ),
       filled: true,
       fillColor: Colors.grey.shade50,
       floatingLabelBehavior: FloatingLabelBehavior.auto,
@@ -447,7 +612,10 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFF4F6F9),
       appBar: AppBar(
-        title: const Text("Teacher Registration", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+        title: const Text(
+          "Teacher Registration",
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+        ),
         elevation: 0,
         backgroundColor: Colors.white,
         foregroundColor: Colors.black87,
@@ -461,8 +629,14 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
                   const CircularProgressIndicator(color: Colors.blueAccent),
                   const SizedBox(height: 18),
                   Text(
-                    _isAnalyzingDoc ? _analysisStatusText : "Registering educator account...",
-                    style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: Colors.black54),
+                    _isAnalyzingDoc
+                        ? _analysisStatusText
+                        : "Registering educator account...",
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 14,
+                      color: Colors.black54,
+                    ),
                     textAlign: TextAlign.center,
                   ),
                 ],
@@ -480,20 +654,30 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(20),
                         boxShadow: [
-                          BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 15, offset: const Offset(0, 5)),
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.04),
+                            blurRadius: 15,
+                            offset: const Offset(0, 5),
+                          ),
                         ],
                       ),
                       child: Column(
                         children: [
                           GestureDetector(
-                            onTap: () => _pickImage((f) => setState(() => _profileImage = f)),
+                            onTap: () => _pickImage(
+                                (f) => setState(() => _profileImage = f)),
                             child: Stack(
                               children: [
                                 CircleAvatar(
                                   radius: 54,
                                   backgroundColor: Colors.blue.shade50,
-                                  backgroundImage: _profileImage != null ? FileImage(_profileImage!) : null,
-                                  child: _profileImage == null ? const Icon(Icons.person, size: 60, color: Colors.blueAccent) : null,
+                                  backgroundImage: _profileImage != null
+                                      ? FileImage(_profileImage!)
+                                      : null,
+                                  child: _profileImage == null
+                                      ? const Icon(Icons.person,
+                                          size: 60, color: Colors.blueAccent)
+                                      : null,
                                 ),
                                 Positioned(
                                   bottom: 0,
@@ -503,9 +687,16 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
                                     decoration: BoxDecoration(
                                       color: Colors.blueAccent,
                                       shape: BoxShape.circle,
-                                      border: Border.all(color: Colors.white, width: 2),
+                                      border: Border.all(
+                                        color: Colors.white,
+                                        width: 2,
+                                      ),
                                     ),
-                                    child: const Icon(Icons.camera_alt, size: 16, color: Colors.white),
+                                    child: const Icon(
+                                      Icons.camera_alt,
+                                      size: 16,
+                                      color: Colors.white,
+                                    ),
                                   ),
                                 ),
                               ],
@@ -514,17 +705,26 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
                           const SizedBox(height: 24),
                           TextFormField(
                             controller: _nameController,
-                            decoration: _buildInputDecoration('Full Name', Icons.person_outline),
-                            validator: (val) => val == null || val.trim().isEmpty ? "Full Name is required" : null,
+                            decoration: _buildInputDecoration(
+                                'Full Name', Icons.person_outline),
+                            validator: (val) => val == null || val.trim().isEmpty
+                                ? "Full Name is required"
+                                : null,
                           ),
                           const SizedBox(height: 16),
                           TextFormField(
                             controller: _emailController,
                             keyboardType: TextInputType.emailAddress,
-                            decoration: _buildInputDecoration('Email Address', Icons.email_outlined),
+                            decoration: _buildInputDecoration(
+                                'Email Address', Icons.email_outlined),
                             validator: (val) {
-                              if (val == null || val.trim().isEmpty) return "Email is required";
-                              if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(val.trim())) return "Enter valid email";
+                              if (val == null || val.trim().isEmpty) {
+                                return "Email is required";
+                              }
+                              if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$')
+                                  .hasMatch(val.trim())) {
+                                return "Enter valid email";
+                              }
                               return null;
                             },
                           ),
@@ -536,13 +736,24 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
                               'Password',
                               Icons.lock_outline,
                               suffix: IconButton(
-                                icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility, color: Colors.grey),
-                                onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+                                icon: Icon(
+                                  _obscurePassword
+                                      ? Icons.visibility_off
+                                      : Icons.visibility,
+                                  color: Colors.grey,
+                                ),
+                                onPressed: () => setState(
+                                  () => _obscurePassword = !_obscurePassword,
+                                ),
                               ),
                             ),
                             validator: (val) {
-                              if (val == null || val.trim().isEmpty) return "Password is required";
-                              if (val.trim().length < 6) return "Password must be at least 6 chars";
+                              if (val == null || val.trim().isEmpty) {
+                                return "Password is required";
+                              }
+                              if (val.trim().length < 6) {
+                                return "Password must be at least 6 chars";
+                              }
                               return null;
                             },
                           ),
@@ -550,19 +761,27 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
                           TextFormField(
                             controller: _phoneController,
                             keyboardType: TextInputType.phone,
-                            decoration: _buildInputDecoration('Phone Number', Icons.phone_outlined),
-                            validator: (val) => val == null || val.trim().length < 10 ? "Enter valid phone" : null,
+                            decoration: _buildInputDecoration(
+                                'Phone Number', Icons.phone_outlined),
+                            validator: (val) =>
+                                val == null || val.trim().length < 10
+                                    ? "Enter valid phone"
+                                    : null,
                           ),
                           const SizedBox(height: 16),
                           TextFormField(
                             controller: _tuitionNameController,
-                            decoration: _buildInputDecoration('Tuition / Institute Name', Icons.school_outlined),
+                            decoration: _buildInputDecoration(
+                                'Tuition / Institute Name',
+                                Icons.school_outlined),
                           ),
                           const SizedBox(height: 16),
                           TextFormField(
                             controller: _experienceController,
                             keyboardType: TextInputType.number,
-                            decoration: _buildInputDecoration('Teaching Experience (in Years)', Icons.work_outline),
+                            decoration: _buildInputDecoration(
+                                'Teaching Experience (in Years)',
+                                Icons.work_outline),
                           ),
                           const SizedBox(height: 16),
                           TextFormField(
@@ -571,37 +790,52 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
                               'Teaching Location',
                               Icons.location_on_outlined,
                               suffix: IconButton(
-                                icon: const Icon(Icons.my_location, color: Colors.blueAccent),
+                                icon: const Icon(Icons.my_location,
+                                    color: Colors.blueAccent),
                                 onPressed: _getCurrentLocation,
                               ),
                             ),
-                            validator: (val) => val == null || val.trim().isEmpty ? "Location is required" : null,
+                            validator: (val) =>
+                                val == null || val.trim().isEmpty
+                                    ? "Location is required"
+                                    : null,
                           ),
                         ],
                       ),
                     ),
                     const SizedBox(height: 20),
-
                     Container(
                       padding: const EdgeInsets.all(20),
                       decoration: BoxDecoration(
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(20),
                         boxShadow: [
-                          BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 15, offset: const Offset(0, 5)),
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.04),
+                            blurRadius: 15,
+                            offset: const Offset(0, 5),
+                          ),
                         ],
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text("Subjects & Expertise", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                          const Text(
+                            "Subjects & Expertise",
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                            ),
+                          ),
                           const SizedBox(height: 14),
                           Row(
                             children: [
                               Expanded(
                                 child: TextFormField(
                                   controller: _subjectInputController,
-                                  decoration: _buildInputDecoration('Add Subject (e.g. Physics)', Icons.book_outlined),
+                                  decoration: _buildInputDecoration(
+                                      'Add Subject (e.g. Physics)',
+                                      Icons.book_outlined),
                                   onFieldSubmitted: (_) => _addSubject(),
                                 ),
                               ),
@@ -611,9 +845,12 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: Colors.blueAccent,
                                   minimumSize: const Size(54, 54),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(14),
+                                  ),
                                 ),
-                                child: const Icon(Icons.add, color: Colors.white),
+                                child:
+                                    const Icon(Icons.add, color: Colors.white),
                               ),
                             ],
                           ),
@@ -623,9 +860,16 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
                             runSpacing: 8,
                             children: _selectedSubjects.map((subject) {
                               return Chip(
-                                label: Text(subject, style: const TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold)),
+                                label: Text(
+                                  subject,
+                                  style: const TextStyle(
+                                    color: Colors.blueAccent,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
                                 backgroundColor: Colors.blue.shade50,
-                                deleteIcon: const Icon(Icons.close, size: 16, color: Colors.blueAccent),
+                                deleteIcon: const Icon(Icons.close,
+                                    size: 16, color: Colors.blueAccent),
                                 onDeleted: () {
                                   setState(() {
                                     _selectedSubjects.remove(subject);
@@ -633,7 +877,9 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
                                 },
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(10),
-                                  side: BorderSide(color: Colors.blue.shade200),
+                                  side: BorderSide(
+                                    color: Colors.blue.shade200,
+                                  ),
                                 ),
                               );
                             }).toList(),
@@ -642,32 +888,67 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
                       ),
                     ),
                     const SizedBox(height: 20),
-
                     Container(
                       padding: const EdgeInsets.all(20),
                       decoration: BoxDecoration(
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(20),
                         boxShadow: [
-                          BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 15, offset: const Offset(0, 5)),
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.04),
+                            blurRadius: 15,
+                            offset: const Offset(0, 5),
+                          ),
                         ],
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text("Verification & Documents", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                          const Text(
+                            "Verification & Documents",
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                            ),
+                          ),
                           const SizedBox(height: 16),
                           ListTile(
                             contentPadding: EdgeInsets.zero,
-                            leading: const Icon(Icons.workspace_premium, color: Colors.blueAccent),
-                            title: const Text("Qualification Certificate (Required)", style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+                            leading: const Icon(Icons.workspace_premium,
+                                color: Colors.blueAccent),
+                            title: const Text(
+                              "Qualification Certificate (Required)",
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
                             trailing: ElevatedButton.icon(
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: _qualificationCertificate != null ? Colors.green : Colors.blueAccent,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                backgroundColor:
+                                    _qualificationCertificate != null
+                                        ? Colors.green
+                                        : Colors.blueAccent,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
                               ),
-                              icon: Icon(_qualificationCertificate != null ? Icons.check : Icons.upload_file, size: 16, color: Colors.white),
-                              label: Text(_qualificationCertificate != null ? "Selected" : "Upload", style: const TextStyle(color: Colors.white, fontSize: 12)),
+                              icon: Icon(
+                                _qualificationCertificate != null
+                                    ? Icons.check
+                                    : Icons.upload_file,
+                                size: 16,
+                                color: Colors.white,
+                              ),
+                              label: Text(
+                                _qualificationCertificate != null
+                                    ? "Selected"
+                                    : "Upload",
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12,
+                                ),
+                              ),
                               onPressed: _pickAndVerifyCertificate,
                             ),
                           ),
@@ -678,28 +959,62 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
                               decoration: BoxDecoration(
                                 color: Colors.blue.shade50,
                                 borderRadius: BorderRadius.circular(12),
-                                border: Border.all(color: Colors.blue.shade200),
+                                border: Border.all(
+                                  color: Colors.blue.shade200,
+                                ),
                               ),
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text("Degree: ${_scannedCertificateData!['qualificationTitle']}", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.blueAccent)),
+                                  Text(
+                                    "Degree: ${_scannedCertificateData!['qualificationTitle']}",
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 13,
+                                      color: Colors.blueAccent,
+                                    ),
+                                  ),
                                   const SizedBox(height: 2),
-                                  Text("Institution: ${_scannedCertificateData!['institutionOrCollege']}", style: const TextStyle(fontSize: 12, color: Colors.black87)),
-                                  Text("Board/University: ${_scannedCertificateData!['boardOrUniversity']}", style: const TextStyle(fontSize: 12, color: Colors.black87)),
-                                  Text("Candidate: ${_scannedCertificateData!['candidateName']}", style: const TextStyle(fontSize: 12, color: Colors.black87)),
+                                  Text(
+                                    "Institution: ${_scannedCertificateData!['institutionOrCollege']}",
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.black87,
+                                    ),
+                                  ),
+                                  Text(
+                                    "Board/University: ${_scannedCertificateData!['boardOrUniversity']}",
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.black87,
+                                    ),
+                                  ),
+                                  Text(
+                                    "Candidate: ${_scannedCertificateData!['candidateName']}",
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.black87,
+                                    ),
+                                  ),
                                   const SizedBox(height: 8),
                                   Row(
                                     children: [
                                       Checkbox(
                                         value: _isCertificateConfirmed,
                                         activeColor: Colors.blueAccent,
-                                        onChanged: (val) => setState(() => _isCertificateConfirmed = val!),
+                                        onChanged: (val) => setState(
+                                          () =>
+                                              _isCertificateConfirmed = val!,
+                                        ),
                                       ),
                                       const Expanded(
                                         child: Text(
                                           "I confirm that the extracted certificate details above are accurate.",
-                                          style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Colors.black87),
+                                          style: TextStyle(
+                                            fontSize: 11.5,
+                                            fontWeight: FontWeight.w600,
+                                            color: Colors.black87,
+                                          ),
                                         ),
                                       ),
                                     ],
@@ -711,30 +1026,78 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
                           const Divider(height: 24),
                           ListTile(
                             contentPadding: EdgeInsets.zero,
-                            leading: const Icon(Icons.badge_outlined, color: Colors.blueAccent),
-                            title: Text("ID Proof - $_selectedIdType (Required)", style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+                            leading: const Icon(Icons.badge_outlined,
+                                color: Colors.blueAccent),
+                            title: Text(
+                              "ID Proof - $_selectedIdType (Required)",
+                              style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
                             trailing: ElevatedButton.icon(
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: _idProofImage != null ? Colors.green : Colors.blueAccent,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                backgroundColor: _idProofImage != null
+                                    ? Colors.green
+                                    : Colors.blueAccent,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
                               ),
-                              icon: Icon(_idProofImage != null ? Icons.check : Icons.upload_file, size: 16, color: Colors.white),
-                              label: Text(_idProofImage != null ? "Selected" : "Upload", style: const TextStyle(color: Colors.white, fontSize: 12)),
+                              icon: Icon(
+                                _idProofImage != null
+                                    ? Icons.check
+                                    : Icons.upload_file,
+                                size: 16,
+                                color: Colors.white,
+                              ),
+                              label: Text(
+                                _idProofImage != null ? "Selected" : "Upload",
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12,
+                                ),
+                              ),
                               onPressed: _showIdProofSelector,
                             ),
                           ),
                           const Divider(height: 24),
                           ListTile(
                             contentPadding: EdgeInsets.zero,
-                            leading: const Icon(Icons.face, color: Colors.blueAccent),
-                            title: const Text("Face Liveness & Biometric Verification", style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+                            leading: const Icon(Icons.face,
+                                color: Colors.blueAccent),
+                            title: const Text(
+                              "Face Liveness & Biometric Verification",
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
                             trailing: ElevatedButton.icon(
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: _isLivenessVerified ? Colors.green : Colors.blueAccent,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                backgroundColor: _isLivenessVerified
+                                    ? Colors.green
+                                    : Colors.blueAccent,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
                               ),
-                              icon: Icon(_isLivenessVerified ? Icons.check_circle : Icons.camera_front, size: 16, color: Colors.white),
-                              label: Text(_isLivenessVerified ? "Verified (85%+)" : "Verify Face", style: const TextStyle(color: Colors.white, fontSize: 12)),
+                              icon: Icon(
+                                _isLivenessVerified
+                                    ? Icons.check_circle
+                                    : Icons.camera_front,
+                                size: 16,
+                                color: Colors.white,
+                              ),
+                              label: Text(
+                                _isLivenessVerified
+                                    ? "Verified (85%+)"
+                                    : "Verify Face",
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12,
+                                ),
+                              ),
                               onPressed: _startFaceLivenessCheck,
                             ),
                           ),
@@ -742,22 +1105,33 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
                       ),
                     ),
                     const SizedBox(height: 20),
-
                     Row(
                       children: [
                         Checkbox(
                           value: _isAccepted,
                           activeColor: Colors.blueAccent,
-                          onChanged: (val) => setState(() => _isAccepted = val!),
+                          onChanged: (val) =>
+                              setState(() => _isAccepted = val!),
                         ),
                         Expanded(
                           child: RichText(
                             text: TextSpan(children: [
-                              const TextSpan(text: "I accept the ", style: TextStyle(color: Colors.black87, fontSize: 13)),
+                              const TextSpan(
+                                text: "I accept the ",
+                                style: TextStyle(
+                                  color: Colors.black87,
+                                  fontSize: 13,
+                                ),
+                              ),
                               TextSpan(
                                 text: "Terms & Conditions",
-                                style: const TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold, fontSize: 13),
-                                recognizer: TapGestureRecognizer()..onTap = _launchUrl,
+                                style: const TextStyle(
+                                  color: Colors.blueAccent,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13,
+                                ),
+                                recognizer: TapGestureRecognizer()
+                                  ..onTap = _launchUrl,
                               ),
                             ]),
                           ),
@@ -765,18 +1139,26 @@ class _TeacherRegistrationScreenState extends State<TeacherRegistrationScreen> {
                       ],
                     ),
                     const SizedBox(height: 20),
-
                     ElevatedButton(
                       onPressed: _isAccepted ? _submit : null,
                       style: ElevatedButton.styleFrom(
                         minimumSize: const Size(double.infinity, 54),
-                        backgroundColor: _isAccepted ? Colors.blueAccent : Colors.grey.shade300,
+                        backgroundColor: _isAccepted
+                            ? Colors.blueAccent
+                            : Colors.grey.shade300,
                         elevation: _isAccepted ? 4 : 0,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
                       ),
                       child: const Text(
                         "REGISTER AS TEACHER",
-                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16, letterSpacing: 0.5),
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                          letterSpacing: 0.5,
+                        ),
                       ),
                     ),
                     const SizedBox(height: 30),
