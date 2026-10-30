@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:io';
 import 'dart:ui';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
@@ -25,6 +27,9 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
   int _selectedIndex = 0;
   late final List<Widget> _screens;
   late final Stream<QuerySnapshot> _unreadNotificationsStream;
+
+  bool _isOffline = false;
+  Timer? _connectivityTimer;
 
   static const Color _primaryNavy = Color(0xFF0F172A);
   static const Color _brandBlue = Color(0xFF1E4C7A);
@@ -73,6 +78,36 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
         .where('receiverId', isEqualTo: widget.currentUserId)
         .where('isRead', isEqualTo: false)
         .snapshots();
+
+    _startConnectivityMonitoring();
+  }
+
+  void _startConnectivityMonitoring() {
+    _checkConnectivity();
+    _connectivityTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+      _checkConnectivity();
+    });
+  }
+
+  Future<void> _checkConnectivity() async {
+    try {
+      final result = await InternetAddress.lookup('example.com')
+          .timeout(const Duration(seconds: 2));
+      final bool hasNet = result.isNotEmpty && result[0].rawAddress.isNotEmpty;
+      if (mounted && _isOffline == hasNet) {
+        setState(() => _isOffline = !hasNet);
+      }
+    } catch (_) {
+      if (mounted && !_isOffline) {
+        setState(() => _isOffline = true);
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _connectivityTimer?.cancel();
+    super.dispose();
   }
 
   void _onTabTapped(int index) {
@@ -100,8 +135,8 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
           children: [
             Container(
               padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: const Color(0xFFFEF2F2),
+              decoration: const BoxDecoration(
+                color: Color(0xFFFEF2F2),
                 shape: BoxShape.circle,
               ),
               child: const Icon(
@@ -453,6 +488,31 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
     );
   }
 
+  Widget _buildOfflineStatusBar() {
+    if (!_isOffline) return const SizedBox.shrink();
+
+    return Container(
+      width: double.infinity,
+      color: const Color(0xFFEF4444),
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: const Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.wifi_off_rounded, color: Colors.white, size: 14),
+          SizedBox(width: 6),
+          Text(
+            'You are offline',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 11.5,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final bool showFab = _selectedIndex == 0 || _selectedIndex == 2;
@@ -629,60 +689,67 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
                   ),
                 )
               : null,
-          bottomNavigationBar: Container(
-            decoration: BoxDecoration(
-              color: Colors.white,
-              border: const Border(
-                top: BorderSide(color: Color(0xFFE2E8F0), width: 1),
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: _primaryNavy.withOpacity(0.05),
-                  blurRadius: 20,
-                  offset: const Offset(0, -4),
-                ),
-              ],
-            ),
-            child: SafeArea(
-              top: false,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                child: Row(
-                  children: [
-                    _buildModernBottomNavItem(
-                      index: 0,
-                      icon: Icons.chat_bubble_outline_rounded,
-                      activeIcon: Icons.chat_bubble_rounded,
-                      label: 'Messages',
-                    ),
-                    _buildModernBottomNavItem(
-                      index: 1,
-                      icon: Icons.school_outlined,
-                      activeIcon: Icons.school_rounded,
-                      label: 'Teachers',
-                    ),
-                    _buildModernBottomNavItem(
-                      index: 2,
-                      icon: Icons.search_rounded,
-                      activeIcon: Icons.manage_search_rounded,
-                      label: 'Search',
-                    ),
-                    _buildModernBottomNavItem(
-                      index: 3,
-                      icon: Icons.auto_awesome_outlined,
-                      activeIcon: Icons.auto_awesome_rounded,
-                      label: 'AI Assistant',
-                    ),
-                    _buildModernBottomNavItem(
-                      index: 4,
-                      icon: Icons.person_outline_rounded,
-                      activeIcon: Icons.person_rounded,
-                      label: 'Profile',
+          bottomNavigationBar: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _buildOfflineStatusBar(),
+              Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  border: const Border(
+                    top: BorderSide(color: Color(0xFFE2E8F0), width: 1),
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: _primaryNavy.withOpacity(0.05),
+                      blurRadius: 20,
+                      offset: const Offset(0, -4),
                     ),
                   ],
                 ),
+                child: SafeArea(
+                  top: false,
+                  child: Padding(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    child: Row(
+                      children: [
+                        _buildModernBottomNavItem(
+                          index: 0,
+                          icon: Icons.chat_bubble_outline_rounded,
+                          activeIcon: Icons.chat_bubble_rounded,
+                          label: 'Messages',
+                        ),
+                        _buildModernBottomNavItem(
+                          index: 1,
+                          icon: Icons.school_outlined,
+                          activeIcon: Icons.school_rounded,
+                          label: 'Teachers',
+                        ),
+                        _buildModernBottomNavItem(
+                          index: 2,
+                          icon: Icons.search_rounded,
+                          activeIcon: Icons.manage_search_rounded,
+                          label: 'Search',
+                        ),
+                        _buildModernBottomNavItem(
+                          index: 3,
+                          icon: Icons.auto_awesome_outlined,
+                          activeIcon: Icons.auto_awesome_rounded,
+                          label: 'AI Assistant',
+                        ),
+                        _buildModernBottomNavItem(
+                          index: 4,
+                          icon: Icons.person_outline_rounded,
+                          activeIcon: Icons.person_rounded,
+                          label: 'Profile',
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               ),
-            ),
+            ],
           ),
         ),
       ),
