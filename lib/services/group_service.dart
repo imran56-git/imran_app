@@ -826,7 +826,7 @@ class GroupService {
         'isViewerTeacher': false,
         'teacher': teacherProfile,
         'studentCount': group.studentCount,
-        'students': >[],
+        'students': const [],
       };
     }
 
