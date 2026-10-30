@@ -916,7 +916,7 @@ class ChatService {
         .listen((snapshot) async {
       if (snapshot.docs.isNotEmpty) {
         final List<MessageModel> incomingMessages = [];
-        final List<DocumentReference>> docsToDeleteFromCloud = [];
+        final List<DocumentReference> docsToDeleteFromCloud = [];
 
         for (final doc in snapshot.docs) {
           final data = doc.data();
@@ -1053,7 +1053,7 @@ class ChatService {
     }
   }
 
-  Future<DocumentReference>> _resolveMessageRef(
+  Future<DocumentReference> _resolveMessageRef(
       String chatOrGroupId, String messageId,
       {bool? isGroup}) async {
     if (isGroup == true) {
