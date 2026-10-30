@@ -245,7 +245,7 @@ class LocalChatStorageService {
       whereArgs.add(categoryFilter);
     }
 
-    final List> maps = await db.query(
+    final List<Map<String, dynamic>> maps = await db.query(
       'local_messages',
       where: whereClause,
       whereArgs: whereArgs,
@@ -316,7 +316,7 @@ class LocalChatStorageService {
   Future<void> deleteMessageForMeLocally(
       String messageId, String chatRoomId, String currentUserId) async {
     final db = await database;
-    final List> maps = await db.query(
+    final List<Map<String, dynamic>> maps = await db.query(
       'local_messages',
       columns: ['deletedForUsers'],
       where: 'messageId = ?',
@@ -400,7 +400,7 @@ class LocalChatStorageService {
     required int optionIndex,
   }) async {
     final db = await database;
-    final List> maps = await db.query(
+    final List<Map<String, dynamic>> maps = await db.query(
       'local_messages',
       columns: ['pollData'],
       where: 'messageId = ?',
@@ -436,7 +436,7 @@ class LocalChatStorageService {
     required int optionIndex,
   }) async {
     final db = await database;
-    final List> maps = await db.query(
+    final List<Map<String, dynamic>> maps = await db.query(
       'local_messages',
       columns: ['quizData'],
       where: 'messageId = ?',
@@ -471,7 +471,7 @@ class LocalChatStorageService {
   }) async {
     if (query.trim().isEmpty) return [];
     final db = await database;
-    final List> maps = await db.query(
+    final List<Map<String, dynamic>> maps = await db.query(
       'local_messages',
       where: 'chatRoomId = ? AND content LIKE ?',
       whereArgs: [chatRoomId, '%$query%'],
