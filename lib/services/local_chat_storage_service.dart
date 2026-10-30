@@ -327,7 +327,7 @@ class LocalChatStorageService {
     if (maps.isNotEmpty) {
       List<String> deleted = [];
       try {
-        final decoded = jsonDecode(maps.first['deletedForUsers'] ?? '[]');
+        final decoded = jsonDecode(maps.first['deletedForUsers']?.toString() ?? '[]');
         if (decoded is List) {
           deleted = decoded.map((e) => e.toString()).toList();
         }
@@ -411,7 +411,7 @@ class LocalChatStorageService {
     if (maps.isNotEmpty && maps.first['pollData'] != null) {
       try {
         final Map<String, dynamic> poll =
-            Map<String, dynamic>.from(jsonDecode(maps.first['pollData']));
+            Map<String, dynamic>.from(jsonDecode(maps.first['pollData'].toString()));
         final Map<String, dynamic> votes = poll['votes'] is Map
             ? Map<String, dynamic>.from(poll['votes'])
             : {};
@@ -447,7 +447,7 @@ class LocalChatStorageService {
     if (maps.isNotEmpty && maps.first['quizData'] != null) {
       try {
         final Map<String, dynamic> quiz =
-            Map<String, dynamic>.from(jsonDecode(maps.first['quizData']));
+            Map<String, dynamic>.from(jsonDecode(maps.first['quizData'].toString()));
         final Map<String, dynamic> submissions = quiz['submissions'] is Map
             ? Map<String, dynamic>.from(quiz['submissions'])
             : {};
