@@ -72,6 +72,18 @@ class _NotificationScreenState extends State<NotificationScreen> {
     }
 
     try {
+      final userDoc = await _firestore.collection('users').doc(uid).get();
+      if (userDoc.exists && userDoc.data() != null) {
+        final role = userDoc.data()!['role']?.toString().toLowerCase();
+        if (mounted) {
+          setState(() {
+            isTeacher = role == 'teacher';
+            isLoading = false;
+          });
+        }
+        return;
+      }
+
       final teacherDoc = await _firestore.collection('teachers').doc(uid).get();
       if (mounted) {
         setState(() {
@@ -108,7 +120,8 @@ class _NotificationScreenState extends State<NotificationScreen> {
         bool isExpired = false;
         if (expireAt != null && expireAt.toDate().isBefore(now)) {
           isExpired = true;
-        } else if (seenAt != null && now.difference(seenAt.toDate()).inHours >= 48) {
+        } else if (seenAt != null &&
+            now.difference(seenAt.toDate()).inHours >= 48) {
           isExpired = true;
         }
 
@@ -336,7 +349,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
     );
   }
 
-  Future<Map<String, String>> _resolveSenderInfo(
+  Future> _resolveSenderInfo(
       String senderId, Map<String, dynamic> data) async {
     String name =
         (data['senderName'] ?? data['teacherName'] ?? data['title'] ?? '')
@@ -362,37 +375,33 @@ class _NotificationScreenState extends State<NotificationScreen> {
     }
 
     try {
-      var doc = await _firestore.collection('teachers').doc(senderId).get();
+      var userDoc = await _firestore.collection('users').doc(senderId).get();
+      if (userDoc.exists && userDoc.data() != null) {
+        final d = userDoc.data()!;
+        final resolvedName = (d['fullName'] ?? d['name'] ?? d['displayName'] ?? name).toString();
+        if (resolvedName.isNotEmpty && resolvedName != 'User') {
+          return {
+            'name': resolvedName,
+            'photoUrl': (d['profileImageUrl'] ?? d['profilePic'] ?? d['photoUrl'] ?? photoUrl).toString(),
+          };
+        }
+      }
+
+      var doc = await _firestore.collection('students').doc(senderId).get();
       if (doc.exists && doc.data() != null) {
         final d = doc.data()!;
         return {
           'name': (d['fullName'] ?? d['name'] ?? name).toString(),
-          'photoUrl':
-              (d['profileImageUrl'] ?? d['profilePic'] ?? photoUrl).toString(),
+          'photoUrl': (d['profileImageUrl'] ?? d['profilePic'] ?? photoUrl).toString(),
         };
       }
 
-      doc = await _firestore.collection('students').doc(senderId).get();
+      doc = await _firestore.collection('teachers').doc(senderId).get();
       if (doc.exists && doc.data() != null) {
         final d = doc.data()!;
         return {
           'name': (d['fullName'] ?? d['name'] ?? name).toString(),
-          'photoUrl':
-              (d['profileImageUrl'] ?? d['profilePic'] ?? photoUrl).toString(),
-        };
-      }
-
-      doc = await _firestore.collection('users').doc(senderId).get();
-      if (doc.exists && doc.data() != null) {
-        final d = doc.data()!;
-        return {
-          'name':
-              (d['fullName'] ?? d['name'] ?? d['displayName'] ?? name).toString(),
-          'photoUrl': (d['profileImageUrl'] ??
-                  d['profilePic'] ??
-                  d['photoUrl'] ??
-                  photoUrl)
-              .toString(),
+          'photoUrl': (d['profileImageUrl'] ?? d['profilePic'] ?? photoUrl).toString(),
         };
       }
     } catch (_) {}
@@ -475,38 +484,104 @@ class _NotificationScreenState extends State<NotificationScreen> {
 
     if (senderId.isEmpty) return;
 
-    if (t == 'request_accepted' || t == 'follow_accepted') {
+    if (t == 'follow_request' ||
+        t == 'follow' ||
+        t == 'new_follower' ||
+        t == 'unfollow' ||
+        t == 'unfollowed') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => StudentProfileScreen(currentUserId: senderId),
+        ),
+      );
+      return;
+    }
+
+    if (t == 'request_accepted' ||
+        t == 'follow_accepted' ||
+        t.contains('dismiss')) {
       Navigator.push(
         context,
         MaterialPageRoute(
           builder: (_) => TeacherProfileScreen(currentUserId: senderId),
         ),
       );
-    } else {
-      final teacherDoc =
-          await _firestore.collection('teachers').doc(senderId).get();
+      return;
+    }
+
+    try {
+      final userDoc = await _firestore.collection('users').doc(senderId).get();
       if (!mounted) return;
 
-      if (teacherDoc.exists) {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => TeacherProfileScreen(currentUserId: senderId),
-          ),
-        );
-      } else {
+      if (userDoc.exists && userDoc.data() != null) {
+        final role = userDoc.data()!['role']?.toString().toLowerCase();
+        if (role == 'teacher') {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => TeacherProfileScreen(currentUserId: senderId),
+            ),
+          );
+          return;
+        } else if (role == 'student') {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => StudentProfileScreen(currentUserId: senderId),
+            ),
+          );
+          return;
+        }
+      }
+
+      final studentDoc =
+          await _firestore.collection('students').doc(senderId).get();
+      if (!mounted) return;
+
+      if (studentDoc.exists &&
+          studentDoc.data() != null &&
+          (studentDoc.data()!['name'] != null ||
+              studentDoc.data()!['fullName'] != null)) {
         Navigator.push(
           context,
           MaterialPageRoute(
             builder: (_) => StudentProfileScreen(currentUserId: senderId),
           ),
         );
+        return;
       }
+
+      final teacherDoc =
+          await _firestore.collection('teachers').doc(senderId).get();
+      if (!mounted) return;
+
+      if (teacherDoc.exists &&
+          teacherDoc.data() != null &&
+          (teacherDoc.data()!['name'] != null ||
+              teacherDoc.data()!['fullName'] != null)) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => TeacherProfileScreen(currentUserId: senderId),
+          ),
+        );
+        return;
+      }
+    } catch (_) {}
+
+    if (mounted) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => StudentProfileScreen(currentUserId: senderId),
+        ),
+      );
     }
   }
 
   Widget _buildFilterChipBar() {
-    final List<Map<String, dynamic>> filters = [
+    final List> filters = [
       {'key': 'all', 'label': 'All Updates', 'icon': Icons.all_inbox_rounded},
       {
         'key': 'follow',
@@ -628,14 +703,17 @@ class _NotificationScreenState extends State<NotificationScreen> {
                       final activityDocs = allDocs.where((doc) {
                         final data = doc.data() as Map<String, dynamic>;
 
-                        final Timestamp? expireAt = data['expireAt'] as Timestamp?;
-                        if (expireAt != null && expireAt.toDate().isBefore(now)) {
+                        final Timestamp? expireAt =
+                            data['expireAt'] as Timestamp?;
+                        if (expireAt != null &&
+                            expireAt.toDate().isBefore(now)) {
                           doc.reference.delete().catchError((_) {});
                           return false;
                         }
 
                         final Timestamp? seenAt = data['seenAt'] as Timestamp?;
-                        if (seenAt != null && now.difference(seenAt.toDate()).inHours >= 48) {
+                        if (seenAt != null &&
+                            now.difference(seenAt.toDate()).inHours >= 48) {
                           doc.reference.delete().catchError((_) {});
                           return false;
                         }
@@ -776,7 +854,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
                                   });
                                 }
 
-                                return FutureBuilder<Map<String, String>>(
+                                return FutureBuilder>(
                                   future: _resolveSenderInfo(senderId, data),
                                   builder: (context, infoSnapshot) {
                                     final senderName =
