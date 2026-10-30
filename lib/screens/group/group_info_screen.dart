@@ -44,7 +44,7 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
 
   StreamSubscription<GroupModel?>? _groupSubscription;
   GroupModel? _group;
-  List> _studentsList = [];
+  List<Map<String, dynamic>> _studentsList = [];
   Map<String, dynamic>? _teacherProfileData;
 
   bool _isLoadingMembers = true;
@@ -515,7 +515,7 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
     );
   }
 
-  Future<List>> _fetchConnectedStudentsForTeacher() async {
+  Future<List<Map<String, dynamic>>> _fetchConnectedStudentsForTeacher() async {
     final Set<String> connectedStudentIds = {};
 
     try {
@@ -564,7 +564,7 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
       }
     } catch (_) {}
 
-    final List> resultList = [];
+    final List<Map<String, dynamic>> resultList = [];
 
     for (String sId in connectedStudentIds) {
       if (sId == widget.currentUserId) continue;
@@ -618,7 +618,7 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
     bool sendInviteMode = true;
     String searchKeyword = '';
     bool isLoading = true;
-    List> connectedStudents = [];
+    List<Map<String, dynamic>> connectedStudents = [];
 
     showModalBottomSheet(
       context: context,
@@ -1302,8 +1302,7 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
             ],
           ),
           content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: CrossAxisAlignment.start,
             children: [
               const Text(
                 'To permanently dismiss this batch group and remove all group records, please enter your educator account password.',
@@ -2405,7 +2404,7 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
                         fontSize: 11.5, color: Colors.grey),
                   ),
                   trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
+                    mainAxisSize: dynamic,
                     children: [
                       IconButton(
                         tooltip: isMuted ? 'Unmute Student' : 'Mute Student',
