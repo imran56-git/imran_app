@@ -28,44 +28,63 @@ class LocalChatStorageService {
 
     return await openDatabase(
       path,
-      version: 1,
+      version: 2,
       onCreate: (db, version) async {
-        await db.execute('''
-          CREATE TABLE local_messages (
-            messageId TEXT PRIMARY KEY,
-            chatRoomId TEXT NOT NULL,
-            senderId TEXT NOT NULL,
-            receiverId TEXT,
-            senderName TEXT,
-            senderRole TEXT,
-            content TEXT,
-            type TEXT,
-            timestamp INTEGER,
-            status TEXT,
-            mediaUrl TEXT,
-            isDeletedForEveryone INTEGER DEFAULT 0,
-            deletedForUsers TEXT,
-            replyToMessageId TEXT,
-            replyText TEXT,
-            messageCategory TEXT,
-            isPinned INTEGER DEFAULT 0,
-            pollData TEXT,
-            quizData TEXT,
-            mediaMetaData TEXT,
-            isSyncedWithServer INTEGER DEFAULT 1
-          )
-        ''');
-
-        await db.execute(
-            'CREATE INDEX idx_room_time ON local_messages(chatRoomId, timestamp DESC)');
-        await db.execute(
-            'CREATE INDEX idx_room_cat ON local_messages(chatRoomId, messageCategory)');
+        await _createTables(db);
+      },
+      onUpgrade: (db, oldVersion, newVersion) async {
+        if (oldVersion < 2) {
+          try {
+            await db.execute(
+                'ALTER TABLE local_messages ADD COLUMN localFilePath TEXT');
+          } catch (_) {}
+        }
       },
     );
   }
 
+  Future<void> _createTables(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS local_messages (
+        messageId TEXT PRIMARY KEY,
+        chatRoomId TEXT NOT NULL,
+        senderId TEXT NOT NULL,
+        receiverId TEXT,
+        senderName TEXT,
+        senderRole TEXT,
+        content TEXT,
+        type TEXT,
+        timestamp INTEGER,
+        status TEXT,
+        mediaUrl TEXT,
+        localFilePath TEXT,
+        isDeletedForEveryone INTEGER DEFAULT 0,
+        deletedForUsers TEXT,
+        replyToMessageId TEXT,
+        replyText TEXT,
+        messageCategory TEXT,
+        isPinned INTEGER DEFAULT 0,
+        pollData TEXT,
+        quizData TEXT,
+        mediaMetaData TEXT,
+        isSyncedWithServer INTEGER DEFAULT 1
+      )
+    ''');
+
+    await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_room_time ON local_messages(chatRoomId, timestamp DESC)');
+    await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_room_cat ON local_messages(chatRoomId, messageCategory)');
+  }
+
   Map<String, dynamic> _messageToDbMap(
       MessageModel message, String chatRoomId, {bool isSynced = true}) {
+    String? localPath;
+    if (message.mediaMetaData != null &&
+        message.mediaMetaData!['localFilePath'] != null) {
+      localPath = message.mediaMetaData!['localFilePath'].toString();
+    }
+
     return {
       'messageId': message.messageId,
       'chatRoomId': chatRoomId,
@@ -79,6 +98,7 @@ class LocalChatStorageService {
           DateTime.now().millisecondsSinceEpoch,
       'status': message.status,
       'mediaUrl': message.mediaUrl,
+      'localFilePath': localPath,
       'isDeletedForEveryone': message.isDeletedForEveryone ? 1 : 0,
       'deletedForUsers': jsonEncode(message.deletedForUsers),
       'replyToMessageId': message.replyToMessageId,
@@ -129,6 +149,12 @@ class LocalChatStorageService {
         mediaMeta =
             Map<String, dynamic>.from(jsonDecode(map['mediaMetaData'].toString()));
       } catch (_) {}
+    }
+
+    if (map['localFilePath'] != null &&
+        map['localFilePath'].toString().isNotEmpty) {
+      mediaMeta ??= {};
+      mediaMeta['localFilePath'] = map['localFilePath'].toString();
     }
 
     DateTime? time;
@@ -193,6 +219,15 @@ class LocalChatStorageService {
     _roomUpdateStreamController.add(chatRoomId);
   }
 
+  Future<List<MessageModel>> getMessages(String chatRoomId,
+      {int limit = 100, int offset = 0}) async {
+    return await getLocalMessages(
+      chatRoomId: chatRoomId,
+      limit: limit,
+      offset: offset,
+    );
+  }
+
   Future<List<MessageModel>> getLocalMessages({
     required String chatRoomId,
     String? categoryFilter,
@@ -210,7 +245,7 @@ class LocalChatStorageService {
       whereArgs.add(categoryFilter);
     }
 
-    final List<Map<String, dynamic>> maps = await db.query(
+    final List> maps = await db.query(
       'local_messages',
       where: whereClause,
       whereArgs: whereArgs,
@@ -241,6 +276,21 @@ class LocalChatStorageService {
     }
   }
 
+  Future<void> updateLocalMediaPath({
+    required String messageId,
+    required String chatRoomId,
+    required String localPath,
+  }) async {
+    final db = await database;
+    await db.update(
+      'local_messages',
+      {'localFilePath': localPath},
+      where: 'messageId = ?',
+      whereArgs: [messageId],
+    );
+    _roomUpdateStreamController.add(chatRoomId);
+  }
+
   Future<void> markMessageReadLocally(String messageId, String chatRoomId) async {
     final db = await database;
     await db.update(
@@ -266,7 +316,7 @@ class LocalChatStorageService {
   Future<void> deleteMessageForMeLocally(
       String messageId, String chatRoomId, String currentUserId) async {
     final db = await database;
-    final List<Map<String, dynamic>> maps = await db.query(
+    final List> maps = await db.query(
       'local_messages',
       columns: ['deletedForUsers'],
       where: 'messageId = ?',
@@ -305,6 +355,7 @@ class LocalChatStorageService {
         'isDeletedForEveryone': 1,
         'content': 'This message was deleted',
         'mediaUrl': null,
+        'localFilePath': null,
       },
       where: 'messageId = ?',
       whereArgs: [messageId],
@@ -349,7 +400,7 @@ class LocalChatStorageService {
     required int optionIndex,
   }) async {
     final db = await database;
-    final List<Map<String, dynamic>> maps = await db.query(
+    final List> maps = await db.query(
       'local_messages',
       columns: ['pollData'],
       where: 'messageId = ?',
@@ -385,7 +436,7 @@ class LocalChatStorageService {
     required int optionIndex,
   }) async {
     final db = await database;
-    final List<Map<String, dynamic>> maps = await db.query(
+    final List> maps = await db.query(
       'local_messages',
       columns: ['quizData'],
       where: 'messageId = ?',
@@ -420,7 +471,7 @@ class LocalChatStorageService {
   }) async {
     if (query.trim().isEmpty) return [];
     final db = await database;
-    final List<Map<String, dynamic>> maps = await db.query(
+    final List> maps = await db.query(
       'local_messages',
       where: 'chatRoomId = ? AND content LIKE ?',
       whereArgs: [chatRoomId, '%$query%'],
