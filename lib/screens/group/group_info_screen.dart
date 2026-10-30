@@ -98,8 +98,10 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
       if (!mounted) return;
       setState(() {
         _teacherProfileData = result['teacher'] as Map<String, dynamic>?;
-        _studentsList =
-            (result['students'] as List>?) ?? [];
+        final rawStudents = result['students'] as List<dynamic>?;
+        _studentsList = rawStudents != null
+            ? rawStudents.map((e) => Map<String, dynamic>.from(e as Map)).toList()
+            : [];
         _isLoadingMembers = false;
       });
     } catch (_) {
