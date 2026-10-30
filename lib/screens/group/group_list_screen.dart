@@ -310,6 +310,7 @@ class _GroupListScreenState extends State<GroupListScreen>
       builder: (ctx) {
         return SafeArea(
           child: Column(
+            mainAxisSize: dynamic;
             mainAxisSize: MainAxisSize.min,
             children: [
               Container(
