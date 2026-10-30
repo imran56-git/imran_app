@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/group_model.dart';
 import '../models/invitation_model.dart';
@@ -14,11 +15,12 @@ class GroupService {
     if (!doc.exists || doc.data() == null) return false;
     final data = doc.data()!;
     final String creatorId =
-        (data['createdBy'] ?? data['teacherId'] ?? '').toString();
+        (data['createdBy'] ?? data['teacherId'] ?? data['adminId'] ?? '')
+            .toString();
     return creatorId.isNotEmpty && creatorId == userId;
   }
 
-  Future<Map<String, dynamic>> _fetchVerifiedTeacherMetadata(
+  Future> _fetchVerifiedTeacherMetadata(
       String teacherId, String fallbackName) async {
     bool isVerified = false;
     bool hasGoldenBadge = false;
@@ -242,6 +244,7 @@ class GroupService {
     final groupRef = _firestore.collection('groups').doc(groupId);
     batch.update(groupRef, {
       'removedStudents': FieldValue.arrayRemove([invitedUserId]),
+      'pendingRemovalNotices': FieldValue.arrayRemove([invitedUserId]),
     });
 
     final docRef = _firestore.collection('invitations').doc();
@@ -300,10 +303,6 @@ class GroupService {
     if (groupModel.isDismissed) {
       throw Exception('This group has been dismissed by the teacher.');
     }
-    if (groupModel.isStudentRemoved(userId)) {
-      throw Exception(
-          'You cannot join this group without teacher re-invitation.');
-    }
 
     final status = accept ? 'accepted' : 'rejected';
     final WriteBatch batch = _firestore.batch();
@@ -330,6 +329,8 @@ class GroupService {
     if (accept) {
       batch.update(_firestore.collection('groups').doc(groupId), {
         'members': FieldValue.arrayUnion([userId]),
+        'removedStudents': FieldValue.arrayRemove([userId]),
+        'pendingRemovalNotices': FieldValue.arrayRemove([userId]),
       });
     }
 
@@ -442,15 +443,6 @@ class GroupService {
       'status': 'pending',
     });
 
-    final auditRef = _firestore.collection('group_audit_logs').doc();
-    batch.set(auditRef, {
-      'groupId': groupId,
-      'action': 'remove_student',
-      'performedBy': teacherId,
-      'targetUserId': studentId,
-      'timestamp': FieldValue.serverTimestamp(),
-    });
-
     await batch.commit();
   }
 
@@ -464,7 +456,8 @@ class GroupService {
 
     final group = GroupModel.fromMap(groupSnap.data()!, groupSnap.id);
     if (studentId == group.createdBy) {
-      throw Exception('Teacher admin cannot leave their own group. Use dismiss instead.');
+      throw Exception(
+          'Teacher admin cannot leave their own group. Use dismiss instead.');
     }
 
     final WriteBatch batch = _firestore.batch();
@@ -472,6 +465,8 @@ class GroupService {
     batch.update(groupRef, {
       'members': FieldValue.arrayRemove([studentId]),
       'mutedStudents': FieldValue.arrayRemove([studentId]),
+      'removedStudents': FieldValue.arrayRemove([studentId]),
+      'pendingRemovalNotices': FieldValue.arrayRemove([studentId]),
     });
 
     final userNoticeRef = _firestore
@@ -480,14 +475,6 @@ class GroupService {
         .collection('group_notices')
         .doc(groupId);
     batch.delete(userNoticeRef);
-
-    final auditRef = _firestore.collection('group_audit_logs').doc();
-    batch.set(auditRef, {
-      'groupId': groupId,
-      'action': 'leave_group',
-      'performedBy': studentId,
-      'timestamp': FieldValue.serverTimestamp(),
-    });
 
     await batch.commit();
     await _localStorage.clearRoomLocally(groupId);
@@ -497,24 +484,21 @@ class GroupService {
     required String groupId,
     required String studentId,
   }) async {
-    final WriteBatch batch = _firestore.batch();
-
-    final groupRef = _firestore.collection('groups').doc(groupId);
-    final groupSnap = await groupRef.get();
-    if (groupSnap.exists) {
-      batch.update(groupRef, {
+    try {
+      final groupRef = _firestore.collection('groups').doc(groupId);
+      await groupRef.update({
         'pendingRemovalNotices': FieldValue.arrayRemove([studentId]),
       });
-    }
+    } catch (_) {}
 
-    final userNoticeRef = _firestore
-        .collection('users')
-        .doc(studentId)
-        .collection('group_notices')
-        .doc(groupId);
-    batch.delete(userNoticeRef);
-
-    await batch.commit();
+    try {
+      final userNoticeRef = _firestore
+          .collection('users')
+          .doc(studentId)
+          .collection('group_notices')
+          .doc(groupId);
+      await userNoticeRef.delete();
+    } catch (_) {}
   }
 
   Future<void> setStudentMuteStatus({
@@ -647,15 +631,6 @@ class GroupService {
       });
     }
 
-    final auditRef = _firestore.collection('group_audit_logs').doc();
-    batch.set(auditRef, {
-      'groupId': groupId,
-      'groupName': group.name,
-      'action': 'dismiss_group',
-      'performedBy': teacherId,
-      'timestamp': FieldValue.serverTimestamp(),
-    });
-
     await batch.commit();
     await _cleanupGroupMessages(groupId);
     await _localStorage.clearRoomLocally(groupId);
@@ -687,25 +662,22 @@ class GroupService {
     required String groupId,
     required String studentId,
   }) async {
-    final WriteBatch batch = _firestore.batch();
-
-    final groupRef = _firestore.collection('groups').doc(groupId);
-    final groupSnap = await groupRef.get();
-    if (groupSnap.exists) {
-      batch.update(groupRef, {
+    try {
+      final groupRef = _firestore.collection('groups').doc(groupId);
+      await groupRef.update({
         'unacknowledgedDismissMembers': FieldValue.arrayRemove([studentId]),
         'members': FieldValue.arrayRemove([studentId]),
       });
-    }
+    } catch (_) {}
 
-    final userNoticeRef = _firestore
-        .collection('users')
-        .doc(studentId)
-        .collection('group_notices')
-        .doc(groupId);
-    batch.delete(userNoticeRef);
-
-    await batch.commit();
+    try {
+      final userNoticeRef = _firestore
+          .collection('users')
+          .doc(studentId)
+          .collection('group_notices')
+          .doc(groupId);
+      await userNoticeRef.delete();
+    } catch (_) {}
   }
 
   Future<void> setAdminOnlyPostingMode({
@@ -826,7 +798,7 @@ class GroupService {
     });
   }
 
-  Future<Map<String, dynamic>> getGroupMembersWithPrivacy({
+  Future> getGroupMembersWithPrivacy({
     required String groupId,
     required String viewerId,
   }) async {
@@ -854,11 +826,11 @@ class GroupService {
         'isViewerTeacher': false,
         'teacher': teacherProfile,
         'studentCount': group.studentCount,
-        'students': <Map<String, dynamic>>[],
+        'students': >[],
       };
     }
 
-    final List<Map<String, dynamic>> studentsList = [];
+    final List> studentsList = [];
     final List<String> studentIds =
         group.members.where((id) => id != group.createdBy).toList();
 
@@ -1017,13 +989,16 @@ class GroupService {
       groups.sort((a, b) {
         final aTime = a.lastMessageTime ?? a.createdAt;
         final bTime = b.lastMessageTime ?? b.createdAt;
+        if (aTime == null && bTime == null) return 0;
+        if (aTime == null) return 1;
+        if (bTime == null) return -1;
         return bTime.compareTo(aTime);
       });
       return groups;
     });
   }
 
-  Stream<List<Map<String, dynamic>>> getPendingGroupNoticesStream(
+  Stream<List>> getPendingGroupNoticesStream(
       String userId) {
     if (userId.trim().isEmpty) return const Stream.empty();
     return _firestore
