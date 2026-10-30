@@ -25,7 +25,8 @@ class GroupListScreen extends StatefulWidget {
   State<GroupListScreen> createState() => _GroupListScreenState();
 }
 
-class _GroupListScreenState extends State<GroupListScreen> {
+class _GroupListScreenState extends State<GroupListScreen>
+    with AutomaticKeepAliveClientMixin {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final GroupService _groupService = GroupService();
 
@@ -34,16 +35,24 @@ class _GroupListScreenState extends State<GroupListScreen> {
   bool _isTeacherRole = false;
   late String _currentUserName;
 
-  StreamSubscription<List<Map<String, dynamic>>>? _noticesSubscription;
+  late final Stream<List<GroupModel>> _groupsStream;
+  StreamSubscription<List>>? _noticesSubscription;
   StreamSubscription<QuerySnapshot>? _groupStatusSubscription;
   final Set<String> _processingNoticeIds = {};
   bool _isDialogShowing = false;
+
+  @override
+  bool get wantKeepAlive => true;
 
   @override
   void initState() {
     super.initState();
     _currentUserName =
         widget.currentUserName.trim().isEmpty ? 'User' : widget.currentUserName;
+
+    _groupsStream =
+        _groupService.getUserActiveGroupsStream(widget.currentUserId);
+
     _checkUserRole();
     _listenForRealtimeAndDelayedGroupNotices();
   }
@@ -435,7 +444,9 @@ class _GroupListScreenState extends State<GroupListScreen> {
               selectedColor: ChatColors.primaryApp.withOpacity(0.12),
               backgroundColor: const Color(0xFFF1F5F9),
               labelStyle: TextStyle(
-                color: isSelected ? ChatColors.primaryApp : const Color(0xFF64748B),
+                color: isSelected
+                    ? ChatColors.primaryApp
+                    : const Color(0xFF64748B),
                 fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
                 fontSize: 12,
               ),
@@ -476,8 +487,8 @@ class _GroupListScreenState extends State<GroupListScreen> {
               decoration: const InputDecoration(
                 hintText: "Search groups, batch or subject...",
                 hintStyle: TextStyle(color: Color(0xFF94A3B8), fontSize: 13.5),
-                prefixIcon:
-                    Icon(Icons.search_rounded, color: Color(0xFF94A3B8), size: 19),
+                prefixIcon: Icon(Icons.search_rounded,
+                    color: Color(0xFF94A3B8), size: 19),
                 border: InputBorder.none,
                 contentPadding: EdgeInsets.symmetric(vertical: 11),
               ),
@@ -488,12 +499,13 @@ class _GroupListScreenState extends State<GroupListScreen> {
         _buildPendingInvitesBanner(),
         Expanded(
           child: StreamBuilder<List<GroupModel>>(
-            stream:
-                _groupService.getUserActiveGroupsStream(widget.currentUserId),
+            stream: _groupsStream,
             builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
+              if (snapshot.connectionState == ConnectionState.waiting &&
+                  !snapshot.hasData) {
                 return const Center(
-                  child: CircularProgressIndicator(color: ChatColors.primaryApp),
+                  child:
+                      CircularProgressIndicator(color: ChatColors.primaryApp),
                 );
               }
 
@@ -559,8 +571,8 @@ class _GroupListScreenState extends State<GroupListScreen> {
 
                   return ListTile(
                     key: ValueKey('group_tile_${group.id}'),
-                    contentPadding:
-                        const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                    contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 4),
                     leading: Stack(
                       children: [
                         CircleAvatar(
@@ -752,6 +764,8 @@ class _GroupListScreenState extends State<GroupListScreen> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
+
     if (widget.isEmbedded) {
       return Container(
         color: Colors.white,
