@@ -349,7 +349,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
     );
   }
 
-  Future> _resolveSenderInfo(
+  Future<Map<String, String>> _resolveSenderInfo(
       String senderId, Map<String, dynamic> data) async {
     String name =
         (data['senderName'] ?? data['teacherName'] ?? data['title'] ?? '')
@@ -581,7 +581,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
   }
 
   Widget _buildFilterChipBar() {
-    final List> filters = [
+    final List<Map<String, dynamic>> filters = [
       {'key': 'all', 'label': 'All Updates', 'icon': Icons.all_inbox_rounded},
       {
         'key': 'follow',
@@ -854,7 +854,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
                                   });
                                 }
 
-                                return FutureBuilder>(
+                                return FutureBuilder<Map<String, String>>(
                                   future: _resolveSenderInfo(senderId, data),
                                   builder: (context, infoSnapshot) {
                                     final senderName =
