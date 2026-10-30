@@ -21,18 +21,18 @@ class GeminiService {
   bool _checkedFirestoreKeys = false;
 
   static const List<String> _geminiModels = [
-    'gemini-2.5-flash',
     'gemini-2.0-flash',
-    'gemini-3.8-flash',
+    'gemini-2.5-flash',
     'gemini-3.5-flash-lite',
+    'gemini-3.8-flash',
     'gemini-3.1-pro',
     'gemini-2.5-pro',
     'gemini-4-argon',
   ];
 
   static const List<String> _groqModels = [
-    'llama-3.3-70b-versatile',
     'llama-3.1-8b-instant',
+    'llama-3.3-70b-versatile',
   ];
 
   static const List<String> _groqVisionModels = [
@@ -44,7 +44,7 @@ class GeminiService {
   int _activeModelIndex = 0;
   bool _isBusy = false;
 
-  final List<Map<String, String>> _conversationHistory = [];
+  final List> _conversationHistory = [];
 
   String _buildSystemInstruction([String? customSystemPrompt]) {
     if (customSystemPrompt != null && customSystemPrompt.trim().isNotEmpty) {
@@ -68,7 +68,7 @@ class GeminiService {
           .collection('app_config')
           .doc('ai_keys')
           .get()
-          .timeout(const Duration(seconds: 4));
+          .timeout(const Duration(seconds: 3));
 
       if (doc.exists && doc.data() != null) {
         final data = doc.data()!;
@@ -87,7 +87,7 @@ class GeminiService {
   void _recordTurn(String userPrompt, String aiResponse) {
     _conversationHistory.add({'role': 'user', 'content': userPrompt});
     _conversationHistory.add({'role': 'model', 'content': aiResponse});
-    while (_conversationHistory.length > 24) {
+    while (_conversationHistory.length > 20) {
       _conversationHistory.removeAt(0);
     }
   }
@@ -180,7 +180,7 @@ class GeminiService {
   }) async {
     await _ensureApiKeysLoaded();
 
-    final List<Map<String, dynamic>> parts = [
+    final List> parts = [
       {'text': prompt},
     ];
 
@@ -224,7 +224,7 @@ class GeminiService {
                 headers: {'Content-Type': 'application/json'},
                 body: jsonEncode(requestBody),
               )
-              .timeout(const Duration(seconds: 30));
+              .timeout(const Duration(seconds: 18));
 
           if (response.statusCode == 200) {
             final Map<String, dynamic> decoded =
@@ -256,7 +256,7 @@ class GeminiService {
     }
 
     if (_resolvedGroqKey.isNotEmpty) {
-      final List<Map<String, dynamic>> contentList = [
+      final List> contentList = [
         {'type': 'text', 'text': prompt},
       ];
       for (final file in imageFiles) {
@@ -292,7 +292,7 @@ class GeminiService {
                   'max_tokens': 1024,
                 }),
               )
-              .timeout(const Duration(seconds: 28));
+              .timeout(const Duration(seconds: 16));
 
           if (response.statusCode == 200) {
             final Map<String, dynamic> data =
@@ -315,7 +315,7 @@ class GeminiService {
     throw Exception(lastError ?? 'Vision verification service unavailable.');
   }
 
-  Future<Map<String, dynamic>> verifyGovernmentIdDocument({
+  Future> verifyGovernmentIdDocument({
     required File documentFile,
     required String selectedDocType,
     String? expectedFullName,
@@ -418,7 +418,7 @@ Strict Rules:
     }
   }
 
-  Future<Map<String, dynamic>> verifyQualificationCertificate({
+  Future> verifyQualificationCertificate({
     required File certificateFile,
     String? expectedFullName,
   }) async {
@@ -519,7 +519,7 @@ Strict Rules:
     }
   }
 
-  Future<Map<String, dynamic>> verifyFaceMatchWithIdCard({
+  Future> verifyFaceMatchWithIdCard({
     required File idDocumentFile,
     required File liveFaceFile,
     double minimumSimilarityThreshold = 85.0,
@@ -601,7 +601,7 @@ Respond ONLY with a valid JSON object in English using this exact schema:
   }) async {
     final String sysInstruction = _buildSystemInstruction(systemPrompt);
 
-    final List<Map<String, dynamic>> contents = [];
+    final List> contents = [];
     for (final turn in _conversationHistory) {
       final String role = turn['role'] == 'user' ? 'user' : 'model';
       final String text = (turn['content'] ?? '').trim();
@@ -633,8 +633,8 @@ Respond ONLY with a valid JSON object in English using this exact schema:
       },
       'contents': contents,
       'generationConfig': {
-        'temperature': 0.7,
-        'maxOutputTokens': 1536,
+        'temperature': 0.6,
+        'maxOutputTokens': 1024,
       },
     };
 
@@ -644,7 +644,7 @@ Respond ONLY with a valid JSON object in English using this exact schema:
           headers: {'Content-Type': 'application/json'},
           body: jsonEncode(requestBody),
         )
-        .timeout(const Duration(seconds: 25));
+        .timeout(const Duration(seconds: 6));
 
     if (response.statusCode != 200) {
       throw Exception(
@@ -690,7 +690,7 @@ Respond ONLY with a valid JSON object in English using this exact schema:
     }
 
     final String sysInstruction = _buildSystemInstruction(systemPrompt);
-    final List<Map<String, String>> messages = [
+    final List> messages = [
       {'role': 'system', 'content': sysInstruction},
       ..._conversationHistory.map((turn) => {
             'role': turn['role'] == 'user' ? 'user' : 'assistant',
@@ -712,11 +712,11 @@ Respond ONLY with a valid JSON object in English using this exact schema:
               body: jsonEncode({
                 'model': groqModel,
                 'messages': messages,
-                'temperature': 0.7,
-                'max_tokens': 1536,
+                'temperature': 0.6,
+                'max_tokens': 1024,
               }),
             )
-            .timeout(const Duration(seconds: 22));
+            .timeout(const Duration(seconds: 6));
 
         if (response.statusCode == 200) {
           final Map<String, dynamic> data =
@@ -744,6 +744,21 @@ Respond ONLY with a valid JSON object in English using this exact schema:
   }
 
   Future<String> generateContent(String prompt, {String? systemPrompt}) async {
+    final String cleanPrompt = prompt.trim().toLowerCase();
+    final RegExp greetingRegExp = RegExp(
+      r'^(hi|hello|hey|hlw|hlo|helo|hi there|hello fybtt|hi fybtt|good morning|good afternoon|good evening|নমস্কার|হ্যালো|হাই|সালাম|কেমন আছো|কেমন আছেন)[!?. ]*$',
+      caseSensitive: false,
+    );
+
+    if (greetingRegExp.hasMatch(cleanPrompt)) {
+      final bool isBengali = cleanPrompt.contains(RegExp(r'[\u0980-\u09FF]'));
+      final String quickReply = isBengali
+          ? 'হ্যালো! আমি আপনার FYBTT AI স্টাডি অ্যাসিস্ট্যান্ট। আজ আপনার পড়াশোনা, বিষয় বা টিচার সংক্রান্ত কী বিষয়ে সাহায্য করতে পারি?'
+          : 'Hello! I am your FYBTT AI Assistant. How can I help you with your studies, subjects, or tuition batches today?';
+      _recordTurn(prompt, quickReply);
+      return quickReply;
+    }
+
     await _ensureApiKeysLoaded();
 
     Object? lastError;
@@ -763,7 +778,7 @@ Respond ONLY with a valid JSON object in English using this exact schema:
           return reply;
         } catch (e) {
           lastError = e;
-          debugPrint('Gemini model $modelName failed: $e');
+          debugPrint('Gemini model $modelName fallback: $e');
         }
       }
     }
@@ -777,7 +792,7 @@ Respond ONLY with a valid JSON object in English using this exact schema:
       }
     }
 
-    throw Exception(lastError ?? 'No AI API key configured.');
+    throw Exception(lastError ?? 'AI assistant is currently busy. Please try again.');
   }
 
   Stream<String> generateContentStream(
@@ -800,10 +815,10 @@ Respond ONLY with a valid JSON object in English using this exact schema:
 
       for (int i = 0; i < words.length; i++) {
         chunk.write(i == words.length - 1 ? words[i] : '${words[i]} ');
-        if (i % 4 == 3 || i == words.length - 1) {
+        if (i % 3 == 2 || i == words.length - 1) {
           yield chunk.toString();
           chunk.clear();
-          await Future.delayed(const Duration(milliseconds: 16));
+          await Future.delayed(const Duration(milliseconds: 12));
         }
       }
     } finally {
