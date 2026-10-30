@@ -44,7 +44,7 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
 
   StreamSubscription<GroupModel?>? _groupSubscription;
   GroupModel? _group;
-  List<Map<String, dynamic>> _studentsList = [];
+  List> _studentsList = [];
   Map<String, dynamic>? _teacherProfileData;
 
   bool _isLoadingMembers = true;
@@ -76,8 +76,7 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
           return;
         }
         if (groupData.isStudentRemoved(widget.currentUserId) ||
-            groupData.pendingRemovalNotices.contains(widget.currentUserId) ||
-            !groupData.members.contains(widget.currentUserId)) {
+            groupData.pendingRemovalNotices.contains(widget.currentUserId)) {
           _handleForcedStudentExit(isDismissal: false);
           return;
         }
@@ -100,7 +99,7 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
       setState(() {
         _teacherProfileData = result['teacher'] as Map<String, dynamic>?;
         _studentsList =
-            (result['students'] as List<Map<String, dynamic>>?) ?? [];
+            (result['students'] as List>?) ?? [];
         _isLoadingMembers = false;
       });
     } catch (_) {
@@ -514,7 +513,7 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
     );
   }
 
-  Future<List<Map<String, dynamic>>> _fetchConnectedStudentsForTeacher() async {
+  Future<List>> _fetchConnectedStudentsForTeacher() async {
     final Set<String> connectedStudentIds = {};
 
     try {
@@ -563,7 +562,7 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
       }
     } catch (_) {}
 
-    final List<Map<String, dynamic>> resultList = [];
+    final List> resultList = [];
 
     for (String sId in connectedStudentIds) {
       if (sId == widget.currentUserId) continue;
@@ -617,7 +616,7 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
     bool sendInviteMode = true;
     String searchKeyword = '';
     bool isLoading = true;
-    List<Map<String, dynamic>> connectedStudents = [];
+    List> connectedStudents = [];
 
     showModalBottomSheet(
       context: context,
@@ -1240,6 +1239,7 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
                     ),
                     onPressed: () async {
                       Navigator.pop(dialogCtx);
+                      _groupSubscription?.cancel();
                       try {
                         await _groupService.leaveGroup(
                           groupId: widget.groupId,
