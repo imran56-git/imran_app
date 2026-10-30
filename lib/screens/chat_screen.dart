@@ -58,7 +58,7 @@ class _ChatScreenState extends State<ChatScreen>
 
   late String _activeChatRoomId;
   Stream<List<MessageModel>>? _messageStream;
-  Stream<Map<String, dynamic>>? _userStatusStream;
+  Stream>? _userStatusStream;
   Stream<DocumentSnapshot>? _typingDocStream;
   Stream<BlockStatus>? _blockStatusStream;
   List<MessageModel> _latestMessages = [];
@@ -68,6 +68,8 @@ class _ChatScreenState extends State<ChatScreen>
   String? _customBgImagePath;
   bool _isMarkingRead = false;
   bool _isInitializing = true;
+  bool _isOffline = false;
+  Timer? _connectivityTimer;
   int _lastMarkedCount = -1;
 
   bool _isDraggingMessage = false;
@@ -131,6 +133,7 @@ class _ChatScreenState extends State<ChatScreen>
     _scrollController.addListener(_onScrollChanged);
     _setupChatRoom();
     _loadCustomTheme();
+    _startConnectivityMonitoring();
 
     if (!_isOfficialChannel) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -142,6 +145,28 @@ class _ChatScreenState extends State<ChatScreen>
           );
         }
       });
+    }
+  }
+
+  void _startConnectivityMonitoring() {
+    _checkConnectivity();
+    _connectivityTimer = Timer.periodic(const Duration(seconds: 4), (_) {
+      _checkConnectivity();
+    });
+  }
+
+  Future<void> _checkConnectivity() async {
+    try {
+      final result = await InternetAddress.lookup('example.com')
+          .timeout(const Duration(seconds: 2));
+      final bool hasNet = result.isNotEmpty && result[0].rawAddress.isNotEmpty;
+      if (mounted && _isOffline == hasNet) {
+        setState(() => _isOffline = !hasNet);
+      }
+    } catch (_) {
+      if (mounted && !_isOffline) {
+        setState(() => _isOffline = true);
+      }
     }
   }
 
@@ -166,6 +191,7 @@ class _ChatScreenState extends State<ChatScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _connectivityTimer?.cancel();
     _bounceController.dispose();
     if (!_isOfficialChannel) {
       _chatService.updateTypingStatus(
@@ -181,6 +207,7 @@ class _ChatScreenState extends State<ChatScreen>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      _checkConnectivity();
       _markMessagesAsReadSafe();
     } else if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.inactive) {
@@ -192,25 +219,42 @@ class _ChatScreenState extends State<ChatScreen>
   }
 
   Future<void> _setupChatRoom() async {
-    if (_isOfficialChannel) {
-      if (mounted) {
+    try {
+      final cachedMsgs = await _localStorage.getMessages(_activeChatRoomId);
+      if (cachedMsgs.isNotEmpty && mounted) {
         setState(() {
-          _messageStream = _chatService.getMessages(_activeChatRoomId);
+          _latestMessages = cachedMsgs;
           _isInitializing = false;
         });
-        _markMessagesAsReadSafe();
       }
+    } catch (_) {}
+
+    if (mounted) {
+      setState(() {
+        _messageStream = _chatService.getMessages(_activeChatRoomId);
+        _isInitializing = false;
+      });
+    }
+
+    if (_isOfficialChannel) {
+      _markMessagesAsReadSafe();
       return;
     }
 
+    _runBackgroundChatInit();
+  }
+
+  Future<void> _runBackgroundChatInit() async {
     try {
       String myName = 'User';
       String myImage = '';
       try {
-        final profile = await _chatService.getUserProfile(
-          widget.currentUserId,
-          widget.isTeacher,
-        );
+        final profile = await _chatService
+            .getUserProfile(
+              widget.currentUserId,
+              widget.isTeacher,
+            )
+            .timeout(const Duration(seconds: 2));
         if (profile != null) {
           myName = (profile['fullName'] ??
                   profile['name'] ??
@@ -240,33 +284,23 @@ class _ChatScreenState extends State<ChatScreen>
       final String studentImage =
           widget.isTeacher ? widget.receiverProfilePic : myImage;
 
-      await _chatService.createOrInitializeChat(
-        teacherId: teacherId,
-        studentId: studentId,
-        teacherName: teacherName,
-        studentName: studentName,
-        teacherImage: teacherImage,
-        studentImage: studentImage,
-      );
+      await _chatService
+          .createOrInitializeChat(
+            teacherId: teacherId,
+            studentId: studentId,
+            teacherName: teacherName,
+            studentName: studentName,
+            teacherImage: teacherImage,
+            studentImage: studentImage,
+          )
+          .timeout(const Duration(seconds: 3));
 
       if (mounted) {
-        setState(() {
-          _messageStream = _chatService.getMessages(_activeChatRoomId);
-          _isInitializing = false;
-        });
         _chatService.updateTypingStatus(
             _activeChatRoomId, widget.currentUserId, false);
         _markMessagesAsReadSafe();
       }
-    } catch (e) {
-      log("Chat setup error: $e");
-      if (mounted) {
-        setState(() {
-          _messageStream = _chatService.getMessages(_activeChatRoomId);
-          _isInitializing = false;
-        });
-      }
-    }
+    } catch (_) {}
   }
 
   Future<void> _markMessagesAsReadSafe() async {
@@ -1216,7 +1250,7 @@ class _ChatScreenState extends State<ChatScreen>
   }
 
   Widget _buildStandardAppBarTitle() {
-    return StreamBuilder<Map<String, dynamic>>(
+    return StreamBuilder>(
       stream: _userStatusStream,
       builder: (context, statusSnapshot) {
         String displayName = widget.receiverName;
@@ -1429,6 +1463,33 @@ class _ChatScreenState extends State<ChatScreen>
     );
   }
 
+  Widget _buildOfflineBanner() {
+    if (!_isOffline) return const SizedBox.shrink();
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 4.5, horizontal: 12),
+      decoration: const BoxDecoration(
+        color: Color(0xFFEF4444),
+      ),
+      child: const Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.wifi_off_rounded, color: Colors.white, size: 14),
+          SizedBox(width: 6),
+          Text(
+            'You are offline • Showing cached chats',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 11.5,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return PopScope(
@@ -1519,7 +1580,7 @@ class _ChatScreenState extends State<ChatScreen>
               Column(
                 children: [
                   Expanded(
-                    child: _isInitializing || _messageStream == null
+                    child: _isInitializing && _latestMessages.isEmpty
                         ? const Center(
                             child: CircularProgressIndicator(
                               color: _brandBlue,
@@ -1529,7 +1590,7 @@ class _ChatScreenState extends State<ChatScreen>
                         : StreamBuilder<List<MessageModel>>(
                             stream: _messageStream,
                             builder: (context, snapshot) {
-                              if (snapshot.hasError) {
+                              if (snapshot.hasError && _latestMessages.isEmpty) {
                                 return Center(
                                   child: Text(
                                     'Failed to load messages.',
@@ -1863,6 +1924,7 @@ class _ChatScreenState extends State<ChatScreen>
                             },
                           ),
                   ),
+                  _buildOfflineBanner(),
                   if (_isOfficialChannel)
                     Container(
                       width: double.infinity,
