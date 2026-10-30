@@ -20,7 +20,7 @@ class GroupService {
     return creatorId.isNotEmpty && creatorId == userId;
   }
 
-  Future> _fetchVerifiedTeacherMetadata(
+  Future<Map<String, dynamic>> _fetchVerifiedTeacherMetadata(
       String teacherId, String fallbackName) async {
     bool isVerified = false;
     bool hasGoldenBadge = false;
@@ -798,7 +798,7 @@ class GroupService {
     });
   }
 
-  Future> getGroupMembersWithPrivacy({
+  Future<Map<String, dynamic>> getGroupMembersWithPrivacy({
     required String groupId,
     required String viewerId,
   }) async {
@@ -830,7 +830,7 @@ class GroupService {
       };
     }
 
-    final List> studentsList = [];
+    final List<Map<String, dynamic>> studentsList = [];
     final List<String> studentIds =
         group.members.where((id) => id != group.createdBy).toList();
 
@@ -998,7 +998,7 @@ class GroupService {
     });
   }
 
-  Stream<List>> getPendingGroupNoticesStream(
+  Stream<List<Map<String, dynamic>>> getPendingGroupNoticesStream(
       String userId) {
     if (userId.trim().isEmpty) return const Stream.empty();
     return _firestore
