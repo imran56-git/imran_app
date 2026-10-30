@@ -2,19 +2,25 @@ import 'dart:async';
 import 'dart:developer';
 import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:http/http.dart' as http;
+import 'package:path/path.dart' as p;
+import 'package:sqflite/sqflite.dart';
 import '../models/group_model.dart';
 import '../models/message_model.dart';
-import '../constants/algorithm_config.dart';
 import 'local_chat_storage_service.dart';
 
 class ChatService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseStorage _storage = FirebaseStorage.instance;
+  final FirebaseAuth _auth = FirebaseAuth.instance;
   final LocalChatStorageService _localStorage = LocalChatStorageService();
   final Map<String, DateTime> _recentClientMessages = {};
 
-  Future<Map<String, dynamic>?> getUserProfile(
+  String get _currentUserId => _auth.currentUser?.uid ?? '';
+
+  Future?> getUserProfile(
       String userId, bool isTeacher) async {
     if (userId.trim().isEmpty) return null;
     try {
@@ -151,7 +157,7 @@ class ChatService {
     });
   }
 
-  Stream<Map<String, dynamic>> getUserStatusStream(
+  Stream> getUserStatusStream(
       String userId, bool isTeacher) {
     if (userId.trim().isEmpty) {
       return Stream.value(
@@ -327,6 +333,27 @@ class ChatService {
     return message;
   }
 
+  Future<String?> _downloadAndCacheMediaLocally(
+      String url, String messageId) async {
+    if (!url.startsWith('http')) return null;
+    try {
+      final response = await http
+          .get(Uri.parse(url))
+          .timeout(const Duration(seconds: 15));
+      if (response.statusCode == 200) {
+        final dbPath = await getDatabasesPath();
+        final mediaDir = Directory(p.join(dbPath, 'fybtt_media'));
+        if (!await mediaDir.exists()) {
+          await mediaDir.create(recursive: true);
+        }
+        final file = File(p.join(mediaDir.path, '${messageId}_media.bin'));
+        await file.writeAsBytes(response.bodyBytes);
+        return file.path;
+      }
+    } catch (_) {}
+    return null;
+  }
+
   Future<void> sendMessage({
     required String chatId,
     required String senderId,
@@ -449,7 +476,12 @@ class ChatService {
         replyToMessageId: replyToMessageId,
         replyText: replyToText,
         mediaMetaData: mediaMetaData,
-        mediaUrl: (type == 'image' || type == 'video' || type == 'audio' || type == 'document') ? message : null,
+        mediaUrl: (type == 'image' ||
+                type == 'video' ||
+                type == 'audio' ||
+                type == 'document')
+            ? message
+            : null,
         messageCategory: messageCategory,
         isPinned: false,
         pollData: pollData,
@@ -651,7 +683,12 @@ class ChatService {
         replyToMessageId: replyToMessageId,
         replyText: replyToText,
         mediaMetaData: mediaMetaData,
-        mediaUrl: (type == 'image' || type == 'video' || type == 'audio' || type == 'document') ? message : null,
+        mediaUrl: (type == 'image' ||
+                type == 'video' ||
+                type == 'audio' ||
+                type == 'document')
+            ? message
+            : null,
         senderRole: isTeacherSender ? 'teacher' : 'student',
         senderName: senderName,
         senderProfilePic: senderProfilePic,
@@ -746,10 +783,7 @@ class ChatService {
 
       final batch = _firestore.batch();
       for (var doc in querySnapshot.docs) {
-        batch.update(doc.reference, {
-          'status': 'seen',
-          'readAt': FieldValue.serverTimestamp(),
-        });
+        batch.delete(doc.reference);
       }
 
       batch.set(
@@ -783,30 +817,6 @@ class ChatService {
       await groupRef.set({
         'unreadCounts': {currentUserId: 0},
       }, SetOptions(merge: true));
-
-      final recentUnreadSnap = await groupRef
-          .collection('messages')
-          .orderBy('timestamp', descending: true)
-          .limit(30)
-          .get();
-
-      final WriteBatch batch = _firestore.batch();
-      int updates = 0;
-      for (final doc in recentUnreadSnap.docs) {
-        final data = doc.data();
-        final List<dynamic> readBy =
-            (data['readBy'] as List<dynamic>?) ?? const [];
-        if (!readBy.contains(currentUserId)) {
-          batch.update(doc.reference, {
-            'readBy': FieldValue.arrayUnion([currentUserId]),
-            'status': 'seen',
-          });
-          updates++;
-        }
-      }
-      if (updates > 0) {
-        await batch.commit();
-      }
     } catch (e) {
       _handleError('markGroupMessagesAsSeen', e);
     }
@@ -897,19 +907,6 @@ class ChatService {
     );
   }
 
-  List<MessageModel> _filterActiveMessages(List<MessageModel> messages) {
-    final now = DateTime.now();
-    return messages.where((msg) {
-      if (msg.isExpired) return false;
-      if (msg.isScheduled &&
-          msg.scheduledAt != null &&
-          msg.scheduledAt!.isAfter(now)) {
-        return false;
-      }
-      return true;
-    }).toList();
-  }
-
   Stream<List<MessageModel>> getMessages(String chatId) {
     _firestore
         .collection('chats')
@@ -918,12 +915,44 @@ class ChatService {
         .snapshots(includeMetadataChanges: false)
         .listen((snapshot) async {
       if (snapshot.docs.isNotEmpty) {
-        final List<MessageModel> incomingMessages = snapshot.docs.map((doc) {
+        final List<MessageModel> incomingMessages = [];
+        final List<DocumentReference> docsToDeleteFromCloud = [];
+
+        for (final doc in snapshot.docs) {
           final data = doc.data();
           data['messageId'] = doc.id;
-          return MessageModel.fromMap(data);
-        }).toList();
+          final msg = MessageModel.fromMap(data);
+          incomingMessages.add(msg);
+
+          if (_currentUserId.isNotEmpty && msg.receiverId == _currentUserId) {
+            docsToDeleteFromCloud.add(doc.reference);
+            if (msg.type == 'image' ||
+                msg.type == 'video' ||
+                msg.type == 'audio' ||
+                msg.type == 'document') {
+              _downloadAndCacheMediaLocally(msg.content, msg.messageId)
+                  .then((localPath) {
+                if (localPath != null) {
+                  _localStorage.updateLocalMediaPath(
+                    messageId: msg.messageId,
+                    chatRoomId: chatId,
+                    localPath: localPath,
+                  );
+                }
+              });
+            }
+          }
+        }
+
         await _localStorage.saveMessagesBatch(incomingMessages, chatId);
+
+        if (docsToDeleteFromCloud.isNotEmpty) {
+          final batch = _firestore.batch();
+          for (final ref in docsToDeleteFromCloud) {
+            batch.delete(ref);
+          }
+          await batch.commit().catchError((_) {});
+        }
       }
     }, onError: (e) {
       _handleError('getMessages (Listener error)', e);
@@ -943,11 +972,33 @@ class ChatService {
         .snapshots(includeMetadataChanges: false)
         .listen((snapshot) async {
       if (snapshot.docs.isNotEmpty) {
-        final List<MessageModel> incomingGroupMessages = snapshot.docs.map((doc) {
+        final List<MessageModel> incomingGroupMessages = [];
+
+        for (final doc in snapshot.docs) {
           final data = doc.data();
           data['messageId'] = doc.id;
-          return MessageModel.fromMap(data);
-        }).toList();
+          final msg = MessageModel.fromMap(data);
+          incomingGroupMessages.add(msg);
+
+          if (_currentUserId.isNotEmpty &&
+              msg.senderId != _currentUserId &&
+              (msg.type == 'image' ||
+                  msg.type == 'video' ||
+                  msg.type == 'audio' ||
+                  msg.type == 'document')) {
+            _downloadAndCacheMediaLocally(msg.content, msg.messageId)
+                .then((localPath) {
+              if (localPath != null) {
+                _localStorage.updateLocalMediaPath(
+                  messageId: msg.messageId,
+                  chatRoomId: groupId,
+                  localPath: localPath,
+                );
+              }
+            });
+          }
+        }
+
         await _localStorage.saveMessagesBatch(incomingGroupMessages, groupId);
       }
     }, onError: (e) {
@@ -972,11 +1023,11 @@ class ChatService {
         limit: limit,
       );
       if (localMsgs.isNotEmpty) {
-        return _filterActiveMessages(localMsgs);
+        return localMsgs;
       }
 
       final String rootCollection = isGroup ? 'groups' : 'chats';
-      Query<Map<String, dynamic>> query = _firestore
+      Query> query = _firestore
           .collection(rootCollection)
           .doc(chatOrGroupId)
           .collection('messages')
@@ -995,14 +1046,14 @@ class ChatService {
       }).toList();
 
       await _localStorage.saveMessagesBatch(list, chatOrGroupId);
-      return _filterActiveMessages(list);
+      return list;
     } catch (e) {
       _handleError('getPaginatedMessages', e);
       return const [];
     }
   }
 
-  Future<DocumentReference<Map<String, dynamic>>> _resolveMessageRef(
+  Future<DocumentReference>> _resolveMessageRef(
       String chatOrGroupId, String messageId,
       {bool? isGroup}) async {
     if (isGroup == true) {
@@ -1220,7 +1271,7 @@ class ChatService {
         final data = doc.data();
         data['messageId'] = doc.id;
         return MessageModel.fromMap(data);
-      }).where((m) => !m.isDeletedForEveryone && !m.isExpired).toList();
+      }).where((m) => !m.isDeletedForEveryone).toList();
     }).handleError((e) {
       _handleError('getSharedMediaDocsLinksStream', e);
     });
