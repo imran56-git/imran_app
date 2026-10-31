@@ -973,7 +973,7 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
               ),
               const SizedBox(height: 4),
               Text(
-                tCreds,
+                creds,
                 textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
               ),
