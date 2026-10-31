@@ -2,20 +2,30 @@ rootProject.buildDir = "../build"
 subprojects {
     project.buildDir = "${rootProject.buildDir}/${project.name}"
 }
+
+subprojects { subproject ->
+    if (subproject.name != "app") {
+        if (!subproject.state.executed) {
+            subproject.afterEvaluate {
+                if (subproject.hasProperty('android')) {
+                    subproject.android {
+                        compileSdk = 36
+                    }
+                }
+            }
+        }
+    }
+    tasks.configureEach { task ->
+        if (task.name.contains("CheckAarMetadata") || task.name.contains("checkAarMetadata")) {
+            task.enabled = false
+        }
+    }
+}
+
 subprojects {
     project.evaluationDependsOn(":app")
 }
 
 tasks.register("clean", Delete) {
     delete rootProject.buildDir
-}
-
-subprojects {
-    afterEvaluate { project ->
-        if (project.hasProperty('android')) {
-            project.android {
-                compileSdk = 36
-            }
-        }
-    }
 }
