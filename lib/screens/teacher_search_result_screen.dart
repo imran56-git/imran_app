@@ -71,12 +71,8 @@ class _TeacherSearchResultScreenState extends State<TeacherSearchResultScreen> {
     }
   }
 
-  String _getChatRoomId(String id1, String id2) {
-    if (id1.compareTo(id2) > 0) {
-      return "${id1}_$id2";
-    } else {
-      return "${id2}_$id1";
-    }
+  String _getChatRoomId(String teacherId, String studentId) {
+    return "${teacherId}_$studentId";
   }
 
   int _parseExperienceYears(Map<String, dynamic> data) {
@@ -165,8 +161,8 @@ class _TeacherSearchResultScreenState extends State<TeacherSearchResultScreen> {
     return {'lat': lat ?? 0.0, 'lng': lng ?? 0.0};
   }
 
-  List<Map<String, String>> _buildActiveFilterChipsData() {
-    final List<Map<String, String>> list = [];
+  List> _buildActiveFilterChipsData() {
+    final List> list = [];
     final f = widget.filters;
 
     final id = (f['teacherId'] ?? '').toString().trim();
@@ -197,7 +193,7 @@ class _TeacherSearchResultScreenState extends State<TeacherSearchResultScreen> {
 
   Widget _buildTopSummaryAndSortBar(int totalMatched) {
     final activeChips = _buildActiveFilterChipsData();
-    final List<Map<String, dynamic>> sortOptions = [
+    final List> sortOptions = [
       {'key': 'best', 'label': 'Best Match', 'icon': Icons.auto_awesome_rounded},
       {'key': 'rating', 'label': 'Top Rated', 'icon': Icons.star_rounded},
       {
@@ -328,8 +324,8 @@ class _TeacherSearchResultScreenState extends State<TeacherSearchResultScreen> {
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(
                           color: isSelected
-                              ? _brandBlue
-                              : const Color(0xFFE2E8F0),
+                            ? _brandBlue
+                            : const Color(0xFFE2E8F0),
                         ),
                       ),
                       child: Row(
@@ -654,14 +650,58 @@ class _TeacherSearchResultScreenState extends State<TeacherSearchResultScreen> {
                             calculatedDistance: distanceText,
                             isVerified: isVerified,
                             highestBadgeType: highestBadgeType,
-                            onChatPressed: () {
-                              final String chatRoomId =
-                                  _getChatRoomId(currentUserId, doc.id);
+                            onChatPressed: () async {
+                              if (currentUserId.isEmpty) return;
+
+                              final String teacherId = doc.id;
+                              String targetChatRoomId =
+                                  _getChatRoomId(teacherId, currentUserId);
+
+                              try {
+                                final directDoc = await FirebaseFirestore.instance
+                                    .collection('chats')
+                                    .doc(targetChatRoomId)
+                                    .get();
+
+                                if (!directDoc.exists) {
+                                  final reverseDoc = await FirebaseFirestore
+                                      .instance
+                                      .collection('chats')
+                                      .doc('${currentUserId}_$teacherId')
+                                      .get();
+
+                                  if (reverseDoc.exists) {
+                                    targetChatRoomId =
+                                        '${currentUserId}_$teacherId';
+                                  } else {
+                                    final query = await FirebaseFirestore
+                                        .instance
+                                        .collection('chats')
+                                        .where('participants',
+                                            arrayContains: currentUserId)
+                                        .get();
+
+                                    for (final cDoc in query.docs) {
+                                      final participants =
+                                          (cDoc.data()['participants']
+                                                  as List?) ??
+                                              [];
+                                      if (participants.contains(teacherId)) {
+                                        targetChatRoomId = cDoc.id;
+                                        break;
+                                      }
+                                    }
+                                  }
+                                }
+                              } catch (_) {}
+
+                              if (!context.mounted) return;
+
                               Navigator.push(
                                 context,
                                 MaterialPageRoute(
                                   builder: (context) => ChatScreen(
-                                    chatRoomId: chatRoomId,
+                                    chatRoomId: targetChatRoomId,
                                     receiverId: doc.id,
                                     receiverName: teacherName,
                                     receiverProfilePic: profilePic,
