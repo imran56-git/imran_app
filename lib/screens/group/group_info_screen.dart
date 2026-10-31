@@ -903,7 +903,7 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
     final String tName =
         group.teacherName.isNotEmpty ? group.teacherName : 'Teacher';
     final String tPic = group.teacherProfilePic;
-    final String tCreds = group.teacherCredentials.isNotEmpty
+    final String creds = group.teacherCredentials.isNotEmpty
         ? group.teacherCredentials
         : 'Verified Educator on FYBTT';
     final double tRating = group.teacherRating;
@@ -1302,7 +1302,8 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
             ],
           ),
           content: Column(
-            mainAxisSize: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text(
                 'To permanently dismiss this batch group and remove all group records, please enter your educator account password.',
@@ -2404,7 +2405,7 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
                         fontSize: 11.5, color: Colors.grey),
                   ),
                   trailing: Row(
-                    mainAxisSize: dynamic,
+                    mainAxisSize: MainAxisSize.min,
                     children: [
                       IconButton(
                         tooltip: isMuted ? 'Unmute Student' : 'Mute Student',
