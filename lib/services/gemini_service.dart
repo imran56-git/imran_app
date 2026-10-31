@@ -44,18 +44,35 @@ class GeminiService {
   int _activeModelIndex = 0;
   bool _isBusy = false;
 
-  final List<Map<String, String>> _conversationHistory = [];
+  final List> _conversationHistory = [];
 
   String _buildSystemInstruction([String? customSystemPrompt]) {
     if (customSystemPrompt != null && customSystemPrompt.trim().isNotEmpty) {
       return customSystemPrompt.trim();
     }
-    return '${AiKnowledge.systemInstruction}\n'
-        'Behavior Guidelines:\n'
-        '1. You are the official AI Assistant for FYBTT (Find Your Best Teacher Today).\n'
-        '2. If the user asks educational, study-related, science, math, or general academic questions, answer them concisely, accurately, and helpfully as an FYBTT study assistant.\n'
-        '3. Support both English and Bengali naturally based on the user\'s question.\n'
-        '4. Keep responses fast, polite, and direct without unnecessary delay.';
+    return '${AiKnowledge.systemInstruction}\n\n'
+        'CRITICAL RESPONSE GUIDELINES (STRICT COMPLIANCE):\n'
+        '1. NO UNPROMPTED GREETINGS OR META-INTRODUCTIONS:\n'
+        '   - NEVER begin answers with "Hello! As the official AI Assistant for FYBTT...", "I would be delighted to...", or similar repetitive introductory fluff.\n'
+        '   - Dive straight into the core, direct explanation or solution in sentence 1.\n'
+        '   - Only greet if the user explicitly greets you first (e.g., "Hi", "Hello").\n'
+        '   - Do NOT add repetitive closing advertisements like "If you need help mastering these formulas or want to connect with teachers on FYBTT..." unless the user specifically asks how to find a teacher.\n\n'
+        '2. MATHEMATICAL & SCIENTIFIC FORMULA FORMATTING (NO RAW LATEX):\n'
+        '   - NEVER output raw LaTeX syntax with dollar delimiters such as "\$\$... \$\$", "\$...\$", "\\times", "\\sum", "\\quad", or "\\text{}". The chat UI does not parse raw dollar LaTeX.\n'
+        '   - ALWAYS render formulas and equations using clean, universally readable UNICODE symbols and clean typography:\n'
+        '     * Multiplication: use "×" or "·" (never write "\\times" or "*")\n'
+        '     * Division: use "/" or "÷"\n'
+        '     * Exponents & Subscripts: use unicode superscripts/subscripts like "x²", "v² = u² + 2as", "H₂O", "F_net", "a_avg"\n'
+        '     * Mathematical & Greek symbols: "∑", "√", "π", "θ", "α", "β", "γ", "λ", "μ", "ω", "∆", "∫", "±", "≈", "≠", "≤", "≥", "sin θ", "cos θ", "tan θ"\n'
+        '   - Present equations prominently on their own lines:\n'
+        '     Example: **F = m × a**\n'
+        '     Example: **∑F = 0 (when a = 0)**\n'
+        '     Example: **v = u + a·t**\n'
+        '     Example: **s = u·t + ½a·t²**\n'
+        '     Followed immediately by clean bullet points defining each variable.\n\n'
+        '3. ACCURACY & LANGUAGE:\n'
+        '   - Keep answers structured, engaging, and direct for students.\n'
+        '   - Support both English and Bengali naturally matching the language of the prompt.';
   }
 
   Future<void> _ensureApiKeysLoaded() async {
@@ -180,7 +197,7 @@ class GeminiService {
   }) async {
     await _ensureApiKeysLoaded();
 
-    final List<Map<String, dynamic>> parts = [
+    final List> parts = [
       {'text': prompt},
     ];
 
@@ -256,7 +273,7 @@ class GeminiService {
     }
 
     if (_resolvedGroqKey.isNotEmpty) {
-      final List<Map<String, dynamic>> contentList = [
+      final List> contentList = [
         {'type': 'text', 'text': prompt},
       ];
       for (final file in imageFiles) {
@@ -315,7 +332,7 @@ class GeminiService {
     throw Exception(lastError ?? 'Vision verification service unavailable.');
   }
 
-  Future<Map<String, dynamic>> verifyGovernmentIdDocument({
+  Future> verifyGovernmentIdDocument({
     required File documentFile,
     required String selectedDocType,
     String? expectedFullName,
@@ -418,7 +435,7 @@ Strict Rules:
     }
   }
 
-  Future<Map<String, dynamic>> verifyQualificationCertificate({
+  Future> verifyQualificationCertificate({
     required File certificateFile,
     String? expectedFullName,
   }) async {
@@ -519,7 +536,7 @@ Strict Rules:
     }
   }
 
-  Future<Map<String, dynamic>> verifyFaceMatchWithIdCard({
+  Future> verifyFaceMatchWithIdCard({
     required File idDocumentFile,
     required File liveFaceFile,
     double minimumSimilarityThreshold = 85.0,
@@ -601,7 +618,7 @@ Respond ONLY with a valid JSON object in English using this exact schema:
   }) async {
     final String sysInstruction = _buildSystemInstruction(systemPrompt);
 
-    final List<Map<String, dynamic>> contents = [];
+    final List> contents = [];
     for (final turn in _conversationHistory) {
       final String role = turn['role'] == 'user' ? 'user' : 'model';
       final String text = (turn['content'] ?? '').trim();
@@ -633,7 +650,7 @@ Respond ONLY with a valid JSON object in English using this exact schema:
       },
       'contents': contents,
       'generationConfig': {
-        'temperature': 0.6,
+        'temperature': 0.4,
         'maxOutputTokens': 1024,
       },
     };
@@ -690,7 +707,7 @@ Respond ONLY with a valid JSON object in English using this exact schema:
     }
 
     final String sysInstruction = _buildSystemInstruction(systemPrompt);
-    final List<Map<String, dynamic>> messages = [
+    final List> messages = [
       {'role': 'system', 'content': sysInstruction},
       ..._conversationHistory.map((turn) => {
             'role': turn['role'] == 'user' ? 'user' : 'assistant',
@@ -712,7 +729,7 @@ Respond ONLY with a valid JSON object in English using this exact schema:
               body: jsonEncode({
                 'model': groqModel,
                 'messages': messages,
-                'temperature': 0.6,
+                'temperature': 0.4,
                 'max_tokens': 1024,
               }),
             )
@@ -753,8 +770,8 @@ Respond ONLY with a valid JSON object in English using this exact schema:
     if (greetingRegExp.hasMatch(cleanPrompt)) {
       final bool isBengali = cleanPrompt.contains(RegExp(r'[\u0980-\u09FF]'));
       final String quickReply = isBengali
-          ? 'হ্যালো! আমি আপনার FYBTT AI স্টাডি অ্যাসিস্ট্যান্ট। আজ আপনার পড়াশোনা, বিষয় বা টিচার সংক্রান্ত কী বিষয়ে সাহায্য করতে পারি?'
-          : 'Hello! I am your FYBTT AI Assistant. How can I help you with your studies, subjects, or tuition batches today?';
+          ? 'হ্যালো! আজ আপনার পড়াশোনা বা কোনো বিষয়ের কনসেপ্ট বুঝতে কী সাহায্য করতে পারি?'
+          : 'Hello! How can I help you with your studies or concepts today?';
       _recordTurn(prompt, quickReply);
       return quickReply;
     }
