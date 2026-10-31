@@ -36,7 +36,7 @@ class _GroupListScreenState extends State<GroupListScreen>
   late String _currentUserName;
 
   late final Stream<List<GroupModel>> _groupsStream;
-  StreamSubscription<List>>? _noticesSubscription;
+  StreamSubscription<List<Map<String, dynamic>>>? _noticesSubscription;
   StreamSubscription<QuerySnapshot>? _groupStatusSubscription;
   final Set<String> _processingNoticeIds = {};
   bool _isDialogShowing = false;
@@ -310,7 +310,6 @@ class _GroupListScreenState extends State<GroupListScreen>
       builder: (ctx) {
         return SafeArea(
           child: Column(
-            mainAxisSize: dynamic;
             mainAxisSize: MainAxisSize.min,
             children: [
               Container(
