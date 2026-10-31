@@ -58,7 +58,7 @@ class _ChatScreenState extends State<ChatScreen>
 
   late String _activeChatRoomId;
   Stream<List<MessageModel>>? _messageStream;
-  Stream<Map<String, dynamic>>? _userStatusStream;
+  Stream>? _userStatusStream;
   Stream<DocumentSnapshot>? _typingDocStream;
   Stream<BlockStatus>? _blockStatusStream;
   List<MessageModel> _latestMessages = [];
@@ -99,7 +99,16 @@ class _ChatScreenState extends State<ChatScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _activeChatRoomId = widget.chatRoomId;
+
+    final String teacherId =
+        widget.isTeacher ? widget.currentUserId : widget.receiverId;
+    final String studentId =
+        widget.isTeacher ? widget.receiverId : widget.currentUserId;
+    final String fallbackId = '${teacherId}_$studentId';
+
+    _activeChatRoomId = widget.chatRoomId.trim().isNotEmpty
+        ? widget.chatRoomId.trim()
+        : (!_isOfficialChannel ? fallbackId : '');
 
     if (!_isOfficialChannel) {
       _userStatusStream = _chatService.getUserStatusStream(
@@ -218,7 +227,68 @@ class _ChatScreenState extends State<ChatScreen>
     }
   }
 
+  void _switchChatRoom(String newId) {
+    if (!mounted || newId.isEmpty || newId == _activeChatRoomId) return;
+    setState(() {
+      _activeChatRoomId = newId;
+      _messageStream = _chatService.getMessages(_activeChatRoomId);
+      if (!_isOfficialChannel) {
+        _typingDocStream = FirebaseFirestore.instance
+            .collection('typing')
+            .doc(_activeChatRoomId)
+            .snapshots()
+            .handleError((error) => log('Typing Stream Error: $error'));
+      }
+    });
+    _loadCustomTheme();
+    _markMessagesAsReadSafe();
+  }
+
   Future<void> _setupChatRoom() async {
+    if (widget.chatRoomId.trim().isEmpty && !_isOfficialChannel) {
+      final String teacherId =
+          widget.isTeacher ? widget.currentUserId : widget.receiverId;
+      final String studentId =
+          widget.isTeacher ? widget.receiverId : widget.currentUserId;
+      final String expectedId = '${teacherId}_$studentId';
+
+      try {
+        final docSnap = await FirebaseFirestore.instance
+            .collection('chats')
+            .doc(expectedId)
+            .get()
+            .timeout(const Duration(seconds: 2));
+
+        if (docSnap.exists) {
+          _activeChatRoomId = expectedId;
+        } else {
+          final altDocSnap = await FirebaseFirestore.instance
+              .collection('chats')
+              .doc('${studentId}_$teacherId')
+              .get()
+              .timeout(const Duration(seconds: 2));
+
+          if (altDocSnap.exists) {
+            _activeChatRoomId = '${studentId}_$teacherId';
+          } else {
+            final querySnap = await FirebaseFirestore.instance
+                .collection('chats')
+                .where('participants', arrayContains: widget.currentUserId)
+                .get()
+                .timeout(const Duration(seconds: 2));
+
+            for (final doc in querySnap.docs) {
+              final participants = (doc.data()['participants'] as List?) ?? [];
+              if (participants.contains(widget.receiverId)) {
+                _activeChatRoomId = doc.id;
+                break;
+              }
+            }
+          }
+        }
+      } catch (_) {}
+    }
+
     try {
       final cachedMsgs = await _localStorage.getMessages(_activeChatRoomId);
       if (cachedMsgs.isNotEmpty && mounted) {
@@ -284,7 +354,7 @@ class _ChatScreenState extends State<ChatScreen>
       final String studentImage =
           widget.isTeacher ? widget.receiverProfilePic : myImage;
 
-      await _chatService
+      final dynamic initResult = await _chatService
           .createOrInitializeChat(
             teacherId: teacherId,
             studentId: studentId,
@@ -294,6 +364,24 @@ class _ChatScreenState extends State<ChatScreen>
             studentImage: studentImage,
           )
           .timeout(const Duration(seconds: 3));
+
+      if (initResult != null) {
+        String? resolvedId;
+        if (initResult is String && initResult.isNotEmpty) {
+          resolvedId = initResult;
+        } else if (initResult is DocumentReference) {
+          resolvedId = initResult.id;
+        } else if (initResult is DocumentSnapshot) {
+          resolvedId = initResult.id;
+        } else if (initResult is Map && initResult['chatId'] != null) {
+          resolvedId = initResult['chatId'].toString();
+        }
+        if (resolvedId != null &&
+            resolvedId.isNotEmpty &&
+            resolvedId != _activeChatRoomId) {
+          _switchChatRoom(resolvedId);
+        }
+      }
 
       if (mounted) {
         _chatService.updateTypingStatus(
@@ -1250,7 +1338,7 @@ class _ChatScreenState extends State<ChatScreen>
   }
 
   Widget _buildStandardAppBarTitle() {
-    return StreamBuilder<Map<String, dynamic>>(
+    return StreamBuilder>(
       stream: _userStatusStream,
       builder: (context, statusSnapshot) {
         String displayName = widget.receiverName;
