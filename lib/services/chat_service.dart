@@ -20,7 +20,7 @@ class ChatService {
 
   String get _currentUserId => _auth.currentUser?.uid ?? '';
 
-  Future<Map<String, dynamic>?> getUserProfile(
+  Future?> getUserProfile(
       String userId, bool isTeacher) async {
     if (userId.trim().isEmpty) return null;
     try {
@@ -157,7 +157,7 @@ class ChatService {
     });
   }
 
-  Stream<Map<String, dynamic>> getUserStatusStream(
+  Stream> getUserStatusStream(
       String userId, bool isTeacher) {
     if (userId.trim().isEmpty) {
       return Stream.value(
@@ -248,9 +248,8 @@ class ChatService {
   }
 
   String getChatRoomId(String user1, String user2) {
-    List<String> ids = [user1, user2];
-    ids.sort();
-    return '${ids[0]}_${ids[1]}';
+    if (user1.trim().isEmpty || user2.trim().isEmpty) return '';
+    return '${user1.trim()}_${user2.trim()}';
   }
 
   Future<void> createOrInitializeChat({
@@ -262,7 +261,7 @@ class ChatService {
     required String studentImage,
   }) async {
     try {
-      final String chatId = getChatRoomId(teacherId, studentId);
+      final String chatId = '${teacherId.trim()}_${studentId.trim()}';
       final chatRef = _firestore.collection('chats').doc(chatId);
       final doc = await chatRef.get();
 
@@ -398,7 +397,11 @@ class ChatService {
           clientMessageId ?? '${senderId}_${receiverId}_${type}_$message';
       if (_isDuplicateSubmission(dedupeKey)) return;
 
-      final String correctChatId = getChatRoomId(senderId, receiverId);
+      String correctChatId = chatId.trim();
+      if (correctChatId.isEmpty) {
+        correctChatId = '${receiverId}_$senderId';
+      }
+
       final chatRef = _firestore.collection('chats').doc(correctChatId);
       final chatDoc = await chatRef.get();
 
@@ -908,6 +911,10 @@ class ChatService {
   }
 
   Stream<List<MessageModel>> getMessages(String chatId) {
+    if (chatId.trim().isEmpty) {
+      return Stream.value(const []);
+    }
+
     _firestore
         .collection('chats')
         .doc(chatId)
@@ -1027,7 +1034,7 @@ class ChatService {
       }
 
       final String rootCollection = isGroup ? 'groups' : 'chats';
-      Query<Map<String, dynamic>> query = _firestore
+      Query> query = _firestore
           .collection(rootCollection)
           .doc(chatOrGroupId)
           .collection('messages')
