@@ -65,7 +65,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
     '📌', '📢', '🏆', '🤝', '🙋‍♂️', '🙋‍♀️', '⏰', '🚀',
   ];
 
-  static const List<Map<String, String>> _quickStickers = [
+  static const List> _quickStickers = [
     {'emoji': '📚✨', 'label': 'Study Hard!'},
     {'emoji': '✅👍', 'label': 'Well Done!'},
     {'emoji': '❓🙋', 'label': 'I have a doubt'},
@@ -73,6 +73,14 @@ class _ChatInputBarState extends State<ChatInputBar> {
     {'emoji': '🎯🏆', 'label': 'Keep Going!'},
     {'emoji': '🙏📘', 'label': 'Thank You Sir'},
   ];
+
+  String get _effectiveChatRoomId {
+    final direct = widget.chatRoomId.trim();
+    if (direct.isNotEmpty) {
+      return direct;
+    }
+    return '${widget.receiverId}_${widget.senderId}';
+  }
 
   @override
   void initState() {
@@ -87,11 +95,19 @@ class _ChatInputBarState extends State<ChatInputBar> {
   }
 
   @override
+  void didUpdateWidget(covariant ChatInputBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.initialMessageCategory != widget.initialMessageCategory) {
+      _attachmentCategory = widget.initialMessageCategory;
+    }
+  }
+
+  @override
   void dispose() {
     _recordingTimer?.cancel();
     if (_isTyping) {
       _chatService.updateTypingStatus(
-          widget.chatRoomId, widget.senderId, false);
+          _effectiveChatRoomId, widget.senderId, false);
     }
     _controller.removeListener(_onTextChanged);
     _controller.dispose();
@@ -107,7 +123,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
       }
       widget.onTypingChanged(_isTyping);
       _chatService.updateTypingStatus(
-          widget.chatRoomId, widget.senderId, _isTyping);
+          _effectiveChatRoomId, widget.senderId, _isTyping);
     }
   }
 
@@ -142,7 +158,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
     setState(() => _showEmojiPanel = false);
     try {
       await _chatService.sendMessage(
-        chatId: widget.chatRoomId,
+        chatId: _effectiveChatRoomId,
         senderId: widget.senderId,
         receiverId: widget.receiverId,
         message: stickerText,
@@ -169,7 +185,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
     HapticFeedback.mediumImpact();
 
     final bool isGroupChat = widget.receiverId == 'group';
-    final List<Map<String, String>> groupCategories = [
+    final List> groupCategories = [
       {'key': 'general', 'label': 'General'},
       {'key': 'study_material', 'label': 'Study Material'},
       {'key': 'homework', 'label': 'Homework'},
@@ -318,7 +334,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
             source: ImageSource.gallery, imageQuality: 80);
         if (image != null) {
           await _chatService.sendImageFile(
-            chatRoomId: widget.chatRoomId,
+            chatRoomId: _effectiveChatRoomId,
             senderId: widget.senderId,
             receiverId: widget.receiverId,
             file: File(image.path),
@@ -330,7 +346,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
             source: ImageSource.camera, imageQuality: 80);
         if (image != null) {
           await _chatService.sendImageFile(
-            chatRoomId: widget.chatRoomId,
+            chatRoomId: _effectiveChatRoomId,
             senderId: widget.senderId,
             receiverId: widget.receiverId,
             file: File(image.path),
@@ -342,7 +358,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
             await _imagePicker.pickVideo(source: ImageSource.gallery);
         if (video != null) {
           await _chatService.sendVideoFile(
-            chatRoomId: widget.chatRoomId,
+            chatRoomId: _effectiveChatRoomId,
             senderId: widget.senderId,
             receiverId: widget.receiverId,
             file: File(video.path),
@@ -366,7 +382,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
         );
         if (result != null && result.files.single.path != null) {
           await _chatService.sendDocumentFile(
-            chatRoomId: widget.chatRoomId,
+            chatRoomId: _effectiveChatRoomId,
             senderId: widget.senderId,
             receiverId: widget.receiverId,
             file: File(result.files.single.path!),
@@ -379,7 +395,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
             await FilePicker.platform.pickFiles(type: FileType.audio);
         if (result != null && result.files.single.path != null) {
           await _chatService.sendAudioFile(
-            chatRoomId: widget.chatRoomId,
+            chatRoomId: _effectiveChatRoomId,
             senderId: widget.senderId,
             receiverId: widget.receiverId,
             file: File(result.files.single.path!),
@@ -387,7 +403,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
         }
       } else if (type == 'location') {
         await _chatService.sendLocation(
-          widget.chatRoomId,
+          _effectiveChatRoomId,
           widget.senderId,
           widget.receiverId,
           22.5726,
@@ -425,7 +441,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
       });
     }
     widget.onTypingChanged(false);
-    _chatService.updateTypingStatus(widget.chatRoomId, widget.senderId, false);
+    _chatService.updateTypingStatus(_effectiveChatRoomId, widget.senderId, false);
 
     if (widget.onCancelReply != null) {
       widget.onCancelReply!();
@@ -433,7 +449,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
 
     try {
       await _chatService.sendMessage(
-        chatId: widget.chatRoomId,
+        chatId: _effectiveChatRoomId,
         senderId: widget.senderId,
         receiverId: widget.receiverId,
         message: text,
@@ -464,7 +480,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
     setState(() => _failedMessageText = null);
     try {
       await _chatService.sendMessage(
-        chatId: widget.chatRoomId,
+        chatId: _effectiveChatRoomId,
         senderId: widget.senderId,
         receiverId: widget.receiverId,
         message: textToRetry,
