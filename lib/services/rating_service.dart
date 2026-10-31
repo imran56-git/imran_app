@@ -39,7 +39,52 @@ class RatingService {
     }
   }
 
-  Future<Map<String, dynamic>> submitReview({
+  /// নিশ্চিত করে যে শিক্ষার্থী সত্যিই ওই শিক্ষকের অ্যাক্সেপ্টেড স্টুডেন্ট কি না
+  Future<bool> isStudentAcceptedByTeacher({
+    required String teacherId,
+    required String studentId,
+  }) async {
+    if (teacherId.isEmpty || studentId.isEmpty || teacherId == studentId) {
+      return false;
+    }
+
+    try {
+      final reqSnap = await _firestore
+          .collection('follow_requests')
+          .where('teacherId', isEqualTo: teacherId)
+          .where('senderId', isEqualTo: studentId)
+          .where('status', isEqualTo: 'accepted')
+          .limit(1)
+          .get();
+
+      if (reqSnap.docs.isNotEmpty) return true;
+
+      final backupSnap = await _firestore
+          .collection('follow_requests')
+          .where('teacherId', isEqualTo: teacherId)
+          .where('studentId', isEqualTo: studentId)
+          .where('status', isEqualTo: 'accepted')
+          .limit(1)
+          .get();
+
+      if (backupSnap.docs.isNotEmpty) return true;
+
+      final connectedSnap = await _firestore
+          .collection('teachers')
+          .doc(teacherId)
+          .collection('connected_students')
+          .doc(studentId)
+          .get();
+
+      if (connectedSnap.exists) return true;
+
+      return false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future> submitReview({
     required String teacherId,
     required String studentId,
     required String studentName,
@@ -51,6 +96,19 @@ class RatingService {
     required String reviewText,
   }) async {
     try {
+      // ১. কঠোর স্টুডেন্ট এলিজিবিলিটি চেক
+      final bool isAccepted = await isStudentAcceptedByTeacher(
+        teacherId: teacherId,
+        studentId: studentId,
+      );
+
+      if (!isAccepted) {
+        return {
+          'success': false,
+          'message': 'Only officially accepted students of this teacher can give ratings.',
+        };
+      }
+
       final validationResult = await _antiFraudService.validateAndProcessReview(
         teacherId: teacherId,
         studentId: studentId,
@@ -120,7 +178,10 @@ class RatingService {
           'categories': categories.toMap(),
           'comment': reviewText,
           'seasonId': seasonId,
+          'status': status,
+          'isVerified': isVerified,
           'updatedAt': FieldValue.serverTimestamp(),
+          'createdAt': FieldValue.serverTimestamp(),
         },
         SetOptions(merge: true),
       );
@@ -151,7 +212,7 @@ class RatingService {
       }
 
       if (isVerified) {
-        await _recalculateTeacherRatings(teacherId);
+        await recalculateTeacherRatings(teacherId);
       }
 
       return {
@@ -170,7 +231,7 @@ class RatingService {
     }
   }
 
-  Future<void> _recalculateTeacherRatings(String teacherId) async {
+  Future<void> recalculateTeacherRatings(String teacherId) async {
     try {
       final reviewsQuery = await _firestore
           .collection('reviews')
@@ -178,10 +239,21 @@ class RatingService {
           .where('status', isEqualTo: 'verified')
           .get();
 
-      final docs = reviewsQuery.docs;
+      List> rawReviewDocs =
+          reviewsQuery.docs.map((d) => d.data()).toList();
+
+      if (rawReviewDocs.isEmpty) {
+        final ratingsQuery = await _firestore
+            .collection('ratings')
+            .where('teacherId', isEqualTo: teacherId)
+            .get();
+
+        rawReviewDocs = ratingsQuery.docs.map((d) => d.data()).toList();
+      }
+
       final currentSeasonId = ReviewModel.getCurrentSeasonId(DateTime.now());
 
-      if (docs.isEmpty) {
+      if (rawReviewDocs.isEmpty) {
         final initialSummary = RatingSummaryModel.initial(teacherId);
         await _firestore
             .collection('teacher_rating_summary')
@@ -195,12 +267,13 @@ class RatingService {
           'ratingCount': 0,
           'currentSeasonRating': 0.0,
           'currentSeason': currentSeasonId,
+          'qualityBadge': 'NONE',
         }, SetOptions(merge: true));
         return;
       }
 
       double totalStars = 0;
-      int totalReviewsCount = docs.length;
+      int totalReviewsCount = rawReviewDocs.length;
       final starDist = {5: 0, 4: 0, 3: 0, 2: 0, 1: 0};
       double sumTeaching = 0;
       double sumBehaviour = 0;
@@ -211,29 +284,30 @@ class RatingService {
       double seasonTotalStars = 0;
       int seasonReviewsCount = 0;
 
-      final Map<String, List<ReviewModel>> subjectReviewsMap = {};
+      final Map<String, List>> subjectReviewsMap = {};
 
-      for (var doc in docs) {
-        final review = ReviewModel.fromMap(doc.data(), doc.id);
-        totalStars += review.overallRating;
+      for (var data in rawReviewDocs) {
+        final double star = (data['overallRating'] ?? data['rating'] as num?)?.toDouble() ?? 5.0;
+        totalStars += star;
 
-        final roundedStar = review.overallRating.round().clamp(1, 5);
+        final roundedStar = star.round().clamp(1, 5);
         starDist[roundedStar] = (starDist[roundedStar] ?? 0) + 1;
 
-        sumTeaching += review.categories.teaching;
-        sumBehaviour += review.categories.behaviour;
-        sumCommunication += review.categories.communication;
-        sumKnowledge += review.categories.knowledge;
-        sumPunctuality += review.categories.punctuality;
+        final cat = data['categories'] as Map<String, dynamic>? ?? {};
+        sumTeaching += (cat['teaching'] as num?)?.toDouble() ?? star;
+        sumBehaviour += (cat['behaviour'] as num?)?.toDouble() ?? star;
+        sumCommunication += (cat['communication'] as num?)?.toDouble() ?? star;
+        sumKnowledge += (cat['knowledge'] as num?)?.toDouble() ?? star;
+        sumPunctuality += (cat['punctuality'] as num?)?.toDouble() ?? star;
 
-        if (review.seasonId == currentSeasonId) {
-          seasonTotalStars += review.overallRating;
+        final season = data['seasonId']?.toString() ?? currentSeasonId;
+        if (season == currentSeasonId) {
+          seasonTotalStars += star;
           seasonReviewsCount++;
         }
 
-        final subId =
-            review.subjectId.isNotEmpty ? review.subjectId : 'general';
-        subjectReviewsMap.putIfAbsent(subId, () => []).add(review);
+        final subId = (data['subjectId'] ?? 'general').toString();
+        subjectReviewsMap.putIfAbsent(subId, () => []).add(data);
       }
 
       final avgRating =
@@ -260,7 +334,7 @@ class RatingService {
       subjectReviewsMap.forEach((subId, subReviews) {
         double subStars = 0;
         for (var r in subReviews) {
-          subStars += r.overallRating;
+          subStars += (r['overallRating'] ?? r['rating'] as num?)?.toDouble() ?? 5.0;
         }
         final subAvg =
             double.parse((subStars / subReviews.length).toStringAsFixed(2));
