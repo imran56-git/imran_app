@@ -31,6 +31,7 @@ class _ReminderScreenState extends State<ReminderScreen> {
   Map<String, dynamic>? _foundStudent;
   bool _isSearching = false;
   bool _isSending = false;
+  bool _hasActiveReminder = false;
   late String _selectedMonth;
   DateTime _selectedDueDate = DateTime.now().add(const Duration(days: 5));
   TimeOfDay _selectedTime = const TimeOfDay(hour: 16, minute: 0);
@@ -73,16 +74,16 @@ class _ReminderScreenState extends State<ReminderScreen> {
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
                 title: Text(
                   title,
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 20, color: Colors.redAccent),
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 19, color: Colors.redAccent),
                 ),
-                content: Text(message, style: const TextStyle(fontSize: 15, color: Colors.black87)),
+                content: Text(message, style: const TextStyle(fontSize: 14.5, color: Colors.black87, height: 1.4)),
                 actions: [
                   ElevatedButton(
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.blue[800],
                       foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
                     ),
                     onPressed: () => Navigator.pop(context),
                     child: const Text('OK', style: TextStyle(fontWeight: FontWeight.bold)),
@@ -96,6 +97,23 @@ class _ReminderScreenState extends State<ReminderScreen> {
     );
   }
 
+  Future<bool> _checkIfActiveReminderExists(String studentId) async {
+    try {
+      final querySnapshot = await _firestore
+          .collection('payment_reminders')
+          .where('teacherId', isEqualTo: widget.currentUserId)
+          .where('studentId', isEqualTo: studentId)
+          .get();
+
+      return querySnapshot.docs.any((doc) {
+        final status = (doc.data()['status'] ?? '').toString().toLowerCase();
+        return status == 'scheduled' || status == 'active' || status == 'sent' || status == 'pending';
+      });
+    } catch (_) {
+      return false;
+    }
+  }
+
   void _searchStudent() async {
     FocusScope.of(context).unfocus();
     final searchId = _searchController.text.trim();
@@ -104,25 +122,45 @@ class _ReminderScreenState extends State<ReminderScreen> {
     setState(() {
       _isSearching = true;
       _foundStudent = null;
+      _hasActiveReminder = false;
     });
 
     try {
       final student = await _reminderService.searchStudentById(searchId);
 
-      setState(() {
-        _foundStudent = student;
-        _isSearching = false;
-      });
+      if (!mounted) return;
 
       if (student == null) {
+        setState(() => _isSearching = false);
         _showErrorPopup(
           'Student Not Found',
           'No student registered with UID: $searchId\nPlease verify the student UID and try again.',
         );
+        return;
+      }
+
+      final String sUid = (student['uid'] ?? searchId).toString();
+      final bool alreadyActive = await _checkIfActiveReminderExists(sUid);
+
+      if (!mounted) return;
+
+      setState(() {
+        _foundStudent = student;
+        _isSearching = false;
+        _hasActiveReminder = alreadyActive;
+      });
+
+      if (alreadyActive) {
+        _showErrorPopup(
+          'Active Reminder Exists',
+          'An active fee reminder is already scheduled for ${student['name'] ?? 'this student'}.\n\nYou cannot create multiple active reminders for the same student. Please check "Active Reminders" below.',
+        );
       }
     } catch (_) {
-      setState(() => _isSearching = false);
-      _showErrorPopup('Query Error', 'Unable to retrieve student data. Please check network connection.');
+      if (mounted) {
+        setState(() => _isSearching = false);
+        _showErrorPopup('Query Error', 'Unable to retrieve student data. Please check network connection.');
+      }
     }
   }
 
@@ -290,9 +328,28 @@ class _ReminderScreenState extends State<ReminderScreen> {
     FocusScope.of(context).unfocus();
     if (_foundStudent == null || _amountController.text.trim().isEmpty) return;
 
+    final String targetStudentId = (_foundStudent!['uid'] ?? _searchController.text.trim()).toString();
+
     setState(() => _isSending = true);
 
     try {
+      // ডুপ্লিকেট সক্রিয় রিমাইন্ডার ব্লক করার যাচাইকরণ
+      final bool alreadyExists = await _checkIfActiveReminderExists(targetStudentId);
+
+      if (alreadyExists) {
+        if (mounted) {
+          setState(() {
+            _isSending = false;
+            _hasActiveReminder = true;
+          });
+          _showErrorPopup(
+            'Active Reminder Already Exists',
+            'An active fee reminder is already scheduled for ${_foundStudent!['name'] ?? 'this student'}.\n\nA teacher can only have one active reminder per student. Please manage the existing reminder from "Active Reminders".',
+          );
+        }
+        return;
+      }
+
       final double amount = double.parse(_amountController.text.trim());
       final String reminderId = DateTime.now().millisecondsSinceEpoch.toString();
 
@@ -307,7 +364,7 @@ class _ReminderScreenState extends State<ReminderScreen> {
       final reminder = ReminderModel(
         reminderId: reminderId,
         studentName: _foundStudent!['name'] ?? 'Student',
-        studentId: _foundStudent!['uid'] ?? _searchController.text.trim(),
+        studentId: targetStudentId,
         teacherId: widget.currentUserId,
         teacherName: widget.currentUserName.isEmpty ? 'Teacher' : widget.currentUserName,
         amount: amount,
@@ -326,11 +383,14 @@ class _ReminderScreenState extends State<ReminderScreen> {
           _searchController.clear();
           _amountController.clear();
           _isSending = false;
+          _hasActiveReminder = false;
         });
       }
     } catch (_) {
-      setState(() => _isSending = false);
-      _showErrorPopup('Failed', 'Could not schedule the reminder. Please try again.');
+      if (mounted) {
+        setState(() => _isSending = false);
+        _showErrorPopup('Failed', 'Could not schedule the reminder. Please try again.');
+      }
     }
   }
 
@@ -438,6 +498,32 @@ class _ReminderScreenState extends State<ReminderScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    if (_hasActiveReminder)
+                      Container(
+                        margin: const EdgeInsets.only(bottom: 16),
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: Colors.amber.shade50,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: Colors.amber.shade300, width: 1.2),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.warning_amber_rounded, color: Colors.amber.shade900, size: 24),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                'An active reminder already exists for this student. You cannot schedule a duplicate.',
+                                style: TextStyle(
+                                  color: Colors.amber.shade900,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 12.5,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     Container(
                       decoration: BoxDecoration(
                         color: Colors.white,
@@ -682,16 +768,21 @@ class _ReminderScreenState extends State<ReminderScreen> {
                       height: 54,
                       child: ElevatedButton.icon(
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF10B981),
+                          backgroundColor: _hasActiveReminder ? Colors.grey.shade400 : const Color(0xFF10B981),
                           foregroundColor: Colors.white,
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                           elevation: 2,
                         ),
-                        onPressed: _isSending || _amountController.text.trim().isEmpty ? null : _sendReminder,
+                        onPressed: _isSending || _amountController.text.trim().isEmpty || _hasActiveReminder
+                            ? null
+                            : _sendReminder,
                         icon: _isSending ? const SizedBox.shrink() : const Icon(Icons.calendar_month_rounded, size: 20),
                         label: _isSending
                             ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5))
-                            : const Text('SCHEDULE REMINDER', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, letterSpacing: 0.5)),
+                            : Text(
+                                _hasActiveReminder ? 'REMINDER ALREADY ACTIVE' : 'SCHEDULE REMINDER',
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, letterSpacing: 0.5),
+                              ),
                       ),
                     ),
                   ],
