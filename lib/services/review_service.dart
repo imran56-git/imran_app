@@ -15,12 +15,61 @@ class ReviewService {
   final CompetitionEngineService _competitionEngine =
       CompetitionEngineService();
 
+  Future<bool> _isStudentAcceptedByTeacher({
+    required String teacherId,
+    required String studentId,
+  }) async {
+    try {
+      final reqSnap = await _firestore
+          .collection('follow_requests')
+          .where('teacherId', isEqualTo: teacherId)
+          .where('senderId', isEqualTo: studentId)
+          .where('status', isEqualTo: 'accepted')
+          .limit(1)
+          .get();
+
+      if (reqSnap.docs.isNotEmpty) return true;
+
+      final backupSnap = await _firestore
+          .collection('follow_requests')
+          .where('teacherId', isEqualTo: teacherId)
+          .where('studentId', isEqualTo: studentId)
+          .where('status', isEqualTo: 'accepted')
+          .limit(1)
+          .get();
+
+      if (backupSnap.docs.isNotEmpty) return true;
+
+      final connectedSnap = await _firestore
+          .collection('teachers')
+          .doc(teacherId)
+          .collection('connected_students')
+          .doc(studentId)
+          .get();
+
+      if (connectedSnap.exists) return true;
+
+      return false;
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<bool> canStudentReviewTeacher({
     required String studentId,
     required String teacherId,
   }) async {
     try {
       if (studentId.isEmpty || teacherId.isEmpty || studentId == teacherId) {
+        return false;
+      }
+
+      final bool isAccepted = await _isStudentAcceptedByTeacher(
+        teacherId: teacherId,
+        studentId: studentId,
+      );
+
+      if (!isAccepted) {
         return false;
       }
 
@@ -49,7 +98,7 @@ class ReviewService {
       return true;
     } catch (e) {
       debugPrint("Error checking review eligibility: $e");
-      return true;
+      return false;
     }
   }
 
@@ -81,6 +130,16 @@ class ReviewService {
     try {
       if (review.studentId == review.teacherId) {
         throw Exception("Self-review is strictly forbidden.");
+      }
+
+      // কঠোর একসেপ্টেড স্টুডেন্ট চেক
+      final bool isAccepted = await _isStudentAcceptedByTeacher(
+        teacherId: review.teacherId,
+        studentId: review.studentId,
+      );
+
+      if (!isAccepted) {
+        throw Exception("Only accepted students can review this teacher.");
       }
 
       final currentSeason = SeasonModel.current();
@@ -121,8 +180,8 @@ class ReviewService {
           .limit(1)
           .get();
 
-      DocumentReference<Map<String, dynamic>> reviewRef;
-      DocumentSnapshot<Map<String, dynamic>>? existingDocSnap;
+      DocumentReference> reviewRef;
+      DocumentSnapshot>? existingDocSnap;
 
       if (existingSeasonQuery.docs.isNotEmpty) {
         existingDocSnap = existingSeasonQuery.docs.first;
@@ -202,6 +261,9 @@ class ReviewService {
           'categories': review.categories.toMap(),
           'comment': review.comment,
           'seasonId': activeSeasonId,
+          'status': validatedStatus,
+          'isVerified': validatedIsVerified,
+          'createdAt': FieldValue.serverTimestamp(),
           'updatedAt': FieldValue.serverTimestamp(),
         },
         SetOptions(merge: true),
@@ -244,10 +306,10 @@ class ReviewService {
     String? subjectId,
     bool onlyVerified = true,
     DocumentSnapshot? startAfter,
-    int limit = 10,
+    int limit = 20,
   }) async {
     try {
-      Query<Map<String, dynamic>> query = _firestore
+      Query> query = _firestore
           .collection('teacher_reviews')
           .where('teacherId', isEqualTo: teacherId);
 
@@ -259,24 +321,105 @@ class ReviewService {
         query = query.where('subjectId', isEqualTo: subjectId);
       }
 
-      query = query.orderBy('createdAt', descending: true).limit(limit);
-
-      if (startAfter != null) {
-        query = query.startAfterDocument(startAfter);
-      }
-
       final querySnapshot = await query.get();
-      final allFetched = querySnapshot.docs
+      List<ReviewModel> allFetched = querySnapshot.docs
           .map((doc) => ReviewModel.fromFirestore(doc))
           .toList();
 
-      if (onlyVerified) {
-        return allFetched.where((r) => r.isEligibleForCalculation).toList();
+      // যদি teacher_reviews-এ ডেটা না পাওয়া যায়, ratings থেকে ব্যাকআপ লোড করা
+      if (allFetched.isEmpty) {
+        final ratingsSnapshot = await _firestore
+            .collection('ratings')
+            .where('teacherId', isEqualTo: teacherId)
+            .get();
+
+        allFetched = ratingsSnapshot.docs.map((doc) {
+          final data = doc.data();
+          final rawCategories =
+              data['categories'] as Map<String, dynamic>? ?? {};
+          final cat = CategoryRating.fromMap(rawCategories);
+          final double star =
+              (data['overallRating'] ?? data['rating'] as num?)?.toDouble() ?? 5.0;
+
+          DateTime cTime = DateTime.now();
+          if (data['createdAt'] is Timestamp) {
+            cTime = (data['createdAt'] as Timestamp).toDate();
+          } else if (data['updatedAt'] is Timestamp) {
+            cTime = (data['updatedAt'] as Timestamp).toDate();
+          }
+
+          return ReviewModel(
+            id: doc.id,
+            teacherId: teacherId,
+            studentId: (data['studentId'] ?? '').toString(),
+            studentName: (data['studentName'] ?? 'Student').toString(),
+            studentPhotoUrl: (data['studentPhotoUrl'] ?? '').toString(),
+            categories: cat,
+            overallRating: star,
+            comment: (data['comment'] ?? '').toString(),
+            createdAt: cTime,
+            status: 'verified',
+            isVerified: true,
+          );
+        }).toList();
       }
+
+      if (onlyVerified) {
+        allFetched = allFetched
+            .where((r) =>
+                r.isEligibleForCalculation ||
+                r.isVerified ||
+                r.status == 'verified')
+            .toList();
+      }
+
+      // নতুন রিভিউ সবার উপরে রাখার জন্য মেমোরি সর্ট
+      allFetched.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+      if (limit > 0 && allFetched.length > limit) {
+        return allFetched.sublist(0, limit);
+      }
+
       return allFetched;
     } catch (e) {
       debugPrint("Error fetching teacher reviews: $e");
-      return [];
+      try {
+        final ratingsSnapshot = await _firestore
+            .collection('ratings')
+            .where('teacherId', isEqualTo: teacherId)
+            .get();
+
+        final fallbackList = ratingsSnapshot.docs.map((doc) {
+          final data = doc.data();
+          final rawCategories =
+              data['categories'] as Map<String, dynamic>? ?? {};
+          final cat = CategoryRating.fromMap(rawCategories);
+          final double star =
+              (data['overallRating'] ?? data['rating'] as num?)?.toDouble() ?? 5.0;
+          DateTime cTime = DateTime.now();
+          if (data['createdAt'] is Timestamp) {
+            cTime = (data['createdAt'] as Timestamp).toDate();
+          }
+          return ReviewModel(
+            id: doc.id,
+            teacherId: teacherId,
+            studentId: (data['studentId'] ?? '').toString(),
+            studentName: (data['studentName'] ?? 'Student').toString(),
+            studentPhotoUrl: (data['studentPhotoUrl'] ?? '').toString(),
+            categories: cat,
+            overallRating: star,
+            comment: (data['comment'] ?? '').toString(),
+            createdAt: cTime,
+            status: 'verified',
+            isVerified: true,
+          );
+        }).toList();
+
+        fallbackList.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+        return fallbackList;
+      } catch (_) {
+        return [];
+      }
     }
   }
 
