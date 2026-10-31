@@ -44,7 +44,7 @@ class GeminiService {
   int _activeModelIndex = 0;
   bool _isBusy = false;
 
-  final List> _conversationHistory = [];
+  final List<Map<String, String>> _conversationHistory = [];
 
   String _buildSystemInstruction([String? customSystemPrompt]) {
     if (customSystemPrompt != null && customSystemPrompt.trim().isNotEmpty) {
@@ -197,7 +197,7 @@ class GeminiService {
   }) async {
     await _ensureApiKeysLoaded();
 
-    final List> parts = [
+    final List<Map<String, dynamic>> parts = [
       {'text': prompt},
     ];
 
@@ -273,7 +273,7 @@ class GeminiService {
     }
 
     if (_resolvedGroqKey.isNotEmpty) {
-      final List> contentList = [
+      final List<Map<String, dynamic>> contentList = [
         {'type': 'text', 'text': prompt},
       ];
       for (final file in imageFiles) {
@@ -332,7 +332,7 @@ class GeminiService {
     throw Exception(lastError ?? 'Vision verification service unavailable.');
   }
 
-  Future> verifyGovernmentIdDocument({
+  Future<Map<String, dynamic>> verifyGovernmentIdDocument({
     required File documentFile,
     required String selectedDocType,
     String? expectedFullName,
@@ -347,7 +347,7 @@ Inspect the image carefully and respond ONLY with a valid JSON object using this
   "isRealGovernmentId": true or false,
   "detectedDocumentType": "Aadhaar Card" or "PAN Card" or "Passport" or "Invalid",
   "matchesSelectedType": true or false,
-  "hasClearFacePhoto": true or false,
+  "hasFacePhoto": true or false,
   "extractedFullName": "Full name in English written on the document, or empty string if unreadable",
   "fatherOrGuardianName": "Father or guardian name if visible, or empty string",
   "dateOfBirth": "DOB if visible, or empty string",
@@ -372,7 +372,7 @@ Strict Rules:
           (parsed['detectedDocumentType'] ?? 'Invalid').toString().trim();
       final bool matchesType = parsed['matchesSelectedType'] == true &&
           detectedType.toLowerCase() == selectedDocType.toLowerCase();
-      final bool hasFace = parsed['hasClearFacePhoto'] == true;
+      final bool hasFace = parsed['hasFacePhoto'] == true || parsed['hasClearFacePhoto'] == true;
       final String extractedName =
           (parsed['extractedFullName'] ?? '').toString().trim();
 
@@ -435,7 +435,7 @@ Strict Rules:
     }
   }
 
-  Future> verifyQualificationCertificate({
+  Future<Map<String, dynamic>> verifyQualificationCertificate({
     required File certificateFile,
     String? expectedFullName,
   }) async {
@@ -536,7 +536,7 @@ Strict Rules:
     }
   }
 
-  Future> verifyFaceMatchWithIdCard({
+  Future<Map<String, dynamic>> verifyFaceMatchWithIdCard({
     required File idDocumentFile,
     required File liveFaceFile,
     double minimumSimilarityThreshold = 85.0,
@@ -618,7 +618,7 @@ Respond ONLY with a valid JSON object in English using this exact schema:
   }) async {
     final String sysInstruction = _buildSystemInstruction(systemPrompt);
 
-    final List> contents = [];
+    final List<Map<String, dynamic>> contents = [];
     for (final turn in _conversationHistory) {
       final String role = turn['role'] == 'user' ? 'user' : 'model';
       final String text = (turn['content'] ?? '').trim();
@@ -707,7 +707,7 @@ Respond ONLY with a valid JSON object in English using this exact schema:
     }
 
     final String sysInstruction = _buildSystemInstruction(systemPrompt);
-    final List> messages = [
+    final List<Map<String, String>> messages = [
       {'role': 'system', 'content': sysInstruction},
       ..._conversationHistory.map((turn) => {
             'role': turn['role'] == 'user' ? 'user' : 'assistant',
