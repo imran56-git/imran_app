@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
-import '../models/review_model.dart';
+import 'package:flutter/services.dart';
 
 class RatingDialogWidget extends StatefulWidget {
   final String teacherName;
   final String? teacherProfileUrl;
   final Future<void> Function(
     double overallRating,
-    CategoryRating categories,
+    Map<String, double> categories,
     String comment,
   ) onSubmit;
 
@@ -23,7 +23,7 @@ class RatingDialogWidget extends StatefulWidget {
     String? teacherProfileUrl,
     required Future<void> Function(
       double overallRating,
-      CategoryRating categories,
+      Map<String, double> categories,
       String comment,
     ) onSubmit,
   }) {
@@ -117,13 +117,13 @@ class _RatingDialogWidgetState extends State<RatingDialogWidget> {
     setState(() => _isSubmitting = true);
 
     try {
-      final categories = CategoryRating(
-        teaching: _teaching,
-        behaviour: _behaviour,
-        communication: _communication,
-        knowledge: _knowledge,
-        punctuality: _punctuality,
-      );
+      final Map<String, double> categories = {
+        'teaching': _teaching,
+        'behaviour': _behaviour,
+        'communication': _communication,
+        'knowledge': _knowledge,
+        'punctuality': _punctuality,
+      };
 
       await widget.onSubmit(
         _calculatedOverallRating,
@@ -184,7 +184,10 @@ class _RatingDialogWidgetState extends State<RatingDialogWidget> {
               final starVal = index + 1.0;
               final isFilled = currentRating >= starVal;
               return GestureDetector(
-                onTap: () => onRatingChanged(starVal),
+                onTap: () {
+                  HapticFeedback.selectionClick();
+                  onRatingChanged(starVal);
+                },
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 2.0),
                   child: Icon(
