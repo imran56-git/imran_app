@@ -600,7 +600,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
   }
 
   void _openMapPicker() async {
-    final List>? results = await Navigator.push(
+    final List<dynamic>? results = await Navigator.push(
       context,
       MaterialPageRoute(builder: (context) => const LocationPickerScreen()),
     );
@@ -685,38 +685,6 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
     } catch (_) {
       if (mounted) setState(() => isLoading = false);
     }
-  }
-
-  Route _createGenieRoute(Widget page, Offset tapPosition) {
-    return PageRouteBuilder(
-      transitionDuration: const Duration(milliseconds: 380),
-      reverseTransitionDuration: const Duration(milliseconds: 320),
-      pageBuilder: (context, animation, secondaryAnimation) => page,
-      transitionsBuilder: (context, animation, secondaryAnimation, child) {
-        final screenSize = MediaQuery.of(context).size;
-        final double alignX = (tapPosition.dx / screenSize.width) * 2 - 1;
-        final double alignY = (tapPosition.dy / screenSize.height) * 2 - 1;
-        final Alignment alignment = Alignment(alignX, alignY);
-
-        final curve = CurvedAnimation(
-          parent: animation,
-          curve: Curves.easeOutCubic,
-          reverseCurve: Curves.easeInCubic,
-        );
-
-        return Align(
-          alignment: alignment,
-          child: ScaleTransition(
-            scale: curve,
-            alignment: alignment,
-            child: FadeTransition(
-              opacity: curve,
-              child: child,
-            ),
-          ),
-        );
-      },
-    );
   }
 
   void _showAnimatedPopup({
@@ -1968,53 +1936,107 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
     );
   }
 
+  Future<bool> _checkIfAcceptedStudent(String currentUID) async {
+    final String targetTeacherId = widget.currentUserId;
+    if (currentUID.isEmpty || targetTeacherId.isEmpty || currentUID == targetTeacherId) {
+      return false;
+    }
+
+    try {
+      final reqSnap = await _firestore
+          .collection('follow_requests')
+          .where('teacherId', isEqualTo: targetTeacherId)
+          .where('senderId', isEqualTo: currentUID)
+          .where('status', isEqualTo: 'accepted')
+          .limit(1)
+          .get();
+
+      if (reqSnap.docs.isNotEmpty) return true;
+
+      final backupSnap = await _firestore
+          .collection('follow_requests')
+          .where('teacherId', isEqualTo: targetTeacherId)
+          .where('studentId', isEqualTo: currentUID)
+          .where('status', isEqualTo: 'accepted')
+          .limit(1)
+          .get();
+
+      if (backupSnap.docs.isNotEmpty) return true;
+
+      final connectedSnap = await _firestore
+          .collection('teachers')
+          .doc(targetTeacherId)
+          .collection('connected_students')
+          .doc(currentUID)
+          .get();
+
+      if (connectedSnap.exists) return true;
+
+      return false;
+    } catch (_) {
+      return false;
+    }
+  }
+
   Widget _buildStudentRatingActionButton() {
-    String currentUID = _auth.currentUser?.uid ?? "";
-    if (currentUID.isEmpty) return const SizedBox();
+    final String currentUID = _auth.currentUser?.uid ?? "";
+    if (currentUID.isEmpty || isOwnProfile) return const SizedBox.shrink();
 
-    return FutureBuilder<DocumentSnapshot>(
-      future: _firestore
-          .collection('ratings')
-          .doc('${widget.currentUserId}_$currentUID')
-          .get(),
-      builder: (context, snapshot) {
-        bool hasRated = snapshot.hasData && snapshot.data!.exists;
+    return FutureBuilder<bool>(
+      future: _checkIfAcceptedStudent(currentUID),
+      builder: (context, authSnapshot) {
+        final bool isAcceptedStudent = authSnapshot.data == true;
 
-        return Padding(
-          padding: const EdgeInsets.only(top: 10),
-          child: ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(
-              backgroundColor:
-                  hasRated ? const Color(0xFFD97706) : const Color(0xFFF59E0B),
-              foregroundColor: Colors.white,
-              elevation: 0,
-              minimumSize: const Size(190, 44),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14)),
-            ),
-            icon: Icon(
-                hasRated ? Icons.edit_note_rounded : Icons.star_rounded,
-                size: 19),
-            label: Text(
-              hasRated ? "Edit Rating" : "Give Rating",
-              style: const TextStyle(fontWeight: FontWeight.w800),
-            ),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => TeacherReviewsScreen(
-                    teacherId: widget.currentUserId,
-                    teacherName: _nameController.text.isEmpty
-                        ? "Teacher"
-                        : _nameController.text,
-                    teacherProfileUrl: teacherData?['profileImageUrl'],
-                    currentStudentId: currentUID,
-                  ),
+        if (!isAcceptedStudent) {
+          return const SizedBox.shrink();
+        }
+
+        return FutureBuilder<DocumentSnapshot>(
+          future: _firestore
+              .collection('ratings')
+              .doc('${widget.currentUserId}_$currentUID')
+              .get(),
+          builder: (context, snapshot) {
+            bool hasRated = snapshot.hasData && snapshot.data!.exists;
+
+            return Padding(
+              padding: const EdgeInsets.only(top: 10),
+              child: ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: hasRated
+                      ? const Color(0xFFD97706)
+                      : const Color(0xFFF59E0B),
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  minimumSize: const Size(190, 44),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14)),
                 ),
-              ).then((_) => fetchTeacherData());
-            },
-          ),
+                icon: Icon(
+                    hasRated ? Icons.edit_note_rounded : Icons.star_rounded,
+                    size: 19),
+                label: Text(
+                  hasRated ? "Edit Rating" : "Give Rating",
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => TeacherReviewsScreen(
+                        teacherId: widget.currentUserId,
+                        teacherName: _nameController.text.isEmpty
+                            ? "Teacher"
+                            : _nameController.text,
+                        teacherProfileUrl: teacherData?['profileImageUrl'],
+                        currentStudentId: currentUID,
+                      ),
+                    ),
+                  ).then((_) => fetchTeacherData());
+                },
+              ),
+            );
+          },
         );
       },
     );
