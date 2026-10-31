@@ -128,6 +128,81 @@ class _AiAssistantScreenState extends State<AiAssistantScreen>
         lower.contains('connection error. please try again');
   }
 
+  /// গাণিতিক ও পদার্থবিজ্ঞানের ফর্মুলা এবং অপ্রয়োজনীয় ডলার সাইন ক্লিন করার মেথড
+  String _cleanMathAndText(String raw) {
+    if (raw.isEmpty) return raw;
+
+    String text = raw;
+
+    // ১. ল্যাটেক্স ফ্র্যাকশন এবং স্কয়ার রুট রূপান্তর
+    text = text.replaceAllMapped(
+      RegExp(r'\\frac\{([^}]+)\}\{([^}]+)\}'),
+      (m) => '(${m[1]} / ${m[2]})',
+    );
+    text = text.replaceAllMapped(
+      RegExp(r'\\sqrt\{([^}]+)\}'),
+      (m) => '√(${m[1]})',
+    );
+    text = text.replaceAll(r'\sqrt', '√');
+
+    // ২. সাধারণ ল্যাটেক্স চিহ্নের ইউনিকোড রূপান্তর
+    final Map<String, String> mathReplacements = {
+      r'\times': '×',
+      r'\div': '÷',
+      r'\sum': '∑',
+      r'\int': '∫',
+      r'\pm': '±',
+      r'\mp': '∓',
+      r'\cdot': '·',
+      r'\approx': '≈',
+      r'\neq': '≠',
+      r'\leq': '≤',
+      r'\geq': '≥',
+      r'\infty': '∞',
+      r'\Delta': '∆',
+      r'\pi': 'π',
+      r'\theta': 'θ',
+      r'\alpha': 'α',
+      r'\beta': 'β',
+      r'\gamma': 'γ',
+      r'\lambda': 'λ',
+      r'\mu': 'μ',
+      r'\omega': 'ω',
+      r'\quad': '  ',
+      r'\qquad': '    ',
+    };
+
+    mathReplacements.forEach((key, val) {
+      text = text.replaceAll(key, val);
+    });
+
+    // ৩. \text{...} ট্যাগ পরিষ্কার করা
+    text = text.replaceAllMapped(
+      RegExp(r'\\text\{([^}]+)\}'),
+      (m) => m[1] ?? '',
+    );
+
+    // ৪. ব্লক সমীকরণ ($$ ... $$) বোল্ড ফর্মে রূপান্তর
+    text = text.replaceAllMapped(
+      RegExp(r'\$\$(.*?)\$\$', dotAll: true),
+      (m) {
+        final inner = (m[1] ?? '').trim();
+        return '\n\n> **$inner**\n\n';
+      },
+    );
+
+    // ৫. ইনলাইন সমীকরণ ($ ... $) পরিষ্কার করা
+    text = text.replaceAllMapped(
+      RegExp(r'\$([^\$\n]+)\$'),
+      (m) {
+        final inner = (m[1] ?? '').trim();
+        return '**$inner**';
+      },
+    );
+
+    return text;
+  }
+
   Future<void> _attemptDirectRescue(
       String prompt, ChatMessage aiMessage) async {
     if (!mounted) return;
@@ -959,7 +1034,8 @@ class _AiAssistantScreenState extends State<AiAssistantScreen>
                                                 ),
                                               )
                                             : MarkdownBody(
-                                                data: message.text,
+                                                data: _cleanMathAndText(
+                                                    message.text),
                                                 selectable: false,
                                                 onTapLink:
                                                     (text, href, title) =>
@@ -991,6 +1067,52 @@ class _AiAssistantScreenState extends State<AiAssistantScreen>
                                                     color: primaryNavy,
                                                     fontWeight: FontWeight.w600,
                                                     fontSize: 15,
+                                                  ),
+                                                  blockquote: const TextStyle(
+                                                    color: Color(0xFF1E3A8A),
+                                                    fontWeight: FontWeight.w600,
+                                                    fontSize: 14.5,
+                                                    height: 1.4,
+                                                  ),
+                                                  blockquoteDecoration:
+                                                      BoxDecoration(
+                                                    color:
+                                                        const Color(0xFFEFF6FF),
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                            10),
+                                                    border: const Border(
+                                                      left: BorderSide(
+                                                        color:
+                                                            Color(0xFF3B82F6),
+                                                        width: 4,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                  blockquotePadding:
+                                                      const EdgeInsets
+                                                          .symmetric(
+                                                          horizontal: 12,
+                                                          vertical: 8),
+                                                  code: const TextStyle(
+                                                    color: Color(0xFF0F172A),
+                                                    backgroundColor:
+                                                        Color(0xFFF1F5F9),
+                                                    fontFamily: 'monospace',
+                                                    fontSize: 13.5,
+                                                    fontWeight: FontWeight.bold,
+                                                  ),
+                                                  codeblockDecoration:
+                                                      BoxDecoration(
+                                                    color:
+                                                        const Color(0xFFF8FAFC),
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                            10),
+                                                    border: Border.all(
+                                                      color: const Color(
+                                                          0xFFE2E8F0),
+                                                    ),
                                                   ),
                                                 ),
                                               ),
