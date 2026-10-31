@@ -600,7 +600,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
   }
 
   void _openMapPicker() async {
-    final List<Map<String, dynamic>>? results = await Navigator.push(
+    final List>? results = await Navigator.push(
       context,
       MaterialPageRoute(builder: (context) => const LocationPickerScreen()),
     );
@@ -777,68 +777,6 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                     },
                     child: Text(confirmText,
                         style: const TextStyle(
-                            fontWeight: FontWeight.bold, fontSize: 14.5)),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  void _showExitAnimatedPopup() {
-    showGeneralDialog(
-      context: context,
-      barrierDismissible: true,
-      barrierLabel: '',
-      transitionDuration: const Duration(milliseconds: 300),
-      pageBuilder: (context, a1, a2) => const SizedBox(),
-      transitionBuilder: (dialogContext, anim, a2, child) {
-        return BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
-          child: ScaleTransition(
-            scale: Tween<double>(begin: 0.85, end: 1.0).animate(
-              CurvedAnimation(parent: anim, curve: Curves.easeOutBack),
-            ),
-            child: FadeTransition(
-              opacity: anim,
-              child: AlertDialog(
-                backgroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(22)),
-                title: const Text("Exit App",
-                    style: TextStyle(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 19,
-                        color: _primaryNavy)),
-                content: const Text("Are you sure you want to exit?",
-                    style:
-                        TextStyle(fontSize: 14.5, color: Color(0xFF475569))),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(dialogContext),
-                    child: const Text('Cancel',
-                        style: TextStyle(
-                            color: Color(0xFF64748B),
-                            fontWeight: FontWeight.bold,
-                            fontSize: 14.5)),
-                  ),
-                  ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFFDC2626),
-                      foregroundColor: Colors.white,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12)),
-                    ),
-                    onPressed: () {
-                      Navigator.pop(dialogContext);
-                      SystemNavigator.pop();
-                    },
-                    child: const Text('Exit',
-                        style: TextStyle(
                             fontWeight: FontWeight.bold, fontSize: 14.5)),
                   ),
                 ],
@@ -1189,7 +1127,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
   }
 
   void _showPendingDuesSheet(
-      double totalDue, List<Map<String, dynamic>> dueStudents) {
+      double totalDue, List> dueStudents) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -1514,14 +1452,12 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
             ?.toString();
 
     return PopScope(
-      canPop: canPopScreen && !_isMenuExpanded,
-      onPopInvokedWithResult: (didPop, result) async {
+      canPop: !_isMenuExpanded,
+      onPopInvokedWithResult: (didPop, result) {
         if (didPop) return;
         if (_isMenuExpanded) {
           _closeMenu();
-          return;
         }
-        _showExitAnimatedPopup();
       },
       child: Scaffold(
         backgroundColor: const Color(0xFF0F172A),
@@ -1808,7 +1744,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                                                                 color: Colors
                                                                     .white,
                                                                 size: 15,
-                                                             ),
+                                                              ),
                                                             const SizedBox(
                                                                 width: 6),
                                                             Text(
@@ -2640,7 +2576,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
               stream: _studentFeesStream,
               builder: (context, snapshot) {
                 double totalPending = 0;
-                List<Map<String, dynamic>> dueStudents = [];
+                List> dueStudents = [];
 
                 if (snapshot.hasData) {
                   for (var doc in snapshot.data!.docs) {
