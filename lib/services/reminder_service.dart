@@ -9,7 +9,7 @@ class ReminderService {
   static const String officialLogoAsset = 'assets/images/app_logo.png';
   static const String verifiedBadgeAsset = 'assets/images/Verified_Batch.png';
 
-  Future<Map<String, dynamic>?> searchStudentById(String studentId) async {
+  Future?> searchStudentById(String studentId) async {
     final cleanId = studentId.trim();
     if (cleanId.isEmpty) return null;
 
@@ -70,7 +70,38 @@ class ReminderService {
     }
   }
 
+  /// নির্দিষ্ট শিক্ষক এবং শিক্ষার্থীর জন্য ইতিমধ্যে কোনো সক্রিয় রিমাইন্ডার আছে কি না যাচাই করে
+  Future<bool> hasActiveReminder({
+    required String teacherId,
+    required String studentId,
+  }) async {
+    try {
+      final querySnapshot = await _firestore
+          .collection('payment_reminders')
+          .where('teacherId', isEqualTo: teacherId)
+          .where('studentId', isEqualTo: studentId)
+          .get();
+
+      return querySnapshot.docs.any((doc) {
+        final status = (doc.data()['status'] ?? '').toString().toLowerCase();
+        return status == 'scheduled' || status == 'active' || status == 'sent' || status == 'pending';
+      });
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<void> sendPaymentReminder(ReminderModel reminder) async {
+    // সার্ভার/সার্ভিস লেভেলে ডুপ্লিকেট সক্রিয় রিমাইন্ডার প্রতিরোধ
+    final bool duplicateExists = await hasActiveReminder(
+      teacherId: reminder.teacherId,
+      studentId: reminder.studentId,
+    );
+
+    if (duplicateExists) {
+      throw Exception('An active reminder already exists for this student.');
+    }
+
     final reminderRef = _firestore.collection('payment_reminders').doc(reminder.reminderId);
 
     final reminderData = reminder.toMap();
