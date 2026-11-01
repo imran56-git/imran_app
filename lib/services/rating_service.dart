@@ -39,7 +39,6 @@ class RatingService {
     }
   }
 
-  /// নিশ্চিত করে যে শিক্ষার্থী সত্যিই ওই শিক্ষকের অ্যাক্সেপ্টেড স্টুডেন্ট কি না
   Future<bool> isStudentAcceptedByTeacher({
     required String teacherId,
     required String studentId,
@@ -84,7 +83,7 @@ class RatingService {
     }
   }
 
-  Future> submitReview({
+  Future<Map<String, dynamic>> submitReview({
     required String teacherId,
     required String studentId,
     required String studentName,
@@ -96,7 +95,6 @@ class RatingService {
     required String reviewText,
   }) async {
     try {
-      // ১. কঠোর স্টুডেন্ট এলিজিবিলিটি চেক
       final bool isAccepted = await isStudentAcceptedByTeacher(
         teacherId: teacherId,
         studentId: studentId,
@@ -239,7 +237,7 @@ class RatingService {
           .where('status', isEqualTo: 'verified')
           .get();
 
-      List> rawReviewDocs =
+      List<Map<String, dynamic>> rawReviewDocs =
           reviewsQuery.docs.map((d) => d.data()).toList();
 
       if (rawReviewDocs.isEmpty) {
@@ -284,7 +282,7 @@ class RatingService {
       double seasonTotalStars = 0;
       int seasonReviewsCount = 0;
 
-      final Map<String, List>> subjectReviewsMap = {};
+      final Map<String, List<Map<String, dynamic>>> subjectReviewsMap = {};
 
       for (var data in rawReviewDocs) {
         final double star = (data['overallRating'] ?? data['rating'] as num?)?.toDouble() ?? 5.0;
