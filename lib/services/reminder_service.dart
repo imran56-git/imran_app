@@ -9,7 +9,7 @@ class ReminderService {
   static const String officialLogoAsset = 'assets/images/app_logo.png';
   static const String verifiedBadgeAsset = 'assets/images/Verified_Batch.png';
 
-  Future?> searchStudentById(String studentId) async {
+  Future<Map<String, dynamic>?> searchStudentById(String studentId) async {
     final cleanId = studentId.trim();
     if (cleanId.isEmpty) return null;
 
@@ -70,7 +70,6 @@ class ReminderService {
     }
   }
 
-  /// নির্দিষ্ট শিক্ষক এবং শিক্ষার্থীর জন্য ইতিমধ্যে কোনো সক্রিয় রিমাইন্ডার আছে কি না যাচাই করে
   Future<bool> hasActiveReminder({
     required String teacherId,
     required String studentId,
@@ -92,7 +91,6 @@ class ReminderService {
   }
 
   Future<void> sendPaymentReminder(ReminderModel reminder) async {
-    // সার্ভার/সার্ভিস লেভেলে ডুপ্লিকেট সক্রিয় রিমাইন্ডার প্রতিরোধ
     final bool duplicateExists = await hasActiveReminder(
       teacherId: reminder.teacherId,
       studentId: reminder.studentId,
