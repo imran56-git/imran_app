@@ -1,614 +1,360 @@
-Fix the corrupted generic types and syntax errors in this complete Flutter Dart file for 'lib/widgets/chat_input_bar.dart'.
-
-Problem & Requirements:
-1. Restore missing generic type parameters:
-   - Line 68: Change `static const List> _quickStickers = [` to `static const List> _quickStickers = [`.
-   - Line 188: Change `final List> groupCategories = [` to `final List> groupCategories = [`.
-2. Ensure all list structures, choices, and state updates remain completely intact.
-3. Output the complete replacement code directly without omissions or internal comments.
-
-Start your response immediately with ```dart on line 1 and end with ``` on the last line. Output the ENTIRE file in ONE SINGLE code block. Do NOT write any introductory or plain text outside the code block.
-
-Source Code:
-import 'dart:async';
-import 'dart:io';
-import 'package:file_picker/file_picker.dart';
+import 'dart:math' as math;
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:image_picker/image_picker.dart';
-import '../services/chat_service.dart';
+import 'package:url_launcher/url_launcher.dart';
+import '../widgets/teacher_card_widget.dart';
+import '../widgets/badge_details_sheet.dart';
+import 'chat_screen.dart';
+import 'teacher_profile_screen.dart';
 
-class ChatInputBar extends StatefulWidget {
-  final String chatRoomId;
-  final String senderId;
-  final String receiverId;
-  final Function(bool) onTypingChanged;
-  final String? replyToMessageId;
-  final String? replyToText;
-  final VoidCallback? onCancelReply;
-  final bool isMutedByTeacher;
-  final String? disabledReasonText;
-  final String initialMessageCategory;
+class TeacherSearchResultScreen extends StatefulWidget {
+  final Map<String, dynamic> filters;
 
-  const ChatInputBar({
-    super.key,
-    required this.chatRoomId,
-    required this.senderId,
-    required this.receiverId,
-    required this.onTypingChanged,
-    this.replyToMessageId,
-    this.replyToText,
-    this.onCancelReply,
-    this.isMutedByTeacher = false,
-    this.disabledReasonText,
-    this.initialMessageCategory = 'general',
-  });
+  const TeacherSearchResultScreen({super.key, required this.filters});
 
   @override
-  State<ChatInputBar> createState() => _ChatInputBarState();
+  State<TeacherSearchResultScreen> createState() =>
+      _TeacherSearchResultScreenState();
 }
 
-class _ChatInputBarState extends State<ChatInputBar> {
-  final TextEditingController _controller = TextEditingController();
-  final FocusNode _focusNode = FocusNode();
-  final ChatService _chatService = ChatService();
-  final ImagePicker _imagePicker = ImagePicker();
+class _TeacherSearchResultScreenState extends State<TeacherSearchResultScreen> {
+  final double _studentLat = 22.5726;
+  final double _studentLng = 88.3639;
 
-  bool _isTyping = false;
-  bool _isUploading = false;
-  bool _showEmojiPanel = false;
-  bool _isRecordingVoice = false;
-  int _recordingSeconds = 0;
-  Timer? _recordingTimer;
-
-  String _attachmentCategory = 'general';
-  String? _failedMessageText;
-  String? _failedReplyId;
-  String? _failedReplyText;
+  late final Stream<QuerySnapshot> _teachersStream;
+  QuerySnapshot? _lastSnapshot;
+  String _selectedSort = 'best';
 
   static const Color _primaryNavy = Color(0xFF0F172A);
   static const Color _brandBlue = Color(0xFF1E4C7A);
   static const Color _accentBlue = Color(0xFF2563EB);
-
-  static const List<String> _commonEmojis = [
-    '😀', '😂', '😊', '😍', '🤔', '😎', '😢', '😭',
-    '👍', '👎', '👏', '🙏', '🔥', '🎉', '❤️', '💯',
-    '📚', '✏️', '📝', '🎓', '✅', '❌', '⭐', '💡',
-    '📌', '📢', '🏆', '🤝', '🙋‍♂️', '🙋‍♀️', '⏰', '🚀',
-  ];
-
-  static const List> _quickStickers = [
-    {'emoji': '📚✨', 'label': 'Study Hard!'},
-    {'emoji': '✅👍', 'label': 'Well Done!'},
-    {'emoji': '❓🙋', 'label': 'I have a doubt'},
-    {'emoji': '📝⏰', 'label': 'Homework Due'},
-    {'emoji': '🎯🏆', 'label': 'Keep Going!'},
-    {'emoji': '🙏📘', 'label': 'Thank You Sir'},
-  ];
-
-  String get _effectiveChatRoomId {
-    final direct = widget.chatRoomId.trim();
-    if (direct.isNotEmpty) {
-      return direct;
-    }
-    return '${widget.receiverId}_${widget.senderId}';
-  }
+  static const Color _scaffoldBg = Color(0xFFF8FAFC);
 
   @override
   void initState() {
     super.initState();
-    _attachmentCategory = widget.initialMessageCategory;
-    _controller.addListener(_onTextChanged);
-    _focusNode.addListener(() {
-      if (_focusNode.hasFocus && _showEmojiPanel && mounted) {
-        setState(() => _showEmojiPanel = false);
-      }
-    });
+    _teachersStream =
+        FirebaseFirestore.instance.collection('teachers').snapshots();
   }
 
-  @override
-  void didUpdateWidget(covariant ChatInputBar oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.initialMessageCategory != widget.initialMessageCategory) {
-      _attachmentCategory = widget.initialMessageCategory;
-    }
+  double _calculateHaversineDistance(
+      double lat1, double lon1, double lat2, double lon2) {
+    const double earthRadius = 6371.0;
+
+    double dLat = _toRadians(lat2 - lat1);
+    double dLon = _toRadians(lon2 - lon1);
+
+    double a = math.sin(dLat / 2) * math.sin(dLat / 2) +
+        math.cos(_toRadians(lat1)) *
+            math.cos(_toRadians(lat2)) *
+            math.sin(dLon / 2) *
+            math.sin(dLon / 2);
+
+    double c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a));
+    return earthRadius * c;
   }
 
-  @override
-  void dispose() {
-    _recordingTimer?.cancel();
-    if (_isTyping) {
-      _chatService.updateTypingStatus(
-          _effectiveChatRoomId, widget.senderId, false);
-    }
-    _controller.removeListener(_onTextChanged);
-    _controller.dispose();
-    _focusNode.dispose();
-    super.dispose();
+  double _toRadians(double degree) {
+    return degree * (math.pi / 180.0);
   }
 
-  void _onTextChanged() {
-    final bool typing = _controller.text.trim().isNotEmpty;
-    if (_isTyping != typing) {
-      if (mounted) {
-        setState(() => _isTyping = typing);
-      }
-      widget.onTypingChanged(_isTyping);
-      _chatService.updateTypingStatus(
-          _effectiveChatRoomId, widget.senderId, _isTyping);
-    }
-  }
-
-  void _toggleEmojiPanel() {
-    if (_isUploading || widget.isMutedByTeacher) return;
-    HapticFeedback.lightImpact();
-    if (_showEmojiPanel) {
-      setState(() => _showEmojiPanel = false);
-      _focusNode.requestFocus();
+  Future<void> _openGoogleMap(
+      double lat, double lng, String teacherName) async {
+    final Uri googleMapsUrl = Uri.parse(
+        'https://www.google.com/maps/search/?api=1&query=$lat,$lng');
+    if (await canLaunchUrl(googleMapsUrl)) {
+      await launchUrl(googleMapsUrl, mode: LaunchMode.externalApplication);
     } else {
-      FocusScope.of(context).unfocus();
-      setState(() => _showEmojiPanel = true);
+      debugPrint('Could not launch Google Maps');
     }
   }
 
-  void _insertEmoji(String emoji) {
-    HapticFeedback.selectionClick();
-    final text = _controller.text;
-    final selection = _controller.selection;
-    final int start = selection.start >= 0 ? selection.start : text.length;
-    final int end = selection.end >= 0 ? selection.end : text.length;
-    final String newText = text.replaceRange(start, end, emoji);
-    _controller.value = TextEditingValue(
-      text: newText,
-      selection: TextSelection.collapsed(offset: start + emoji.length),
-    );
+  String _getChatRoomId(String teacherId, String studentId) {
+    return "${teacherId}_$studentId";
   }
 
-  Future<void> _sendQuickSticker(String stickerText) async {
-    if (_isUploading || widget.isMutedByTeacher) return;
-    HapticFeedback.lightImpact();
-    setState(() => _showEmojiPanel = false);
-    try {
-      await _chatService.sendMessage(
-        chatId: _effectiveChatRoomId,
-        senderId: widget.senderId,
-        receiverId: widget.receiverId,
-        message: stickerText,
-        type: 'text',
-        replyToMessageId: widget.replyToMessageId,
-        replyToText: widget.replyToText,
-        clientMessageId:
-            '${widget.senderId}_${DateTime.now().millisecondsSinceEpoch}',
-      );
-      if (widget.onCancelReply != null) {
-        widget.onCancelReply!();
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to send sticker: $e')),
-        );
+  int _parseExperienceYears(Map<String, dynamic> data) {
+    final raw = data['experience'] ??
+        data['teachingExperience'] ??
+        data['experienceYears'] ??
+        0;
+    if (raw is int) return raw;
+    if (raw is num) return raw.toInt();
+    final match = RegExp(r'\d+').firstMatch(raw.toString());
+    if (match != null) {
+      return int.tryParse(match.group(0)!) ?? 0;
+    }
+    return 0;
+  }
+
+  String _extractLocationDisplay(Map<String, dynamic> data) {
+    final direct =
+        (data['teachingLocation'] ?? data['location'] ?? data['address'] ?? '')
+            .toString()
+            .trim();
+    if (direct.isNotEmpty) return direct;
+
+    if (data['locations'] is List && (data['locations'] as List).isNotEmpty) {
+      final firstLoc = (data['locations'] as List).first;
+      if (firstLoc is Map) {
+        final addr = (firstLoc['address'] ?? '').toString().trim();
+        if (addr.isNotEmpty) return addr;
+      } else if (firstLoc != null) {
+        final addr = firstLoc.toString().trim();
+        if (addr.isNotEmpty) return addr;
       }
     }
+    return 'Location N/A';
   }
 
-  void _showAttachmentBottomSheet() {
-    if (_isUploading || widget.isMutedByTeacher) return;
-    HapticFeedback.mediumImpact();
-
-    final bool isGroupChat = widget.receiverId == 'group';
-    final List> groupCategories = [
-      {'key': 'general', 'label': 'General'},
-      {'key': 'study_material', 'label': 'Study Material'},
-      {'key': 'homework', 'label': 'Homework'},
-      {'key': 'assignment', 'label': 'Assignment'},
-      {'key': 'announcement', 'label': 'Announcement'},
-    ];
-
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (context, setSheetState) {
-            return Container(
-              margin: const EdgeInsets.all(16),
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(24),
-                boxShadow: [
-                  BoxShadow(
-                    color: _primaryNavy.withOpacity(0.12),
-                    blurRadius: 20,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Text(
-                    "Send Attachment",
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                      color: _brandBlue,
-                    ),
-                  ),
-                  if (isGroupChat) ...[
-                    const SizedBox(height: 12),
-                    SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: Row(
-                        children: groupCategories.map((cat) {
-                          final bool isSel =
-                              _attachmentCategory == cat['key'];
-                          return Padding(
-                            padding: const EdgeInsets.only(right: 6),
-                            child: ChoiceChip(
-                              label: Text(
-                                cat['label']!,
-                                style: const TextStyle(fontSize: 11.5),
-                              ),
-                              selected: isSel,
-                              selectedColor:
-                                  _brandBlue.withOpacity(0.15),
-                              labelStyle: TextStyle(
-                                color: isSel
-                                    ? _brandBlue
-                                    : Colors.black87,
-                                fontWeight:
-                                    isSel ? FontWeight.bold : FontWeight.normal,
-                              ),
-                              onSelected: (_) {
-                                setSheetState(() {
-                                  _attachmentCategory = cat['key']!;
-                                });
-                                setState(() {
-                                  _attachmentCategory = cat['key']!;
-                                });
-                              },
-                            ),
-                          );
-                        }).toList(),
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: 16),
-                  GridView.count(
-                    crossAxisCount: 3,
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    mainAxisSpacing: 16,
-                    crossAxisSpacing: 16,
-                    children: [
-                      _attachmentTile(Icons.photo_library_rounded, "Gallery",
-                          Colors.purple, 'gallery'),
-                      _attachmentTile(Icons.camera_alt_rounded, "Camera",
-                          Colors.pink, 'camera'),
-                      _attachmentTile(Icons.description_rounded,
-                          "PDF / Document", Colors.blue, 'document'),
-                      _attachmentTile(Icons.audiotrack_rounded, "Audio File",
-                          Colors.orange, 'audio'),
-                      _attachmentTile(Icons.video_library_rounded, "Video",
-                          Colors.red, 'video'),
-                      _attachmentTile(Icons.location_on_rounded, "Location",
-                          Colors.teal, 'location'),
-                    ],
-                  ),
-                ],
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
-  Widget _attachmentTile(
-      IconData icon, String label, Color color, String type) {
-    return InkWell(
-      onTap: () async {
-        Navigator.pop(context);
-        await _handleAttachmentPick(type);
-      },
-      borderRadius: BorderRadius.circular(16),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          CircleAvatar(
-            radius: 26,
-            backgroundColor: color.withOpacity(0.12),
-            child: Icon(icon, color: color, size: 24),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            label,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w500,
-              color: Colors.black87,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _handleAttachmentPick(String type) async {
-    if (mounted) setState(() => _isUploading = true);
-    try {
-      if (type == 'gallery') {
-        final XFile? image = await _imagePicker.pickImage(
-            source: ImageSource.gallery, imageQuality: 80);
-        if (image != null) {
-          await _chatService.sendImageFile(
-            chatRoomId: _effectiveChatRoomId,
-            senderId: widget.senderId,
-            receiverId: widget.receiverId,
-            file: File(image.path),
-            messageCategory: _attachmentCategory,
-          );
+  String _extractAllLocationsSearchable(Map<String, dynamic> data) {
+    final buffer = StringBuffer();
+    buffer.write('${data['teachingLocation'] ?? ''} ');
+    buffer.write('${data['location'] ?? ''} ');
+    buffer.write('${data['address'] ?? ''} ');
+    if (data['locations'] is List) {
+      for (final item in (data['locations'] as List)) {
+        if (item is Map) {
+          buffer.write('${item['address'] ?? ''} ');
+        } else if (item != null) {
+          buffer.write('$item ');
         }
-      } else if (type == 'camera') {
-        final XFile? image = await _imagePicker.pickImage(
-            source: ImageSource.camera, imageQuality: 80);
-        if (image != null) {
-          await _chatService.sendImageFile(
-            chatRoomId: _effectiveChatRoomId,
-            senderId: widget.senderId,
-            receiverId: widget.receiverId,
-            file: File(image.path),
-            messageCategory: _attachmentCategory,
-          );
-        }
-      } else if (type == 'video') {
-        final XFile? video =
-            await _imagePicker.pickVideo(source: ImageSource.gallery);
-        if (video != null) {
-          await _chatService.sendVideoFile(
-            chatRoomId: _effectiveChatRoomId,
-            senderId: widget.senderId,
-            receiverId: widget.receiverId,
-            file: File(video.path),
-            messageCategory: _attachmentCategory,
-          );
-        }
-      } else if (type == 'document') {
-        final FilePickerResult? result = await FilePicker.platform.pickFiles(
-          type: FileType.custom,
-          allowedExtensions: [
-            'pdf',
-            'doc',
-            'docx',
-            'ppt',
-            'pptx',
-            'xls',
-            'xlsx',
-            'txt',
-            'zip'
-          ],
-        );
-        if (result != null && result.files.single.path != null) {
-          await _chatService.sendDocumentFile(
-            chatRoomId: _effectiveChatRoomId,
-            senderId: widget.senderId,
-            receiverId: widget.receiverId,
-            file: File(result.files.single.path!),
-            fileName: result.files.single.name,
-            messageCategory: _attachmentCategory,
-          );
-        }
-      } else if (type == 'audio') {
-        final FilePickerResult? result =
-            await FilePicker.platform.pickFiles(type: FileType.audio);
-        if (result != null && result.files.single.path != null) {
-          await _chatService.sendAudioFile(
-            chatRoomId: _effectiveChatRoomId,
-            senderId: widget.senderId,
-            receiverId: widget.receiverId,
-            file: File(result.files.single.path!),
-          );
-        }
-      } else if (type == 'location') {
-        await _chatService.sendLocation(
-          _effectiveChatRoomId,
-          widget.senderId,
-          widget.receiverId,
-          22.5726,
-          88.3639,
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to send attachment: $e')),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isUploading = false);
       }
     }
+    return buffer.toString().toLowerCase();
   }
 
-  Future<void> _handleSend() async {
-    final text = _controller.text.trim();
-    if (text.isEmpty || _isUploading || widget.isMutedByTeacher) return;
+  Map<String, double> _extractCoordinates(Map<String, dynamic> data) {
+    double? lat = double.tryParse(data['latitude']?.toString() ?? '');
+    double? lng = double.tryParse(data['longitude']?.toString() ?? '');
 
-    HapticFeedback.lightImpact();
-    final String? currentReplyId = widget.replyToMessageId;
-    final String? currentReplyText = widget.replyToText;
-    final String clientMsgId =
-        '${widget.senderId}_${DateTime.now().millisecondsSinceEpoch}';
+    if ((lat == null || lng == null) &&
+        data['locations'] is List &&
+        (data['locations'] as List).isNotEmpty) {
+      final firstLoc = (data['locations'] as List).first;
+      if (firstLoc is Map) {
+        lat ??= double.tryParse(
+            (firstLoc['lat'] ?? firstLoc['latitude'])?.toString() ?? '');
+        lng ??= double.tryParse(
+            (firstLoc['lng'] ?? firstLoc['longitude'])?.toString() ?? '');
+      }
+    }
 
-    _controller.clear();
-    if (mounted) {
-      setState(() {
-        _isTyping = false;
-        _failedMessageText = null;
+    if ((lat == null || lng == null) && data['teachingLocation'] != null) {
+      final parts = data['teachingLocation'].toString().split(',');
+      if (parts.length == 2) {
+        lat = double.tryParse(parts[0].trim());
+        lng = double.tryParse(parts[1].trim());
+      }
+    }
+
+    if ((lat == null || lng == null) && data['location'] != null) {
+      final parts = data['location'].toString().split(',');
+      if (parts.length == 2) {
+        lat = double.tryParse(parts[0].trim());
+        lng = double.tryParse(parts[1].trim());
+      }
+    }
+
+    return {'lat': lat ?? 0.0, 'lng': lng ?? 0.0};
+  }
+
+  List<Map<String, String>> _buildActiveFilterChipsData() {
+    final List<Map<String, String>> list = [];
+    final f = widget.filters;
+
+    final id = (f['teacherId'] ?? '').toString().trim();
+    if (id.isNotEmpty) {
+      list.add({'label': 'ID: $id'});
+      return list;
+    }
+
+    final name = (f['name'] ?? '').toString().trim();
+    final subject = (f['subject'] ?? '').toString().trim();
+    final location = (f['location'] ?? '').toString().trim();
+    final exp = (f['experience'] ?? '').toString().trim();
+    final minR = f['minRadius'];
+    final maxR = f['maxRadius'];
+
+    if (name.isNotEmpty) list.add({'label': 'Name: $name'});
+    if (subject.isNotEmpty) list.add({'label': subject});
+    if (location.isNotEmpty) list.add({'label': location});
+    if (exp.isNotEmpty) list.add({'label': '$exp+ Yrs Exp'});
+    if (minR != null && maxR != null) {
+      list.add({
+        'label':
+            '${(minR as num).toInt()}–${(maxR as num).toInt()} KM Radius'
       });
     }
-    widget.onTypingChanged(false);
-    _chatService.updateTypingStatus(_effectiveChatRoomId, widget.senderId, false);
-
-    if (widget.onCancelReply != null) {
-      widget.onCancelReply!();
-    }
-
-    try {
-      await _chatService.sendMessage(
-        chatId: _effectiveChatRoomId,
-        senderId: widget.senderId,
-        receiverId: widget.receiverId,
-        message: text,
-        type: 'text',
-        replyToMessageId: currentReplyId,
-        replyToText: currentReplyText,
-        messageCategory: widget.initialMessageCategory,
-        clientMessageId: clientMsgId,
-      );
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _failedMessageText = text;
-          _failedReplyId = currentReplyId;
-          _failedReplyText = currentReplyText;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Network error. Tap Retry to resend: $e')),
-        );
-      }
-    }
+    return list;
   }
 
-  Future<void> _retryFailedMessage() async {
-    final String? textToRetry = _failedMessageText;
-    if (textToRetry == null || textToRetry.isEmpty || _isUploading) return;
-
-    setState(() => _failedMessageText = null);
-    try {
-      await _chatService.sendMessage(
-        chatId: _effectiveChatRoomId,
-        senderId: widget.senderId,
-        receiverId: widget.receiverId,
-        message: textToRetry,
-        type: 'text',
-        replyToMessageId: _failedReplyId,
-        replyToText: _failedReplyText,
-        messageCategory: widget.initialMessageCategory,
-        clientMessageId:
-            '${widget.senderId}_${DateTime.now().millisecondsSinceEpoch}',
-      );
-    } catch (e) {
-      if (mounted) {
-        setState(() => _failedMessageText = textToRetry);
-      }
-    }
-  }
-
-  void _startVoiceNoteSession() {
-    if (_isUploading || widget.isMutedByTeacher) return;
-    HapticFeedback.heavyImpact();
-    _recordingTimer?.cancel();
-    setState(() {
-      _isRecordingVoice = true;
-      _recordingSeconds = 0;
-    });
-    _recordingTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted) {
-        setState(() => _recordingSeconds++);
-      }
-    });
-  }
-
-  void _cancelVoiceNoteSession() {
-    _recordingTimer?.cancel();
-    setState(() {
-      _isRecordingVoice = false;
-      _recordingSeconds = 0;
-    });
-  }
-
-  Future<void> _finishAndPickVoiceNote() async {
-    _recordingTimer?.cancel();
-    setState(() {
-      _isRecordingVoice = false;
-      _recordingSeconds = 0;
-    });
-    await _handleAttachmentPick('audio');
-  }
-
-  String _formatDuration(int totalSeconds) {
-    final int mins = totalSeconds ~/ 60;
-    final int secs = totalSeconds % 60;
-    return '${mins.toString().padLeft(2, '0')}:${secs.toString().padLeft(2, '0')}';
-  }
-
-  Widget _buildEmojiAndStickerPanel() {
-    if (!_showEmojiPanel) return const SizedBox.shrink();
+  Widget _buildTopSummaryAndSortBar(int totalMatched) {
+    final activeChips = _buildActiveFilterChipsData();
+    final List<Map<String, dynamic>> sortOptions = [
+      {'key': 'best', 'label': 'Best Match', 'icon': Icons.auto_awesome_rounded},
+      {'key': 'rating', 'label': 'Top Rated', 'icon': Icons.star_rounded},
+      {
+        'key': 'experience',
+        'label': 'Most Experienced',
+        'icon': Icons.workspace_premium_rounded
+      },
+      {'key': 'distance', 'label': 'Nearest', 'icon': Icons.near_me_rounded},
+    ];
 
     return Container(
-      height: 230,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
-        border: Border(top: BorderSide(color: Colors.grey.shade200)),
-      ),
+      color: Colors.white,
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(
-            height: 38,
-            child: ListView.builder(
-              scrollDirection: Axis.horizontal,
-              itemCount: _quickStickers.length,
-              itemBuilder: (context, index) {
-                final item = _quickStickers[index];
-                return Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: ActionChip(
-                    backgroundColor: Colors.blue.shade50,
-                    label: Text(
-                      "${item['emoji']} ${item['label']}",
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEFF6FF),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: const Color(0xFFBFDBFE)),
+                    ),
+                    child: Text(
+                      '$totalMatched Educator${totalMatched == 1 ? '' : 's'} Found',
                       style: const TextStyle(
                         fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: _brandBlue,
+                        fontWeight: FontWeight.w800,
+                        color: _accentBlue,
                       ),
                     ),
-                    onPressed: () => _sendQuickSticker(
-                        "${item['emoji']} ${item['label']}"),
                   ),
-                );
-              },
-            ),
-          ),
-          const SizedBox(height: 8),
-          Expanded(
-            child: GridView.builder(
-              itemCount: _commonEmojis.length,
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 8,
-                mainAxisSpacing: 6,
-                crossAxisSpacing: 6,
+                ],
               ),
-              itemBuilder: (context, index) {
-                final emoji = _commonEmojis[index];
-                return InkWell(
-                  borderRadius: BorderRadius.circular(8),
-                  onTap: () => _insertEmoji(emoji),
-                  child: Center(
-                    child: Text(
-                      emoji,
-                      style: const TextStyle(fontSize: 22),
+              InkWell(
+                borderRadius: BorderRadius.circular(10),
+                onTap: () => Navigator.pop(context),
+                child: const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.tune_rounded, size: 15, color: _brandBlue),
+                      SizedBox(width: 4),
+                      Text(
+                        'Modify Filters',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                          color: _brandBlue,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (activeChips.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              physics: const BouncingScrollPhysics(),
+              child: Row(
+                children: activeChips.map((chip) {
+                  return Container(
+                    margin: const EdgeInsets.only(right: 8),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.check_circle_rounded,
+                            size: 13, color: Color(0xFF0D9488)),
+                        const SizedBox(width: 5),
+                        Text(
+                          chip['label']!,
+                          style: const TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF334155),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+          ],
+          const SizedBox(height: 10),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(),
+            child: Row(
+              children: sortOptions.map((opt) {
+                final bool isSelected = _selectedSort == opt['key'];
+                return Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(12),
+                    onTap: () {
+                      HapticFeedback.selectionClick();
+                      setState(() => _selectedSort = opt['key'] as String);
+                    },
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 180),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        gradient: isSelected
+                            ? const LinearGradient(
+                                colors: [_primaryNavy, _brandBlue],
+                              )
+                            : null,
+                        color: isSelected ? null : const Color(0xFFF1F5F9),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: isSelected
+                            ? _brandBlue
+                            : const Color(0xFFE2E8F0),
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            opt['icon'] as IconData,
+                            size: 14,
+                            color: isSelected
+                                ? const Color(0xFFFBBF24)
+                                : const Color(0xFF64748B),
+                          ),
+                          const SizedBox(width: 5),
+                          Text(
+                            opt['label'] as String,
+                            style: TextStyle(
+                              fontSize: 11.8,
+                              fontWeight: FontWeight.w800,
+                              color: isSelected
+                                  ? Colors.white
+                                  : const Color(0xFF475569),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 );
-              },
+              }).toList(),
             ),
           ),
         ],
@@ -618,323 +364,446 @@ class _ChatInputBarState extends State<ChatInputBar> {
 
   @override
   Widget build(BuildContext context) {
-    if (widget.isMutedByTeacher) {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        color: Colors.white,
-        child: SafeArea(
-          top: false,
-          child: Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  enabled: false,
-                  readOnly: true,
-                  decoration: InputDecoration(
-                    hintText: widget.disabledReasonText ?? "Muted by teacher",
-                    hintStyle: TextStyle(
-                      color: Colors.red.shade700,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 14,
-                    ),
-                    prefixIcon: Icon(
-                      Icons.mic_off_rounded,
-                      color: Colors.red.shade600,
-                      size: 20,
-                    ),
-                    filled: true,
-                    fillColor: Colors.red.shade50,
-                    contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 12),
-                    disabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(24),
-                      borderSide: BorderSide(color: Colors.red.shade200),
-                    ),
-                  ),
-                ),
+    final currentUserId = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final filters = widget.filters;
+
+    final String targetId =
+        (filters['teacherId'] ?? '').toString().trim().toLowerCase();
+    final String targetName =
+        (filters['name'] ?? '').toString().trim().toLowerCase();
+    final String targetSubject =
+        (filters['subject'] ?? '').toString().trim().toLowerCase();
+    final String targetLocation =
+        (filters['location'] ?? '').toString().trim().toLowerCase();
+
+    final int minExperience =
+        int.tryParse(filters['experience']?.toString() ?? '0') ?? 0;
+    final double minRadius =
+        double.tryParse(filters['minRadius']?.toString() ?? '0.0') ?? 0.0;
+    final double maxRadius =
+        double.tryParse(filters['maxRadius']?.toString() ?? '500.0') ?? 500.0;
+
+    return Scaffold(
+      backgroundColor: _scaffoldBg,
+      appBar: AppBar(
+        title: const Column(
+          children: [
+            Text(
+              'Matching Teachers',
+              style: TextStyle(
+                fontWeight: FontWeight.w900,
+                fontSize: 17.5,
+                color: Colors.white,
+                letterSpacing: 0.2,
               ),
-              const SizedBox(width: 8),
-              CircleAvatar(
-                radius: 22,
-                backgroundColor: Colors.grey.shade300,
-                child: Icon(
-                  Icons.send_rounded,
-                  color: Colors.grey.shade500,
-                  size: 20,
-                ),
+            ),
+            Text(
+              'Verified Educators & Subject Specialists',
+              style: TextStyle(
+                fontSize: 11,
+                color: Colors.white70,
+                fontWeight: FontWeight.w500,
               ),
-            ],
+            ),
+          ],
+        ),
+        backgroundColor: _primaryNavy,
+        flexibleSpace: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                _primaryNavy,
+                Color(0xFF1E3A8A),
+                _brandBlue,
+              ],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
           ),
         ),
-      );
-    }
+        elevation: 0,
+        centerTitle: true,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new_rounded,
+              size: 19, color: Colors.white),
+          onPressed: () => Navigator.pop(context),
+        ),
+      ),
+      body: StreamBuilder<QuerySnapshot>(
+        stream: _teachersStream,
+        builder: (context, snapshot) {
+          if (snapshot.hasData) {
+            _lastSnapshot = snapshot.data;
+          }
+          final activeData = snapshot.data ?? _lastSnapshot;
 
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (_isUploading)
-          const LinearProgressIndicator(
-            backgroundColor: Colors.transparent,
-            valueColor: AlwaysStoppedAnimation<Color>(_brandBlue),
-            minHeight: 2.5,
-          ),
-        if (_failedMessageText != null)
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            color: Colors.red.shade50,
-            child: Row(
-              children: [
-                const Icon(Icons.error_outline_rounded,
-                    color: Colors.redAccent, size: 18),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    "Failed to send: $_failedMessageText",
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: Colors.redAccent,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-                TextButton.icon(
-                  onPressed: _retryFailedMessage,
-                  icon: const Icon(Icons.refresh_rounded, size: 16),
-                  label: const Text("Retry"),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.close, size: 16, color: Colors.grey),
-                  onPressed: () => setState(() => _failedMessageText = null),
-                ),
-              ],
-            ),
-          ),
-        if (widget.replyToMessageId != null && widget.replyToText != null)
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-            margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(14),
-              border: const Border(
-                left: BorderSide(color: _brandBlue, width: 4),
+          if (activeData == null &&
+              snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(
+              child: CircularProgressIndicator(
+                  color: _brandBlue, strokeWidth: 3),
+            );
+          }
+
+          if (snapshot.hasError && activeData == null) {
+            return Center(
+              child: Text(
+                'Error fetching teachers: ${snapshot.error}',
+                style: const TextStyle(color: Colors.redAccent),
               ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.04),
-                  blurRadius: 6,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        "Replying to Message",
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: _brandBlue,
-                          fontSize: 12,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        widget.replyToText!,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: Colors.black.withOpacity(0.85),
-                          fontSize: 12.5,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.close_rounded, size: 18, color: Colors.grey),
-                  onPressed: widget.onCancelReply,
-                ),
-              ],
-            ),
-          ),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10.0, vertical: 6.0),
-          child: _isRecordingVoice
-              ? Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: Colors.red.shade50,
-                    borderRadius: BorderRadius.circular(26),
-                    border: Border.all(color: Colors.red.shade200),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.fiber_manual_record_rounded,
-                          color: Colors.redAccent, size: 18),
-                      const SizedBox(width: 8),
-                      Text(
-                        "Voice Note  ${_formatDuration(_recordingSeconds)}",
-                        style: TextStyle(
-                          color: Colors.red.shade700,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 13.5,
-                        ),
-                      ),
-                      const Spacer(),
-                      TextButton(
-                        onPressed: _cancelVoiceNoteSession,
-                        child: const Text(
-                          "Cancel",
-                          style: TextStyle(color: Colors.grey),
-                        ),
-                      ),
-                      ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: _brandBlue,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(18),
-                          ),
-                        ),
-                        onPressed: _finishAndPickVoiceNote,
-                        icon: const Icon(Icons.upload_file_rounded,
-                            color: Colors.white, size: 16),
-                        label: const Text(
-                          "Attach Audio",
-                          style: TextStyle(color: Colors.white, fontSize: 12),
-                        ),
-                      ),
-                    ],
-                  ),
-                )
-              : Row(
-                  children: [
-                    Expanded(
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(26.0),
-                          border: Border.all(color: const Color(0xFFE2E8F0)),
-                          boxShadow: [
-                            BoxShadow(
-                              color: _primaryNavy.withOpacity(0.04),
-                              blurRadius: 8,
-                              offset: const Offset(0, 2),
-                            ),
-                          ],
-                        ),
-                        child: Row(
-                          children: [
-                            IconButton(
-                              icon: Icon(
-                                _showEmojiPanel
-                                    ? Icons.keyboard_alt_outlined
-                                    : Icons.emoji_emotions_outlined,
-                                color: _showEmojiPanel
-                                    ? _brandBlue
-                                    : Colors.grey.shade600,
-                                size: 22,
-                              ),
-                              onPressed: _toggleEmojiPanel,
-                            ),
-                            Expanded(
-                              child: TextField(
-                                controller: _controller,
-                                focusNode: _focusNode,
-                                minLines: 1,
-                                maxLines: 5,
-                                enabled: !_isUploading,
-                                style: const TextStyle(
-                                  fontSize: 14.5,
-                                  color: Color(0xFF0F172A),
-                                ),
-                                decoration: InputDecoration(
-                                  hintText: 'Type a message...',
-                                  hintStyle: TextStyle(
-                                    color: Colors.grey.shade400,
-                                    fontSize: 14,
+            );
+          }
+
+          if (activeData == null || activeData.docs.isEmpty) {
+            return _buildNoResultsView();
+          }
+
+          final matchedDocs = activeData.docs.where((doc) {
+            final data = doc.data() as Map<String, dynamic>? ?? {};
+            final docId = doc.id.toLowerCase();
+
+            final String name =
+                (data['name'] ?? data['fullName'] ?? data['displayName'] ?? '')
+                    .toString()
+                    .toLowerCase();
+            final String locationSearchable =
+                _extractAllLocationsSearchable(data);
+
+            List<String> subjects = [];
+            if (data['subjects'] is List) {
+              subjects = (data['subjects'] as List)
+                  .map((s) => s.toString().toLowerCase())
+                  .toList();
+            } else if (data['subjects'] is String) {
+              subjects = [data['subjects'].toString().toLowerCase()];
+            }
+
+            final int exp = _parseExperienceYears(data);
+
+            bool matchesId = targetId.isEmpty || docId.contains(targetId);
+            bool matchesName = targetName.isEmpty || name.contains(targetName);
+            bool matchesLocation = targetLocation.isEmpty ||
+                locationSearchable.contains(targetLocation);
+            bool matchesSubject = targetSubject.isEmpty ||
+                subjects.any((s) => s.contains(targetSubject));
+            bool matchesExperience = exp >= minExperience;
+
+            bool matchesRadius = true;
+            final coords = _extractCoordinates(data);
+            double tLat = coords['lat']!;
+            double tLng = coords['lng']!;
+
+            if (targetId.isEmpty && tLat != 0.0 && tLng != 0.0) {
+              double distance = _calculateHaversineDistance(
+                  _studentLat, _studentLng, tLat, tLng);
+              matchesRadius = distance >= minRadius && distance <= maxRadius;
+            }
+
+            return matchesId &&
+                matchesName &&
+                matchesLocation &&
+                matchesSubject &&
+                matchesExperience &&
+                matchesRadius;
+          }).toList();
+
+          matchedDocs.sort((a, b) {
+            final aData = a.data() as Map<String, dynamic>? ?? {};
+            final bData = b.data() as Map<String, dynamic>? ?? {};
+
+            if (_selectedSort == 'rating') {
+              final double rA = double.tryParse(
+                      (aData['averageRating'] ?? aData['rating'] ?? '0')
+                          .toString()) ??
+                  0.0;
+              final double rB = double.tryParse(
+                      (bData['averageRating'] ?? bData['rating'] ?? '0')
+                          .toString()) ??
+                  0.0;
+              return rB.compareTo(rA);
+            }
+
+            if (_selectedSort == 'experience') {
+              return _parseExperienceYears(bData)
+                  .compareTo(_parseExperienceYears(aData));
+            }
+
+            if (_selectedSort == 'distance') {
+              final cA = _extractCoordinates(aData);
+              final cB = _extractCoordinates(bData);
+              final double dA = (cA['lat'] != 0.0 && cA['lng'] != 0.0)
+                  ? _calculateHaversineDistance(
+                      _studentLat, _studentLng, cA['lat']!, cA['lng']!)
+                  : 999999.0;
+              final double dB = (cB['lat'] != 0.0 && cB['lng'] != 0.0)
+                  ? _calculateHaversineDistance(
+                      _studentLat, _studentLng, cB['lat']!, cB['lng']!)
+                  : 999999.0;
+              return dA.compareTo(dB);
+            }
+
+            final bool vA = aData['isVerified'] == true;
+            final bool vB = bData['isVerified'] == true;
+            if (vA != vB) return vB ? 1 : -1;
+            final double rA = double.tryParse(
+                    (aData['averageRating'] ?? aData['rating'] ?? '0')
+                        .toString()) ??
+                0.0;
+            final double rB = double.tryParse(
+                    (bData['averageRating'] ?? bData['rating'] ?? '0')
+                        .toString()) ??
+                0.0;
+            return rB.compareTo(rA);
+          });
+
+          return Column(
+            children: [
+              _buildTopSummaryAndSortBar(matchedDocs.length),
+              const Divider(height: 1, color: Color(0xFFE2E8F0)),
+              Expanded(
+                child: matchedDocs.isEmpty
+                    ? _buildNoResultsView()
+                    : ListView.builder(
+                        key: const PageStorageKey<String>(
+                            'teacher_search_results_list'),
+                        padding: const EdgeInsets.fromLTRB(10, 12, 10, 28),
+                        physics: const BouncingScrollPhysics(),
+                        itemCount: matchedDocs.length,
+                        itemBuilder: (context, index) {
+                          final doc = matchedDocs[index];
+                          final data =
+                              doc.data() as Map<String, dynamic>? ?? {};
+
+                          final coords = _extractCoordinates(data);
+                          double tLat = coords['lat']!;
+                          double tLng = coords['lng']!;
+
+                          String distanceText = "N/A";
+                          if (tLat != 0.0 && tLng != 0.0) {
+                            double distance = _calculateHaversineDistance(
+                                _studentLat, _studentLng, tLat, tLng);
+                            distanceText = "${distance.toStringAsFixed(1)} KM";
+                          }
+
+                          List<String> subjectsList = [];
+                          if (data['subjects'] is List) {
+                            subjectsList = List<String>.from(
+                                data['subjects'].map((x) => x.toString()));
+                          } else if (data['subjects'] is String) {
+                            subjectsList = [data['subjects'].toString()];
+                          }
+                          final String subjectText = subjectsList.isNotEmpty
+                              ? subjectsList.join(', ')
+                              : 'General';
+
+                          final String teacherName = (data['name'] ??
+                                  data['fullName'] ??
+                                  data['displayName'] ??
+                                  'Unknown Teacher')
+                              .toString();
+
+                          final String profilePic = (data['profileUrl'] ??
+                                  data['profileImageUrl'] ??
+                                  data['photoUrl'] ??
+                                  data['profilePic'] ??
+                                  '')
+                              .toString();
+
+                          final bool isVerified = data['isVerified'] == true ||
+                              data['status'] == 'approved';
+                          final String? highestBadgeType =
+                              data['highestBadgeType']?.toString();
+
+                          final String locationDisplay =
+                              _extractLocationDisplay(data);
+
+                          final double ratingVal = double.tryParse(
+                                  (data['averageRating'] ??
+                                          data['rating'] ??
+                                          '0.0')
+                                      .toString()) ??
+                              0.0;
+
+                          return TeacherCardWidget(
+                            key: ValueKey('teacher_card_${doc.id}'),
+                            teacherId: doc.id,
+                            name: teacherName,
+                            subject: subjectText,
+                            profileImageUrl: profilePic,
+                            latitude: tLat,
+                            longitude: tLng,
+                            studentCount: data['studentCount'] is int
+                                ? data['studentCount']
+                                : int.tryParse(data['studentCount']
+                                            ?.toString() ??
+                                        '0') ??
+                                    0,
+                            experienceYears: _parseExperienceYears(data),
+                            followersCount: data['followersCount'] is int
+                                ? data['followersCount']
+                                : int.tryParse(data['followersCount']
+                                            ?.toString() ??
+                                        '0') ??
+                                    0,
+                            rating: ratingVal,
+                            locationText: locationDisplay,
+                            calculatedDistance: distanceText,
+                            isVerified: isVerified,
+                            highestBadgeType: highestBadgeType,
+                            onChatPressed: () async {
+                              if (currentUserId.isEmpty) return;
+
+                              final String teacherId = doc.id;
+                              String targetChatRoomId =
+                                  _getChatRoomId(teacherId, currentUserId);
+
+                              try {
+                                final directDoc = await FirebaseFirestore.instance
+                                    .collection('chats')
+                                    .doc(targetChatRoomId)
+                                    .get();
+
+                                if (!directDoc.exists) {
+                                  final reverseDoc = await FirebaseFirestore
+                                      .instance
+                                      .collection('chats')
+                                      .doc('${currentUserId}_$teacherId')
+                                      .get();
+
+                                  if (reverseDoc.exists) {
+                                    targetChatRoomId =
+                                        '${currentUserId}_$teacherId';
+                                  } else {
+                                    final query = await FirebaseFirestore
+                                        .instance
+                                        .collection('chats')
+                                        .where('participants',
+                                            arrayContains: currentUserId)
+                                        .get();
+
+                                    for (final cDoc in query.docs) {
+                                      final participants =
+                                          (cDoc.data()['participants']
+                                                  as List?) ??
+                                              [];
+                                      if (participants.contains(teacherId)) {
+                                        targetChatRoomId = cDoc.id;
+                                        break;
+                                      }
+                                    }
+                                  }
+                                }
+                              } catch (_) {}
+
+                              if (!context.mounted) return;
+
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => ChatScreen(
+                                    chatRoomId: targetChatRoomId,
+                                    receiverId: doc.id,
+                                    receiverName: teacherName,
+                                    receiverProfilePic: profilePic,
+                                    currentUserId: currentUserId,
+                                    isTeacher: false,
                                   ),
-                                  border: InputBorder.none,
-                                  contentPadding: const EdgeInsets.symmetric(
-                                    vertical: 10.0,
-                                    horizontal: 4,
-                                  ),
-                                ),
-                              ),
-                            ),
-                            IconButton(
-                              icon: Icon(Icons.attach_file_rounded,
-                                  color: Colors.grey.shade600, size: 22),
-                              onPressed: _isUploading
-                                  ? null
-                                  : _showAttachmentBottomSheet,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8.0),
-                    GestureDetector(
-                      onTap: _isTyping ? _handleSend : _startVoiceNoteSession,
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 220),
-                        curve: Curves.easeOutCubic,
-                        width: 44,
-                        height: 44,
-                        decoration: BoxDecoration(
-                          color: _isTyping ? _accentBlue : _brandBlue,
-                          shape: BoxShape.circle,
-                          boxShadow: [
-                            BoxShadow(
-                              color: (_isTyping ? _accentBlue : _brandBlue)
-                                  .withOpacity(0.28),
-                              blurRadius: 8,
-                              offset: const Offset(0, 3),
-                            ),
-                          ],
-                        ),
-                        child: Center(
-                          child: AnimatedSwitcher(
-                            duration: const Duration(milliseconds: 220),
-                            transitionBuilder: (child, animation) {
-                              return ScaleTransition(
-                                scale: animation,
-                                child: RotationTransition(
-                                  turns: Tween<double>(begin: 0.75, end: 1.0)
-                                      .animate(animation),
-                                  child: child,
                                 ),
                               );
                             },
-                            child: _isTyping
-                                ? const Icon(
-                                    Icons.send_rounded,
-                                    key: ValueKey('send_action_btn'),
-                                    color: Colors.white,
-                                    size: 20,
-                                  )
-                                : const Icon(
-                                    Icons.mic_rounded,
-                                    key: ValueKey('mic_action_btn'),
-                                    color: Colors.white,
-                                    size: 20,
+                            onProfilePressed: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => TeacherProfileScreen(
+                                    currentUserId: doc.id,
                                   ),
-                          ),
-                        ),
+                                ),
+                              );
+                            },
+                            onMapPressed: (tLat != 0.0 && tLng != 0.0)
+                                ? () => _openGoogleMap(tLat, tLng, teacherName)
+                                : null,
+                          );
+                        },
                       ),
-                    ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildNoResultsView() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(28.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 84,
+              height: 84,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    _brandBlue.withOpacity(0.12),
+                    _accentBlue.withOpacity(0.05),
                   ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
                 ),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.person_search_rounded,
+                size: 42,
+                color: _brandBlue,
+              ),
+            ),
+            const SizedBox(height: 18),
+            const Text(
+              "No Matching Educators Found",
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w900,
+                color: _primaryNavy,
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              "We couldn't find any teacher matching your exact filters and radius settings. Try broadening your search criteria or increasing the distance range.",
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 13.2,
+                color: Color(0xFF64748B),
+                height: 1.45,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const SizedBox(height: 20),
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _brandBlue,
+                foregroundColor: Colors.white,
+                elevation: 0,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
+              onPressed: () => Navigator.pop(context),
+              icon: const Icon(Icons.tune_rounded, size: 18),
+              label: const Text(
+                "Adjust Search Filters",
+                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5),
+              ),
+            ),
+          ],
         ),
-        _buildEmojiAndStickerPanel(),
-      ],
+      ),
     );
   }
 }
