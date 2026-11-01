@@ -1,17 +1,3 @@
-Fix the syntax and void expression errors in this complete Flutter Dart file for 'lib/screens/chat_screen.dart'.
-
-Problem & Requirements:
-1. Fix the void expression error at line 357:
-   - `_chatService.createOrInitializeChat(...)` returns `Future<void>`.
-   - Remove `final dynamic initResult =` and the subsequent `if (initResult != null) { ... }` block.
-   - Simply await `_chatService.createOrInitializeChat(...).timeout(const Duration(seconds: 3));`.
-2. Ensure `import 'dart:async';` starts with lowercase 'import'.
-3. Ensure all StreamBuilders, types, and drag-and-drop actions remain completely intact.
-4. Output the complete replacement code directly without omissions or internal comments.
-
-Start your response immediately with ```dart on line 1 and end with ``` on the last line. Output the ENTIRE file in ONE SINGLE code block. Do NOT write any introductory or plain text outside the code block.
-
-Source Code:
 import 'dart:async';
 import 'dart:developer';
 import 'dart:io';
@@ -72,7 +58,7 @@ class _ChatScreenState extends State<ChatScreen>
 
   late String _activeChatRoomId;
   Stream<List<MessageModel>>? _messageStream;
-  Stream>? _userStatusStream;
+  Stream<Map<String, dynamic>>? _userStatusStream;
   Stream<DocumentSnapshot>? _typingDocStream;
   Stream<BlockStatus>? _blockStatusStream;
   List<MessageModel> _latestMessages = [];
@@ -1334,7 +1320,7 @@ class _ChatScreenState extends State<ChatScreen>
   }
 
   Widget _buildStandardAppBarTitle() {
-    return StreamBuilder>(
+    return StreamBuilder<Map<String, dynamic>>(
       stream: _userStatusStream,
       builder: (context, statusSnapshot) {
         String displayName = widget.receiverName;
