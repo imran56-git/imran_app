@@ -1,17 +1,3 @@
-Fix the corrupted generic types and syntax errors in this complete Flutter Dart file for 'lib/services/chat_service.dart'.
-
-Problem & Requirements:
-1. Restore missing generic type parameters:
-   - Line 23: Change `Future?> getUserProfile(` to `Future?> getUserProfile(`.
-   - Line 160: Change `Stream> getUserStatusStream(` to `Stream> getUserStatusStream(`.
-   - Line 1037: Change `Query> query = _firestore...` to `Query> query = _firestore...`.
-2. Fix the initial import statement so that `import` starts with lowercase 'i'.
-3. Ensure all Streams, Futures, batch writes, offline SQLite caching, and media handling logic remain completely intact.
-4. Output the complete replacement code directly without omissions or internal comments.
-
-Start your response immediately with ```dart on line 1 and end with ``` on the last line. Output the ENTIRE file in ONE SINGLE code block. Do NOT write any introductory or plain text outside the code block.
-
-Source Code:
 import 'dart:async';
 import 'dart:developer';
 import 'dart:io';
@@ -34,7 +20,7 @@ class ChatService {
 
   String get _currentUserId => _auth.currentUser?.uid ?? '';
 
-  Future?> getUserProfile(
+  Future<Map<String, dynamic>?> getUserProfile(
       String userId, bool isTeacher) async {
     if (userId.trim().isEmpty) return null;
     try {
@@ -171,7 +157,7 @@ class ChatService {
     });
   }
 
-  Stream> getUserStatusStream(
+  Stream<Map<String, dynamic>> getUserStatusStream(
       String userId, bool isTeacher) {
     if (userId.trim().isEmpty) {
       return Stream.value(
@@ -1048,7 +1034,7 @@ class ChatService {
       }
 
       final String rootCollection = isGroup ? 'groups' : 'chats';
-      Query> query = _firestore
+      Query<Map<String, dynamic>> query = _firestore
           .collection(rootCollection)
           .doc(chatOrGroupId)
           .collection('messages')
