@@ -1,3 +1,17 @@
+Fix the syntax and void expression errors in this complete Flutter Dart file for 'lib/screens/chat_screen.dart'.
+
+Problem & Requirements:
+1. Fix the void expression error at line 357:
+   - `_chatService.createOrInitializeChat(...)` returns `Future<void>`.
+   - Remove `final dynamic initResult =` and the subsequent `if (initResult != null) { ... }` block.
+   - Simply await `_chatService.createOrInitializeChat(...).timeout(const Duration(seconds: 3));`.
+2. Ensure `import 'dart:async';` starts with lowercase 'import'.
+3. Ensure all StreamBuilders, types, and drag-and-drop actions remain completely intact.
+4. Output the complete replacement code directly without omissions or internal comments.
+
+Start your response immediately with ```dart on line 1 and end with ``` on the last line. Output the ENTIRE file in ONE SINGLE code block. Do NOT write any introductory or plain text outside the code block.
+
+Source Code:
 import 'dart:async';
 import 'dart:developer';
 import 'dart:io';
@@ -58,7 +72,7 @@ class _ChatScreenState extends State<ChatScreen>
 
   late String _activeChatRoomId;
   Stream<List<MessageModel>>? _messageStream;
-  Stream<Map<String, dynamic>>? _userStatusStream;
+  Stream>? _userStatusStream;
   Stream<DocumentSnapshot>? _typingDocStream;
   Stream<BlockStatus>? _blockStatusStream;
   List<MessageModel> _latestMessages = [];
@@ -354,7 +368,7 @@ class _ChatScreenState extends State<ChatScreen>
       final String studentImage =
           widget.isTeacher ? widget.receiverProfilePic : myImage;
 
-      final dynamic initResult = await _chatService
+      await _chatService
           .createOrInitializeChat(
             teacherId: teacherId,
             studentId: studentId,
@@ -364,24 +378,6 @@ class _ChatScreenState extends State<ChatScreen>
             studentImage: studentImage,
           )
           .timeout(const Duration(seconds: 3));
-
-      if (initResult != null) {
-        String? resolvedId;
-        if (initResult is String && initResult.isNotEmpty) {
-          resolvedId = initResult;
-        } else if (initResult is DocumentReference) {
-          resolvedId = initResult.id;
-        } else if (initResult is DocumentSnapshot) {
-          resolvedId = initResult.id;
-        } else if (initResult is Map && initResult['chatId'] != null) {
-          resolvedId = initResult['chatId'].toString();
-        }
-        if (resolvedId != null &&
-            resolvedId.isNotEmpty &&
-            resolvedId != _activeChatRoomId) {
-          _switchChatRoom(resolvedId);
-        }
-      }
 
       if (mounted) {
         _chatService.updateTypingStatus(
@@ -1338,7 +1334,7 @@ class _ChatScreenState extends State<ChatScreen>
   }
 
   Widget _buildStandardAppBarTitle() {
-    return StreamBuilder<Map<String, dynamic>>(
+    return StreamBuilder>(
       stream: _userStatusStream,
       builder: (context, statusSnapshot) {
         String displayName = widget.receiverName;
