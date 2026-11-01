@@ -132,7 +132,6 @@ class ReviewService {
         throw Exception("Self-review is strictly forbidden.");
       }
 
-      // কঠোর একসেপ্টেড স্টুডেন্ট চেক
       final bool isAccepted = await _isStudentAcceptedByTeacher(
         teacherId: review.teacherId,
         studentId: review.studentId,
@@ -180,8 +179,8 @@ class ReviewService {
           .limit(1)
           .get();
 
-      DocumentReference> reviewRef;
-      DocumentSnapshot>? existingDocSnap;
+      DocumentReference<Map<String, dynamic>> reviewRef;
+      DocumentSnapshot<Map<String, dynamic>>? existingDocSnap;
 
       if (existingSeasonQuery.docs.isNotEmpty) {
         existingDocSnap = existingSeasonQuery.docs.first;
@@ -309,7 +308,7 @@ class ReviewService {
     int limit = 20,
   }) async {
     try {
-      Query> query = _firestore
+      Query<Map<String, dynamic>> query = _firestore
           .collection('teacher_reviews')
           .where('teacherId', isEqualTo: teacherId);
 
@@ -326,7 +325,6 @@ class ReviewService {
           .map((doc) => ReviewModel.fromFirestore(doc))
           .toList();
 
-      // যদি teacher_reviews-এ ডেটা না পাওয়া যায়, ratings থেকে ব্যাকআপ লোড করা
       if (allFetched.isEmpty) {
         final ratingsSnapshot = await _firestore
             .collection('ratings')
@@ -373,7 +371,6 @@ class ReviewService {
             .toList();
       }
 
-      // নতুন রিভিউ সবার উপরে রাখার জন্য মেমোরি সর্ট
       allFetched.sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
       if (limit > 0 && allFetched.length > limit) {
