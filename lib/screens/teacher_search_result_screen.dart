@@ -1,3 +1,17 @@
+Fix the corrupted generic types and syntax errors in this complete Flutter Dart file for 'lib/screens/teacher_search_result_screen.dart'.
+
+Problem & Requirements:
+1. Restore missing generic type parameters:
+   - Line 164: Change `List> _buildActiveFilterChipsData()` to `List> _buildActiveFilterChipsData()`
+   - Line 165: Change `final List> list = [];` to `final List> list = [];`
+   - Line 196: Change `final List> sortOptions = [` to `final List> sortOptions = [`
+2. Fix the initial import statement so that `import` starts with lowercase 'i'.
+3. Ensure all list mappings, distance calculations, Firestore snapshots, and sorting logic remain completely intact.
+4. Output the complete replacement code directly without omissions or internal comments.
+
+Start your response immediately with ```dart on line 1 and end with ``` on the last line. Output the ENTIRE file in ONE SINGLE code block. Do NOT write any introductory or plain text outside the code block.
+
+Source Code:
 import 'dart:math' as math;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
