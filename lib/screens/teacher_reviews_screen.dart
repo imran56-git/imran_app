@@ -1,3 +1,16 @@
+Fix the corrupted types and syntax errors in this complete Flutter Dart file for 'lib/screens/teacher_reviews_screen.dart'.
+
+Problem & Requirements:
+1. Fix the `categories` type mismatches with `CategoryRating`:
+   - In `_fetchData`: Construct and pass a `CategoryRating` object to `ReviewModel` instead of `Map<String, double>`.
+   - In `_openRatingDialog`: Resolve `categories` to a `CategoryRating` object before passing to `ReviewModel`.
+   - In `_buildReviewTile`: Do not call `.isNotEmpty` or `.entries` directly on `review.categories` (which is a `CategoryRating` instance). Extract the values into a mapped breakdown to render categories safely.
+2. Fix the initial import statement so that `import` starts with lowercase 'i'.
+3. Output the complete replacement code directly without omissions or internal comments.
+
+Start your response immediately with ```dart on line 1 and end with ``` on the last line. Output the ENTIRE file in ONE SINGLE code block. Do NOT write any introductory or plain text outside the code block.
+
+Source Code:
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import '../models/review_model.dart';
@@ -106,10 +119,13 @@ class _TeacherReviewsScreenState extends State<TeacherReviewsScreen> {
         reviews = snap.docs.map((d) {
           final data = d.data();
           final rawCategories = data['categories'] as Map<String, dynamic>? ?? {};
-          final Map<String, double> catMap = {};
-          rawCategories.forEach((k, v) {
-            if (v is num) catMap[k] = v.toDouble();
-          });
+          final CategoryRating catRating = CategoryRating(
+            teaching: (rawCategories['teaching'] as num?)?.toDouble() ?? (data['overallRating'] as num?)?.toDouble() ?? 5.0,
+            behaviour: (rawCategories['behaviour'] as num?)?.toDouble() ?? (data['overallRating'] as num?)?.toDouble() ?? 5.0,
+            communication: (rawCategories['communication'] as num?)?.toDouble() ?? (data['overallRating'] as num?)?.toDouble() ?? 5.0,
+            knowledge: (rawCategories['knowledge'] as num?)?.toDouble() ?? (data['overallRating'] as num?)?.toDouble() ?? 5.0,
+            punctuality: (rawCategories['punctuality'] as num?)?.toDouble() ?? (data['overallRating'] as num?)?.toDouble() ?? 5.0,
+          );
 
           return ReviewModel(
             id: d.id,
@@ -118,7 +134,7 @@ class _TeacherReviewsScreenState extends State<TeacherReviewsScreen> {
             studentName: (data['studentName'] ?? data['name'] ?? 'Student').toString(),
             studentPhotoUrl: (data['studentPhotoUrl'] ?? data['studentPhoto'] ?? data['profileImageUrl'] ?? '').toString(),
             overallRating: (data['overallRating'] ?? data['rating'] as num?)?.toDouble() ?? 5.0,
-            categories: catMap,
+            categories: catRating,
             comment: (data['comment'] ?? data['review'] ?? '').toString(),
             createdAt: (data['createdAt'] is Timestamp)
                 ? (data['createdAt'] as Timestamp).toDate()
@@ -353,8 +369,19 @@ class _TeacherReviewsScreenState extends State<TeacherReviewsScreen> {
       context,
       teacherName: widget.teacherName,
       teacherProfileUrl: widget.teacherProfileUrl,
-      onSubmit: (overallRating, categories, comment) async {
+      onSubmit: (overallRating, categoriesParam, comment) async {
         final String docId = '${widget.teacherId}_${widget.currentStudentId}';
+
+        final dynamic rawCats = categoriesParam;
+        final CategoryRating catRating = rawCats is CategoryRating
+            ? rawCats
+            : CategoryRating(
+                teaching: (rawCats['teaching'] as num?)?.toDouble() ?? overallRating,
+                behaviour: (rawCats['behaviour'] as num?)?.toDouble() ?? overallRating,
+                communication: (rawCats['communication'] as num?)?.toDouble() ?? overallRating,
+                knowledge: (rawCats['knowledge'] as num?)?.toDouble() ?? overallRating,
+                punctuality: (rawCats['punctuality'] as num?)?.toDouble() ?? overallRating,
+              );
 
         final review = ReviewModel(
           id: docId,
@@ -363,7 +390,7 @@ class _TeacherReviewsScreenState extends State<TeacherReviewsScreen> {
           studentName: studentName,
           studentPhotoUrl: studentPhotoUrl,
           overallRating: overallRating,
-          categories: categories,
+          categories: catRating,
           comment: comment,
           createdAt: DateTime.now(),
         );
@@ -377,7 +404,7 @@ class _TeacherReviewsScreenState extends State<TeacherReviewsScreen> {
           'studentName': studentName,
           'studentPhotoUrl': studentPhotoUrl,
           'overallRating': overallRating,
-          'categories': categories,
+          'categories': catRating.toMap(),
           'comment': comment,
           'createdAt': FieldValue.serverTimestamp(),
           'updatedAt': FieldValue.serverTimestamp(),
@@ -666,6 +693,13 @@ class _TeacherReviewsScreenState extends State<TeacherReviewsScreen> {
   Widget _buildReviewTile(ReviewModel review, Color primaryColor) {
     final String reviewKey = review.id.isNotEmpty ? review.id : '${review.studentId}_${review.createdAt.millisecondsSinceEpoch}';
     final bool isExpanded = _expandedReviewIds.contains(reviewKey);
+    final Map<String, double> categoryBreakdown = {
+      'Teaching Quality': review.categories.teaching,
+      'Behaviour': review.categories.behaviour,
+      'Communication': review.categories.communication,
+      'Knowledge': review.categories.knowledge,
+      'Punctuality': review.categories.punctuality,
+    };
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -773,83 +807,80 @@ class _TeacherReviewsScreenState extends State<TeacherReviewsScreen> {
               ),
             ),
           ],
-          if (review.categories.isNotEmpty) ...[
-            const SizedBox(height: 10),
-            InkWell(
-              borderRadius: BorderRadius.circular(8),
-              onTap: () {
-                setState(() {
-                  if (isExpanded) {
-                    _expandedReviewIds.remove(reviewKey);
-                  } else {
-                    _expandedReviewIds.add(reviewKey);
-                  }
-                });
-              },
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      isExpanded ? 'Hide Category Ratings' : 'View Detailed Breakdown',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFF2563EB),
-                      ),
+          const SizedBox(height: 10),
+          InkWell(
+            borderRadius: BorderRadius.circular(8),
+            onTap: () {
+              setState(() {
+                if (isExpanded) {
+                  _expandedReviewIds.remove(reviewKey);
+                } else {
+                  _expandedReviewIds.add(reviewKey);
+                }
+              });
+            },
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    isExpanded ? 'Hide Category Ratings' : 'View Detailed Breakdown',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF2563EB),
                     ),
-                    Icon(
-                      isExpanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
-                      size: 16,
-                      color: const Color(0xFF2563EB),
-                    ),
-                  ],
-                ),
+                  ),
+                  Icon(
+                    isExpanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
+                    size: 16,
+                    color: const Color(0xFF2563EB),
+                  ),
+                ],
               ),
             ),
-            if (isExpanded)
-              Container(
-                margin: const EdgeInsets.only(top: 8),
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF8FAFC),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFFE2E8F0)),
-                ),
-                child: Column(
-                  children: review.categories.entries.map((entry) {
-                    final keyName = entry.key[0].toUpperCase() + entry.key.substring(1);
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 2.5),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            keyName,
-                            style: const TextStyle(fontSize: 12, color: Color(0xFF475569)),
-                          ),
-                          Row(
-                            children: [
-                              const Icon(Icons.star_rounded, size: 13, color: Color(0xFFFFB300)),
-                              const SizedBox(width: 2),
-                              Text(
-                                entry.value.toStringAsFixed(1),
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 12,
-                                  color: Color(0xFF0F172A),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    );
-                  }).toList(),
-                ),
+          ),
+          if (isExpanded)
+            Container(
+              margin: const EdgeInsets.only(top: 8),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
               ),
-          ],
+              child: Column(
+                children: categoryBreakdown.entries.map((entry) {
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 2.5),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          entry.key,
+                          style: const TextStyle(fontSize: 12, color: Color(0xFF475569)),
+                        ),
+                        Row(
+                          children: [
+                            const Icon(Icons.star_rounded, size: 13, color: Color(0xFFFFB300)),
+                            const SizedBox(width: 2),
+                            Text(
+                              entry.value.toStringAsFixed(1),
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 12,
+                                color: Color(0xFF0F172A),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
         ],
       ),
     );
