@@ -1,16 +1,3 @@
-Fix the corrupted types and syntax errors in this complete Flutter Dart file for 'lib/screens/teacher_reviews_screen.dart'.
-
-Problem & Requirements:
-1. Fix the `categories` type mismatches with `CategoryRating`:
-   - In `_fetchData`: Construct and pass a `CategoryRating` object to `ReviewModel` instead of `Map<String, double>`.
-   - In `_openRatingDialog`: Resolve `categories` to a `CategoryRating` object before passing to `ReviewModel`.
-   - In `_buildReviewTile`: Do not call `.isNotEmpty` or `.entries` directly on `review.categories` (which is a `CategoryRating` instance). Extract the values into a mapped breakdown to render categories safely.
-2. Fix the initial import statement so that `import` starts with lowercase 'i'.
-3. Output the complete replacement code directly without omissions or internal comments.
-
-Start your response immediately with ```dart on line 1 and end with ``` on the last line. Output the ENTIRE file in ONE SINGLE code block. Do NOT write any introductory or plain text outside the code block.
-
-Source Code:
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import '../models/review_model.dart';
@@ -375,13 +362,21 @@ class _TeacherReviewsScreenState extends State<TeacherReviewsScreen> {
         final dynamic rawCats = categoriesParam;
         final CategoryRating catRating = rawCats is CategoryRating
             ? rawCats
-            : CategoryRating(
-                teaching: (rawCats['teaching'] as num?)?.toDouble() ?? overallRating,
-                behaviour: (rawCats['behaviour'] as num?)?.toDouble() ?? overallRating,
-                communication: (rawCats['communication'] as num?)?.toDouble() ?? overallRating,
-                knowledge: (rawCats['knowledge'] as num?)?.toDouble() ?? overallRating,
-                punctuality: (rawCats['punctuality'] as num?)?.toDouble() ?? overallRating,
-              );
+            : (rawCats is Map
+                ? CategoryRating(
+                    teaching: (rawCats['teaching'] as num?)?.toDouble() ?? overallRating,
+                    behaviour: (rawCats['behaviour'] as num?)?.toDouble() ?? overallRating,
+                    communication: (rawCats['communication'] as num?)?.toDouble() ?? overallRating,
+                    knowledge: (rawCats['knowledge'] as num?)?.toDouble() ?? overallRating,
+                    punctuality: (rawCats['punctuality'] as num?)?.toDouble() ?? overallRating,
+                  )
+                : CategoryRating(
+                    teaching: overallRating,
+                    behaviour: overallRating,
+                    communication: overallRating,
+                    knowledge: overallRating,
+                    punctuality: overallRating,
+                  ));
 
         final review = ReviewModel(
           id: docId,
