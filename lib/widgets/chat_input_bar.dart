@@ -1,3 +1,15 @@
+Fix the corrupted generic types and syntax errors in this complete Flutter Dart file for 'lib/widgets/chat_input_bar.dart'.
+
+Problem & Requirements:
+1. Restore missing generic type parameters:
+   - Line 68: Change `static const List> _quickStickers = [` to `static const List> _quickStickers = [`.
+   - Line 188: Change `final List> groupCategories = [` to `final List> groupCategories = [`.
+2. Ensure all list structures, choices, and state updates remain completely intact.
+3. Output the complete replacement code directly without omissions or internal comments.
+
+Start your response immediately with ```dart on line 1 and end with ``` on the last line. Output the ENTIRE file in ONE SINGLE code block. Do NOT write any introductory or plain text outside the code block.
+
+Source Code:
 import 'dart:async';
 import 'dart:io';
 import 'package:file_picker/file_picker.dart';
