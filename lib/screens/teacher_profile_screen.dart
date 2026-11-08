@@ -1,3 +1,4 @@
+```dart
 import 'dart:async';
 import 'dart:io';
 import 'dart:ui';
@@ -11,15 +12,21 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../animations/animation_constants.dart';
 import '../models/rating_model.dart';
+import '../models/teacher_location_model.dart';
 import '../services/follow_service.dart';
+import '../services/teacher_location_service.dart';
 import '../utils/image_utils.dart';
 import '../widgets/follow_button.dart';
 import '../widgets/success_toast.dart';
 import '../widgets/badge_details_sheet.dart';
+import '../widgets/teaching_location_card_widget.dart';
 import 'blocked_users_screen.dart';
 import 'diary_history_screen.dart';
+import 'edit_teaching_location_screen.dart';
 import 'live/join_live_screen.dart';
+import 'location_batch_schedule_screen.dart';
 import 'location_picker_screen.dart';
+import 'manage_teaching_locations_screen.dart';
 import 'notification_screen.dart';
 import 'teacher_follow_requests_screen.dart';
 import 'teacher_reviews_screen.dart';
@@ -46,6 +53,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
   final FirebaseStorage _storage = FirebaseStorage.instance;
   final ImagePicker _picker = ImagePicker();
   final FollowService _followService = FollowService();
+  final TeacherLocationService _locationService = TeacherLocationService();
 
   late AnimationController _glowController;
   late Animation<double> _glowAnimation;
@@ -2336,7 +2344,281 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
     );
   }
 
+  Widget _buildTeachingLocationsSection(String targetId) {
+    final Stream<List<TeacherLocationModel>> locationStream = isOwnProfile
+        ? _locationService.getTeacherLocationsStream(targetId, includeInactive: false)
+        : _locationService.getPublicActiveLocationsStream(targetId);
+
+    return StreamBuilder<List<TeacherLocationModel>>(
+      stream: locationStream,
+      builder: (context, snapshot) {
+        final List<TeacherLocationModel> locations = snapshot.data ?? [];
+
+        // Check if locations subcollection has data
+        if (locations.isNotEmpty) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.location_on_rounded, size: 18, color: _brandBlue),
+                      const SizedBox(width: 7),
+                      const Text(
+                        "Teaching Centres & Areas",
+                        style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 16,
+                          color: _primaryNavy,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: _brandBlue.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          "${locations.length}",
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: _brandBlue,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (isOwnProfile)
+                    OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: _brandBlue,
+                        side: const BorderSide(color: _brandBlue, width: 1.1),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => ManageTeachingLocationsScreen(
+                              currentTeacherId: targetId,
+                            ),
+                          ),
+                        ).then((_) => fetchTeacherData());
+                      },
+                      icon: const Icon(Icons.settings_outlined, size: 14),
+                      label: const Text(
+                        "Manage Centres",
+                        style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              ...locations.map((loc) {
+                return TeachingLocationCardWidget(
+                  location: loc,
+                  isOwner: isOwnProfile,
+                  onViewOnMap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => LocationPickerScreen(
+                          initialLatitude: loc.latitude,
+                          initialLongitude: loc.longitude,
+                          initialAddress: loc.address,
+                        ),
+                      ),
+                    );
+                  },
+                  onViewSchedule: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => LocationBatchScheduleScreen(location: loc),
+                      ),
+                    );
+                  },
+                  onGetDirections: () {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Opening directions for ${loc.locationName}...'),
+                        backgroundColor: _brandBlue,
+                      ),
+                    );
+                  },
+                  onEditLocation: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => EditTeachingLocationScreen(location: loc),
+                      ),
+                    ).then((_) => fetchTeacherData());
+                  },
+                  onManageBatches: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => LocationBatchScheduleScreen(location: loc),
+                      ),
+                    );
+                  },
+                );
+              }),
+            ],
+          );
+        }
+
+        // Fallback to legacy teacherLocations list if subcollection not populated yet
+        if (teacherLocations.isNotEmpty) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  _buildSectionTitle(
+                    "Teaching Areas (Locations)",
+                    Icons.location_on_rounded,
+                  ),
+                  if (isOwnProfile)
+                    TextButton.icon(
+                      style: TextButton.styleFrom(
+                        foregroundColor: _brandBlue,
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => ManageTeachingLocationsScreen(
+                              currentTeacherId: targetId,
+                            ),
+                          ),
+                        ).then((_) => fetchTeacherData());
+                      },
+                      icon: const Icon(Icons.add_location_alt_outlined, size: 15),
+                      label: const Text(
+                        "Upgrade to Centres",
+                        style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: teacherLocations
+                    .map(
+                      (l) => Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: const Color(0xFFE2E8F0)),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.location_on_rounded,
+                                size: 15, color: Color(0xFFEF4444)),
+                            const SizedBox(width: 6),
+                            Flexible(
+                              child: Text(
+                                (l is Map)
+                                    ? (l['address'] ?? "Unknown").toString()
+                                    : l.toString(),
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: _primaryNavy,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    )
+                    .toList(),
+              ),
+            ],
+          );
+        }
+
+        // Empty State
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildSectionTitle("Teaching Centres & Areas", Icons.location_on_rounded),
+            const SizedBox(height: 10),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              child: Column(
+                children: [
+                  const Text(
+                    "No teaching locations added yet",
+                    style: TextStyle(
+                      color: Color(0xFF94A3B8),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  if (isOwnProfile) ...[
+                    const SizedBox(height: 12),
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _brandBlue,
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                      ),
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const LocationPickerScreen(),
+                          ),
+                        ).then((_) => fetchTeacherData());
+                      },
+                      icon: const Icon(Icons.add_location_alt_rounded, size: 18),
+                      label: const Text(
+                        "Add Teaching Location",
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   Widget _buildViewProfile() {
+    final String targetId = widget.currentUserId.isNotEmpty
+        ? widget.currentUserId
+        : (_auth.currentUser?.uid ?? '');
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -2377,48 +2659,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
           const Color(0xFFF59E0B),
         ),
         const SizedBox(height: 18),
-        _buildSectionTitle(
-            "Teaching Areas (Locations)", Icons.location_on_rounded),
-        const SizedBox(height: 10),
-        teacherLocations.isEmpty
-            ? _buildEmptyChipNotice("No teaching locations added yet")
-            : Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: teacherLocations
-                    .map(
-                      (l) => Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: const Color(0xFFE2E8F0)),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(Icons.location_on_rounded,
-                                size: 15, color: Color(0xFFEF4444)),
-                            const SizedBox(width: 6),
-                            Flexible(
-                              child: Text(
-                                (l is Map)
-                                    ? (l['address'] ?? "Unknown").toString()
-                                    : l.toString(),
-                                style: const TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600,
-                                  color: _primaryNavy,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    )
-                    .toList(),
-              ),
+        _buildTeachingLocationsSection(targetId),
         const SizedBox(height: 20),
         _buildSectionTitle("Subjects", Icons.menu_book_rounded),
         const SizedBox(height: 10),
@@ -2758,6 +2999,8 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
       '10+ Years',
     ];
 
+    final currentTeacherUid = _auth.currentUser?.uid ?? '';
+
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
@@ -2928,6 +3171,35 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
             }).toList(),
           ),
           const SizedBox(height: 20),
+          // Direct Action Button for Roadmap 2.0 Teaching Location System
+          Container(
+            width: double.infinity,
+            margin: const EdgeInsets.only(bottom: 14),
+            child: OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 13, horizontal: 14),
+                side: const BorderSide(color: _brandBlue, width: 1.2),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                foregroundColor: _brandBlue,
+                backgroundColor: const Color(0xFFF1F5F9),
+              ),
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => ManageTeachingLocationsScreen(
+                      currentTeacherId: currentTeacherUid,
+                    ),
+                  ),
+                ).then((_) => fetchTeacherData());
+              },
+              icon: const Icon(Icons.hub_outlined, size: 20),
+              label: const Text(
+                "Manage Teaching Centres & Map Markers",
+                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5),
+              ),
+            ),
+          ),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
