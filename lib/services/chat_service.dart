@@ -830,7 +830,53 @@ class ChatService {
       final fileName =
           '${DateTime.now().millisecondsSinceEpoch}_${file.path.split('/').last}';
       final ref = _storage.ref().child('chat_attachments/$folder/$fileName');
-      final uploadTask = await ref.putFile(file);
+
+      SettableMetadata? metadata;
+      if (folder == 'images') {
+        metadata = SettableMetadata(contentType: 'image/jpeg');
+      } else if (folder == 'videos') {
+        metadata = SettableMetadata(contentType: 'video/mp4');
+      } else if (folder == 'audio') {
+        metadata = SettableMetadata(contentType: 'audio/mpeg');
+      } else if (folder == 'documents') {
+        final extension = p.extension(file.path).toLowerCase();
+        String contentType;
+        switch (extension) {
+          case '.pdf':
+            contentType = 'application/pdf';
+            break;
+          case '.doc':
+            contentType = 'application/msword';
+            break;
+          case '.docx':
+            contentType =
+                'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+            break;
+          case '.xls':
+            contentType = 'application/vnd.ms-excel';
+            break;
+          case '.xlsx':
+            contentType =
+                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+            break;
+          case '.ppt':
+            contentType = 'application/vnd.ms-powerpoint';
+            break;
+          case '.pptx':
+            contentType =
+                'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+            break;
+          case '.txt':
+            contentType = 'text/plain';
+            break;
+          default:
+            contentType = 'application/octet-stream';
+            break;
+        }
+        metadata = SettableMetadata(contentType: contentType);
+      }
+
+      final uploadTask = await ref.putFile(file, metadata);
       return await uploadTask.ref.getDownloadURL();
     } catch (e) {
       _handleError('_uploadFileToStorage', e);
