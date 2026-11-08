@@ -8,10 +8,16 @@ import '../services/location_service.dart';
 
 class LocationPickerScreen extends StatefulWidget {
   final List<Map<String, dynamic>>? initialLocations;
+  final double? initialLatitude;
+  final double? initialLongitude;
+  final String? initialAddress;
 
   const LocationPickerScreen({
     super.key,
     this.initialLocations,
+    this.initialLatitude,
+    this.initialLongitude,
+    this.initialAddress,
   });
 
   @override
@@ -42,19 +48,44 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
   @override
   void initState() {
     super.initState();
+    bool hasInitialCoordinates = false;
+
+    if (widget.initialLatitude != null && widget.initialLongitude != null) {
+      _currentCenterPosition = LatLng(
+        widget.initialLatitude!,
+        widget.initialLongitude!,
+      );
+      hasInitialCoordinates = true;
+    }
+
+    if (widget.initialAddress != null && widget.initialAddress!.trim().isNotEmpty) {
+      _draggedAddress = widget.initialAddress!;
+    }
+
     if (widget.initialLocations != null && widget.initialLocations!.isNotEmpty) {
-      selectedLocations.addAll(widget.initialLocations!);
-      final first = widget.initialLocations!.first;
-      if (first['latitude'] != null && first['longitude'] != null) {
-        _currentCenterPosition = LatLng(
-          (first['latitude'] as num).toDouble(),
-          (first['longitude'] as num).toDouble(),
-        );
+      for (final loc in widget.initialLocations!) {
+        final entry = Map<String, dynamic>.from(loc);
+        entry['fullAddress'] ??= entry['address'] ?? '';
+        selectedLocations.add(entry);
+      }
+
+      if (!hasInitialCoordinates) {
+        final first = widget.initialLocations!.first;
+        if (first['latitude'] != null && first['longitude'] != null) {
+          _currentCenterPosition = LatLng(
+            (first['latitude'] as num).toDouble(),
+            (first['longitude'] as num).toDouble(),
+          );
+          hasInitialCoordinates = true;
+        }
       }
     }
 
-    _updateAddressFromPosition(_currentCenterPosition);
-    _getUserCurrentLocation(moveToPosition: true);
+    if (widget.initialAddress == null || widget.initialAddress!.trim().isEmpty) {
+      _updateAddressFromPosition(_currentCenterPosition);
+    }
+
+    _getUserCurrentLocation(moveToPosition: !hasInitialCoordinates);
   }
 
   @override
@@ -206,9 +237,9 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
   void _openPinDetailsModal() {
     // Duplicate check
     final isDuplicate = selectedLocations.any((loc) =>
-        (loc['latitude'] as double).toStringAsFixed(4) ==
+        (loc['latitude'] as num).toDouble().toStringAsFixed(4) ==
             _currentCenterPosition.latitude.toStringAsFixed(4) &&
-        (loc['longitude'] as double).toStringAsFixed(4) ==
+        (loc['longitude'] as num).toDouble().toStringAsFixed(4) ==
             _currentCenterPosition.longitude.toStringAsFixed(4));
 
     if (isDuplicate) {
@@ -464,6 +495,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
                             'locationType': selectedType,
                             'teachingMode': selectedMode.toLowerCase(),
                             'address': _draggedAddress,
+                            'fullAddress': _draggedAddress,
                             'latitude': _currentCenterPosition.latitude,
                             'longitude': _currentCenterPosition.longitude,
                             'radiusKm': 10.0,
@@ -553,7 +585,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
         icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
         infoWindow: InfoWindow(
           title: name.toString(),
-          snippet: data['address'].toString(),
+          snippet: (data['fullAddress'] ?? data['address']).toString(),
         ),
       );
     }).toSet();
@@ -956,6 +988,8 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
                               final locType = item['locationType'] ?? 'Centre';
                               final teachMode =
                                   (item['teachingMode'] ?? 'Offline').toString().toUpperCase();
+                              final displayAddr =
+                                  (item['fullAddress'] ?? item['address'] ?? '').toString();
 
                               return Container(
                                 width: 240,
@@ -1002,7 +1036,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
                                                 ),
                                               ),
                                               Text(
-                                                item['address'].toString(),
+                                                displayAddr,
                                                 maxLines: 1,
                                                 overflow: TextOverflow.ellipsis,
                                                 style: const TextStyle(
