@@ -4,6 +4,7 @@ class TeachingScheduleModel {
   final String id;
   final String locationId;
   final String batchId;
+  final String batchName;
   final String teacherId;
   final String dayOfWeek; // 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'
   final String slotType; // 'morning', 'afternoon', 'evening'
@@ -22,6 +23,7 @@ class TeachingScheduleModel {
     required this.id,
     required this.locationId,
     required this.batchId,
+    this.batchName = '',
     required this.teacherId,
     required this.dayOfWeek,
     this.slotType = 'morning',
@@ -29,13 +31,16 @@ class TeachingScheduleModel {
     required this.endTime,
     required this.subject,
     required this.classLevel,
-    this.recurrenceType = 'weekly',
+    String? recurrenceType,
+    String? recurrence,
     this.status = 'active',
     this.isTemporaryChange = false,
-    this.note,
+    String? note,
+    String? notes,
     this.createdAt,
     this.updatedAt,
-  });
+  })  : recurrenceType = recurrenceType ?? recurrence ?? 'weekly',
+        note = note ?? notes;
 
   /// Factory constructor to create a TeachingScheduleModel from a Firestore document
   factory TeachingScheduleModel.fromMap(Map<String, dynamic> map, String docId) {
@@ -51,6 +56,7 @@ class TeachingScheduleModel {
       id: docId,
       locationId: map['locationId']?.toString() ?? '',
       batchId: map['batchId']?.toString() ?? '',
+      batchName: map['batchName']?.toString() ?? '',
       teacherId: map['teacherId']?.toString() ?? '',
       dayOfWeek: map['dayOfWeek']?.toString() ?? 'Monday',
       slotType: map['slotType']?.toString() ?? 'morning',
@@ -58,12 +64,12 @@ class TeachingScheduleModel {
       endTime: map['endTime']?.toString() ?? '',
       subject: map['subject']?.toString() ?? '',
       classLevel: map['classLevel']?.toString() ?? '',
-      recurrenceType: map['recurrenceType']?.toString() ?? 'weekly',
+      recurrenceType: (map['recurrenceType'] ?? map['recurrence'])?.toString() ?? 'weekly',
       status: map['status']?.toString() ?? 'active',
       isTemporaryChange: map['isTemporaryChange'] is bool
           ? map['isTemporaryChange'] as bool
           : false,
-      note: map['note']?.toString(),
+      note: (map['note'] ?? map['notes'])?.toString(),
       createdAt: parseDateTime(map['createdAt']),
       updatedAt: parseDateTime(map['updatedAt']),
     );
@@ -74,6 +80,7 @@ class TeachingScheduleModel {
     return {
       'locationId': locationId,
       'batchId': batchId,
+      'batchName': batchName,
       'teacherId': teacherId,
       'dayOfWeek': dayOfWeek,
       'slotType': slotType,
@@ -82,9 +89,11 @@ class TeachingScheduleModel {
       'subject': subject,
       'classLevel': classLevel,
       'recurrenceType': recurrenceType,
+      'recurrence': recurrenceType,
       'status': status,
       'isTemporaryChange': isTemporaryChange,
       'note': note,
+      'notes': note,
       'createdAt': createdAt != null ? Timestamp.fromDate(createdAt!) : null,
       'updatedAt': updatedAt != null ? Timestamp.fromDate(updatedAt!) : null,
     };
@@ -95,6 +104,7 @@ class TeachingScheduleModel {
     String? id,
     String? locationId,
     String? batchId,
+    String? batchName,
     String? teacherId,
     String? dayOfWeek,
     String? slotType,
@@ -103,9 +113,11 @@ class TeachingScheduleModel {
     String? subject,
     String? classLevel,
     String? recurrenceType,
+    String? recurrence,
     String? status,
     bool? isTemporaryChange,
     String? note,
+    String? notes,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -113,6 +125,7 @@ class TeachingScheduleModel {
       id: id ?? this.id,
       locationId: locationId ?? this.locationId,
       batchId: batchId ?? this.batchId,
+      batchName: batchName ?? this.batchName,
       teacherId: teacherId ?? this.teacherId,
       dayOfWeek: dayOfWeek ?? this.dayOfWeek,
       slotType: slotType ?? this.slotType,
@@ -120,14 +133,18 @@ class TeachingScheduleModel {
       endTime: endTime ?? this.endTime,
       subject: subject ?? this.subject,
       classLevel: classLevel ?? this.classLevel,
-      recurrenceType: recurrenceType ?? this.recurrenceType,
+      recurrenceType: recurrenceType ?? recurrence ?? this.recurrenceType,
       status: status ?? this.status,
       isTemporaryChange: isTemporaryChange ?? this.isTemporaryChange,
-      note: note ?? this.note,
+      note: note ?? notes ?? this.note,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
   }
+
+  // Backward-compatible Getters
+  String? get notes => note;
+  String get recurrence => recurrenceType;
 
   // Getters & Helper Methods
   String get displayTiming => '$startTime – $endTime';
@@ -178,12 +195,10 @@ class TeachingScheduleModel {
     final s2 = other.startMinutesSinceMidnight;
     final e2 = other.endMinutesSinceMidnight;
 
-    // Guard against inverted or invalid interval ranges
     if (s1 >= e1 || s2 >= e2) {
       return false;
     }
 
-    // Two intervals [s1, e1) and [s2, e2) overlap if s1 < e2 and s2 < e1
     return s1 < e2 && s2 < e1;
   }
 
