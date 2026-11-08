@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../models/teacher_location_model.dart';
 import '../services/teacher_location_service.dart';
 import 'location_picker_screen.dart';
+import 'location_batch_schedule_screen.dart';
 
 class ManageTeachingLocationsScreen extends StatefulWidget {
   final String currentTeacherId;
@@ -62,6 +63,11 @@ class _ManageTeachingLocationsScreenState
       int addedCount = 0;
       for (final item in result) {
         try {
+          final String resolvedAddress =
+              (item['fullAddress'] ?? item['address'] ?? '').toString();
+          final double resolvedRadius =
+              (item['radiusKm'] as num?)?.toDouble() ?? 10.0;
+
           final newLoc = TeacherLocationModel(
             id: '',
             teacherId: widget.currentTeacherId,
@@ -69,10 +75,12 @@ class _ManageTeachingLocationsScreenState
                 .toString(),
             locationType: (item['locationType'] ?? 'Tuition Centre').toString(),
             teachingMode: (item['teachingMode'] ?? 'offline').toString().toLowerCase(),
-            address: (item['address'] ?? '').toString(),
+            address: resolvedAddress,
+            fullAddress: resolvedAddress,
             latitude: (item['latitude'] as num).toDouble(),
             longitude: (item['longitude'] as num).toDouble(),
-            radiusKm: (item['radiusKm'] as num?)?.toDouble() ?? 10.0,
+            radiusKm: resolvedRadius,
+            serviceRadiusKm: resolvedRadius,
             isActive: true,
             isDeleted: false,
             createdAt: DateTime.now(),
@@ -94,6 +102,11 @@ class _ManageTeachingLocationsScreenState
   }
 
   Future<void> _moveOrEditPin(TeacherLocationModel location) async {
+    final double radius = location.serviceRadiusKm ?? location.radiusKm ?? 10.0;
+    final String currentAddress = location.fullAddress.isNotEmpty
+        ? location.fullAddress
+        : location.address;
+
     final initialList = [
       {
         'id': location.id,
@@ -101,30 +114,42 @@ class _ManageTeachingLocationsScreenState
         'locationType': location.locationType,
         'teachingMode': location.teachingMode,
         'address': location.address,
+        'fullAddress': currentAddress,
         'latitude': location.latitude,
         'longitude': location.longitude,
-        'radiusKm': location.radiusKm,
+        'radiusKm': radius,
       }
     ];
 
     final result = await Navigator.push<List<Map<String, dynamic>>>(
       context,
       MaterialPageRoute(
-        builder: (_) => LocationPickerScreen(initialLocations: initialList),
+        builder: (_) => LocationPickerScreen(
+          initialLocations: initialList,
+          initialLatitude: location.latitude,
+          initialLongitude: location.longitude,
+          initialAddress: currentAddress,
+        ),
       ),
     );
 
     if (result != null && result.isNotEmpty && mounted) {
       final updated = result.first;
       try {
+        final double newRad = (updated['radiusKm'] as num?)?.toDouble() ?? radius;
+        final String newAddr =
+            (updated['fullAddress'] ?? updated['address'] ?? currentAddress).toString();
+
         final updatedModel = location.copyWith(
           locationName: updated['locationName']?.toString() ?? location.locationName,
           locationType: updated['locationType']?.toString() ?? location.locationType,
           teachingMode: updated['teachingMode']?.toString() ?? location.teachingMode,
-          address: updated['address']?.toString() ?? location.address,
+          address: newAddr,
+          fullAddress: newAddr,
           latitude: (updated['latitude'] as num).toDouble(),
           longitude: (updated['longitude'] as num).toDouble(),
-          radiusKm: (updated['radiusKm'] as num?)?.toDouble() ?? location.radiusKm,
+          radiusKm: newRad,
+          serviceRadiusKm: newRad,
           updatedAt: DateTime.now(),
         );
 
@@ -138,6 +163,15 @@ class _ManageTeachingLocationsScreenState
         }
       }
     }
+  }
+
+  void _navigateToBatchesAndSchedule(TeacherLocationModel location) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => LocationBatchScheduleScreen(location: location),
+      ),
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -257,7 +291,10 @@ class _ManageTeachingLocationsScreenState
 
     if (confirmed == true) {
       try {
-        await _locationService.softDeleteTeachingLocation(location.id);
+        await _locationService.softDeleteTeachingLocation(
+          widget.currentTeacherId,
+          location.id,
+        );
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -269,7 +306,10 @@ class _ManageTeachingLocationsScreenState
                 label: 'UNDO',
                 textColor: kAccentAmber,
                 onPressed: () async {
-                  await _locationService.restoreTeachingLocation(location.id);
+                  await _locationService.restoreTeachingLocation(
+                    widget.currentTeacherId,
+                    location.id,
+                  );
                 },
               ),
             ),
@@ -285,7 +325,10 @@ class _ManageTeachingLocationsScreenState
 
   void _openEditDetailsSheet(TeacherLocationModel location) {
     final nameCtrl = TextEditingController(text: location.locationName);
-    final addressCtrl = TextEditingController(text: location.address);
+    final String currentAddress = location.fullAddress.isNotEmpty
+        ? location.fullAddress
+        : location.address;
+    final addressCtrl = TextEditingController(text: currentAddress);
     String currentType = location.locationType;
     String currentMode = location.teachingMode;
 
@@ -404,6 +447,7 @@ class _ManageTeachingLocationsScreenState
                         final updated = location.copyWith(
                           locationName: nameCtrl.text.trim(),
                           address: addressCtrl.text.trim(),
+                          fullAddress: addressCtrl.text.trim(),
                           locationType: currentType,
                           teachingMode: currentMode,
                           updatedAt: DateTime.now(),
@@ -588,7 +632,10 @@ class _ManageTeachingLocationsScreenState
                                     icon: const Icon(Icons.restore_rounded, size: 16),
                                     label: const Text("Restore"),
                                     onPressed: () async {
-                                      await _locationService.restoreTeachingLocation(item.id);
+                                      await _locationService.restoreTeachingLocation(
+                                        widget.currentTeacherId,
+                                        item.id,
+                                      );
                                       if (mounted) {
                                         _showSnackBar('Restored "${item.locationName}"', isSuccess: true);
                                       }
@@ -645,7 +692,10 @@ class _ManageTeachingLocationsScreenState
     );
 
     if (confirmed == true) {
-      await _locationService.permanentlyDeleteTeachingLocation(location.id);
+      await _locationService.permanentlyDeleteTeachingLocation(
+        widget.currentTeacherId,
+        location.id,
+      );
       if (mounted) {
         _showSnackBar("Location permanently erased.");
       }
@@ -843,8 +893,31 @@ class _ManageTeachingLocationsScreenState
   }
 
   Widget _buildLocationCard(TeacherLocationModel location) {
-    final isVerified = location.isVerified;
+    bool isVerified = false;
+    try {
+      final dynamic l = location;
+      if (l.isVerified != null && l.isVerified is bool) {
+        isVerified = l.isVerified as bool;
+      } else if (l.verificationStatus != null) {
+        isVerified = l.verificationStatus == 'verified';
+      }
+    } catch (_) {}
+
     final teachingMode = location.teachingMode.toUpperCase();
+    final double radius = location.serviceRadiusKm ?? location.radiusKm ?? 10.0;
+    final String displayAddress = location.fullAddress.isNotEmpty
+        ? location.fullAddress
+        : location.address;
+
+    List<String> subjects = [];
+    try {
+      final dynamic l = location;
+      if (l.subjects != null) {
+        subjects = List<String>.from(l.subjects);
+      } else if (l.subjectSpecialties != null) {
+        subjects = List<String>.from(l.subjectSpecialties);
+      }
+    } catch (_) {}
 
     return Container(
       decoration: BoxDecoration(
@@ -930,10 +1003,8 @@ class _ManageTeachingLocationsScreenState
                         _openEditDetailsSheet(location);
                         break;
                       case 'batches':
-                        _showSnackBar('Opening Batches for ${location.locationName}');
-                        break;
                       case 'schedule':
-                        _showSnackBar('Opening Timetable for ${location.locationName}');
+                        _navigateToBatchesAndSchedule(location);
                         break;
                       case 'duplicate':
                         _handleDuplicateLocation(location);
@@ -1026,7 +1097,7 @@ class _ManageTeachingLocationsScreenState
                     const SizedBox(width: 6),
                     Expanded(
                       child: Text(
-                        location.address,
+                        displayAddress,
                         style: const TextStyle(
                           fontSize: 12,
                           color: kTextSecondary,
@@ -1071,7 +1142,7 @@ class _ManageTeachingLocationsScreenState
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: Text(
-                    "Coverage: ${location.radiusKm.toStringAsFixed(0)} KM",
+                    "Coverage: ${radius.toStringAsFixed(0)} KM",
                     style: const TextStyle(
                       fontSize: 10,
                       fontWeight: FontWeight.w600,
@@ -1079,8 +1150,8 @@ class _ManageTeachingLocationsScreenState
                     ),
                   ),
                 ),
-                if (location.subjectSpecialties.isNotEmpty)
-                  ...location.subjectSpecialties.take(2).map(
+                if (subjects.isNotEmpty)
+                  ...subjects.take(2).map(
                         (sub) => Container(
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                           decoration: BoxDecoration(
@@ -1120,8 +1191,9 @@ class _ManageTeachingLocationsScreenState
                         activeColor: kBrandBlue,
                         onChanged: (val) async {
                           await _locationService.toggleLocationActiveStatus(
-                            locationId: location.id,
-                            isActive: val,
+                            widget.currentTeacherId,
+                            location.id,
+                            val,
                           );
                         },
                       ),
@@ -1165,9 +1237,7 @@ class _ManageTeachingLocationsScreenState
                   ),
                   icon: const Icon(Icons.calendar_today_rounded, size: 13),
                   label: const Text("Batches"),
-                  onPressed: () {
-                    _showSnackBar('Navigating to Batches for ${location.locationName}');
-                  },
+                  onPressed: () => _navigateToBatchesAndSchedule(location),
                 ),
               ],
             ),
@@ -1181,7 +1251,8 @@ class _ManageTeachingLocationsScreenState
   // HELPERS
   // ---------------------------------------------------------------------------
 
-  String _formatDate(DateTime dt) {
+  String _formatDate(DateTime? dt) {
+    if (dt == null) return 'Recently';
     return '${dt.day}/${dt.month}/${dt.year}';
   }
 
