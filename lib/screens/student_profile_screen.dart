@@ -599,12 +599,16 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
     if (uid == null) return;
     setState(() => isLoading = true);
     try {
-      String? imageUrl = studentData?['profileImageUrl'];
+      String? imageUrl =
+          studentData?['profileImageUrl'] ?? studentData?['photoUrl'];
       if (_selectedImage != null) {
         final File? compressed =
             await ImageHelper.compressImage(_selectedImage!);
         final ref = _storage.ref('students/$uid/profile.jpg');
-        await ref.putFile(compressed ?? _selectedImage!);
+        await ref.putFile(
+          compressed ?? _selectedImage!,
+          SettableMetadata(contentType: 'image/jpeg'),
+        );
         imageUrl = await ref.getDownloadURL();
       }
       await _firestore.collection('students').doc(uid).set({
@@ -620,6 +624,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
         'studentClass': studentClass,
         'interestedSubjects': selectedSubjects,
         'profileImageUrl': imageUrl,
+        'photoUrl': imageUrl,
       }, SetOptions(merge: true));
 
       if (mounted) {
