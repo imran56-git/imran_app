@@ -18,7 +18,7 @@ class LocationBatchScheduleScreen extends StatefulWidget {
 
 class _LocationBatchScheduleScreenState extends State<LocationBatchScheduleScreen>
     with SingleTickerProviderStateMixin {
-  // Theme Color Palette
+  // Theme Color Palette FYBTT 2.0
   static const Color _navy = Color(0xFF0F172A);
   static const Color _brandBlue = Color(0xFF1E4C7A);
   static const Color _accentBlue = Color(0xFF2563EB);
@@ -61,8 +61,70 @@ class _LocationBatchScheduleScreenState extends State<LocationBatchScheduleScree
     super.dispose();
   }
 
+  // Safe Batch Property Getters (Resolves Model Divergences)
+  static int _getBatchMaxCapacity(TeachingBatchModel batch) {
+    try {
+      final dynamic b = batch;
+      if (b.maxStudents != null) return (b.maxStudents as num).toInt();
+    } catch (_) {}
+    try {
+      final dynamic b = batch;
+      if (b.maxCapacity != null) return (b.maxCapacity as num).toInt();
+    } catch (_) {}
+    try {
+      final dynamic b = batch;
+      if (b.capacity != null) return (b.capacity as num).toInt();
+    } catch (_) {}
+    return 20;
+  }
+
+  static int _getBatchEnrolledCount(TeachingBatchModel? batch) {
+    if (batch == null) return 0;
+    try {
+      final dynamic b = batch;
+      if (b.enrolledStudents != null) return (b.enrolledStudents as num).toInt();
+    } catch (_) {}
+    try {
+      final dynamic b = batch;
+      if (b.enrolledCount != null) return (b.enrolledCount as num).toInt();
+    } catch (_) {}
+    return 0;
+  }
+
+  static List<String> _getBatchDays(TeachingBatchModel batch) {
+    try {
+      final dynamic b = batch;
+      if (b.teachingDays != null) return List<String>.from(b.teachingDays);
+    } catch (_) {}
+    try {
+      final dynamic b = batch;
+      if (b.days != null) return List<String>.from(b.days);
+    } catch (_) {}
+    return const [];
+  }
+
+  static String _getBatchStartTime(TeachingBatchModel batch) {
+    try {
+      final dynamic b = batch;
+      if (b.startTime != null && b.startTime.toString().trim().isNotEmpty) {
+        return b.startTime.toString().trim();
+      }
+    } catch (_) {}
+    return '';
+  }
+
+  static String _getBatchEndTime(TeachingBatchModel batch) {
+    try {
+      final dynamic b = batch;
+      if (b.endTime != null && b.endTime.toString().trim().isNotEmpty) {
+        return b.endTime.toString().trim();
+      }
+    } catch (_) {}
+    return '';
+  }
+
   // Helper to parse "HH:mm AM/PM" or "HH:mm" into minutes since midnight
-  int _timeToMinutes(String timeStr) {
+  static int _timeToMinutes(String timeStr) {
     try {
       final sanitized = timeStr.trim().toUpperCase();
       final isPm = sanitized.contains('PM');
@@ -81,11 +143,20 @@ class _LocationBatchScheduleScreenState extends State<LocationBatchScheduleScree
     }
   }
 
-  String _formatTimeOfDay(TimeOfDay time) {
-    final hour = time.hourOfPeriod == 0 ? 12 : time.hourOfPeriod;
-    final minute = time.minute.toString().padLeft(2, '0');
-    final period = time.period == DayPeriod.am ? 'AM' : 'PM';
-    return '${hour.toString().padLeft(2, '0')}:$minute $period';
+  static bool _slotsOverlap(TeachingScheduleModel a, TeachingScheduleModel b) {
+    try {
+      final dynamic dynA = a;
+      if (dynA.overlapsWith != null) {
+        return dynA.overlapsWith(b) as bool;
+      }
+    } catch (_) {}
+
+    final startA = _timeToMinutes(a.startTime);
+    final endA = _timeToMinutes(a.endTime);
+    final startB = _timeToMinutes(b.startTime);
+    final endB = _timeToMinutes(b.endTime);
+
+    return (startA < endB && endA > startB);
   }
 
   String _getSlotPeriod(String startTimeStr) {
@@ -116,6 +187,10 @@ class _LocationBatchScheduleScreenState extends State<LocationBatchScheduleScree
   }
 
   PreferredSizeWidget _buildAppBar() {
+    final String displayAddress = widget.location.fullAddress.isNotEmpty
+        ? widget.location.fullAddress
+        : widget.location.address;
+
     return AppBar(
       elevation: 0,
       backgroundColor: Colors.white,
@@ -139,7 +214,7 @@ class _LocationBatchScheduleScreenState extends State<LocationBatchScheduleScree
           ),
           const SizedBox(height: 2),
           Text(
-            widget.location.address,
+            displayAddress,
             style: const TextStyle(
               color: _mutedSlate,
               fontSize: 11.5,
@@ -415,7 +490,7 @@ class _LocationBatchScheduleScreenState extends State<LocationBatchScheduleScree
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                       decoration: BoxDecoration(
-                        color: _brandBlue.withValues(alpha: 0.1),
+                        color: _brandBlue.withOpacity(0.1),
                         borderRadius: BorderRadius.circular(6),
                       ),
                       child: Text(
@@ -584,7 +659,7 @@ class _LocationBatchScheduleScreenState extends State<LocationBatchScheduleScree
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: _brandBlue.withValues(alpha: 0.08),
+              color: _brandBlue.withOpacity(0.08),
               shape: BoxShape.circle,
             ),
             child: const Icon(Icons.event_busy, size: 36, color: _brandBlue),
@@ -644,7 +719,7 @@ class _LocationBatchScheduleScreenState extends State<LocationBatchScheduleScree
                   Container(
                     padding: const EdgeInsets.all(20),
                     decoration: BoxDecoration(
-                      color: _brandBlue.withValues(alpha: 0.08),
+                      color: _brandBlue.withOpacity(0.08),
                       shape: BoxShape.circle,
                     ),
                     child: const Icon(Icons.group_off_outlined, size: 48, color: _brandBlue),
@@ -695,10 +770,13 @@ class _LocationBatchScheduleScreenState extends State<LocationBatchScheduleScree
   }
 
   Widget _buildBatchCard(TeachingBatchModel batch) {
-    final maxCapacity = batch.maxCapacity;
-    final enrolled = batch.enrolledCount ?? 0;
+    final maxCapacity = _getBatchMaxCapacity(batch);
+    final enrolled = _getBatchEnrolledCount(batch);
     final remaining = (maxCapacity - enrolled).clamp(0, maxCapacity);
     final ratio = maxCapacity > 0 ? (enrolled / maxCapacity).clamp(0.0, 1.0) : 0.0;
+    final days = _getBatchDays(batch);
+    final startTime = _getBatchStartTime(batch);
+    final endTime = _getBatchEndTime(batch);
 
     Color statusColor;
     String statusLabel;
@@ -772,7 +850,7 @@ class _LocationBatchScheduleScreenState extends State<LocationBatchScheduleScree
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
-                  color: _brandBlue.withValues(alpha: 0.1),
+                  color: _brandBlue.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: Text(
@@ -820,29 +898,34 @@ class _LocationBatchScheduleScreenState extends State<LocationBatchScheduleScree
               valueColor: AlwaysStoppedAnimation<Color>(statusColor),
             ),
           ),
-          const SizedBox(height: 12),
-          // Days & Timings
-          Row(
-            children: [
-              const Icon(Icons.access_time, size: 14, color: _mutedSlate),
-              const SizedBox(width: 4),
-              Text(
-                '${batch.startTime} - ${batch.endTime}',
-                style: const TextStyle(fontSize: 12, color: _navy, fontWeight: FontWeight.w500),
-              ),
-              const SizedBox(width: 12),
-              const Icon(Icons.date_range, size: 14, color: _mutedSlate),
-              const SizedBox(width: 4),
-              Expanded(
-                child: Text(
-                  batch.days.join(', '),
-                  style: const TextStyle(fontSize: 12, color: _mutedSlate),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ],
-          ),
+          if (startTime.isNotEmpty || days.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                if (startTime.isNotEmpty) ...[
+                  const Icon(Icons.access_time, size: 14, color: _mutedSlate),
+                  const SizedBox(width: 4),
+                  Text(
+                    endTime.isNotEmpty ? '$startTime - $endTime' : startTime,
+                    style: const TextStyle(fontSize: 12, color: _navy, fontWeight: FontWeight.w500),
+                  ),
+                  const SizedBox(width: 12),
+                ],
+                if (days.isNotEmpty) ...[
+                  const Icon(Icons.date_range, size: 14, color: _mutedSlate),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      days.join(', '),
+                      style: const TextStyle(fontSize: 12, color: _mutedSlate),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ],
           const SizedBox(height: 12),
           const Divider(height: 1, color: _cardBorder),
           const SizedBox(height: 8),
@@ -911,7 +994,7 @@ class _LocationBatchScheduleScreenState extends State<LocationBatchScheduleScree
           // Check conflict
           final conflictingSlots = (daySlots ?? []).where((s) {
             if (existingSlot != null && s.id == existingSlot.id) return false;
-            return s.overlapsWith(newSlot);
+            return _slotsOverlap(s, newSlot);
           }).toList();
 
           if (conflictingSlots.isNotEmpty) {
@@ -1079,7 +1162,7 @@ class _LocationBatchScheduleScreenState extends State<LocationBatchScheduleScree
                         for (final targetDay in selectedDaysToCopy) {
                           for (final slot in sourceSlots) {
                             final duplicated = slot.copyWith(
-                              id: UniqueKey().toString(),
+                              id: 'sched_${DateTime.now().microsecondsSinceEpoch}',
                               dayOfWeek: targetDay,
                               createdAt: DateTime.now(),
                             );
@@ -1126,7 +1209,11 @@ class _LocationBatchScheduleScreenState extends State<LocationBatchScheduleScree
             ),
             onPressed: () async {
               Navigator.pop(context);
-              await _locationService.deleteScheduleSlot(slot.id);
+              await _locationService.deleteScheduleSlot(
+                widget.location.teacherId,
+                widget.location.id,
+                slot.id,
+              );
             },
             child: const Text('Delete'),
           ),
@@ -1157,7 +1244,11 @@ class _LocationBatchScheduleScreenState extends State<LocationBatchScheduleScree
             ),
             onPressed: () async {
               Navigator.pop(context);
-              await _locationService.deleteBatch(batch.id);
+              await _locationService.deleteBatch(
+                widget.location.teacherId,
+                widget.location.id,
+                batch.id,
+              );
             },
             child: const Text('Delete'),
           ),
@@ -1219,10 +1310,8 @@ class _ScheduleSlotModalSheetState extends State<_ScheduleSlotModalSheet> {
     final slot = widget.existingSlot;
 
     if (slot != null) {
-      _selectedBatch = widget.availableBatches.firstWhere(
-        (b) => b.id == slot.batchId,
-        orElse: () => widget.availableBatches.first,
-      );
+      final matching = widget.availableBatches.where((b) => b.id == slot.batchId).toList();
+      _selectedBatch = matching.isNotEmpty ? matching.first : widget.availableBatches.first;
       _dayOfWeek = slot.dayOfWeek;
       _startTime = _parseTimeString(slot.startTime);
       _endTime = _parseTimeString(slot.endTime);
@@ -1315,13 +1404,13 @@ class _ScheduleSlotModalSheetState extends State<_ScheduleSlotModalSheet> {
                   fillColor: const Color(0xFFF8FAFC),
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
                 ),
-                items: widget.availableBatches.map((b) {
-                  return DropdownMenuItem(
+                items: widget.availableBatches.map<DropdownMenuItem<TeachingBatchModel>>((b) {
+                  return DropdownMenuItem<TeachingBatchModel>(
                     value: b,
                     child: Text('${b.batchName} (${b.subject} - ${b.classLevel})'),
                   );
                 }).toList(),
-                onChanged: (val) {
+                onChanged: (TeachingBatchModel? val) {
                   if (val != null) setState(() => _selectedBatch = val);
                 },
               ),
@@ -1493,7 +1582,7 @@ class _ScheduleSlotModalSheetState extends State<_ScheduleSlotModalSheet> {
                     final endFormatted = _formatTimeOfDay(_endTime);
 
                     final newSlot = TeachingScheduleModel(
-                      id: widget.existingSlot?.id ?? UniqueKey().toString(),
+                      id: widget.existingSlot?.id ?? 'sched_${DateTime.now().millisecondsSinceEpoch}',
                       teacherId: widget.location.teacherId,
                       locationId: widget.location.id,
                       batchId: _selectedBatch.id,
@@ -1565,7 +1654,9 @@ class _BatchFormModalSheetState extends State<_BatchFormModalSheet> {
     final availableClasses = widget.location.classes ?? ['Class 10'];
 
     _nameController = TextEditingController(text: b?.batchName ?? '');
-    _capacityController = TextEditingController(text: (b?.maxCapacity ?? 20).toString());
+    _capacityController = TextEditingController(
+      text: (b != null ? _LocationBatchScheduleScreenState._getBatchMaxCapacity(b) : 20).toString(),
+    );
     _selectedSubject = b != null && availableSubjects.contains(b.subject)
         ? b.subject
         : availableSubjects.isNotEmpty
@@ -1577,9 +1668,13 @@ class _BatchFormModalSheetState extends State<_BatchFormModalSheet> {
             ? availableClasses.first
             : 'General';
 
-    _startTime = b != null ? _parseTime(b.startTime) : const TimeOfDay(hour: 16, minute: 0);
-    _endTime = b != null ? _parseTime(b.endTime) : const TimeOfDay(hour: 17, minute: 30);
-    _selectedDays = Set<String>.from(b?.days ?? ['Mon', 'Wed', 'Fri']);
+    final bStart = b != null ? _LocationBatchScheduleScreenState._getBatchStartTime(b) : '';
+    final bEnd = b != null ? _LocationBatchScheduleScreenState._getBatchEndTime(b) : '';
+    _startTime = bStart.isNotEmpty ? _parseTime(bStart) : const TimeOfDay(hour: 16, minute: 0);
+    _endTime = bEnd.isNotEmpty ? _parseTime(bEnd) : const TimeOfDay(hour: 17, minute: 30);
+
+    final bDays = b != null ? _LocationBatchScheduleScreenState._getBatchDays(b) : <String>[];
+    _selectedDays = Set<String>.from(bDays.isNotEmpty ? bDays : ['Mon', 'Wed', 'Fri']);
   }
 
   TimeOfDay _parseTime(String timeStr) {
@@ -1713,7 +1808,7 @@ class _BatchFormModalSheetState extends State<_BatchFormModalSheet> {
                   return FilterChip(
                     label: Text(d),
                     selected: isSelected,
-                    selectedColor: const Color(0xFF1E4C7A).withValues(alpha: 0.15),
+                    selectedColor: const Color(0xFF1E4C7A).withOpacity(0.15),
                     checkmarkColor: const Color(0xFF1E4C7A),
                     onSelected: (selected) {
                       setState(() {
@@ -1818,23 +1913,34 @@ class _BatchFormModalSheetState extends State<_BatchFormModalSheet> {
                       return;
                     }
 
-                    final batch = TeachingBatchModel(
-                      id: widget.existingBatch?.id ?? UniqueKey().toString(),
-                      teacherId: widget.location.teacherId,
-                      locationId: widget.location.id,
-                      batchName: _nameController.text.trim(),
-                      subject: _selectedSubject,
-                      classLevel: _selectedClass,
-                      startTime: _formatTimeOfDay(_startTime),
-                      endTime: _formatTimeOfDay(_endTime),
-                      days: _selectedDays.toList(),
-                      maxCapacity: int.parse(_capacityController.text.trim()),
-                      enrolledCount: widget.existingBatch?.enrolledCount ?? 0,
-                      isActive: widget.existingBatch?.isActive ?? true,
-                      createdAt: widget.existingBatch?.createdAt ?? DateTime.now(),
-                      updatedAt: DateTime.now(),
-                    );
+                    final parsedCapacity = int.parse(_capacityController.text.trim());
+                    final batchId = widget.existingBatch?.id.isNotEmpty == true
+                        ? widget.existingBatch!.id
+                        : 'batch_${DateTime.now().millisecondsSinceEpoch}';
 
+                    final batchData = <String, dynamic>{
+                      'id': batchId,
+                      'teacherId': widget.location.teacherId,
+                      'locationId': widget.location.id,
+                      'batchName': _nameController.text.trim(),
+                      'subject': _selectedSubject,
+                      'classLevel': _selectedClass,
+                      'maxStudents': parsedCapacity,
+                      'maxCapacity': parsedCapacity,
+                      'capacity': parsedCapacity,
+                      'enrolledStudents': _LocationBatchScheduleScreenState._getBatchEnrolledCount(widget.existingBatch),
+                      'enrolledCount': _LocationBatchScheduleScreenState._getBatchEnrolledCount(widget.existingBatch),
+                      'teachingMode': widget.location.teachingMode ?? 'offline',
+                      'isActive': widget.existingBatch?.isActive ?? true,
+                      'startTime': _formatTimeOfDay(_startTime),
+                      'endTime': _formatTimeOfDay(_endTime),
+                      'days': _selectedDays.toList(),
+                      'teachingDays': _selectedDays.toList(),
+                      'createdAt': widget.existingBatch?.createdAt ?? DateTime.now(),
+                      'updatedAt': DateTime.now(),
+                    };
+
+                    final batch = TeachingBatchModel.fromMap(batchData, batchId);
                     widget.onSave(batch);
                   },
                   child: Text(
