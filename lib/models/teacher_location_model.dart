@@ -27,7 +27,8 @@ class TeacherLocationModel {
     required this.teacherId,
     required this.locationName,
     this.locationType = 'tuition_centre',
-    required this.fullAddress,
+    String? fullAddress,
+    String? address,
     this.placeId,
     required this.latitude,
     required this.longitude,
@@ -42,8 +43,10 @@ class TeacherLocationModel {
     this.createdAt,
     this.updatedAt,
     this.deletedAt,
-    this.serviceRadiusKm,
-  });
+    double? serviceRadiusKm,
+    double? radiusKm,
+  })  : fullAddress = fullAddress ?? address ?? '',
+        serviceRadiusKm = serviceRadiusKm ?? radiusKm;
 
   /// Factory constructor to instantiate model from Firestore map and document ID
   factory TeacherLocationModel.fromMap(Map<String, dynamic> map, String docId) {
@@ -74,13 +77,13 @@ class TeacherLocationModel {
       teacherId: map['teacherId']?.toString() ?? '',
       locationName: map['locationName']?.toString() ?? '',
       locationType: map['locationType']?.toString() ?? 'tuition_centre',
-      fullAddress: map['fullAddress']?.toString() ?? '',
+      fullAddress: (map['fullAddress'] ?? map['address'])?.toString() ?? '',
       placeId: map['placeId']?.toString(),
       latitude: parseDouble(map['latitude']),
       longitude: parseDouble(map['longitude']),
       geohash: map['geohash']?.toString() ?? '',
       teachingMode: map['teachingMode']?.toString() ?? 'offline',
-      subjects: parseStringList(map['subjects']),
+      subjects: parseStringList(map['subjects'] ?? map['subjectSpecialties']),
       classes: parseStringList(map['classes']),
       additionalNotes: map['additionalNotes']?.toString() ?? '',
       verificationStatus: map['verificationStatus']?.toString() ?? 'pending',
@@ -91,7 +94,7 @@ class TeacherLocationModel {
       deletedAt: parseDateTime(map['deletedAt']),
       serviceRadiusKm: map['serviceRadiusKm'] != null
           ? parseDouble(map['serviceRadiusKm'])
-          : null,
+          : (map['radiusKm'] != null ? parseDouble(map['radiusKm']) : null),
     );
   }
 
@@ -102,12 +105,14 @@ class TeacherLocationModel {
       'locationName': locationName,
       'locationType': locationType,
       'fullAddress': fullAddress,
+      'address': fullAddress,
       'placeId': placeId,
       'latitude': latitude,
       'longitude': longitude,
       'geohash': geohash,
       'teachingMode': teachingMode,
       'subjects': subjects,
+      'subjectSpecialties': subjects,
       'classes': classes,
       'additionalNotes': additionalNotes,
       'verificationStatus': verificationStatus,
@@ -117,6 +122,7 @@ class TeacherLocationModel {
       'updatedAt': updatedAt != null ? Timestamp.fromDate(updatedAt!) : null,
       'deletedAt': deletedAt != null ? Timestamp.fromDate(deletedAt!) : null,
       'serviceRadiusKm': serviceRadiusKm,
+      'radiusKm': serviceRadiusKm,
     };
   }
 
@@ -127,6 +133,7 @@ class TeacherLocationModel {
     String? locationName,
     String? locationType,
     String? fullAddress,
+    String? address,
     String? placeId,
     double? latitude,
     double? longitude,
@@ -142,13 +149,14 @@ class TeacherLocationModel {
     DateTime? updatedAt,
     DateTime? deletedAt,
     double? serviceRadiusKm,
+    double? radiusKm,
   }) {
     return TeacherLocationModel(
       id: id ?? this.id,
       teacherId: teacherId ?? this.teacherId,
       locationName: locationName ?? this.locationName,
       locationType: locationType ?? this.locationType,
-      fullAddress: fullAddress ?? this.fullAddress,
+      fullAddress: fullAddress ?? address ?? this.fullAddress,
       placeId: placeId ?? this.placeId,
       latitude: latitude ?? this.latitude,
       longitude: longitude ?? this.longitude,
@@ -163,9 +171,15 @@ class TeacherLocationModel {
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       deletedAt: deletedAt ?? this.deletedAt,
-      serviceRadiusKm: serviceRadiusKm ?? this.serviceRadiusKm,
+      serviceRadiusKm: serviceRadiusKm ?? radiusKm ?? this.serviceRadiusKm,
     );
   }
+
+  // Backward-compatible Getters
+  String get address => fullAddress;
+  double? get radiusKm => serviceRadiusKm;
+  bool get isVerified => verificationStatus == 'verified';
+  List<String> get subjectSpecialties => subjects;
 
   // Helper Getters
   bool get isOfflineTeaching => teachingMode == 'offline' || teachingMode == 'hybrid';
