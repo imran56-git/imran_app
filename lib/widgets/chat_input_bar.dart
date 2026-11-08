@@ -332,7 +332,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
       if (type == 'gallery') {
         final XFile? image = await _imagePicker.pickImage(
             source: ImageSource.gallery, imageQuality: 80);
-        if (image != null) {
+        if (image != null && image.path.isNotEmpty) {
           await _chatService.sendImageFile(
             chatRoomId: _effectiveChatRoomId,
             senderId: widget.senderId,
@@ -344,7 +344,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
       } else if (type == 'camera') {
         final XFile? image = await _imagePicker.pickImage(
             source: ImageSource.camera, imageQuality: 80);
-        if (image != null) {
+        if (image != null && image.path.isNotEmpty) {
           await _chatService.sendImageFile(
             chatRoomId: _effectiveChatRoomId,
             senderId: widget.senderId,
@@ -356,7 +356,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
       } else if (type == 'video') {
         final XFile? video =
             await _imagePicker.pickVideo(source: ImageSource.gallery);
-        if (video != null) {
+        if (video != null && video.path.isNotEmpty) {
           await _chatService.sendVideoFile(
             chatRoomId: _effectiveChatRoomId,
             senderId: widget.senderId,
@@ -380,7 +380,10 @@ class _ChatInputBarState extends State<ChatInputBar> {
             'zip'
           ],
         );
-        if (result != null && result.files.single.path != null) {
+        if (result != null &&
+            result.files.isNotEmpty &&
+            result.files.single.path != null &&
+            result.files.single.path!.isNotEmpty) {
           await _chatService.sendDocumentFile(
             chatRoomId: _effectiveChatRoomId,
             senderId: widget.senderId,
@@ -393,7 +396,10 @@ class _ChatInputBarState extends State<ChatInputBar> {
       } else if (type == 'audio') {
         final FilePickerResult? result =
             await FilePicker.platform.pickFiles(type: FileType.audio);
-        if (result != null && result.files.single.path != null) {
+        if (result != null &&
+            result.files.isNotEmpty &&
+            result.files.single.path != null &&
+            result.files.single.path!.isNotEmpty) {
           await _chatService.sendAudioFile(
             chatRoomId: _effectiveChatRoomId,
             senderId: widget.senderId,
