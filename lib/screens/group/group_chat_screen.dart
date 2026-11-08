@@ -1784,6 +1784,9 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                         receiverId: 'group',
                         replyToMessageId: _replyToMessageId,
                         replyToText: _replyToText,
+                        initialMessageCategory: _selectedCategory == 'all'
+                            ? 'general'
+                            : _selectedCategory,
                         onCancelReply: () {
                           setState(() {
                             _replyToMessageId = null;
