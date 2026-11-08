@@ -55,12 +55,17 @@ class _TeacherSearchResultScreenState extends State<TeacherSearchResultScreen>
 
   Future<void> _initStudentLocation() async {
     try {
-      final locService = LocationService();
-      final pos = await locService.getCurrentLocation();
+      dynamic pos;
+      try {
+        pos = await LocationService.getCurrentLocation();
+      } catch (_) {
+        final dynamic locService = LocationService();
+        pos = await locService.getCurrentLocation();
+      }
       if (pos != null && mounted) {
         setState(() {
-          _studentLat = pos.latitude;
-          _studentLng = pos.longitude;
+          _studentLat = (pos.latitude as num).toDouble();
+          _studentLng = (pos.longitude as num).toDouble();
           _isLoadingLocation = false;
         });
         return;
