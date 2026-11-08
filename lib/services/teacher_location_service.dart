@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../models/teacher_location_model.dart';
 import '../models/teaching_batch_model.dart';
 import '../models/teaching_schedule_model.dart';
@@ -11,23 +12,25 @@ class TeacherLocationService {
   TeacherLocationService({FirebaseFirestore? firestore})
       : _firestore = firestore ?? FirebaseFirestore.instance;
 
+  String get _currentUid => FirebaseAuth.instance.currentUser?.uid ?? '';
+
   // Collection references helpers
-  CollectionReference<Map<String, dynamic>> _locationsRef(String teacherId) =>
+  CollectionReference> _locationsRef(String teacherId) =>
       _firestore.collection('teachers').doc(teacherId).collection('teachingLocations');
 
-  CollectionReference<Map<String, dynamic>> _batchesRef(
+  CollectionReference> _batchesRef(
     String teacherId,
     String locationId,
   ) =>
       _locationsRef(teacherId).doc(locationId).collection('batches');
 
-  CollectionReference<Map<String, dynamic>> _schedulesRef(
+  CollectionReference> _schedulesRef(
     String teacherId,
     String locationId,
   ) =>
       _locationsRef(teacherId).doc(locationId).collection('schedules');
 
-  CollectionReference<Map<String, dynamic>> _historyRef(String teacherId) =>
+  CollectionReference> _historyRef(String teacherId) =>
       _firestore.collection('teachers').doc(teacherId).collection('locationHistory');
 
   // ==========================================
@@ -35,16 +38,16 @@ class TeacherLocationService {
   // ==========================================
 
   /// Adds a new location document under teachers/$teacherId/teachingLocations/
-  /// Sets createdAt/updatedAt and records an audit log.
   Future<String> addTeachingLocation(TeacherLocationModel location) async {
-    final CollectionReference<Map<String, dynamic>> ref =
-        _locationsRef(location.teacherId);
-    final DocumentReference<Map<String, dynamic>> docRef =
+    final tId = location.teacherId.isNotEmpty ? location.teacherId : _currentUid;
+    final CollectionReference> ref = _locationsRef(tId);
+    final DocumentReference> docRef =
         location.id.isEmpty ? ref.doc() : ref.doc(location.id);
 
     final now = DateTime.now();
     final updatedModel = location.copyWith(
       id: docRef.id,
+      teacherId: tId,
       createdAt: location.createdAt ?? now,
       updatedAt: now,
       isDeleted: false,
@@ -57,7 +60,7 @@ class TeacherLocationService {
     await docRef.set(data);
 
     await _recordLocationHistory(
-      teacherId: location.teacherId,
+      teacherId: tId,
       locationId: docRef.id,
       action: 'LOCATION_CREATED',
       details: {
@@ -70,10 +73,15 @@ class TeacherLocationService {
     return docRef.id;
   }
 
+  /// Alias for addTeachingLocation to support screens calling createTeachingLocation
+  Future<String> createTeachingLocation(TeacherLocationModel location) =>
+      addTeachingLocation(location);
+
   /// Updates existing location fields, updates updatedAt, and records audit history.
   Future<void> updateTeachingLocation(TeacherLocationModel location) async {
-    final DocumentReference<Map<String, dynamic>> docRef =
-        _locationsRef(location.teacherId).doc(location.id);
+    final tId = location.teacherId.isNotEmpty ? location.teacherId : _currentUid;
+    final DocumentReference> docRef =
+        _locationsRef(tId).doc(location.id);
 
     final data = location.toMap();
     data['updatedAt'] = FieldValue.serverTimestamp();
@@ -81,7 +89,7 @@ class TeacherLocationService {
     await docRef.update(data);
 
     await _recordLocationHistory(
-      teacherId: location.teacherId,
+      teacherId: tId,
       locationId: location.id,
       action: 'LOCATION_UPDATED',
       details: {
@@ -91,31 +99,55 @@ class TeacherLocationService {
     );
   }
 
-  /// Toggles active status without deleting the location.
+  /// Toggles active status without deleting the location. Supports 2 or 3 arguments.
   Future<void> toggleLocationActiveStatus(
-    String teacherId,
-    String locationId,
-    bool isActive,
-  ) async {
-    await _locationsRef(teacherId).doc(locationId).update({
-      'isActive': isActive,
+    dynamic arg1, [
+    dynamic arg2,
+    bool? arg3,
+  ]) async {
+    String tId = _currentUid;
+    String locId = '';
+    bool active = true;
+
+    if (arg3 != null) {
+      tId = arg1.toString();
+      locId = arg2.toString();
+      active = arg3;
+    } else if (arg2 != null && arg2 is bool) {
+      locId = arg1.toString();
+      active = arg2;
+    } else if (arg1 is TeacherLocationModel) {
+      tId = arg1.teacherId.isNotEmpty ? arg1.teacherId : _currentUid;
+      locId = arg1.id;
+      active = arg2 is bool ? arg2 : !arg1.isActive;
+    } else {
+      locId = arg1.toString();
+    }
+
+    if (locId.isEmpty) return;
+
+    await _locationsRef(tId).doc(locId).update({
+      'isActive': active,
       'updatedAt': FieldValue.serverTimestamp(),
     });
 
     await _recordLocationHistory(
-      teacherId: teacherId,
-      locationId: locationId,
-      action: isActive ? 'LOCATION_ACTIVATED' : 'LOCATION_DEACTIVATED',
-      details: {'isActive': isActive},
+      teacherId: tId,
+      locationId: locId,
+      action: active ? 'LOCATION_ACTIVATED' : 'LOCATION_DEACTIVATED',
+      details: {'isActive': active},
     );
   }
 
-  /// Soft deletes a location document.
+  /// Soft deletes a location document. Supports calling with (locationId) or (teacherId, locationId).
   Future<void> softDeleteTeachingLocation(
-    String teacherId,
-    String locationId,
-  ) async {
-    await _locationsRef(teacherId).doc(locationId).update({
+    String arg1, [
+    String? arg2,
+  ]) async {
+    final String tId = arg2 != null ? arg1 : _currentUid;
+    final String locId = arg2 ?? arg1;
+
+    await _locationsRef(tId).doc(locId).update({
       'isDeleted': true,
       'isActive': false,
       'deletedAt': FieldValue.serverTimestamp(),
@@ -123,19 +155,22 @@ class TeacherLocationService {
     });
 
     await _recordLocationHistory(
-      teacherId: teacherId,
-      locationId: locationId,
+      teacherId: tId,
+      locationId: locId,
       action: 'LOCATION_SOFT_DELETED',
       details: {'isDeleted': true},
     );
   }
 
-  /// Restores a soft-deleted location document within recovery window.
+  /// Restores a soft-deleted location document. Supports calling with (locationId) or (teacherId, locationId).
   Future<void> restoreTeachingLocation(
-    String teacherId,
-    String locationId,
-  ) async {
-    await _locationsRef(teacherId).doc(locationId).update({
+    String arg1, [
+    String? arg2,
+  ]) async {
+    final String tId = arg2 != null ? arg1 : _currentUid;
+    final String locId = arg2 ?? arg1;
+
+    await _locationsRef(tId).doc(locId).update({
       'isDeleted': false,
       'isActive': true,
       'deletedAt': null,
@@ -143,43 +178,43 @@ class TeacherLocationService {
     });
 
     await _recordLocationHistory(
-      teacherId: teacherId,
-      locationId: locationId,
+      teacherId: tId,
+      locationId: locId,
       action: 'LOCATION_RESTORED',
       details: {'isDeleted': false},
     );
   }
 
-  /// Permanently deletes the location document and all its subcollections.
+  /// Permanently deletes location document and its subcollections. Supports calling with (locationId) or (teacherId, locationId).
   Future<void> permanentlyDeleteTeachingLocation(
-    String teacherId,
-    String locationId,
-  ) async {
+    String arg1, [
+    String? arg2,
+  ]) async {
+    final String tId = arg2 != null ? arg1 : _currentUid;
+    final String locId = arg2 ?? arg1;
+
     final WriteBatch batch = _firestore.batch();
 
-    // 1. Delete all batches sub-collection documents
-    final batchesSnapshot = await _batchesRef(teacherId, locationId).get();
+    final batchesSnapshot = await _batchesRef(tId, locId).get();
     for (final doc in batchesSnapshot.docs) {
       batch.delete(doc.reference);
     }
 
-    // 2. Delete all schedules sub-collection documents
-    final schedulesSnapshot = await _schedulesRef(teacherId, locationId).get();
+    final schedulesSnapshot = await _schedulesRef(tId, locId).get();
     for (final doc in schedulesSnapshot.docs) {
       batch.delete(doc.reference);
     }
 
-    // 3. Delete parent location document
-    final docRef = _locationsRef(teacherId).doc(locationId);
+    final docRef = _locationsRef(tId).doc(locId);
     batch.delete(docRef);
 
     await batch.commit();
 
     await _recordLocationHistory(
-      teacherId: teacherId,
-      locationId: locationId,
+      teacherId: tId,
+      locationId: locId,
       action: 'LOCATION_PERMANENTLY_DELETED',
-      details: {'locationId': locationId},
+      details: {'locationId': locId},
     );
   }
 
@@ -192,7 +227,8 @@ class TeacherLocationService {
     String teacherId, {
     bool includeInactive = false,
   }) {
-    Query<Map<String, dynamic>> query = _locationsRef(teacherId)
+    final tId = teacherId.isNotEmpty ? teacherId : _currentUid;
+    Query> query = _locationsRef(tId)
         .where('isDeleted', isEqualTo: false);
 
     if (!includeInactive) {
@@ -200,6 +236,21 @@ class TeacherLocationService {
     }
 
     return query.snapshots().map((snapshot) {
+      return snapshot.docs
+          .map((doc) => TeacherLocationModel.fromMap(doc.data(), doc.id))
+          .toList();
+    });
+  }
+
+  /// Streams soft-deleted teaching locations for recovery screens.
+  Stream<List<TeacherLocationModel>> getDeletedTeacherLocationsStream(
+    String teacherId,
+  ) {
+    final tId = teacherId.isNotEmpty ? teacherId : _currentUid;
+    return _locationsRef(tId)
+        .where('isDeleted', isEqualTo: true)
+        .snapshots()
+        .map((snapshot) {
       return snapshot.docs
           .map((doc) => TeacherLocationModel.fromMap(doc.data(), doc.id))
           .toList();
@@ -241,7 +292,8 @@ class TeacherLocationService {
 
   /// Adds a new batch under location's batches subcollection.
   Future<String> addBatch(TeachingBatchModel batch) async {
-    final ref = _batchesRef(batch.teacherId, batch.locationId);
+    final tId = batch.teacherId.isNotEmpty ? batch.teacherId : _currentUid;
+    final ref = _batchesRef(tId, batch.locationId);
     final docRef = batch.id.isEmpty ? ref.doc() : ref.doc(batch.id);
 
     final data = batch.toMap();
@@ -255,21 +307,35 @@ class TeacherLocationService {
 
   /// Updates an existing batch.
   Future<void> updateBatch(TeachingBatchModel batch) async {
+    final tId = batch.teacherId.isNotEmpty ? batch.teacherId : _currentUid;
     final data = batch.toMap();
     data['updatedAt'] = FieldValue.serverTimestamp();
 
-    await _batchesRef(batch.teacherId, batch.locationId)
+    await _batchesRef(tId, batch.locationId)
         .doc(batch.id)
         .update(data);
   }
 
-  /// Deletes a batch document.
+  /// Deletes a batch document. Supports deleteBatch(batchId) or deleteBatch(teacherId, locationId, batchId).
   Future<void> deleteBatch(
-    String teacherId,
-    String locationId,
-    String batchId,
-  ) async {
-    await _batchesRef(teacherId, locationId).doc(batchId).delete();
+    String arg1, [
+    String? arg2,
+    String? arg3,
+  ]) async {
+    if (arg3 != null && arg2 != null) {
+      await _batchesRef(arg1, arg2).doc(arg3).delete();
+    } else {
+      // Search across collections via collectionGroup if only batchId was provided
+      final query = await _firestore
+          .collectionGroup('batches')
+          .where('id', isEqualTo: arg1)
+          .limit(1)
+          .get();
+
+      if (query.docs.isNotEmpty) {
+        await query.docs.first.reference.delete();
+      }
+    }
   }
 
   /// Streams active batches for a location.
@@ -284,13 +350,29 @@ class TeacherLocationService {
     });
   }
 
+  /// Fetches batches list directly as a Future.
+  Future<List<TeachingBatchModel>> getBatches(
+    String teacherId,
+    String locationId,
+  ) async {
+    try {
+      final snapshot = await _batchesRef(teacherId, locationId).get();
+      return snapshot.docs
+          .map((doc) => TeachingBatchModel.fromMap(doc.data(), doc.id))
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
   // ==========================================
   // SECTION D: SCHEDULE MANAGEMENT
   // ==========================================
 
   /// Adds a schedule slot for a given location.
   Future<String> addScheduleSlot(TeachingScheduleModel schedule) async {
-    final ref = _schedulesRef(schedule.teacherId, schedule.locationId);
+    final tId = schedule.teacherId.isNotEmpty ? schedule.teacherId : _currentUid;
+    final ref = _schedulesRef(tId, schedule.locationId);
     final docRef = schedule.id.isEmpty ? ref.doc() : ref.doc(schedule.id);
 
     final data = schedule.toMap();
@@ -304,21 +386,35 @@ class TeacherLocationService {
 
   /// Updates a schedule slot.
   Future<void> updateScheduleSlot(TeachingScheduleModel schedule) async {
+    final tId = schedule.teacherId.isNotEmpty ? schedule.teacherId : _currentUid;
     final data = schedule.toMap();
     data['updatedAt'] = FieldValue.serverTimestamp();
 
-    await _schedulesRef(schedule.teacherId, schedule.locationId)
+    await _schedulesRef(tId, schedule.locationId)
         .doc(schedule.id)
         .update(data);
   }
 
-  /// Deletes a schedule slot.
+  /// Deletes a schedule slot. Supports deleteScheduleSlot(scheduleId) or deleteScheduleSlot(teacherId, locationId, scheduleId).
   Future<void> deleteScheduleSlot(
-    String teacherId,
-    String locationId,
-    String scheduleId,
-  ) async {
-    await _schedulesRef(teacherId, locationId).doc(scheduleId).delete();
+    String arg1, [
+    String? arg2,
+    String? arg3,
+  ]) async {
+    if (arg3 != null && arg2 != null) {
+      await _schedulesRef(arg1, arg2).doc(arg3).delete();
+    } else {
+      // Search across collections via collectionGroup if only scheduleId was provided
+      final query = await _firestore
+          .collectionGroup('schedules')
+          .where('id', isEqualTo: arg1)
+          .limit(1)
+          .get();
+
+      if (query.docs.isNotEmpty) {
+        await query.docs.first.reference.delete();
+      }
+    }
   }
 
   /// Streams schedules for a location.
