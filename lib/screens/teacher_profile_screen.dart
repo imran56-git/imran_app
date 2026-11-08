@@ -346,7 +346,10 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
         setState(() => _isUploadingBanner = true);
         File? compressed = await ImageHelper.compressImage(file);
         final ref = _storage.ref().child('teachers/$uid/banner.jpg');
-        await ref.putFile(compressed ?? file);
+        await ref.putFile(
+          compressed ?? file,
+          SettableMetadata(contentType: 'image/jpeg'),
+        );
         final bannerUrl = await ref.getDownloadURL();
         await _firestore.collection('teachers').doc(uid).update({
           'bannerImageUrl': bannerUrl,
@@ -640,7 +643,10 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
         File? compressedFile =
             await ImageHelper.compressImage(_selectedImage!);
         final ref = _storage.ref().child('teachers/$uid/profile.jpg');
-        await ref.putFile(compressedFile ?? _selectedImage!);
+        await ref.putFile(
+          compressedFile ?? _selectedImage!,
+          SettableMetadata(contentType: 'image/jpeg'),
+        );
         imageUrl = await ref.getDownloadURL();
       }
 
@@ -648,7 +654,10 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
         File? compressedBanner =
             await ImageHelper.compressImage(_selectedBannerImage!);
         final bannerRef = _storage.ref().child('teachers/$uid/banner.jpg');
-        await bannerRef.putFile(compressedBanner ?? _selectedBannerImage!);
+        await bannerRef.putFile(
+          compressedBanner ?? _selectedBannerImage!,
+          SettableMetadata(contentType: 'image/jpeg'),
+        );
         bannerUrl = await bannerRef.getDownloadURL();
       }
 
