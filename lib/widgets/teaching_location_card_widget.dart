@@ -27,7 +27,7 @@ class TeachingLocationCardWidget extends StatelessWidget {
     this.onManageBatches,
   });
 
-  // Palette Constants
+  // Executive Palette Constants FYBTT 2.0
   static const Color _navy = Color(0xFF0F172A);
   static const Color _brandBlue = Color(0xFF1E4C7A);
   static const Color _accentBlue = Color(0xFF2563EB);
@@ -36,6 +36,19 @@ class TeachingLocationCardWidget extends StatelessWidget {
   static const Color _cardBorder = Color(0xFFE2E8F0);
   static const Color _mutedSlate = Color(0xFF64748B);
   static const Color _surfaceSlate = Color(0xFFF8FAFC);
+
+  String get _resolvedAddress {
+    final String full = location.fullAddress;
+    if (full.trim().isNotEmpty) return full;
+    try {
+      final dynamic dynamicLoc = location;
+      final dynamic addr = dynamicLoc.address;
+      if (addr != null && addr.toString().trim().isNotEmpty) {
+        return addr.toString();
+      }
+    } catch (_) {}
+    return full;
+  }
 
   String _formatLocationType(String type) {
     switch (type.toLowerCase()) {
@@ -84,7 +97,7 @@ class TeachingLocationCardWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bool isActive = location.isActive ?? true;
+    final bool isActive = location.isActive != false;
     final bool isVerified = location.verificationStatus == 'verified';
 
     return Opacity(
@@ -123,7 +136,8 @@ class TeachingLocationCardWidget extends StatelessWidget {
                   _buildTitleAndAddress(),
                   const SizedBox(height: 12),
                   _buildBatchAndSchedulePreview(),
-                  if ((location.subjects?.isNotEmpty ?? false) || (location.classes?.isNotEmpty ?? false)) ...[
+                  if ((location.subjects?.isNotEmpty ?? false) ||
+                      (location.classes?.isNotEmpty ?? false)) ...[
                     const SizedBox(height: 12),
                     _buildTagsSection(),
                   ],
@@ -306,6 +320,8 @@ class TeachingLocationCardWidget extends StatelessWidget {
   }
 
   Widget _buildTitleAndAddress() {
+    final String addressText = _resolvedAddress;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -354,7 +370,7 @@ class TeachingLocationCardWidget extends StatelessWidget {
             const SizedBox(width: 5),
             Expanded(
               child: Text(
-                location.address,
+                addressText.isNotEmpty ? addressText : 'Address details unavailable',
                 style: const TextStyle(
                   fontSize: 13,
                   color: _mutedSlate,
@@ -405,15 +421,18 @@ class TeachingLocationCardWidget extends StatelessWidget {
           );
         }
 
-        final activeBatchCount = batches.where((b) => b.isActive ?? true).length;
-        final allDays = <String>{};
-        for (var b in batches) {
-          allDays.addAll(b.days);
-        }
+        final activeBatches = batches.where((b) => b.isActive).toList();
+        final int activeBatchCount = activeBatches.length;
 
-        final sampleTiming = batches.isNotEmpty
-            ? '${batches.first.startTime} - ${batches.first.endTime}'
-            : null;
+        final subjects = activeBatches
+            .map((b) => b.subject)
+            .where((s) => s.trim().isNotEmpty)
+            .toSet();
+
+        final classLevels = activeBatches
+            .map((b) => b.classLevel)
+            .where((c) => c.trim().isNotEmpty)
+            .toSet();
 
         return Container(
           width: double.infinity,
@@ -431,25 +450,31 @@ class TeachingLocationCardWidget extends StatelessWidget {
                 text: '$activeBatchCount Active ${activeBatchCount == 1 ? 'Batch' : 'Batches'}',
                 color: _brandBlue,
               ),
-              const SizedBox(width: 8),
-              // Days Summary
-              if (allDays.isNotEmpty) ...[
+              if (subjects.isNotEmpty) ...[
+                const SizedBox(width: 8),
                 Expanded(
                   child: _buildMetricChip(
-                    icon: Icons.calendar_today_outlined,
-                    text: allDays.take(3).join(', '),
+                    icon: Icons.menu_book_outlined,
+                    text: subjects.take(2).join(', '),
                     color: _navy,
                   ),
                 ),
-                const SizedBox(width: 8),
               ],
-              // Timing Preview
-              if (sampleTiming != null)
+              if (classLevels.isNotEmpty) ...[
+                const SizedBox(width: 8),
                 _buildMetricChip(
-                  icon: Icons.access_time_outlined,
-                  text: sampleTiming,
+                  icon: Icons.school_outlined,
+                  text: classLevels.first,
                   color: _amber,
                 ),
+              ] else if (activeBatches.isNotEmpty) ...[
+                const SizedBox(width: 8),
+                _buildMetricChip(
+                  icon: Icons.event_seat_outlined,
+                  text: activeBatches.first.seatStatusDisplay,
+                  color: _emerald,
+                ),
+              ],
             ],
           ),
         );
