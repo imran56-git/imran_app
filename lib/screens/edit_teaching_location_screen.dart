@@ -16,7 +16,7 @@ class EditTeachingLocationScreen extends StatefulWidget {
 }
 
 class _EditTeachingLocationScreenState extends State<EditTeachingLocationScreen> {
-  // Theme Color Palette
+  // Theme Color Palette FYBTT 2.0
   static const Color _navy = Color(0xFF0F172A);
   static const Color _brandBlue = Color(0xFF1E4C7A);
   static const Color _accentBlue = Color(0xFF2563EB);
@@ -93,8 +93,9 @@ class _EditTeachingLocationScreenState extends State<EditTeachingLocationScreen>
   void _initFromLocation() {
     final loc = widget.location;
     _nameController = TextEditingController(text: loc.locationName);
-    _address = loc.address;
-    _addressController = TextEditingController(text: loc.address);
+
+    _address = loc.fullAddress.isNotEmpty ? loc.fullAddress : loc.address;
+    _addressController = TextEditingController(text: _address);
     _notesController = TextEditingController(text: loc.additionalNotes ?? '');
 
     _locationType = loc.locationType;
@@ -103,7 +104,9 @@ class _EditTeachingLocationScreenState extends State<EditTeachingLocationScreen>
     _longitude = loc.longitude;
     _selectedSubjects = Set<String>.from(loc.subjects ?? []);
     _selectedClasses = Set<String>.from(loc.classes ?? []);
-    _serviceRadiusKm = (loc.radiusKm ?? 5.0).clamp(1.0, 20.0);
+
+    final double rawRadius = loc.serviceRadiusKm ?? loc.radiusKm ?? 5.0;
+    _serviceRadiusKm = rawRadius.clamp(1.0, 20.0);
     _isActive = loc.isActive ?? true;
   }
 
@@ -118,14 +121,17 @@ class _EditTeachingLocationScreenState extends State<EditTeachingLocationScreen>
 
   bool _hasUnsavedChanges() {
     final loc = widget.location;
+    final initialAddr = loc.fullAddress.isNotEmpty ? loc.fullAddress : loc.address;
     if (_nameController.text.trim() != loc.locationName) return true;
-    if (_address != loc.address) return true;
+    if (_address != initialAddr) return true;
     if ((_notesController.text.trim()) != (loc.additionalNotes ?? '')) return true;
     if (_locationType != loc.locationType) return true;
     if (_teachingMode != (loc.teachingMode ?? 'offline')) return true;
     if (_latitude != loc.latitude || _longitude != loc.longitude) return true;
     if (_isActive != (loc.isActive ?? true)) return true;
-    if (_locationType == 'home_tuition' && _serviceRadiusKm != (loc.radiusKm ?? 5.0)) return true;
+
+    final initialRadius = (loc.serviceRadiusKm ?? loc.radiusKm ?? 5.0).clamp(1.0, 20.0);
+    if (_locationType == 'home_tuition' && _serviceRadiusKm != initialRadius) return true;
 
     final initialSubjects = Set<String>.from(loc.subjects ?? []);
     if (_selectedSubjects.length != initialSubjects.length ||
@@ -191,17 +197,41 @@ class _EditTeachingLocationScreenState extends State<EditTeachingLocationScreen>
     );
 
     if (result != null) {
-      setState(() {
-        if (result is Map) {
-          if (result['latitude'] != null) _latitude = (result['latitude'] as num).toDouble();
-          if (result['longitude'] != null) _longitude = (result['longitude'] as num).toDouble();
-          if (result['address'] != null && (result['address'] as String).isNotEmpty) {
-            _address = result['address'];
+      Map<String, dynamic>? selectedMap;
+
+      if (result is List && result.isNotEmpty) {
+        final firstItem = result.first;
+        if (firstItem is Map<String, dynamic>) {
+          selectedMap = firstItem;
+        } else if (firstItem is Map) {
+          selectedMap = Map<String, dynamic>.from(firstItem);
+        }
+      } else if (result is Map<String, dynamic>) {
+        selectedMap = result;
+      } else if (result is Map) {
+        selectedMap = Map<String, dynamic>.from(result);
+      }
+
+      if (selectedMap != null) {
+        setState(() {
+          if (selectedMap!['latitude'] != null) {
+            _latitude = (selectedMap['latitude'] as num).toDouble();
+          }
+          if (selectedMap['longitude'] != null) {
+            _longitude = (selectedMap['longitude'] as num).toDouble();
+          }
+
+          final String? resolvedAddr = (selectedMap['fullAddress'] as String?)?.isNotEmpty == true
+              ? selectedMap['fullAddress'] as String
+              : selectedMap['address'] as String?;
+
+          if (resolvedAddr != null && resolvedAddr.trim().isNotEmpty) {
+            _address = resolvedAddr.trim();
             _addressController.text = _address;
           }
-        }
-        _isLocationChanged = true;
-      });
+          _isLocationChanged = true;
+        });
+      }
     }
   }
 
@@ -239,16 +269,20 @@ class _EditTeachingLocationScreenState extends State<EditTeachingLocationScreen>
     setState(() => _isSaving = true);
 
     try {
+      final double? targetRadius = _locationType == 'home_tuition' ? _serviceRadiusKm : null;
+
       final updatedLocation = widget.location.copyWith(
         locationName: _nameController.text.trim(),
         locationType: _locationType,
         address: _address.trim(),
+        fullAddress: _address.trim(),
         latitude: _latitude,
         longitude: _longitude,
         teachingMode: _teachingMode,
         subjects: _selectedSubjects.toList(),
         classes: _selectedClasses.toList(),
-        radiusKm: _locationType == 'home_tuition' ? _serviceRadiusKm : null,
+        radiusKm: targetRadius,
+        serviceRadiusKm: targetRadius,
         additionalNotes: _notesController.text.trim(),
         isActive: _isActive,
         updatedAt: DateTime.now(),
@@ -427,7 +461,7 @@ class _EditTeachingLocationScreenState extends State<EditTeachingLocationScreen>
             Container(
               padding: const EdgeInsets.all(6),
               decoration: BoxDecoration(
-                color: _brandBlue.withValues(alpha: 0.1),
+                color: _brandBlue.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Icon(icon, size: 18, color: _brandBlue),
@@ -633,9 +667,9 @@ class _EditTeachingLocationScreenState extends State<EditTeachingLocationScreen>
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
-                  color: _accentAmber.withValues(alpha: 0.15),
+                  color: _accentAmber.withOpacity(0.15),
                   borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: _accentAmber.withValues(alpha: 0.5)),
+                  border: Border.all(color: _accentAmber.withOpacity(0.5)),
                 ),
                 child: const Row(
                   mainAxisSize: MainAxisSize.min,
@@ -777,7 +811,7 @@ class _EditTeachingLocationScreenState extends State<EditTeachingLocationScreen>
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
               decoration: BoxDecoration(
-                color: _brandBlue.withValues(alpha: 0.1),
+                color: _brandBlue.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Text(
@@ -796,7 +830,7 @@ class _EditTeachingLocationScreenState extends State<EditTeachingLocationScreen>
             activeTrackColor: _brandBlue,
             inactiveTrackColor: _cardBorder,
             thumbColor: _brandBlue,
-            overlayColor: _brandBlue.withValues(alpha: 0.1),
+            overlayColor: _brandBlue.withOpacity(0.1),
             valueIndicatorColor: _navy,
           ),
           child: Slider(
@@ -843,7 +877,7 @@ class _EditTeachingLocationScreenState extends State<EditTeachingLocationScreen>
             return FilterChip(
               label: Text(subject),
               selected: isSelected,
-              selectedColor: _accentBlue.withValues(alpha: 0.15),
+              selectedColor: _accentBlue.withOpacity(0.15),
               checkmarkColor: _accentBlue,
               backgroundColor: _backgroundSlate,
               labelStyle: TextStyle(
@@ -924,7 +958,7 @@ class _EditTeachingLocationScreenState extends State<EditTeachingLocationScreen>
             return FilterChip(
               label: Text(cls),
               selected: isSelected,
-              selectedColor: _brandBlue.withValues(alpha: 0.15),
+              selectedColor: _brandBlue.withOpacity(0.15),
               checkmarkColor: _brandBlue,
               backgroundColor: _backgroundSlate,
               labelStyle: TextStyle(
