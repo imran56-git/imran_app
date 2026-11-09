@@ -969,7 +969,7 @@ class _ManageTeachingLocationsScreenState
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Row(
-                    mainAxisSize: minAxisSize,
+                    mainAxisSize: MainAxisSize.min,
                     children: [
                       Icon(
                         isVerified ? Icons.verified_rounded : Icons.pending_rounded,
