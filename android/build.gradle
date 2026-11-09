@@ -1,3 +1,25 @@
+buildscript {
+    repositories {
+        google()
+        maven { url 'https://maven-central.storage-download.googleapis.com/maven2/' }
+        maven { url 'https://cache-redirector.jetbrains.com/maven.central' }
+        maven { url 'https://repo1.maven.org/maven2/' }
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+
+allprojects {
+    repositories {
+        google()
+        maven { url 'https://maven-central.storage-download.googleapis.com/maven2/' }
+        maven { url 'https://cache-redirector.jetbrains.com/maven.central' }
+        maven { url 'https://repo1.maven.org/maven2/' }
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+
 rootProject.buildDir = "../build"
 subprojects {
     project.buildDir = "${rootProject.buildDir}/${project.name}"
