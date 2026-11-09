@@ -79,6 +79,7 @@ class _ManageTeachingLocationsScreenState
             fullAddress: resolvedAddress,
             latitude: (item['latitude'] as num).toDouble(),
             longitude: (item['longitude'] as num).toDouble(),
+            geohash: (item['geohash'] ?? '').toString(),
             radiusKm: resolvedRadius,
             serviceRadiusKm: resolvedRadius,
             isActive: true,
@@ -968,7 +969,7 @@ class _ManageTeachingLocationsScreenState
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Row(
-                    mainAxisSize: MainAxisSize.min,
+                    mainAxisSize: minAxisSize,
                     children: [
                       Icon(
                         isVerified ? Icons.verified_rounded : Icons.pending_rounded,
