@@ -15,22 +15,22 @@ class TeacherLocationService {
   String get _currentUid => FirebaseAuth.instance.currentUser?.uid ?? '';
 
   // Collection references helpers
-  CollectionReference> _locationsRef(String teacherId) =>
+  CollectionReference<Map<String, dynamic>> _locationsRef(String teacherId) =>
       _firestore.collection('teachers').doc(teacherId).collection('teachingLocations');
 
-  CollectionReference> _batchesRef(
+  CollectionReference<Map<String, dynamic>> _batchesRef(
     String teacherId,
     String locationId,
   ) =>
       _locationsRef(teacherId).doc(locationId).collection('batches');
 
-  CollectionReference> _schedulesRef(
+  CollectionReference<Map<String, dynamic>> _schedulesRef(
     String teacherId,
     String locationId,
   ) =>
       _locationsRef(teacherId).doc(locationId).collection('schedules');
 
-  CollectionReference> _historyRef(String teacherId) =>
+  CollectionReference<Map<String, dynamic>> _historyRef(String teacherId) =>
       _firestore.collection('teachers').doc(teacherId).collection('locationHistory');
 
   // ==========================================
@@ -40,8 +40,8 @@ class TeacherLocationService {
   /// Adds a new location document under teachers/$teacherId/teachingLocations/
   Future<String> addTeachingLocation(TeacherLocationModel location) async {
     final tId = location.teacherId.isNotEmpty ? location.teacherId : _currentUid;
-    final CollectionReference> ref = _locationsRef(tId);
-    final DocumentReference> docRef =
+    final CollectionReference<Map<String, dynamic>> ref = _locationsRef(tId);
+    final DocumentReference<Map<String, dynamic>> docRef =
         location.id.isEmpty ? ref.doc() : ref.doc(location.id);
 
     final now = DateTime.now();
@@ -80,7 +80,7 @@ class TeacherLocationService {
   /// Updates existing location fields, updates updatedAt, and records audit history.
   Future<void> updateTeachingLocation(TeacherLocationModel location) async {
     final tId = location.teacherId.isNotEmpty ? location.teacherId : _currentUid;
-    final DocumentReference> docRef =
+    final DocumentReference<Map<String, dynamic>> docRef =
         _locationsRef(tId).doc(location.id);
 
     final data = location.toMap();
@@ -228,7 +228,7 @@ class TeacherLocationService {
     bool includeInactive = false,
   }) {
     final tId = teacherId.isNotEmpty ? teacherId : _currentUid;
-    Query> query = _locationsRef(tId)
+    Query<Map<String, dynamic>> query = _locationsRef(tId)
         .where('isDeleted', isEqualTo: false);
 
     if (!includeInactive) {
