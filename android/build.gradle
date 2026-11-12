@@ -12,7 +12,6 @@ buildscript {
 allprojects {
     repositories {
         google()
-        // Jitsi Meet SDK CDN & Direct Mirror (Bypasses GitHub 504 Gateway Timeout)
         maven { url 'https://maven.jitsi.net' }
         maven { url 'https://maven-central.storage-download.googleapis.com/maven2/' }
         maven { url 'https://cache-redirector.jetbrains.com/maven.central' }
