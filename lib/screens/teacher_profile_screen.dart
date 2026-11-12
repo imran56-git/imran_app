@@ -1,21 +1,19 @@
 import 'dart:async';
-import 'dart:io';
 import 'dart:ui';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../animations/animation_constants.dart';
 import '../models/rating_model.dart';
 import '../models/teacher_location_model.dart';
 import '../services/follow_service.dart';
+import '../services/media_compression_service.dart';
 import '../services/teacher_location_service.dart';
-import '../utils/image_utils.dart';
 import '../widgets/follow_button.dart';
+import '../widgets/image_viewer.dart';
 import '../widgets/success_toast.dart';
 import '../widgets/badge_details_sheet.dart';
 import '../widgets/teaching_location_card_widget.dart';
@@ -50,7 +48,6 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseStorage _storage = FirebaseStorage.instance;
-  final ImagePicker _picker = ImagePicker();
   final FollowService _followService = FollowService();
   final TeacherLocationService _locationService = TeacherLocationService();
 
@@ -74,10 +71,11 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
   Map<String, dynamic>? teacherData;
   bool isLoading = true;
   bool isEditing = false;
+  bool _isUploadingProfileImage = false;
   bool _isUploadingBanner = false;
 
-  File? _selectedImage;
-  File? _selectedBannerImage;
+  String? _pendingProfileImageUrl;
+  String? _pendingBannerImageUrl;
 
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _phoneController = TextEditingController();
@@ -144,6 +142,8 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
       setState(() {
         isLoading = true;
         teacherData = null;
+        _pendingProfileImageUrl = null;
+        _pendingBannerImageUrl = null;
         _nameController.clear();
         _phoneController.clear();
         _classController.clear();
@@ -273,104 +273,109 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
     });
   }
 
-  void _openFullScreenImageViewer(String imageUrl, String title) {
-    if (imageUrl.isEmpty) return;
-    Navigator.of(context).push(
-      PageRouteBuilder(
-        opaque: false,
-        barrierDismissible: true,
-        pageBuilder: (context, _, __) {
-          return Scaffold(
-            backgroundColor: Colors.black.withOpacity(0.96),
-            appBar: AppBar(
-              backgroundColor: Colors.transparent,
-              elevation: 0,
-              leading: IconButton(
-                icon: const Icon(Icons.arrow_back_ios_new_rounded,
-                    color: Colors.white),
-                onPressed: () => Navigator.pop(context),
-              ),
-              title: Text(
-                title,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 17,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-            body: SizedBox.expand(
-              child: Center(
-                child: InteractiveViewer(
-                  panEnabled: true,
-                  boundaryMargin: const EdgeInsets.all(120),
-                  minScale: 0.5,
-                  maxScale: 5.0,
-                  child: Image.network(
-                    imageUrl,
-                    fit: BoxFit.contain,
-                    loadingBuilder: (context, child, progress) {
-                      if (progress == null) return child;
-                      return const Center(
-                        child: CircularProgressIndicator(color: Colors.white),
-                      );
-                    },
-                    errorBuilder: (context, error, stackTrace) {
-                      return const Center(
-                        child: Icon(Icons.broken_image_rounded,
-                            color: Colors.white54, size: 48),
-                      );
-                    },
-                  ),
-                ),
-              ),
-            ),
-          );
-        },
-      ),
+  void _openFullScreenImageViewer(
+    String imageUrl,
+    String title, {
+    String? subtitle,
+    String? heroTag,
+  }) {
+    ImageViewer.open(
+      context,
+      imageUrl: imageUrl,
+      title: title,
+      subtitle: subtitle,
+      heroTag: heroTag,
     );
   }
 
-  Future<void> _pickAndUploadBanner() async {
-    if (!isOwnProfile) return;
+  Future<void> _pickCropAndUploadProfileImage() async {
+    if (!isOwnProfile || _isUploadingProfileImage) return;
+    final uid = _auth.currentUser?.uid;
+    if (uid == null || uid.isEmpty) return;
+
     try {
-      final picked = await _picker.pickImage(
-        source: ImageSource.gallery,
-        maxWidth: 1400,
-        maxHeight: 800,
-        imageQuality: 85,
+      setState(() => _isUploadingProfileImage = true);
+
+      final String? freshUrl =
+          await MediaCompressionService.pickCropCompressAndUpload(
+        context: context,
+        uploadType: MediaUploadType.profile,
+        ownerId: uid,
       );
-      if (picked == null) return;
 
-      final file = File(picked.path);
-      setState(() {
-        _selectedBannerImage = file;
-      });
+      if (!mounted) return;
 
-      if (!isEditing) {
-        final uid = _auth.currentUser?.uid;
-        if (uid == null) return;
-        setState(() => _isUploadingBanner = true);
-        File? compressed = await ImageHelper.compressImage(file);
-        final ref = _storage.ref().child('teachers/$uid/banner.jpg');
-        await ref.putFile(
-          compressed ?? file,
-          SettableMetadata(contentType: 'image/jpeg'),
-        );
-        final bannerUrl = await ref.getDownloadURL();
-        await _firestore.collection('teachers').doc(uid).update({
-          'bannerImageUrl': bannerUrl,
-          'coverImageUrl': bannerUrl,
+      if (freshUrl != null && freshUrl.isNotEmpty) {
+        setState(() {
+          _pendingProfileImageUrl = freshUrl;
+          teacherData ??= {};
+          teacherData!['profileImageUrl'] = freshUrl;
+          teacherData!['photoUrl'] = freshUrl;
+          _isUploadingProfileImage = false;
         });
-        if (mounted) {
-          setState(() {
-            teacherData ??= {};
-            teacherData!['bannerImageUrl'] = bannerUrl;
-            teacherData!['coverImageUrl'] = bannerUrl;
-            _isUploadingBanner = false;
+
+        // If triggered outside edit form, sync immediately to Firestore
+        if (!isEditing) {
+          await _firestore.collection('teachers').doc(uid).update({
+            'profileImageUrl': freshUrl,
+            'photoUrl': freshUrl,
           });
-          SuccessToast.show(context, 'Profile banner updated!');
         }
+
+        if (mounted) {
+          SuccessToast.show(context, 'Profile photo optimized & updated!');
+        }
+      } else {
+        setState(() => _isUploadingProfileImage = false);
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isUploadingProfileImage = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to update profile photo: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _pickAndUploadBanner() async {
+    if (!isOwnProfile || _isUploadingBanner) return;
+    final uid = _auth.currentUser?.uid;
+    if (uid == null || uid.isEmpty) return;
+
+    try {
+      setState(() => _isUploadingBanner = true);
+
+      final String? bannerUrl =
+          await MediaCompressionService.pickCropCompressAndUpload(
+        context: context,
+        uploadType: MediaUploadType.banner,
+        ownerId: uid,
+      );
+
+      if (!mounted) return;
+
+      if (bannerUrl != null && bannerUrl.isNotEmpty) {
+        setState(() {
+          _pendingBannerImageUrl = bannerUrl;
+          teacherData ??= {};
+          teacherData!['bannerImageUrl'] = bannerUrl;
+          teacherData!['coverImageUrl'] = bannerUrl;
+          _isUploadingBanner = false;
+        });
+
+        if (!isEditing) {
+          await _firestore.collection('teachers').doc(uid).update({
+            'bannerImageUrl': bannerUrl,
+            'coverImageUrl': bannerUrl,
+          });
+        }
+
+        if (mounted) {
+          SuccessToast.show(context, 'Cover banner optimized & updated!');
+        }
+      } else {
+        setState(() => _isUploadingBanner = false);
       }
     } catch (e) {
       if (mounted) {
@@ -550,6 +555,15 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                             .delete()
                             .catchError((_) {});
 
+                        // Delete both new WebP paths and legacy JPG paths
+                        await _storage
+                            .ref('profile_images/$uid/profile.webp')
+                            .delete()
+                            .catchError((_) {});
+                        await _storage
+                            .ref('cover_banners/$uid/cover.webp')
+                            .delete()
+                            .catchError((_) {});
                         await _storage
                             .ref('teachers/$uid/profile.jpg')
                             .delete()
@@ -641,32 +655,11 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
     if (uid == null) return;
     setState(() => isLoading = true);
     try {
-      String? imageUrl = teacherData?['profileImageUrl'];
-      String? bannerUrl =
+      final String? imageUrl = _pendingProfileImageUrl ??
+          teacherData?['profileImageUrl']?.toString();
+      final String? bannerUrl = _pendingBannerImageUrl ??
           (teacherData?['bannerImageUrl'] ?? teacherData?['coverImageUrl'])
               ?.toString();
-
-      if (_selectedImage != null) {
-        File? compressedFile =
-            await ImageHelper.compressImage(_selectedImage!);
-        final ref = _storage.ref().child('teachers/$uid/profile.jpg');
-        await ref.putFile(
-          compressedFile ?? _selectedImage!,
-          SettableMetadata(contentType: 'image/jpeg'),
-        );
-        imageUrl = await ref.getDownloadURL();
-      }
-
-      if (_selectedBannerImage != null) {
-        File? compressedBanner =
-            await ImageHelper.compressImage(_selectedBannerImage!);
-        final bannerRef = _storage.ref().child('teachers/$uid/banner.jpg');
-        await bannerRef.putFile(
-          compressedBanner ?? _selectedBannerImage!,
-          SettableMetadata(contentType: 'image/jpeg'),
-        );
-        bannerUrl = await bannerRef.getDownloadURL();
-      }
 
       final String expText = _experienceController.text.trim();
 
@@ -680,7 +673,10 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
         'experience': expText,
         'teachingExperience': expText,
         'gender': gender,
-        'profileImageUrl': imageUrl,
+        if (imageUrl != null && imageUrl.isNotEmpty) ...{
+          'profileImageUrl': imageUrl,
+          'photoUrl': imageUrl,
+        },
         if (bannerUrl != null && bannerUrl.isNotEmpty) ...{
           'bannerImageUrl': bannerUrl,
           'coverImageUrl': bannerUrl,
@@ -693,46 +689,14 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
         SuccessToast.show(context, 'Updated Successfully');
         setState(() {
           isEditing = false;
-          _selectedImage = null;
-          _selectedBannerImage = null;
+          _pendingProfileImageUrl = null;
+          _pendingBannerImageUrl = null;
         });
         fetchTeacherData();
       }
     } catch (_) {
       if (mounted) setState(() => isLoading = false);
     }
-  }
-
-  Route _createGenieRoute(Widget page, Offset tapPosition) {
-    return PageRouteBuilder(
-      transitionDuration: const Duration(milliseconds: 380),
-      reverseTransitionDuration: const Duration(milliseconds: 320),
-      pageBuilder: (context, animation, secondaryAnimation) => page,
-      transitionsBuilder: (context, animation, secondaryAnimation, child) {
-        final screenSize = MediaQuery.of(context).size;
-        final double alignX = (tapPosition.dx / screenSize.width) * 2 - 1;
-        final double alignY = (tapPosition.dy / screenSize.height) * 2 - 1;
-        final Alignment alignment = Alignment(alignX, alignY);
-
-        final curve = CurvedAnimation(
-          parent: animation,
-          curve: Curves.easeOutCubic,
-          reverseCurve: Curves.easeInCubic,
-        );
-
-        return Align(
-          alignment: alignment,
-          child: ScaleTransition(
-            scale: curve,
-            alignment: alignment,
-            child: FadeTransition(
-              opacity: curve,
-              child: child,
-            ),
-          ),
-        );
-      },
-    );
   }
 
   void _showAnimatedPopup({
@@ -1143,7 +1107,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
   }
 
   void _showPendingDuesSheet(
-      double totalDue, List<Map<String, dynamic>> dueStudents) {
+      double totalDue, List> dueStudents) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -1443,10 +1407,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
   }
 
   ImageProvider? _resolveBannerImageProvider() {
-    if (_selectedBannerImage != null) {
-      return FileImage(_selectedBannerImage!);
-    }
-    final String? bannerUrl =
+    final String? bannerUrl = _pendingBannerImageUrl ??
         (teacherData?['bannerImageUrl'] ?? teacherData?['coverImageUrl'])
             ?.toString();
     if (bannerUrl != null && bannerUrl.trim().isNotEmpty) {
@@ -1463,7 +1424,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
     const double profileRadius = 56.0;
     final bool canPopScreen = Navigator.canPop(context) && !isOwnProfile;
     final ImageProvider? bannerProvider = _resolveBannerImageProvider();
-    final String? currentBannerUrl =
+    final String? currentBannerUrl = _pendingBannerImageUrl ??
         (teacherData?['bannerImageUrl'] ?? teacherData?['coverImageUrl'])
             ?.toString();
 
@@ -1513,7 +1474,12 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                                           currentBannerUrl != null &&
                                           currentBannerUrl.isNotEmpty) {
                                         _openFullScreenImageViewer(
-                                            currentBannerUrl, 'Cover Banner');
+                                          currentBannerUrl,
+                                          _nameController.text.isEmpty
+                                              ? 'Cover Banner'
+                                              : _nameController.text,
+                                          subtitle: 'Cover Banner',
+                                        );
                                       }
                                     },
                                     child: Container(
@@ -1765,7 +1731,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                                                                 width: 6),
                                                             Text(
                                                               _isUploadingBanner
-                                                                  ? 'Uploading...'
+                                                                  ? 'Compressing...'
                                                                   : (bannerProvider !=
                                                                           null
                                                                       ? 'Change Cover'
@@ -2110,7 +2076,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
   }
 
   Widget _buildProfileImage(double radius) {
-    final rawUrl = teacherData?['profileImageUrl'];
+    final rawUrl = _pendingProfileImageUrl ?? teacherData?['profileImageUrl'];
     final String? url =
         (rawUrl != null && rawUrl.toString().trim().isNotEmpty)
             ? rawUrl.toString().trim()
@@ -2118,6 +2084,9 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
     final String nameText = _nameController.text.trim().isNotEmpty
         ? _nameController.text.trim()
         : 'T';
+    final String targetId = widget.currentUserId.isNotEmpty
+        ? widget.currentUserId
+        : (_auth.currentUser?.uid ?? '');
 
     final bool isVerified = BadgeTierResolver.isTeacherVerified(teacherData);
     final bool hasGolden = BadgeTierResolver.hasGoldenTenureBadge(teacherData);
@@ -2133,86 +2102,131 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
       cornerBadgeType = BadgeType.verified;
     }
 
-    return GestureDetector(
-      onTap: isEditing
-          ? () async {
-              final picked = await _picker.pickImage(
-                  source: ImageSource.gallery, imageQuality: 80);
-              if (picked != null) {
-                setState(() => _selectedImage = File(picked.path));
-              }
-            }
-          : () {
-              if (url != null && url.isNotEmpty) {
-                _openFullScreenImageViewer(url, nameText);
-              }
-            },
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(4),
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: Colors.white,
-              boxShadow: [
-                BoxShadow(
-                  color: _primaryNavy.withOpacity(0.14),
-                  blurRadius: 18,
-                  offset: const Offset(0, 6),
-                ),
-              ],
-            ),
-            child: CircleAvatar(
-              radius: radius,
-              backgroundColor: const Color(0xFFE0F2FE),
-              backgroundImage: _selectedImage != null
-                  ? FileImage(_selectedImage!)
-                  : (url != null ? NetworkImage(url) : null) as ImageProvider?,
-              child: (_selectedImage == null && url == null)
-                  ? Text(
-                      nameText[0].toUpperCase(),
-                      style: const TextStyle(
-                        fontSize: 36,
-                        fontWeight: FontWeight.w900,
-                        color: _brandBlue,
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: isEditing
+              ? _pickCropAndUploadProfileImage
+              : () {
+                  _openFullScreenImageViewer(
+                    url ?? '',
+                    nameText,
+                    subtitle: _instituteController.text.trim().isNotEmpty
+                        ? _instituteController.text.trim()
+                        : 'Verified Educator',
+                    heroTag: 'teacher_avatar_$targetId',
+                  );
+                },
+          child: Hero(
+            tag: 'teacher_avatar_$targetId',
+            child: Container(
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.white,
+                boxShadow: [
+                  BoxShadow(
+                    color: _primaryNavy.withOpacity(0.14),
+                    blurRadius: 18,
+                    offset: const Offset(0, 6),
+                  ),
+                ],
+              ),
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  CircleAvatar(
+                    radius: radius,
+                    backgroundColor: const Color(0xFFE0F2FE),
+                    backgroundImage: url != null ? NetworkImage(url) : null,
+                    child: url == null
+                        ? Text(
+                            nameText[0].toUpperCase(),
+                            style: const TextStyle(
+                              fontSize: 36,
+                              fontWeight: FontWeight.w900,
+                              color: _brandBlue,
+                            ),
+                          )
+                        : null,
+                  ),
+                  if (_isUploadingProfileImage)
+                    Container(
+                      width: radius * 2,
+                      height: radius * 2,
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.55),
+                        shape: BoxShape.circle,
                       ),
-                    )
-                  : null,
+                      child: const Center(
+                        child: SizedBox(
+                          width: 26,
+                          height: 26,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2.5,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
             ),
           ),
-          if (isEditing)
-            Positioned(
-              bottom: 2,
-              right: 2,
-              child: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [_brandBlue, _accentBlue],
+        ),
+        if (isEditing)
+          Positioned(
+            bottom: 0,
+            right: 0,
+            child: Material(
+              color: Colors.transparent,
+              shape: const CircleBorder(),
+              child: InkWell(
+                customBorder: const CircleBorder(),
+                onTap: _isUploadingProfileImage
+                    ? null
+                    : () {
+                        HapticFeedback.selectionClick();
+                        _pickCropAndUploadProfileImage();
+                      },
+                child: Container(
+                  padding: const EdgeInsets.all(9),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [_brandBlue, _accentBlue],
+                    ),
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 2.5),
+                    boxShadow: [
+                      BoxShadow(
+                        color: _accentBlue.withOpacity(0.35),
+                        blurRadius: 8,
+                        offset: const Offset(0, 3),
+                      ),
+                    ],
                   ),
-                  shape: BoxShape.circle,
-                  border: Border.all(color: Colors.white, width: 2.5),
+                  child: const Icon(
+                    Icons.camera_alt_rounded,
+                    color: Colors.white,
+                    size: 17,
+                  ),
                 ),
-                child: const Icon(
-                  Icons.camera_alt_rounded,
-                  color: Colors.white,
-                  size: 16,
-                ),
-              ),
-            )
-          else if (cornerBadgeType != null)
-            Positioned(
-              bottom: 2,
-              right: 4,
-              child: AvatarCornerBadge(
-                badgeType: cornerBadgeType,
-                holderName: nameText,
-                size: 24,
               ),
             ),
-        ],
-      ),
+          )
+        else if (cornerBadgeType != null)
+          Positioned(
+            bottom: 2,
+            right: 4,
+            child: AvatarCornerBadge(
+              badgeType: cornerBadgeType,
+              holderName: nameText,
+              size: 24,
+            ),
+          ),
+      ],
     );
   }
 
@@ -2345,7 +2359,8 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
 
   Widget _buildTeachingLocationsSection(String targetId) {
     final Stream<List<TeacherLocationModel>> locationStream = isOwnProfile
-        ? _locationService.getTeacherLocationsStream(targetId, includeInactive: false)
+        ? _locationService.getTeacherLocationsStream(targetId,
+            includeInactive: false)
         : _locationService.getPublicActiveLocationsStream(targetId);
 
     return StreamBuilder<List<TeacherLocationModel>>(
@@ -2353,7 +2368,6 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
       builder: (context, snapshot) {
         final List<TeacherLocationModel> locations = snapshot.data ?? [];
 
-        // Check if locations subcollection has data
         if (locations.isNotEmpty) {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -2363,7 +2377,8 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                 children: [
                   Row(
                     children: [
-                      const Icon(Icons.location_on_rounded, size: 18, color: _brandBlue),
+                      const Icon(Icons.location_on_rounded,
+                          size: 18, color: _brandBlue),
                       const SizedBox(width: 7),
                       const Text(
                         "Teaching Centres & Areas",
@@ -2375,7 +2390,8 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                       ),
                       const SizedBox(width: 8),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 7, vertical: 2),
                         decoration: BoxDecoration(
                           color: _brandBlue.withOpacity(0.1),
                           borderRadius: BorderRadius.circular(10),
@@ -2399,7 +2415,8 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(10),
                         ),
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 6),
                         visualDensity: VisualDensity.compact,
                       ),
                       onPressed: () {
@@ -2415,7 +2432,8 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                       icon: const Icon(Icons.settings_outlined, size: 14),
                       label: const Text(
                         "Manage Centres",
-                        style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700),
+                        style: TextStyle(
+                            fontSize: 11.5, fontWeight: FontWeight.w700),
                       ),
                     ),
                 ],
@@ -2441,14 +2459,16 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (_) => LocationBatchScheduleScreen(location: loc),
+                        builder: (_) =>
+                            LocationBatchScheduleScreen(location: loc),
                       ),
                     );
                   },
                   onGetDirections: () {
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
-                        content: Text('Opening directions for ${loc.locationName}...'),
+                        content: Text(
+                            'Opening directions for ${loc.locationName}...'),
                         backgroundColor: _brandBlue,
                       ),
                     );
@@ -2457,7 +2477,8 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (_) => EditTeachingLocationScreen(location: loc),
+                        builder: (_) =>
+                            EditTeachingLocationScreen(location: loc),
                       ),
                     ).then((_) => fetchTeacherData());
                   },
@@ -2465,7 +2486,8 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (_) => LocationBatchScheduleScreen(location: loc),
+                        builder: (_) =>
+                            LocationBatchScheduleScreen(location: loc),
                       ),
                     );
                   },
@@ -2475,7 +2497,6 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
           );
         }
 
-        // Fallback to legacy teacherLocations list if subcollection not populated yet
         if (teacherLocations.isNotEmpty) {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -2503,10 +2524,12 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                           ),
                         ).then((_) => fetchTeacherData());
                       },
-                      icon: const Icon(Icons.add_location_alt_outlined, size: 15),
+                      icon:
+                          const Icon(Icons.add_location_alt_outlined, size: 15),
                       label: const Text(
                         "Upgrade to Centres",
-                        style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700),
+                        style: TextStyle(
+                            fontSize: 11.5, fontWeight: FontWeight.w700),
                       ),
                     ),
                 ],
@@ -2553,11 +2576,11 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
           );
         }
 
-        // Empty State
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _buildSectionTitle("Teaching Centres & Areas", Icons.location_on_rounded),
+            _buildSectionTitle(
+                "Teaching Centres & Areas", Icons.location_on_rounded),
             const SizedBox(height: 10),
             Container(
               width: double.infinity,
@@ -2587,7 +2610,8 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(10),
                         ),
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 10),
                       ),
                       onPressed: () {
                         Navigator.push(
@@ -2600,7 +2624,8 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                       icon: const Icon(Icons.add_location_alt_rounded, size: 18),
                       label: const Text(
                         "Add Teaching Location",
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 13),
                       ),
                     ),
                   ],
@@ -2825,7 +2850,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
               stream: _studentFeesStream,
               builder: (context, snapshot) {
                 double totalPending = 0;
-                List<Map<String, dynamic>> dueStudents = [];
+                List> dueStudents = [];
 
                 if (snapshot.hasData) {
                   for (var doc in snapshot.data!.docs) {
@@ -3170,15 +3195,16 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
             }).toList(),
           ),
           const SizedBox(height: 20),
-          // Direct Action Button for Roadmap 2.0 Teaching Location System
           Container(
             width: double.infinity,
             margin: const EdgeInsets.only(bottom: 14),
             child: OutlinedButton.icon(
               style: OutlinedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 13, horizontal: 14),
+                padding:
+                    const EdgeInsets.symmetric(vertical: 13, horizontal: 14),
                 side: const BorderSide(color: _brandBlue, width: 1.2),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
                 foregroundColor: _brandBlue,
                 backgroundColor: const Color(0xFFF1F5F9),
               ),
@@ -3371,9 +3397,10 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
               onPressed: () {
                 setState(() {
                   isEditing = false;
-                  _selectedImage = null;
-                  _selectedBannerImage = null;
+                  _pendingProfileImageUrl = null;
+                  _pendingBannerImageUrl = null;
                 });
+                fetchTeacherData();
               },
               child: const Text(
                 "CANCEL",
