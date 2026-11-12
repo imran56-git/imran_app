@@ -1,3 +1,4 @@
+```dart
 import 'dart:async';
 import 'dart:ui';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -1107,7 +1108,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
   }
 
   void _showPendingDuesSheet(
-      double totalDue, List> dueStudents) {
+      double totalDue, List<Map<String, dynamic>> dueStudents) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -2850,7 +2851,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
               stream: _studentFeesStream,
               builder: (context, snapshot) {
                 double totalPending = 0;
-                List> dueStudents = [];
+                List<Map<String, dynamic>> dueStudents = [];
 
                 if (snapshot.hasData) {
                   for (var doc in snapshot.data!.docs) {
