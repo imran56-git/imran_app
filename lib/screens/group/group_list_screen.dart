@@ -1,12 +1,14 @@
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
+import 'package:flutter/services.dart';
 import '../../models/group_model.dart';
 import '../../services/group_service.dart';
 import '../../utils/chat_colors.dart';
+import '../../widgets/image_viewer.dart';
 import 'create_group_screen.dart';
 import 'group_chat_screen.dart';
+import 'group_list_screen.dart';
 import 'invitation_list_screen.dart';
 
 class GroupListScreen extends StatefulWidget {
@@ -36,7 +38,7 @@ class _GroupListScreenState extends State<GroupListScreen>
   late String _currentUserName;
 
   late final Stream<List<GroupModel>> _groupsStream;
-  StreamSubscription<List<Map<String, dynamic>>>? _noticesSubscription;
+  StreamSubscription<List>>? _noticesSubscription;
   StreamSubscription<QuerySnapshot>? _groupStatusSubscription;
   final Set<String> _processingNoticeIds = {};
   bool _isDialogShowing = false;
@@ -573,37 +575,55 @@ class _GroupListScreenState extends State<GroupListScreen>
                     key: ValueKey('group_tile_${group.id}'),
                     contentPadding: const EdgeInsets.symmetric(
                         horizontal: 16, vertical: 4),
-                    leading: Stack(
-                      children: [
-                        CircleAvatar(
-                          radius: 24,
-                          backgroundColor: Colors.blue.shade50,
-                          backgroundImage: group.imageUrl.isNotEmpty
-                              ? NetworkImage(group.imageUrl)
-                              : null,
-                          child: group.imageUrl.isEmpty
-                              ? const Icon(Icons.groups_rounded,
-                                  color: ChatColors.primaryApp, size: 26)
-                              : null,
-                        ),
-                        if (group.isTeacherVerified)
-                          Positioned(
-                            right: 0,
-                            bottom: 0,
-                            child: Container(
-                              padding: const EdgeInsets.all(2),
-                              decoration: const BoxDecoration(
-                                color: Colors.white,
-                                shape: BoxShape.circle,
-                              ),
-                              child: const Icon(
-                                Icons.verified,
-                                color: Colors.blueAccent,
-                                size: 14,
-                              ),
+                    leading: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () {
+                        ImageViewer.open(
+                          context,
+                          imageUrl: group.imageUrl,
+                          title: group.name,
+                          subtitle: group.className.isNotEmpty
+                              ? group.className
+                              : 'Study Batch',
+                          heroTag: 'group_avatar_${group.id}',
+                          isGroup: true,
+                        );
+                      },
+                      child: Hero(
+                        tag: 'group_avatar_${group.id}',
+                        child: Stack(
+                          children: [
+                            CircleAvatar(
+                              radius: 24,
+                              backgroundColor: Colors.blue.shade50,
+                              backgroundImage: group.imageUrl.isNotEmpty
+                                  ? NetworkImage(group.imageUrl)
+                                  : null,
+                              child: group.imageUrl.isEmpty
+                                  ? const Icon(Icons.groups_rounded,
+                                      color: ChatColors.primaryApp, size: 26)
+                                  : null,
                             ),
-                          ),
-                      ],
+                            if (group.isTeacherVerified)
+                              Positioned(
+                                right: 0,
+                                bottom: 0,
+                                child: Container(
+                                  padding: const EdgeInsets.all(2),
+                                  decoration: const BoxDecoration(
+                                    color: Colors.white,
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: const Icon(
+                                    Icons.verified,
+                                    color: Colors.blueAccent,
+                                    size: 14,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
                     ),
                     title: Row(
                       children: [
