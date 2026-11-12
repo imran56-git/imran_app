@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 import 'dart:ui';
 import 'package:animate_do/animate_do.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -7,12 +6,10 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../animations/animation_constants.dart';
-import '../utils/image_utils.dart';
-import '../widgets/success_toast.dart';
+import '../services/media_compression_service.dart';
+import '../widgets/image_viewer.dart';
 import 'blocked_users_screen.dart';
 import 'notification_screen.dart';
 import 'privacy_policy_screen.dart';
@@ -35,7 +32,6 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
   final _auth = FirebaseAuth.instance;
   final _firestore = FirebaseFirestore.instance;
   final _storage = FirebaseStorage.instance;
-  final _picker = ImagePicker();
 
   final _name = TextEditingController(),
       _phone = TextEditingController(),
@@ -56,7 +52,8 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
   bool hasUnreadNotifications = false;
 
   Map<String, dynamic>? studentData;
-  File? _selectedImage;
+  String? _pendingProfileImageUrl;
+  bool _isUploadingProfileImage = false;
   bool isLoading = true, isEditing = false, _triggerAnimation = true;
   String? gender, studentClass;
   List<String> selectedSubjects = [];
@@ -200,69 +197,70 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
     }
   }
 
-  void _openFullScreenImageViewer(String imageUrl, String title) {
-    if (imageUrl.isEmpty) return;
-    Navigator.of(context).push(
-      PageRouteBuilder(
-        opaque: false,
-        barrierDismissible: true,
-        pageBuilder: (context, _, __) {
-          return Scaffold(
-            backgroundColor: Colors.black.withOpacity(0.96),
-            appBar: AppBar(
-              backgroundColor: Colors.transparent,
-              elevation: 0,
-              leading: IconButton(
-                icon: const Icon(Icons.arrow_back_ios_new_rounded,
-                    color: Colors.white),
-                onPressed: () => Navigator.pop(context),
-              ),
-              title: Text(
-                title,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 17,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-            body: SizedBox.expand(
-              child: Center(
-                child: InteractiveViewer(
-                  panEnabled: true,
-                  boundaryMargin: const EdgeInsets.all(120),
-                  minScale: 0.5,
-                  maxScale: 5.0,
-                  child: Image.network(
-                    imageUrl,
-                    fit: BoxFit.contain,
-                    loadingBuilder: (context, child, progress) {
-                      if (progress == null) return child;
-                      return const Center(
-                        child: CircularProgressIndicator(color: Colors.white),
-                      );
-                    },
-                    errorBuilder: (context, error, stackTrace) {
-                      return const Center(
-                        child: Icon(Icons.broken_image_rounded,
-                            color: Colors.white54, size: 48),
-                      );
-                    },
-                  ),
-                ),
-              ),
-            ),
-          );
-        },
-      ),
+  void _openFullScreenImageViewer(
+    String imageUrl,
+    String title, {
+    String? subtitle,
+    String? heroTag,
+  }) {
+    ImageViewer.open(
+      context,
+      imageUrl: imageUrl,
+      title: title,
+      subtitle: subtitle,
+      heroTag: heroTag,
     );
   }
 
-  Future<void> _pickProfileImage() async {
-    final picked =
-        await _picker.pickImage(source: ImageSource.gallery, imageQuality: 75);
-    if (picked != null && mounted) {
-      setState(() => _selectedImage = File(picked.path));
+  Future<void> _pickCropAndUploadProfileImage() async {
+    if (!isOwnProfile || _isUploadingProfileImage) return;
+    final uid = _auth.currentUser?.uid;
+    if (uid == null || uid.isEmpty) return;
+
+    try {
+      setState(() => _isUploadingProfileImage = true);
+
+      final String? freshUrl =
+          await MediaCompressionService.pickCropCompressAndUpload(
+        context: context,
+        uploadType: MediaUploadType.profile,
+        ownerId: uid,
+      );
+
+      if (!mounted) return;
+
+      if (freshUrl != null && freshUrl.isNotEmpty) {
+        setState(() {
+          _pendingProfileImageUrl = freshUrl;
+          studentData ??= {};
+          studentData!['profileImageUrl'] = freshUrl;
+          studentData!['photoUrl'] = freshUrl;
+          _isUploadingProfileImage = false;
+        });
+
+        if (!isEditing) {
+          await _firestore.collection('students').doc(uid).set({
+            'profileImageUrl': freshUrl,
+            'photoUrl': freshUrl,
+          }, SetOptions(merge: true));
+
+          await _firestore.collection('users').doc(uid).set({
+            'profileImageUrl': freshUrl,
+            'photoUrl': freshUrl,
+          }, SetOptions(merge: true)).catchError((_) {});
+        }
+
+        if (mounted) {
+          _snack('Profile photo optimized & updated!', isError: false);
+        }
+      } else {
+        setState(() => _isUploadingProfileImage = false);
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isUploadingProfileImage = false);
+        _snack('Failed to update photo: $e', isError: true);
+      }
     }
   }
 
@@ -505,6 +503,10 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
                             .catchError((_) {});
 
                         await _storage
+                            .ref('profile_images/$uid/profile.webp')
+                            .delete()
+                            .catchError((_) {});
+                        await _storage
                             .ref('students/$uid/profile.jpg')
                             .delete()
                             .catchError((_) {});
@@ -599,18 +601,10 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
     if (uid == null) return;
     setState(() => isLoading = true);
     try {
-      String? imageUrl =
-          studentData?['profileImageUrl'] ?? studentData?['photoUrl'];
-      if (_selectedImage != null) {
-        final File? compressed =
-            await ImageHelper.compressImage(_selectedImage!);
-        final ref = _storage.ref('students/$uid/profile.jpg');
-        await ref.putFile(
-          compressed ?? _selectedImage!,
-          SettableMetadata(contentType: 'image/jpeg'),
-        );
-        imageUrl = await ref.getDownloadURL();
-      }
+      final String? imageUrl = _pendingProfileImageUrl ??
+          (studentData?['profileImageUrl'] ?? studentData?['photoUrl'])
+              ?.toString();
+
       await _firestore.collection('students').doc(uid).set({
         'name': _name.text.trim(),
         'fullName': _name.text.trim(),
@@ -623,14 +617,25 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
         'gender': gender,
         'studentClass': studentClass,
         'interestedSubjects': selectedSubjects,
-        'profileImageUrl': imageUrl,
-        'photoUrl': imageUrl,
+        if (imageUrl != null && imageUrl.isNotEmpty) ...{
+          'profileImageUrl': imageUrl,
+          'photoUrl': imageUrl,
+        },
       }, SetOptions(merge: true));
+
+      await _firestore.collection('users').doc(uid).set({
+        'name': _name.text.trim(),
+        'fullName': _name.text.trim(),
+        if (imageUrl != null && imageUrl.isNotEmpty) ...{
+          'profileImageUrl': imageUrl,
+          'photoUrl': imageUrl,
+        },
+      }, SetOptions(merge: true)).catchError((_) {});
 
       if (mounted) {
         setState(() {
           isEditing = false;
-          _selectedImage = null;
+          _pendingProfileImageUrl = null;
         });
       }
       await fetchStudentData();
@@ -668,10 +673,11 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
   }
 
   ImageProvider? get _profileImage {
-    if (_selectedImage != null) return FileImage(_selectedImage!);
-    final url = studentData?['profileImageUrl'];
+    final url = _pendingProfileImageUrl ??
+        studentData?['profileImageUrl'] ??
+        studentData?['photoUrl'];
     return (url != null && url.toString().trim().isNotEmpty)
-        ? NetworkImage(url.toString())
+        ? NetworkImage(url.toString().trim())
         : null;
   }
 
@@ -1113,9 +1119,10 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
         : (_auth.currentUser?.uid ?? 'N/A');
     final String initial =
         _name.text.trim().isNotEmpty ? _name.text.trim()[0].toUpperCase() : 'S';
-    final String? profilePicUrl =
-        (studentData?['profileImageUrl'] ?? studentData?['photoUrl'])
-            ?.toString();
+    final String? profilePicUrl = (_pendingProfileImageUrl ??
+            studentData?['profileImageUrl'] ??
+            studentData?['photoUrl'])
+        ?.toString();
 
     return FadeInDown(
       duration: const Duration(milliseconds: 380),
@@ -1152,53 +1159,84 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
               clipBehavior: Clip.none,
               children: [
                 GestureDetector(
-                  onTap: () {
-                    if (!isEditing &&
-                        profilePicUrl != null &&
-                        profilePicUrl.isNotEmpty) {
-                      _openFullScreenImageViewer(
-                        profilePicUrl,
-                        _name.text.isEmpty ? "Student Profile" : _name.text,
-                      );
-                    }
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.all(3.5),
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      gradient: const LinearGradient(
-                        colors: [Color(0xFF2DD4BF), Color(0xFF38BDF8)],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.22),
-                          blurRadius: 16,
-                          offset: const Offset(0, 6),
-                        ),
-                      ],
-                    ),
+                  behavior: HitTestBehavior.opaque,
+                  onTap: isEditing
+                      ? _pickCropAndUploadProfileImage
+                      : () {
+                          _openFullScreenImageViewer(
+                            profilePicUrl ?? '',
+                            _name.text.isEmpty ? 'Student Profile' : _name.text,
+                            subtitle: (studentClass != null &&
+                                    studentClass!.trim().isNotEmpty)
+                                ? studentClass!.trim()
+                                : 'Student',
+                            heroTag: 'student_avatar_$currentUid',
+                          );
+                        },
+                  child: Hero(
+                    tag: 'student_avatar_$currentUid',
                     child: Container(
-                      padding: const EdgeInsets.all(2.5),
-                      decoration: const BoxDecoration(
-                        color: _primaryNavy,
+                      padding: const EdgeInsets.all(3.5),
+                      decoration: BoxDecoration(
                         shape: BoxShape.circle,
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFF2DD4BF), Color(0xFF38BDF8)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.22),
+                            blurRadius: 16,
+                            offset: const Offset(0, 6),
+                          ),
+                        ],
                       ),
-                      child: CircleAvatar(
-                        radius: 50,
-                        backgroundColor: const Color(0xFF1E293B),
-                        backgroundImage: _profileImage,
-                        child: _profileImage == null
-                            ? Text(
-                                initial,
-                                style: const TextStyle(
-                                  fontSize: 36,
-                                  fontWeight: FontWeight.w900,
-                                  color: Color(0xFF5EEAD4),
+                      child: Container(
+                        padding: const EdgeInsets.all(2.5),
+                        decoration: const BoxDecoration(
+                          color: _primaryNavy,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            CircleAvatar(
+                              radius: 50,
+                              backgroundColor: const Color(0xFF1E293B),
+                              backgroundImage: _profileImage,
+                              child: _profileImage == null
+                                  ? Text(
+                                      initial,
+                                      style: const TextStyle(
+                                        fontSize: 36,
+                                        fontWeight: FontWeight.w900,
+                                        color: Color(0xFF5EEAD4),
+                                      ),
+                                    )
+                                  : null,
+                            ),
+                            if (_isUploadingProfileImage)
+                              Container(
+                                width: 100,
+                                height: 100,
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withOpacity(0.55),
+                                  shape: BoxShape.circle,
                                 ),
-                              )
-                            : null,
+                                child: const Center(
+                                  child: SizedBox(
+                                    width: 24,
+                                    height: 24,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2.5,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
@@ -1207,25 +1245,34 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
                   Positioned(
                     bottom: 0,
                     right: 0,
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(24),
-                      onTap: _pickProfileImage,
-                      child: Container(
-                        padding: const EdgeInsets.all(9),
-                        decoration: BoxDecoration(
-                          gradient: const LinearGradient(
-                            colors: [_accentTeal, _accentBlue],
+                    child: Material(
+                      color: Colors.transparent,
+                      shape: const CircleBorder(),
+                      child: InkWell(
+                        customBorder: const CircleBorder(),
+                        onTap: _isUploadingProfileImage
+                            ? null
+                            : () {
+                                HapticFeedback.selectionClick();
+                                _pickCropAndUploadProfileImage();
+                              },
+                        child: Container(
+                          padding: const EdgeInsets.all(9),
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              colors: [_accentTeal, _accentBlue],
+                            ),
+                            shape: BoxShape.circle,
+                            border: Border.all(color: Colors.white, width: 2.5),
+                            boxShadow: const [
+                              BoxShadow(color: Colors.black26, blurRadius: 6),
+                            ],
                           ),
-                          shape: BoxShape.circle,
-                          border: Border.all(color: Colors.white, width: 2.5),
-                          boxShadow: const [
-                            BoxShadow(color: Colors.black26, blurRadius: 6),
-                          ],
-                        ),
-                        child: const Icon(
-                          Icons.camera_alt_rounded,
-                          color: Colors.white,
-                          size: 17,
+                          child: const Icon(
+                            Icons.camera_alt_rounded,
+                            color: Colors.white,
+                            size: 17,
+                          ),
                         ),
                       ),
                     ),
@@ -1837,7 +1884,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
                     onPressed: () {
                       setState(() {
                         isEditing = false;
-                        _selectedImage = null;
+                        _pendingProfileImageUrl = null;
                         _triggerAnimation = !_triggerAnimation;
                       });
                       _customSubjectController.clear();
