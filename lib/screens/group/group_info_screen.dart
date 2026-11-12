@@ -1,3 +1,4 @@
+```dart
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -39,7 +40,7 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
 
   StreamSubscription<GroupModel?>? _groupSubscription;
   GroupModel? _group;
-  List> _studentsList = [];
+  List<Map<String, dynamic>> _studentsList = [];
 
   bool _isLoadingMembers = true;
   bool _isUploadingGroupPic = false;
@@ -441,7 +442,7 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
     );
   }
 
-  Future<List>> _fetchConnectedStudentsForTeacher() async {
+  Future<List<Map<String, dynamic>>> _fetchConnectedStudentsForTeacher() async {
     final Set<String> connectedStudentIds = {};
 
     try {
@@ -490,7 +491,7 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
       }
     } catch (_) {}
 
-    final List> resultList = [];
+    final List<Map<String, dynamic>> resultList = [];
 
     for (String sId in connectedStudentIds) {
       if (sId == widget.currentUserId) continue;
@@ -544,7 +545,7 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
     bool sendInviteMode = true;
     String searchKeyword = '';
     bool isLoading = true;
-    List> connectedStudents = [];
+    List<Map<String, dynamic>> connectedStudents = [];
 
     showModalBottomSheet(
       context: context,
