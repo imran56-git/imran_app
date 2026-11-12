@@ -1,19 +1,16 @@
 import 'dart:async';
-import 'dart:io';
-import 'dart:ui';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../models/group_model.dart';
 import '../../models/message_model.dart';
 import '../../services/chat_service.dart';
 import '../../services/group_service.dart';
-import '../../utils/image_utils.dart';
+import '../../services/media_compression_service.dart';
 import '../../widgets/badge_details_sheet.dart';
+import '../../widgets/image_viewer.dart';
 
 class GroupInfoScreen extends StatefulWidget {
   final String groupId;
@@ -38,16 +35,14 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
   final ChatService _chatService = ChatService();
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
-  final FirebaseStorage _storage = FirebaseStorage.instance;
-  final ImagePicker _picker = ImagePicker();
   final TextEditingController _memberSearchController = TextEditingController();
 
   StreamSubscription<GroupModel?>? _groupSubscription;
   GroupModel? _group;
-  List<Map<String, dynamic>> _studentsList = [];
-  Map<String, dynamic>? _teacherProfileData;
+  List> _studentsList = [];
 
   bool _isLoadingMembers = true;
+  bool _isUploadingGroupPic = false;
   bool _exitDialogShown = false;
   String _memberSearchQuery = '';
 
@@ -97,7 +92,6 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
       );
       if (!mounted) return;
       setState(() {
-        _teacherProfileData = result['teacher'] as Map<String, dynamic>?;
         final rawStudents = result['students'] as List<dynamic>?;
         _studentsList = rawStudents != null
             ? rawStudents.map((e) => Map<String, dynamic>.from(e as Map)).toList()
@@ -186,128 +180,54 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
-  void _openFullScreenImageViewer(String imageUrl, String title) {
-    if (imageUrl.isEmpty) return;
-    Navigator.of(context).push(
-      PageRouteBuilder(
-        opaque: false,
-        barrierDismissible: true,
-        pageBuilder: (context, _, __) {
-          return Scaffold(
-            backgroundColor: Colors.black.withOpacity(0.95),
-            appBar: AppBar(
-              backgroundColor: Colors.transparent,
-              elevation: 0,
-              leading: IconButton(
-                icon: const Icon(Icons.arrow_back_ios_new_rounded,
-                    color: Colors.white),
-                onPressed: () => Navigator.pop(context),
-              ),
-              title: Text(
-                title,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 17,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-            body: Center(
-              child: InteractiveViewer(
-                minScale: 0.5,
-                maxScale: 4.0,
-                child: Image.network(
-                  imageUrl,
-                  fit: BoxFit.contain,
-                  loadingBuilder: (context, child, progress) {
-                    if (progress == null) return child;
-                    return const Center(
-                      child: CircularProgressIndicator(color: Colors.white),
-                    );
-                  },
-                  errorBuilder: (context, error, stackTrace) {
-                    return const Center(
-                      child: Icon(Icons.broken_image_rounded,
-                          color: Colors.white54, size: 48),
-                    );
-                  },
-                ),
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  void _showTeacherIdBlockedDialog() {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Row(
-          children: [
-            Icon(Icons.warning_amber_rounded,
-                color: Color(0xFFDC2626), size: 26),
-            SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                'Invalid Student ID',
-                style: TextStyle(
-                  fontWeight: FontWeight.w800,
-                  fontSize: 17,
-                  color: Color(0xFF0F172A),
-                ),
-              ),
-            ),
-          ],
-        ),
-        content: const Text(
-          'This ID belongs to an Educator/Teacher. Only students can be enrolled in this batch.',
-          style: TextStyle(
-            fontSize: 14,
-            color: Color(0xFF475569),
-            height: 1.4,
-          ),
-        ),
-        actions: [
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF0F172A),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
-            ),
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('OK', style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
+  void _openFullScreenImageViewer(
+    String imageUrl,
+    String title, {
+    String? subtitle,
+    String? heroTag,
+    bool isGroup = false,
+  }) {
+    ImageViewer.open(
+      context,
+      imageUrl: imageUrl,
+      title: title,
+      subtitle: subtitle,
+      heroTag: heroTag,
+      isGroup: isGroup,
     );
   }
 
   Future<void> _pickAndUploadGroupPicture() async {
-    final picked = await _picker.pickImage(
-      source: ImageSource.gallery,
-      imageQuality: 80,
-    );
-    if (picked == null) return;
-
-    final file = File(picked.path);
-    _showSnackBar('Uploading group picture...');
+    if (!_isViewerTeacher || _isUploadingGroupPic) return;
 
     try {
-      File? compressed = await ImageHelper.compressImage(file);
-      final ref = _storage.ref().child('groups/${widget.groupId}/profile.jpg');
-      await ref.putFile(compressed ?? file);
-      final downloadUrl = await ref.getDownloadURL();
+      setState(() => _isUploadingGroupPic = true);
 
-      await _firestore.collection('groups').doc(widget.groupId).update({
-        'imageUrl': downloadUrl,
-      });
+      final String? downloadUrl =
+          await MediaCompressionService.pickCropCompressAndUpload(
+        context: context,
+        uploadType: MediaUploadType.groupIcon,
+        ownerId: widget.groupId,
+      );
 
-      _showSnackBar('Group picture updated successfully!');
+      if (!mounted) return;
+
+      if (downloadUrl != null && downloadUrl.isNotEmpty) {
+        await _firestore.collection('groups').doc(widget.groupId).update({
+          'imageUrl': downloadUrl,
+        });
+        if (mounted) {
+          setState(() => _isUploadingGroupPic = false);
+          _showSnackBar('Group picture optimized & updated!');
+        }
+      } else {
+        setState(() => _isUploadingGroupPic = false);
+      }
     } catch (e) {
-      _showSnackBar('Failed to upload picture: $e');
+      if (mounted) {
+        setState(() => _isUploadingGroupPic = false);
+        _showSnackBar('Failed to upload group picture: $e');
+      }
     }
   }
 
@@ -356,16 +276,22 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
                 Center(
                   child: Stack(
                     children: [
-                      CircleAvatar(
-                        radius: 36,
-                        backgroundColor: const Color(0xFFEFF6FF),
-                        backgroundImage: group.imageUrl.isNotEmpty
-                            ? NetworkImage(group.imageUrl)
-                            : null,
-                        child: group.imageUrl.isEmpty
-                            ? const Icon(Icons.groups_rounded,
-                                color: Colors.blueAccent, size: 36)
-                            : null,
+                      GestureDetector(
+                        onTap: () {
+                          Navigator.pop(ctx);
+                          _pickAndUploadGroupPicture();
+                        },
+                        child: CircleAvatar(
+                          radius: 36,
+                          backgroundColor: const Color(0xFFEFF6FF),
+                          backgroundImage: group.imageUrl.isNotEmpty
+                              ? NetworkImage(group.imageUrl)
+                              : null,
+                          child: group.imageUrl.isEmpty
+                              ? const Icon(Icons.groups_rounded,
+                                  color: Colors.blueAccent, size: 36)
+                              : null,
+                        ),
                       ),
                       Positioned(
                         bottom: 0,
@@ -515,7 +441,7 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
     );
   }
 
-  Future<List<Map<String, dynamic>>> _fetchConnectedStudentsForTeacher() async {
+  Future<List>> _fetchConnectedStudentsForTeacher() async {
     final Set<String> connectedStudentIds = {};
 
     try {
@@ -564,7 +490,7 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
       }
     } catch (_) {}
 
-    final List<Map<String, dynamic>> resultList = [];
+    final List> resultList = [];
 
     for (String sId in connectedStudentIds) {
       if (sId == widget.currentUserId) continue;
@@ -618,7 +544,7 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
     bool sendInviteMode = true;
     String searchKeyword = '';
     bool isLoading = true;
-    List<Map<String, dynamic>> connectedStudents = [];
+    List> connectedStudents = [];
 
     showModalBottomSheet(
       context: context,
@@ -920,10 +846,12 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
             children: [
               GestureDetector(
                 onTap: () {
-                  if (tPic.isNotEmpty) {
-                    Navigator.pop(ctx);
-                    _openFullScreenImageViewer(tPic, tName);
-                  }
+                  Navigator.pop(ctx);
+                  _openFullScreenImageViewer(
+                    tPic,
+                    tName,
+                    subtitle: creds,
+                  );
                 },
                 child: CircleAvatar(
                   radius: 38,
@@ -1580,7 +1508,10 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
                                   onTap: () {
                                     if (item.type == 'image') {
                                       _openFullScreenImageViewer(
-                                          item.content, 'Shared Photo');
+                                        item.content,
+                                        'Shared Photo',
+                                        subtitle: _group?.name,
+                                      );
                                     } else {
                                       final uri = Uri.tryParse(item.content);
                                       if (uri != null) {
@@ -1711,26 +1642,61 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
             clipBehavior: Clip.none,
             children: [
               GestureDetector(
+                behavior: HitTestBehavior.opaque,
                 onTap: () {
-                  if (group.imageUrl.isNotEmpty) {
-                    _openFullScreenImageViewer(group.imageUrl, group.name);
-                  }
+                  _openFullScreenImageViewer(
+                    group.imageUrl,
+                    group.name,
+                    subtitle: group.className.isNotEmpty
+                        ? group.className
+                        : 'Study Batch',
+                    heroTag: 'group_avatar_${group.id}',
+                    isGroup: true,
+                  );
                 },
-                child: CircleAvatar(
-                  radius: 44,
-                  backgroundColor: const Color(0xFFEFF6FF),
-                  backgroundImage: group.imageUrl.isNotEmpty
-                      ? NetworkImage(group.imageUrl)
-                      : null,
-                  child: group.imageUrl.isEmpty
-                      ? const Icon(Icons.groups_rounded,
-                          color: Colors.blueAccent, size: 46)
-                      : null,
+                child: Hero(
+                  tag: 'group_avatar_${group.id}',
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      CircleAvatar(
+                        radius: 44,
+                        backgroundColor: const Color(0xFFEFF6FF),
+                        backgroundImage: group.imageUrl.isNotEmpty
+                            ? NetworkImage(group.imageUrl)
+                            : null,
+                        child: group.imageUrl.isEmpty
+                            ? const Icon(Icons.groups_rounded,
+                                color: Colors.blueAccent, size: 46)
+                            : null,
+                      ),
+                      if (_isUploadingGroupPic)
+                        Container(
+                          width: 88,
+                          height: 88,
+                          decoration: BoxDecoration(
+                            color: Colors.black.withOpacity(0.55),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Center(
+                            child: SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2.5,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
               ),
               if (group.isTeacherVerified)
                 Positioned(
-                  right: -2,
+                  left: _isViewerTeacher ? -2 : null,
+                  right: _isViewerTeacher ? null : -2,
                   bottom: -2,
                   child: AvatarCornerBadge(
                     badgeType: BadgeType.verifiedBatch,
@@ -1742,16 +1708,27 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
                 Positioned(
                   right: 0,
                   bottom: 0,
-                  child: InkWell(
-                    onTap: _pickAndUploadGroupPicture,
-                    child: Container(
-                      padding: const EdgeInsets.all(6),
-                      decoration: const BoxDecoration(
-                        color: Colors.blueAccent,
-                        shape: BoxShape.circle,
+                  child: Material(
+                    color: Colors.transparent,
+                    shape: const CircleBorder(),
+                    child: InkWell(
+                      customBorder: const CircleBorder(),
+                      onTap: _isUploadingGroupPic
+                          ? null
+                          : () {
+                              HapticFeedback.selectionClick();
+                              _pickAndUploadGroupPicture();
+                            },
+                      child: Container(
+                        padding: const EdgeInsets.all(7),
+                        decoration: BoxDecoration(
+                          color: Colors.blueAccent,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.white, width: 2),
+                        ),
+                        child: const Icon(Icons.camera_alt_rounded,
+                            color: Colors.white, size: 15),
                       ),
-                      child: const Icon(Icons.camera_alt_rounded,
-                          color: Colors.white, size: 15),
                     ),
                   ),
                 ),
@@ -2346,9 +2323,11 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
                   contentPadding: EdgeInsets.zero,
                   leading: GestureDetector(
                     onTap: () {
-                      if (sPic.isNotEmpty) {
-                        _openFullScreenImageViewer(sPic, sName);
-                      }
+                      _openFullScreenImageViewer(
+                        sPic,
+                        sName,
+                        subtitle: 'Enrolled Student',
+                      );
                     },
                     child: CircleAvatar(
                       backgroundColor: Colors.blue.shade50,
