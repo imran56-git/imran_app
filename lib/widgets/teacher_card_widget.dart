@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'image_viewer.dart';
 import 'teacher_badge_widget.dart';
 
 class TeacherCardWidget extends StatelessWidget {
@@ -46,84 +47,20 @@ class TeacherCardWidget extends StatelessWidget {
 
   static const Color _primaryNavy = Color(0xFF0F172A);
   static const Color _brandBlue = Color(0xFF1E4C7A);
-  static const Color _accentBlue = Color(0xFF2563EB);
   static const Color _accentTeal = Color(0xFF0F766E);
 
   void _openFullImage(BuildContext context) {
-    HapticFeedback.selectionClick();
-    showGeneralDialog(
-      context: context,
-      barrierDismissible: true,
-      barrierLabel: 'Dismiss Image',
-      barrierColor: Colors.black87,
-      transitionDuration: const Duration(milliseconds: 280),
-      pageBuilder: (dialogCtx, __, ___) => Center(
-        child: Material(
-          color: Colors.transparent,
-          child: Stack(
-            alignment: Alignment.topRight,
-            children: [
-              Container(
-                margin: const EdgeInsets.all(24),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(26),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.35),
-                      blurRadius: 24,
-                      spreadRadius: 4,
-                    ),
-                  ],
-                ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(26),
-                  child: InteractiveViewer(
-                    panEnabled: true,
-                    scaleEnabled: true,
-                    child: profileImageUrl.isNotEmpty
-                        ? Image.network(
-                            profileImageUrl,
-                            fit: BoxFit.contain,
-                            errorBuilder: (context, error, stackTrace) =>
-                                _buildImagePlaceholder(),
-                          )
-                        : _buildImagePlaceholder(),
-                  ),
-                ),
-              ),
-              Positioned(
-                top: 36,
-                right: 36,
-                child: IconButton.filled(
-                  style: IconButton.styleFrom(
-                    backgroundColor: Colors.black54,
-                  ),
-                  icon: const Icon(Icons.close_rounded, color: Colors.white),
-                  onPressed: () => Navigator.of(dialogCtx).pop(),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-      transitionBuilder: (_, animation, __, child) {
-        return ScaleTransition(
-          scale: CurvedAnimation(parent: animation, curve: Curves.easeOutBack),
-          child: FadeTransition(opacity: animation, child: child),
-        );
-      },
-    );
-  }
+    final String subtitleText =
+        (tuitionName != null && tuitionName!.trim().isNotEmpty)
+            ? tuitionName!.trim()
+            : subject.trim();
 
-  Widget _buildImagePlaceholder() {
-    return Container(
-      color: Colors.white,
-      padding: const EdgeInsets.all(48),
-      child: const Icon(
-        Icons.person_rounded,
-        size: 84,
-        color: _brandBlue,
-      ),
+    ImageViewer.open(
+      context,
+      imageUrl: profileImageUrl,
+      title: name,
+      subtitle: subtitleText,
+      heroTag: 'teacher_avatar_$teacherId',
     );
   }
 
