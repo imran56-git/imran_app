@@ -38,7 +38,7 @@ class _GroupListScreenState extends State<GroupListScreen>
   late String _currentUserName;
 
   late final Stream<List<GroupModel>> _groupsStream;
-  StreamSubscription<List>>? _noticesSubscription;
+  StreamSubscription<List<Map<String, dynamic>>>? _noticesSubscription;
   StreamSubscription<QuerySnapshot>? _groupStatusSubscription;
   final Set<String> _processingNoticeIds = {};
   bool _isDialogShowing = false;
