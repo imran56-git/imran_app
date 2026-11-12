@@ -38,7 +38,7 @@ class _ChatListScreenState extends State<ChatListScreen>
   late final Stream<int> _unreadGroupsCountStream;
   QuerySnapshot? _lastChatsSnapshot;
 
-  final Map<String, Stream>> _userStatusStreams = {};
+  final Map<String, Stream<Map<String, dynamic>>> _userStatusStreams = {};
   final Map<String, Stream<bool>> _typingStreams = {};
 
   String _searchText = '';
@@ -81,7 +81,7 @@ class _ChatListScreenState extends State<ChatListScreen>
     });
   }
 
-  Stream> _getCachedUserStatusStream(String userId) {
+  Stream<Map<String, dynamic>> _getCachedUserStatusStream(String userId) {
     return _userStatusStreams.putIfAbsent(
       userId,
       () => _chatService.getUserStatusStream(userId, !widget.isTeacher),
@@ -657,7 +657,7 @@ class _ChatListScreenState extends State<ChatListScreen>
 
             return KeyedSubtree(
               key: ValueKey('chat_tile_${doc.id}'),
-              child: StreamBuilder>(
+              child: StreamBuilder<Map<String, dynamic>>(
                 stream: _getCachedUserStatusStream(receiverId),
                 builder: (context, userSnapshot) {
                   final mapData = userSnapshot.data;
