@@ -13,7 +13,13 @@ import 'services/notification_service.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+  SystemChrome.setSystemUIMode(SystemUiMode.edgeToEdge);
+  SystemChrome.setSystemUIOverlayStyle(
+    const SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      statusBarIconBrightness: Brightness.light,
+    ),
+  );
 
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
@@ -26,11 +32,14 @@ void main() async {
 
   FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
 
-  await NotificationService.instance.initializeNotificationSystem(
-    appNavigatorKey: NotificationService.navigatorKey,
-  );
-
+  // Render UI immediately without blocking first frame
   runApp(const FindYourBestTeacherTodayApp());
+
+  unawaited(
+    NotificationService.instance.initializeNotificationSystem(
+      appNavigatorKey: NotificationService.navigatorKey,
+    ),
+  );
 }
 
 class FindYourBestTeacherTodayApp extends StatefulWidget {
@@ -138,20 +147,21 @@ class _FindYourBestTeacherTodayAppState
         updateData['fcmToken'] = token;
       }
 
+      // Use .update() on role collections so ghost documents are NEVER created
       await _firestore
           .collection('users')
           .doc(user.uid)
-          .set(updateData, SetOptions(merge: true))
+          .update(updateData)
           .catchError((_) {});
       await _firestore
           .collection('teachers')
           .doc(user.uid)
-          .set(updateData, SetOptions(merge: true))
+          .update(updateData)
           .catchError((_) {});
       await _firestore
           .collection('students')
           .doc(user.uid)
-          .set(updateData, SetOptions(merge: true))
+          .update(updateData)
           .catchError((_) {});
     } catch (_) {}
   }
@@ -165,17 +175,17 @@ class _FindYourBestTeacherTodayAppState
       await _firestore
           .collection('users')
           .doc(user.uid)
-          .set(updateData, SetOptions(merge: true))
+          .update(updateData)
           .catchError((_) {});
       await _firestore
           .collection('teachers')
           .doc(user.uid)
-          .set(updateData, SetOptions(merge: true))
+          .update(updateData)
           .catchError((_) {});
       await _firestore
           .collection('students')
           .doc(user.uid)
-          .set(updateData, SetOptions(merge: true))
+          .update(updateData)
           .catchError((_) {});
     } catch (_) {}
   }
@@ -188,6 +198,7 @@ class _FindYourBestTeacherTodayAppState
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF1E4C7A)),
+        scaffoldBackgroundColor: Colors.black,
         useMaterial3: true,
       ),
       initialRoute: AppRoutes.splash,
