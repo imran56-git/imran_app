@@ -19,6 +19,7 @@ import 'package:find_your_best_teacher_today/widgets/chat_input_bar.dart';
 import 'package:find_your_best_teacher_today/widgets/chat_popup_menu.dart';
 import 'package:find_your_best_teacher_today/widgets/clear_chat_dialog.dart';
 import 'package:find_your_best_teacher_today/widgets/delete_chat_dialog.dart';
+import 'package:find_your_best_teacher_today/widgets/image_viewer.dart';
 import 'package:find_your_best_teacher_today/widgets/message_bubble.dart';
 import 'package:find_your_best_teacher_today/widgets/report_dialog.dart';
 import 'student_profile_screen.dart';
@@ -58,7 +59,7 @@ class _ChatScreenState extends State<ChatScreen>
 
   late String _activeChatRoomId;
   Stream<List<MessageModel>>? _messageStream;
-  Stream<Map<String, dynamic>>? _userStatusStream;
+  Stream>? _userStatusStream;
   Stream<DocumentSnapshot>? _typingDocStream;
   Stream<BlockStatus>? _blockStatusStream;
   List<MessageModel> _latestMessages = [];
@@ -227,23 +228,6 @@ class _ChatScreenState extends State<ChatScreen>
     }
   }
 
-  void _switchChatRoom(String newId) {
-    if (!mounted || newId.isEmpty || newId == _activeChatRoomId) return;
-    setState(() {
-      _activeChatRoomId = newId;
-      _messageStream = _chatService.getMessages(_activeChatRoomId);
-      if (!_isOfficialChannel) {
-        _typingDocStream = FirebaseFirestore.instance
-            .collection('typing')
-            .doc(_activeChatRoomId)
-            .snapshots()
-            .handleError((error) => log('Typing Stream Error: $error'));
-      }
-    });
-    _loadCustomTheme();
-    _markMessagesAsReadSafe();
-  }
-
   Future<void> _setupChatRoom() async {
     if (widget.chatRoomId.trim().isEmpty && !_isOfficialChannel) {
       final String teacherId =
@@ -332,6 +316,7 @@ class _ChatScreenState extends State<ChatScreen>
                   'User')
               .toString();
           myImage = (profile['profileImageUrl'] ??
+                  profile['photoUrl'] ??
                   profile['profilePic'] ??
                   profile['profileUrl'] ??
                   '')
@@ -421,60 +406,12 @@ class _ChatScreenState extends State<ChatScreen>
   }
 
   void _openFullScreenImageViewer(String imageUrl, String title) {
-    if (imageUrl.isEmpty) return;
-    Navigator.of(context).push(
-      PageRouteBuilder(
-        opaque: false,
-        barrierDismissible: true,
-        pageBuilder: (context, _, __) {
-          return Scaffold(
-            backgroundColor: Colors.black.withOpacity(0.96),
-            appBar: AppBar(
-              backgroundColor: Colors.transparent,
-              elevation: 0,
-              leading: IconButton(
-                icon: const Icon(Icons.arrow_back_ios_new_rounded,
-                    color: Colors.white),
-                onPressed: () => Navigator.pop(context),
-              ),
-              title: Text(
-                title,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 17,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-            body: SizedBox.expand(
-              child: Center(
-                child: InteractiveViewer(
-                  panEnabled: true,
-                  boundaryMargin: const EdgeInsets.all(100),
-                  minScale: 0.5,
-                  maxScale: 5.0,
-                  child: Image.network(
-                    imageUrl,
-                    fit: BoxFit.contain,
-                    loadingBuilder: (context, child, progress) {
-                      if (progress == null) return child;
-                      return const Center(
-                        child: CircularProgressIndicator(color: Colors.white),
-                      );
-                    },
-                    errorBuilder: (context, error, stackTrace) {
-                      return const Center(
-                        child: Icon(Icons.broken_image_rounded,
-                            color: Colors.white54, size: 48),
-                      );
-                    },
-                  ),
-                ),
-              ),
-            ),
-          );
-        },
-      ),
+    ImageViewer.open(
+      context,
+      imageUrl: imageUrl,
+      title: title,
+      subtitle: widget.isTeacher ? 'Student' : 'Verified Educator',
+      heroTag: 'chat_avatar_${widget.receiverId}',
     );
   }
 
@@ -1320,11 +1257,11 @@ class _ChatScreenState extends State<ChatScreen>
   }
 
   Widget _buildStandardAppBarTitle() {
-    return StreamBuilder<Map<String, dynamic>>(
+    return StreamBuilder>(
       stream: _userStatusStream,
       builder: (context, statusSnapshot) {
         String displayName = widget.receiverName;
-        String displayPic = widget.receiverProfilePic;
+        String displayPic = widget.receiverProfilePic.trim();
         bool isOnline = false;
         bool isVerified = false;
         DateTime? lastSeenDate;
@@ -1341,6 +1278,7 @@ class _ChatScreenState extends State<ChatScreen>
             displayName = extractedName.trim();
           }
           final extractedPic = (data['profileImageUrl'] ??
+                  data['photoUrl'] ??
                   data['profilePic'] ??
                   data['profileUrl'])
               ?.toString();
@@ -1383,61 +1321,59 @@ class _ChatScreenState extends State<ChatScreen>
               },
             ),
             GestureDetector(
-              onTap: () {
-                if (displayPic.isNotEmpty) {
-                  _openFullScreenImageViewer(displayPic, displayName);
-                } else {
-                  _openReceiverProfile();
-                }
-              },
-              child: Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(1.5),
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: isOnline
-                            ? const Color(0xFF4ADE80)
-                            : Colors.white.withOpacity(0.35),
-                        width: 1.5,
-                      ),
-                    ),
-                    child: CircleAvatar(
-                      radius: 18,
-                      backgroundColor: const Color(0xFF1E293B),
-                      backgroundImage: displayPic.isNotEmpty
-                          ? NetworkImage(displayPic)
-                          : null,
-                      child: displayPic.isEmpty
-                          ? Text(
-                              initial,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w800,
-                                fontSize: 15,
-                              ),
-                            )
-                          : null,
-                    ),
-                  ),
-                  if (isOnline)
-                    Positioned(
-                      right: 0,
-                      bottom: 0,
-                      child: Container(
-                        width: 10.5,
-                        height: 10.5,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF22C55E),
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                              color: _primaryNavy, width: 1.8),
+              behavior: HitTestBehavior.opaque,
+              onTap: () => _openFullScreenImageViewer(displayPic, displayName),
+              child: Hero(
+                tag: 'chat_avatar_${widget.receiverId}',
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(1.5),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: isOnline
+                              ? const Color(0xFF4ADE80)
+                              : Colors.white.withOpacity(0.35),
+                          width: 1.5,
                         ),
                       ),
+                      child: CircleAvatar(
+                        radius: 18,
+                        backgroundColor: const Color(0xFF1E293B),
+                        backgroundImage: displayPic.isNotEmpty
+                            ? NetworkImage(displayPic)
+                            : null,
+                        child: displayPic.isEmpty
+                            ? Text(
+                                initial,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 15,
+                                ),
+                              )
+                            : null,
+                      ),
                     ),
-                ],
+                    if (isOnline)
+                      Positioned(
+                        right: 0,
+                        bottom: 0,
+                        child: Container(
+                          width: 10.5,
+                          height: 10.5,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF22C55E),
+                            shape: BoxShape.circle,
+                            border:
+                                Border.all(color: _primaryNavy, width: 1.8),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
               ),
             ),
             const SizedBox(width: 10),
