@@ -434,8 +434,8 @@ class _TeacherSearchResultScreenState extends State<TeacherSearchResultScreen>
     return score.clamp(0, 100).toInt();
   }
 
-  List> _buildActiveFilterChipsData() {
-    final List> list = [];
+  List<Map<String, String>> _buildActiveFilterChipsData() {
+    final List<Map<String, String>> list = [];
     final f = widget.filters;
 
     final id = (f['teacherId'] ?? '').toString().trim();
@@ -465,7 +465,7 @@ class _TeacherSearchResultScreenState extends State<TeacherSearchResultScreen>
 
   Widget _buildTopSummaryAndSortBar(int totalMatched) {
     final activeChips = _buildActiveFilterChipsData();
-    final List> sortOptions = [
+    final List<Map<String, dynamic>> sortOptions = [
       {'key': 'best', 'label': 'Best Match', 'icon': Icons.auto_awesome_rounded},
       {'key': 'rating', 'label': 'Top Rated', 'icon': Icons.star_rounded},
       {
