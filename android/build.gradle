@@ -12,11 +12,11 @@ buildscript {
 allprojects {
     repositories {
         google()
-        maven { url 'https://maven.jitsi.net' }
+        mavenCentral()
         maven { url 'https://maven-central.storage-download.googleapis.com/maven2/' }
         maven { url 'https://cache-redirector.jetbrains.com/maven.central' }
         maven { url 'https://repo1.maven.org/maven2/' }
-        mavenCentral()
+        maven { url 'https://github.com/jitsi/jitsi-maven-repository/raw/master/releases' }
         maven { url 'https://jitpack.io' }
         gradlePluginPortal()
     }
