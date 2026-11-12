@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/chat_service.dart';
+import '../widgets/image_viewer.dart';
 import 'chat_screen.dart';
 import 'group/create_group_screen.dart';
 import 'group/group_chat_screen.dart';
@@ -37,7 +38,7 @@ class _ChatListScreenState extends State<ChatListScreen>
   late final Stream<int> _unreadGroupsCountStream;
   QuerySnapshot? _lastChatsSnapshot;
 
-  final Map<String, Stream<Map<String, dynamic>>> _userStatusStreams = {};
+  final Map<String, Stream>> _userStatusStreams = {};
   final Map<String, Stream<bool>> _typingStreams = {};
 
   String _searchText = '';
@@ -80,7 +81,7 @@ class _ChatListScreenState extends State<ChatListScreen>
     });
   }
 
-  Stream<Map<String, dynamic>> _getCachedUserStatusStream(String userId) {
+  Stream> _getCachedUserStatusStream(String userId) {
     return _userStatusStreams.putIfAbsent(
       userId,
       () => _chatService.getUserStatusStream(userId, !widget.isTeacher),
@@ -121,61 +122,17 @@ class _ChatListScreenState extends State<ChatListScreen>
     super.dispose();
   }
 
-  void _openFullScreenImageViewer(String imageUrl, String title) {
-    if (imageUrl.isEmpty) return;
-    Navigator.of(context).push(
-      PageRouteBuilder(
-        opaque: false,
-        barrierDismissible: true,
-        pageBuilder: (context, _, __) {
-          return Scaffold(
-            backgroundColor: Colors.black.withOpacity(0.96),
-            appBar: AppBar(
-              backgroundColor: Colors.transparent,
-              elevation: 0,
-              leading: IconButton(
-                icon: const Icon(Icons.arrow_back_ios_new_rounded,
-                    color: Colors.white),
-                onPressed: () => Navigator.pop(context),
-              ),
-              title: Text(
-                title,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 17,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-            body: SizedBox.expand(
-              child: Center(
-                child: InteractiveViewer(
-                  panEnabled: true,
-                  boundaryMargin: const EdgeInsets.all(100),
-                  minScale: 0.5,
-                  maxScale: 5.0,
-                  child: Image.network(
-                    imageUrl,
-                    fit: BoxFit.contain,
-                    loadingBuilder: (context, child, progress) {
-                      if (progress == null) return child;
-                      return const Center(
-                        child: CircularProgressIndicator(color: Colors.white),
-                      );
-                    },
-                    errorBuilder: (context, error, stackTrace) {
-                      return const Center(
-                        child: Icon(Icons.broken_image_rounded,
-                            color: Colors.white54, size: 48),
-                      );
-                    },
-                  ),
-                ),
-              ),
-            ),
-          );
-        },
-      ),
+  void _openFullScreenImageViewer(
+    String imageUrl,
+    String title, {
+    String? heroTag,
+  }) {
+    ImageViewer.open(
+      context,
+      imageUrl: imageUrl,
+      title: title,
+      subtitle: widget.isTeacher ? 'Student' : 'Verified Educator',
+      heroTag: heroTag,
     );
   }
 
@@ -634,6 +591,7 @@ class _ChatListScreenState extends State<ChatListScreen>
 
               return _ChatCard(
                 key: ValueKey('chat_tile_${doc.id}'),
+                avatarHeroTag: 'official_desk_avatar_${doc.id}',
                 name: officialName,
                 lastMessage: lastMessage.isEmpty
                     ? 'Official Communication Desk'
@@ -683,15 +641,29 @@ class _ChatListScreenState extends State<ChatListScreen>
                         'Teacher')
                     .toString();
 
+            final String fallbackImageUrl = (widget.isTeacher
+                    ? (chatData['studentPhoto'] ??
+                        chatData['studentImage'] ??
+                        chatData['receiverImage'] ??
+                        '')
+                    : (chatData['teacherPhoto'] ??
+                        chatData['teacherImage'] ??
+                        chatData['receiverImage'] ??
+                        ''))
+                .toString()
+                .trim();
+
+            final String heroTag = 'chat_avatar_$receiverId';
+
             return KeyedSubtree(
               key: ValueKey('chat_tile_${doc.id}'),
-              child: StreamBuilder<Map<String, dynamic>>(
+              child: StreamBuilder>(
                 stream: _getCachedUserStatusStream(receiverId),
                 builder: (context, userSnapshot) {
                   final mapData = userSnapshot.data;
 
                   String finalName = fallbackName;
-                  String finalImageUrl = '';
+                  String finalImageUrl = fallbackImageUrl;
                   bool isOnline = false;
                   bool isVerifiedUser = false;
 
@@ -709,11 +681,17 @@ class _ChatListScreenState extends State<ChatListScreen>
                       finalName = extractedName.trim();
                     }
 
-                    finalImageUrl = (mapData['profileImageUrl'] ??
+                    final resolvedImg = (mapData['profileImageUrl'] ??
+                            mapData['photoUrl'] ??
                             mapData['profilePic'] ??
                             mapData['profileUrl'] ??
                             '')
-                        .toString();
+                        .toString()
+                        .trim();
+
+                    if (resolvedImg.isNotEmpty) {
+                      finalImageUrl = resolvedImg;
+                    }
 
                     final bool rawIsOnline = mapData['isOnline'] == true;
                     if (rawIsOnline) {
@@ -741,6 +719,7 @@ class _ChatListScreenState extends State<ChatListScreen>
                     builder: (context, typingSnap) {
                       final bool isTyping = typingSnap.data == true;
                       return _ChatCard(
+                        avatarHeroTag: heroTag,
                         name: finalName,
                         lastMessage:
                             isTyping ? 'typing a message...' : lastMessage,
@@ -753,12 +732,11 @@ class _ChatListScreenState extends State<ChatListScreen>
                         isOfficial: false,
                         isVerified: isVerifiedUser,
                         isSelected: isSelected,
-                        onAvatarTap: finalImageUrl.isNotEmpty
-                            ? () => _openFullScreenImageViewer(
-                                  finalImageUrl,
-                                  finalName,
-                                )
-                            : null,
+                        onAvatarTap: () => _openFullScreenImageViewer(
+                          finalImageUrl,
+                          finalName,
+                          heroTag: heroTag,
+                        ),
                         onLongPress: () => _toggleSelection(doc.id),
                         onTap: () {
                           if (_isSelectionMode) {
@@ -1238,6 +1216,7 @@ class _ChatListScreenState extends State<ChatListScreen>
 }
 
 class _ChatCard extends StatelessWidget {
+  final String avatarHeroTag;
   final String name;
   final String lastMessage;
   final bool isTyping;
@@ -1255,6 +1234,7 @@ class _ChatCard extends StatelessWidget {
 
   const _ChatCard({
     super.key,
+    required this.avatarHeroTag,
     required this.name,
     required this.lastMessage,
     this.isTyping = false,
@@ -1336,124 +1316,128 @@ class _ChatCard extends StatelessWidget {
               children: [
                 GestureDetector(
                   behavior: HitTestBehavior.opaque,
-                  onTap: isSelected ? onTap : onAvatarTap ?? onTap,
-                  child: Stack(
-                    clipBehavior: Clip.none,
-                    alignment: Alignment.center,
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(2),
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          gradient: isOnline || hasUnread
-                              ? LinearGradient(
-                                  colors: isOfficial
-                                      ? [
-                                          const Color(0xFF059669),
-                                          const Color(0xFF10B981)
-                                        ]
-                                      : avatarColors,
-                                )
-                              : null,
-                          border: !isOnline && !hasUnread
-                              ? Border.all(
-                                  color: const Color(0xFFE2E8F0),
-                                  width: 1.5,
-                                )
-                              : null,
-                        ),
-                        child: isOfficial
-                            ? ClipRRect(
-                                borderRadius: BorderRadius.circular(26),
-                                child: Image.asset(
-                                  'assets/images/app_logo.png',
-                                  width: 50,
-                                  height: 50,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (_, __, ___) => Container(
+                  onTap: isSelected ? onTap : (onAvatarTap ?? onTap),
+                  child: Hero(
+                    tag: avatarHeroTag,
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      alignment: Alignment.center,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(2),
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            gradient: isOnline || hasUnread
+                                ? LinearGradient(
+                                    colors: isOfficial
+                                        ? [
+                                            const Color(0xFF059669),
+                                            const Color(0xFF10B981)
+                                          ]
+                                        : avatarColors,
+                                  )
+                                : null,
+                            border: !isOnline && !hasUnread
+                                ? Border.all(
+                                    color: const Color(0xFFE2E8F0),
+                                    width: 1.5,
+                                  )
+                                : null,
+                          ),
+                          child: isOfficial
+                              ? ClipRRect(
+                                  borderRadius: BorderRadius.circular(26),
+                                  child: Image.asset(
+                                    'assets/images/app_logo.png',
                                     width: 50,
                                     height: 50,
-                                    decoration: const BoxDecoration(
-                                      color: Color(0xFF0F766E),
-                                      shape: BoxShape.circle,
-                                    ),
-                                    child: const Icon(
-                                      Icons.verified_user_rounded,
-                                      color: Colors.white,
-                                      size: 26,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) => Container(
+                                      width: 50,
+                                      height: 50,
+                                      decoration: const BoxDecoration(
+                                        color: Color(0xFF0F766E),
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: const Icon(
+                                        Icons.verified_user_rounded,
+                                        color: Colors.white,
+                                        size: 26,
+                                      ),
                                     ),
                                   ),
-                                ),
-                              )
-                            : CircleAvatar(
-                                radius: 25,
-                                backgroundColor: avatarColors.first,
-                                backgroundImage: imageUrl.isNotEmpty
-                                    ? NetworkImage(imageUrl)
-                                    : null,
-                                child: imageUrl.isEmpty
-                                    ? Container(
-                                        width: 50,
-                                        height: 50,
-                                        alignment: Alignment.center,
-                                        decoration: BoxDecoration(
-                                          shape: BoxShape.circle,
-                                          gradient: LinearGradient(
-                                            colors: avatarColors,
-                                            begin: Alignment.topLeft,
-                                            end: Alignment.bottomRight,
+                                )
+                              : CircleAvatar(
+                                  radius: 25,
+                                  backgroundColor: avatarColors.first,
+                                  backgroundImage: imageUrl.isNotEmpty
+                                      ? NetworkImage(imageUrl)
+                                      : null,
+                                  child: imageUrl.isEmpty
+                                      ? Container(
+                                          width: 50,
+                                          height: 50,
+                                          alignment: Alignment.center,
+                                          decoration: BoxDecoration(
+                                            shape: BoxShape.circle,
+                                            gradient: LinearGradient(
+                                              colors: avatarColors,
+                                              begin: Alignment.topLeft,
+                                              end: Alignment.bottomRight,
+                                            ),
                                           ),
-                                        ),
-                                        child: isGroup
-                                            ? const Icon(
-                                                Icons.groups_rounded,
-                                                color: Colors.white,
-                                                size: 24,
-                                              )
-                                            : Text(
-                                                _getInitials(name),
-                                                style: const TextStyle(
+                                          child: isGroup
+                                              ? const Icon(
+                                                  Icons.groups_rounded,
                                                   color: Colors.white,
-                                                  fontWeight: FontWeight.w800,
-                                                  fontSize: 16,
+                                                  size: 24,
+                                                )
+                                              : Text(
+                                                  _getInitials(name),
+                                                  style: const TextStyle(
+                                                    color: Colors.white,
+                                                    fontWeight: FontWeight.w800,
+                                                    fontSize: 16,
+                                                  ),
                                                 ),
-                                              ),
-                                      )
-                                    : null,
+                                        )
+                                      : null,
+                                ),
+                        ),
+                        if (isOnline && !isGroup && !isSelected)
+                          Positioned(
+                            right: 1,
+                            bottom: 1,
+                            child: Container(
+                              width: 13.5,
+                              height: 13.5,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF22C55E),
+                                shape: BoxShape.circle,
+                                border:
+                                    Border.all(color: Colors.white, width: 2.2),
                               ),
-                      ),
-                      if (isOnline && !isGroup && !isSelected)
-                        Positioned(
-                          right: 1,
-                          bottom: 1,
+                            ),
+                          ),
+                        AnimatedScale(
+                          duration: const Duration(milliseconds: 180),
+                          scale: isSelected ? 1.0 : 0.0,
                           child: Container(
-                            width: 13.5,
-                            height: 13.5,
+                            width: 54,
+                            height: 54,
                             decoration: BoxDecoration(
-                              color: const Color(0xFF22C55E),
+                              color: const Color(0xFF1E4C7A).withOpacity(0.88),
                               shape: BoxShape.circle,
-                              border: Border.all(color: Colors.white, width: 2.2),
+                            ),
+                            child: const Icon(
+                              Icons.check_rounded,
+                              color: Colors.white,
+                              size: 26,
                             ),
                           ),
                         ),
-                      AnimatedScale(
-                        duration: const Duration(milliseconds: 180),
-                        scale: isSelected ? 1.0 : 0.0,
-                        child: Container(
-                          width: 54,
-                          height: 54,
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF1E4C7A).withOpacity(0.88),
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(
-                            Icons.check_rounded,
-                            color: Colors.white,
-                            size: 26,
-                          ),
-                        ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
                 const SizedBox(width: 13),
