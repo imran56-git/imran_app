@@ -83,22 +83,58 @@ class _TeacherSearchResultScreenState extends State<TeacherSearchResultScreen>
     if (targetId.isEmpty) return;
 
     try {
-      // 1. Check if it's a student ID
-      final studentDoc = await FirebaseFirestore.instance
-          .collection('students')
-          .doc(targetId)
-          .get();
-
-      // 2. Check if it exists in teachers collection
+      // 1. Check `teachers` collection FIRST (strict priority)
       final teacherDoc = await FirebaseFirestore.instance
           .collection('teachers')
           .doc(targetId)
           .get();
 
-      final bool isStudent = studentDoc.exists;
-      final bool isInvalidTeacher = !teacherDoc.exists;
+      bool existsInTeachers = teacherDoc.exists;
 
-      if ((isStudent || isInvalidTeacher) && mounted) {
+      // Fallback check in case UID is stored inside fields rather than doc.id
+      if (!existsInTeachers) {
+        final uidQuery = await FirebaseFirestore.instance
+            .collection('teachers')
+            .where('uid', isEqualTo: targetId)
+            .limit(1)
+            .get();
+        if (uidQuery.docs.isNotEmpty) {
+          existsInTeachers = true;
+        }
+      }
+
+      // If valid teacher exists in `teachers` collection, NEVER trigger student error
+      if (existsInTeachers) {
+        if (mounted && _isStudentIdGlitch) {
+          setState(() {
+            _isStudentIdGlitch = false;
+          });
+        }
+        return;
+      }
+
+      // 2. Only if NOT found in `teachers`, check if it belongs to a Student account
+      final studentDoc = await FirebaseFirestore.instance
+          .collection('students')
+          .doc(targetId)
+          .get();
+
+      bool isStudentAccount = studentDoc.exists;
+
+      if (!isStudentAccount) {
+        final userDoc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(targetId)
+            .get();
+        if (userDoc.exists) {
+          final role = (userDoc.data()?['role'] ?? '').toString().toLowerCase();
+          if (role == 'student') {
+            isStudentAccount = true;
+          }
+        }
+      }
+
+      if (isStudentAccount && mounted) {
         setState(() {
           _isStudentIdGlitch = true;
         });
@@ -398,8 +434,8 @@ class _TeacherSearchResultScreenState extends State<TeacherSearchResultScreen>
     return score.clamp(0, 100).toInt();
   }
 
-  List<Map<String, String>> _buildActiveFilterChipsData() {
-    final List<Map<String, String>> list = [];
+  List> _buildActiveFilterChipsData() {
+    final List> list = [];
     final f = widget.filters;
 
     final id = (f['teacherId'] ?? '').toString().trim();
@@ -429,7 +465,7 @@ class _TeacherSearchResultScreenState extends State<TeacherSearchResultScreen>
 
   Widget _buildTopSummaryAndSortBar(int totalMatched) {
     final activeChips = _buildActiveFilterChipsData();
-    final List<Map<String, dynamic>> sortOptions = [
+    final List> sortOptions = [
       {'key': 'best', 'label': 'Best Match', 'icon': Icons.auto_awesome_rounded},
       {'key': 'rating', 'label': 'Top Rated', 'icon': Icons.star_rounded},
       {
@@ -692,7 +728,6 @@ class _TeacherSearchResultScreenState extends State<TeacherSearchResultScreen>
             );
           }
 
-          // If student ID glitch is detected, force empty state to prevent invalid teacher cards
           if (_isStudentIdGlitch || activeData == null || activeData.docs.isEmpty) {
             return _buildNoResultsView();
           }
@@ -700,8 +735,11 @@ class _TeacherSearchResultScreenState extends State<TeacherSearchResultScreen>
           final matchedDocs = activeData.docs.where((doc) {
             final data = doc.data() as Map<String, dynamic>? ?? {};
             final docId = doc.id.toLowerCase();
+            final fieldUid = (data['uid'] ?? data['teacherId'] ?? '')
+                .toString()
+                .trim()
+                .toLowerCase();
 
-            // Strict exclusion if docId corresponds to an invalid student search
             if (_isStudentIdGlitch) return false;
 
             final String name =
@@ -722,7 +760,9 @@ class _TeacherSearchResultScreenState extends State<TeacherSearchResultScreen>
 
             final int exp = _parseExperienceYears(data);
 
-            bool matchesId = targetId.isEmpty || docId.contains(targetId);
+            bool matchesId = targetId.isEmpty ||
+                docId.contains(targetId) ||
+                (fieldUid.isNotEmpty && fieldUid.contains(targetId));
             bool matchesName = targetName.isEmpty || name.contains(targetName);
             bool matchesLocation = targetLocation.isEmpty ||
                 locationSearchable.contains(targetLocation);
