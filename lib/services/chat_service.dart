@@ -114,15 +114,18 @@ class ChatService {
       await _firestore
           .collection('users')
           .doc(userId)
-          .set(statusData, SetOptions(merge: true));
+          .update(statusData)
+          .catchError((_) {});
       await _firestore
           .collection('teachers')
           .doc(userId)
-          .set(statusData, SetOptions(merge: true));
+          .update(statusData)
+          .catchError((_) {});
       await _firestore
           .collection('students')
           .doc(userId)
-          .set(statusData, SetOptions(merge: true));
+          .update(statusData)
+          .catchError((_) {});
     } catch (e) {
       _handleError('updateOnlineStatus', e);
     }
@@ -511,21 +514,177 @@ class ChatService {
 
       final List<String> sortedParticipants = [senderId, receiverId]..sort();
 
-      batch.set(
-          chatRef,
-          {
-            'chatId': correctChatId,
-            'lastMessage': previewText,
-            'lastMessageContent': previewText,
-            'lastMessageTime': FieldValue.serverTimestamp(),
-            'lastSenderId': senderId,
-            'unreadCount': currentUnread + 1,
-            'unreadFor': receiverId,
-            'unreadCount_$receiverId': currentUnread + 1,
-            'participants': sortedParticipants,
-            'deletedBy': FieldValue.arrayRemove([senderId, receiverId]),
-          },
-          SetOptions(merge: true));
+      final Map<String, dynamic>? existingChatData = chatDoc.data();
+      final bool isMissingMetadata = !chatDoc.exists ||
+          existingChatData == null ||
+          existingChatData['teacherName'] == null ||
+          existingChatData['teacherName'].toString().trim().isEmpty ||
+          existingChatData['studentName'] == null ||
+          existingChatData['studentName'].toString().trim().isEmpty ||
+          existingChatData['teacherImage'] == null ||
+          existingChatData['teacherImage'].toString().trim().isEmpty ||
+          existingChatData['studentImage'] == null ||
+          existingChatData['studentImage'].toString().trim().isEmpty;
+
+      Map<String, dynamic> metadataToMerge = {};
+
+      if (isMissingMetadata) {
+        String teacherId = (existingChatData?['teacherId'] as String?) ?? '';
+        String studentId = (existingChatData?['studentId'] as String?) ?? '';
+
+        Map<String, dynamic>? teacherProfile;
+        Map<String, dynamic>? studentProfile;
+
+        final senderTeacherDoc =
+            await _firestore.collection('teachers').doc(senderId).get();
+        final receiverTeacherDoc =
+            await _firestore.collection('teachers').doc(receiverId).get();
+
+        if (senderTeacherDoc.exists && senderTeacherDoc.data() != null) {
+          teacherId = senderId;
+          studentId = receiverId;
+          teacherProfile = senderTeacherDoc.data();
+          final sDoc =
+              await _firestore.collection('students').doc(receiverId).get();
+          studentProfile = sDoc.data() ??
+              (await _firestore.collection('users').doc(receiverId).get())
+                  .data();
+        } else if (receiverTeacherDoc.exists &&
+            receiverTeacherDoc.data() != null) {
+          teacherId = receiverId;
+          studentId = senderId;
+          teacherProfile = receiverTeacherDoc.data();
+          final sDoc =
+              await _firestore.collection('students').doc(senderId).get();
+          studentProfile = sDoc.data() ??
+              (await _firestore.collection('users').doc(senderId).get())
+                  .data();
+        } else {
+          if (teacherId == senderId) {
+            final sDoc =
+                await _firestore.collection('students').doc(receiverId).get();
+            studentProfile = sDoc.data() ??
+                (await _firestore.collection('users').doc(receiverId).get())
+                    .data();
+            teacherProfile =
+                (await _firestore.collection('users').doc(senderId).get())
+                    .data();
+          } else if (teacherId == receiverId) {
+            final sDoc =
+                await _firestore.collection('students').doc(senderId).get();
+            studentProfile = sDoc.data() ??
+                (await _firestore.collection('users').doc(senderId).get())
+                    .data();
+            teacherProfile =
+                (await _firestore.collection('users').doc(receiverId).get())
+                    .data();
+          } else {
+            final senderUserDoc =
+                await _firestore.collection('users').doc(senderId).get();
+            final receiverUserDoc =
+                await _firestore.collection('users').doc(receiverId).get();
+            final senderUserData = senderUserDoc.data() ?? {};
+            final receiverUserData = receiverUserDoc.data() ?? {};
+
+            final senderRole =
+                (senderUserData['role'] ?? senderUserData['userType'] ?? '')
+                    .toString()
+                    .toLowerCase();
+
+            if (senderRole == 'teacher') {
+              teacherId = senderId;
+              studentId = receiverId;
+              teacherProfile = senderUserData;
+              studentProfile = receiverUserData;
+            } else {
+              teacherId = receiverId;
+              studentId = senderId;
+              teacherProfile = receiverUserData;
+              studentProfile = senderUserData;
+            }
+          }
+        }
+
+        String teacherName = (existingChatData?['teacherName'] as String?) ?? '';
+        String studentName = (existingChatData?['studentName'] as String?) ?? '';
+        String teacherImage = (existingChatData?['teacherImage'] as String?) ?? '';
+        String studentImage = (existingChatData?['studentImage'] as String?) ?? '';
+
+        if (teacherProfile != null) {
+          final fetchedTName = (teacherProfile['fullName'] ??
+                  teacherProfile['name'] ??
+                  teacherProfile['displayName'] ??
+                  teacherProfile['teacherName'] ??
+                  '')
+              .toString()
+              .trim();
+          final fetchedTImg = (teacherProfile['profileImageUrl'] ??
+                  teacherProfile['profilePic'] ??
+                  teacherProfile['profileUrl'] ??
+                  teacherProfile['photoUrl'] ??
+                  '')
+              .toString()
+              .trim();
+          if (fetchedTName.isNotEmpty &&
+              fetchedTName != 'Me' &&
+              fetchedTName != 'User') {
+            teacherName = fetchedTName;
+          }
+          if (fetchedTImg.isNotEmpty) {
+            teacherImage = fetchedTImg;
+          }
+        }
+
+        if (studentProfile != null) {
+          final fetchedSName = (studentProfile['fullName'] ??
+                  studentProfile['name'] ??
+                  studentProfile['displayName'] ??
+                  studentProfile['studentName'] ??
+                  '')
+              .toString()
+              .trim();
+          final fetchedSImg = (studentProfile['profileImageUrl'] ??
+                  studentProfile['profilePic'] ??
+                  studentProfile['profileUrl'] ??
+                  studentProfile['photoUrl'] ??
+                  '')
+              .toString()
+              .trim();
+          if (fetchedSName.isNotEmpty &&
+              fetchedSName != 'Me' &&
+              fetchedSName != 'User') {
+            studentName = fetchedSName;
+          }
+          if (fetchedSImg.isNotEmpty) {
+            studentImage = fetchedSImg;
+          }
+        }
+
+        metadataToMerge = {
+          'teacherId': teacherId,
+          'studentId': studentId,
+          'teacherName': teacherName,
+          'studentName': studentName,
+          'teacherImage': teacherImage,
+          'studentImage': studentImage,
+        };
+      }
+
+      final Map<String, dynamic> chatUpdateData = {
+        'chatId': correctChatId,
+        'lastMessage': previewText,
+        'lastMessageContent': previewText,
+        'lastMessageTime': FieldValue.serverTimestamp(),
+        'lastSenderId': senderId,
+        'unreadCount': currentUnread + 1,
+        'unreadFor': receiverId,
+        'unreadCount_$receiverId': currentUnread + 1,
+        'participants': sortedParticipants,
+        'deletedBy': FieldValue.arrayRemove([senderId, receiverId]),
+        ...metadataToMerge,
+      };
+
+      batch.set(chatRef, chatUpdateData, SetOptions(merge: true));
 
       final notificationRef = _firestore.collection('notifications').doc();
       batch.set(notificationRef, {
