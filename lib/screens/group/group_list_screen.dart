@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -565,6 +566,9 @@ class _GroupListScreenState extends State<GroupListScreen>
                       group.isStudentMuted(widget.currentUserId);
                   final bool isNotificationMuted =
                       group.mutedByUsers.contains(widget.currentUserId);
+                  final bool hasValidGroupImage = group.imageUrl.isNotEmpty &&
+                      (group.imageUrl.startsWith('http://') ||
+                          group.imageUrl.startsWith('https://'));
 
                   final List<String> metaTags = [
                     if (group.className.isNotEmpty) group.className,
@@ -597,10 +601,10 @@ class _GroupListScreenState extends State<GroupListScreen>
                             CircleAvatar(
                               radius: 24,
                               backgroundColor: Colors.blue.shade50,
-                              backgroundImage: group.imageUrl.isNotEmpty
-                                  ? NetworkImage(group.imageUrl)
+                              backgroundImage: hasValidGroupImage
+                                  ? CachedNetworkImageProvider(group.imageUrl)
                                   : null,
-                              child: group.imageUrl.isEmpty
+                              child: !hasValidGroupImage
                                   ? const Icon(Icons.groups_rounded,
                                       color: ChatColors.primaryApp, size: 26)
                                   : null,
