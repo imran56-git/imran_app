@@ -263,7 +263,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen>
             initAspectRatio: CropAspectRatioPreset.square,
             lockAspectRatio: true,
           ),
-          const IOSUiSettings(
+          IOSUiSettings(
             title: 'Adjust Group Photo',
             cropStyle: CropStyle.circle,
             aspectRatioLockEnabled: true,
