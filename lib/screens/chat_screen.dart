@@ -1249,7 +1249,7 @@ class _ChatScreenState extends State<ChatScreen>
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Row(
-                mainAxisSize: min(0, 0) == 0 ? MainAxisSize.min : MainAxisSize.max,
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   const Flexible(
                     child: Text(
