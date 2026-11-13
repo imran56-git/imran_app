@@ -84,7 +84,7 @@ class _TeacherRegistrationScreenState
           initAspectRatio: CropAspectRatioPreset.square,
           lockAspectRatio: true,
         ),
-        const IOSUiSettings(
+        IOSUiSettings(
           title: 'Adjust Profile Photo',
           cropStyle: CropStyle.circle,
           aspectRatioLockEnabled: true,
