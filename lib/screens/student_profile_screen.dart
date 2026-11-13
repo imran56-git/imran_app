@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:ui';
 import 'package:animate_do/animate_do.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
@@ -676,8 +677,9 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
     final url = _pendingProfileImageUrl ??
         studentData?['profileImageUrl'] ??
         studentData?['photoUrl'];
-    return (url != null && url.toString().trim().isNotEmpty)
-        ? NetworkImage(url.toString().trim())
+    final String cleanUrl = (url ?? '').toString().trim();
+    return (cleanUrl.startsWith('http://') || cleanUrl.startsWith('https://'))
+        ? CachedNetworkImageProvider(cleanUrl)
         : null;
   }
 
