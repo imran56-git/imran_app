@@ -83,7 +83,55 @@ class _TeacherSearchResultScreenState extends State<TeacherSearchResultScreen>
     if (targetId.isEmpty) return;
 
     try {
-      // 1. Check if targetId belongs to a Student account (students collection or users with role == 'student')
+      // 1. Check teachers collection FIRST (doc, uid, teacherId)
+      Map<String, dynamic>? teacherData;
+
+      final teacherDoc = await FirebaseFirestore.instance
+          .collection('teachers')
+          .doc(targetId)
+          .get();
+
+      if (teacherDoc.exists) {
+        teacherData = teacherDoc.data();
+      } else {
+        final uidQuery = await FirebaseFirestore.instance
+            .collection('teachers')
+            .where('uid', isEqualTo: targetId)
+            .limit(1)
+            .get();
+        if (uidQuery.docs.isNotEmpty) {
+          teacherData = uidQuery.docs.first.data();
+        } else {
+          final teacherIdQuery = await FirebaseFirestore.instance
+              .collection('teachers')
+              .where('teacherId', isEqualTo: targetId)
+              .limit(1)
+              .get();
+          if (teacherIdQuery.docs.isNotEmpty) {
+            teacherData = teacherIdQuery.docs.first.data();
+          }
+        }
+      }
+
+      // If a document exists in teachers with a non-empty name, immediately confirm as valid teacher
+      if (teacherData != null) {
+        final teacherName = (teacherData['name'] ??
+                teacherData['fullName'] ??
+                teacherData['displayName'] ??
+                '')
+            .toString()
+            .trim();
+        if (teacherName.isNotEmpty) {
+          if (mounted) {
+            setState(() {
+              _isStudentIdGlitch = false;
+            });
+          }
+          return;
+        }
+      }
+
+      // 2. ONLY if no valid teacher document exists in teachers, check students and users
       bool isStudentAccount = false;
 
       final studentDoc = await FirebaseFirestore.instance
@@ -143,63 +191,6 @@ class _TeacherSearchResultScreenState extends State<TeacherSearchResultScreen>
           });
         }
         return;
-      }
-
-      // 2. Check teachers collection: verify that a valid teacher document has a non-empty name and role != 'student'
-      final teacherDoc = await FirebaseFirestore.instance
-          .collection('teachers')
-          .doc(targetId)
-          .get();
-
-      Map<String, dynamic>? teacherData;
-      if (teacherDoc.exists) {
-        teacherData = teacherDoc.data();
-      } else {
-        final uidQuery = await FirebaseFirestore.instance
-            .collection('teachers')
-            .where('uid', isEqualTo: targetId)
-            .limit(1)
-            .get();
-        if (uidQuery.docs.isNotEmpty) {
-          teacherData = uidQuery.docs.first.data();
-        }
-      }
-
-      bool isValidTeacher = false;
-      if (teacherData != null) {
-        final role = (teacherData['role'] ?? '').toString().toLowerCase();
-        if (role == 'student') {
-          if (mounted) {
-            setState(() {
-              _isStudentIdGlitch = true;
-            });
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (!_hasShownGlitchDialog && mounted) {
-                _hasShownGlitchDialog = true;
-                _showInvalidEducatorDialog();
-              }
-            });
-          }
-          return;
-        }
-
-        final teacherName = (teacherData['name'] ??
-                teacherData['fullName'] ??
-                teacherData['displayName'] ??
-                '')
-            .toString()
-            .trim();
-        if (teacherName.isNotEmpty) {
-          isValidTeacher = true;
-        }
-      }
-
-      if (isValidTeacher) {
-        if (mounted && _isStudentIdGlitch) {
-          setState(() {
-            _isStudentIdGlitch = false;
-          });
-        }
       }
     } catch (_) {}
   }
@@ -790,10 +781,6 @@ class _TeacherSearchResultScreenState extends State<TeacherSearchResultScreen>
           final matchedDocs = activeData.docs.where((doc) {
             final data = doc.data() as Map<String, dynamic>? ?? {};
             if (_isStudentIdGlitch) return false;
-
-            final String role =
-                (data['role'] ?? '').toString().toLowerCase();
-            if (role == 'student') return false;
 
             final String rawName =
                 (data['name'] ?? data['fullName'] ?? data['displayName'] ?? '')
