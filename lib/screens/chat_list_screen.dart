@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -1274,6 +1275,8 @@ class _ChatCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final bool hasUnread = unreadCount > 0;
     final avatarColors = _getAvatarGradient(name);
+    final bool hasValidNetworkImage = imageUrl.trim().startsWith('http://') ||
+        imageUrl.trim().startsWith('https://');
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 180),
@@ -1370,10 +1373,12 @@ class _ChatCard extends StatelessWidget {
                               : CircleAvatar(
                                   radius: 25,
                                   backgroundColor: avatarColors.first,
-                                  backgroundImage: imageUrl.isNotEmpty
-                                      ? NetworkImage(imageUrl)
+                                  backgroundImage: hasValidNetworkImage
+                                      ? CachedNetworkImageProvider(
+                                          imageUrl.trim(),
+                                        )
                                       : null,
-                                  child: imageUrl.isEmpty
+                                  child: !hasValidNetworkImage
                                       ? Container(
                                           width: 50,
                                           height: 50,
