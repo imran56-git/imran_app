@@ -119,7 +119,7 @@ class TeacherCardWidget extends StatelessWidget {
     final int extraSubjectCount =
         subjectPills.length > 3 ? subjectPills.length - 3 : 0;
 
-    return StreamBuilder<DocumentSnapshot>>(
+    return StreamBuilder<DocumentSnapshot>(
       stream: teacherId.trim().isNotEmpty
           ? FirebaseFirestore.instance
               .collection('teachers')
@@ -127,7 +127,8 @@ class TeacherCardWidget extends StatelessWidget {
               .snapshots()
           : const Stream.empty(),
       builder: (context, teacherSnap) {
-        final liveTeacherData = teacherSnap.data?.data();
+        final liveTeacherData =
+            teacherSnap.data?.data() as Map<String, dynamic>?;
         final String resolvedImageUrl = _pickFirstValidUrl(liveTeacherData);
         final String resolvedTuition =
             (tuitionName != null && tuitionName!.trim().isNotEmpty)
