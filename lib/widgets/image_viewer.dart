@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -19,7 +20,6 @@ class ImageViewer extends StatefulWidget {
     this.onEditPressed,
   });
 
-  /// Helper method to launch the full-screen viewer with a smooth fade transition.
   static Future<void> open(
     BuildContext context, {
     required String imageUrl,
@@ -34,8 +34,8 @@ class ImageViewer extends StatefulWidget {
       PageRouteBuilder(
         opaque: false,
         barrierColor: Colors.black,
-        transitionDuration: const Duration(milliseconds: 260),
-        reverseTransitionDuration: const Duration(milliseconds: 220),
+        transitionDuration: const Duration(milliseconds: 240),
+        reverseTransitionDuration: const Duration(milliseconds: 200),
         pageBuilder: (context, animation, secondaryAnimation) {
           return FadeTransition(
             opacity: animation,
@@ -244,45 +244,31 @@ class _ImageViewerState extends State<ImageViewer>
                   minScale: 1.0,
                   maxScale: 4.0,
                   clipBehavior: Clip.none,
-                  child: _buildHeroWrapper(
-                    child: SizedBox(
-                      width: screenWidth,
-                      height: screenWidth,
-                      child: hasValidImage
-                          ? Image.network(
-                              cleanUrl,
-                              fit: BoxFit.cover,
+                  child: SizedBox(
+                    width: screenWidth,
+                    height: screenWidth,
+                    child: hasValidImage
+                        ? CachedNetworkImage(
+                            imageUrl: cleanUrl,
+                            fit: BoxFit.cover,
+                            width: screenWidth,
+                            height: screenWidth,
+                            fadeInDuration: const Duration(milliseconds: 120),
+                            placeholder: (context, url) => Container(
                               width: screenWidth,
                               height: screenWidth,
-                              loadingBuilder:
-                                  (context, child, loadingProgress) {
-                                if (loadingProgress == null) return child;
-                                return Container(
-                                  width: screenWidth,
-                                  height: screenWidth,
-                                  color: const Color(0xFF111827),
-                                  child: Center(
-                                    child: CircularProgressIndicator(
-                                      color: Colors.white,
-                                      strokeWidth: 2.8,
-                                      value: loadingProgress
-                                                  .expectedTotalBytes !=
-                                              null
-                                          ? loadingProgress
-                                                  .cumulativeBytesLoaded /
-                                              loadingProgress
-                                                  .expectedTotalBytes!
-                                          : null,
-                                    ),
-                                  ),
-                                );
-                              },
-                              errorBuilder: (context, error, stackTrace) {
-                                return _buildFallbackAvatar(screenWidth);
-                              },
-                            )
-                          : _buildFallbackAvatar(screenWidth),
-                    ),
+                              color: const Color(0xFF111827),
+                              child: const Center(
+                                child: CircularProgressIndicator(
+                                  color: Colors.white,
+                                  strokeWidth: 2.5,
+                                ),
+                              ),
+                            ),
+                            errorWidget: (context, url, error) =>
+                                _buildFallbackAvatar(screenWidth),
+                          )
+                        : _buildFallbackAvatar(screenWidth),
                   ),
                 ),
               ),
@@ -291,19 +277,6 @@ class _ImageViewerState extends State<ImageViewer>
         ),
       ),
     );
-  }
-
-  Widget _buildHeroWrapper({required Widget child}) {
-    if (widget.heroTag != null && widget.heroTag!.trim().isNotEmpty) {
-      return Hero(
-        tag: widget.heroTag!.trim(),
-        child: Material(
-          color: Colors.transparent,
-          child: child,
-        ),
-      );
-    }
-    return child;
   }
 
   Widget _buildFallbackAvatar(double size) {
