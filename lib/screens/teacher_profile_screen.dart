@@ -1,5 +1,7 @@
+```dart
 import 'dart:async';
 import 'dart:ui';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
@@ -1492,10 +1494,10 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
     final String? bannerUrl = _pendingBannerImageUrl ??
         (teacherData?['bannerImageUrl'] ?? teacherData?['coverImageUrl'])
             ?.toString();
-    if (bannerUrl != null && bannerUrl.trim().isNotEmpty) {
-      return NetworkImage(bannerUrl.trim());
-    }
-    return null;
+    final String cleanUrl = (bannerUrl ?? '').trim();
+    return (cleanUrl.startsWith('http://') || cleanUrl.startsWith('https://'))
+        ? CachedNetworkImageProvider(cleanUrl)
+        : null;
   }
 
   @override
@@ -2269,6 +2271,8 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
         (rawUrl != null && rawUrl.toString().trim().isNotEmpty)
             ? rawUrl.toString().trim()
             : null;
+    final bool hasValidUrl = url != null &&
+        (url.startsWith('http://') || url.startsWith('https://'));
     final String nameText = _nameController.text.trim().isNotEmpty
         ? _nameController.text.trim()
         : 'T';
@@ -2328,8 +2332,9 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                   CircleAvatar(
                     radius: radius,
                     backgroundColor: const Color(0xFFE0F2FE),
-                    backgroundImage: url != null ? NetworkImage(url) : null,
-                    child: url == null
+                    backgroundImage:
+                        hasValidUrl ? CachedNetworkImageProvider(url!) : null,
+                    child: !hasValidUrl
                         ? Text(
                             nameText[0].toUpperCase(),
                             style: const TextStyle(
