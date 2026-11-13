@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:image_cropper/image_cropper.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
@@ -67,8 +68,35 @@ class _TeacherRegistrationScreenState
 
   Future<void> _pickImage(Function(File) onPicked) async {
     final picked = await ImagePicker()
-        .pickImage(source: ImageSource.gallery, imageQuality: 85);
-    if (picked != null) onPicked(File(picked.path));
+        .pickImage(source: ImageSource.gallery, imageQuality: 90);
+    if (picked == null) return;
+
+    final CroppedFile? croppedFile = await ImageCropper().cropImage(
+      sourcePath: picked.path,
+      aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
+      uiSettings: [
+        AndroidUiSettings(
+          toolbarTitle: 'Adjust Profile Photo',
+          toolbarColor: const Color(0xFF0F172A),
+          toolbarWidgetColor: Colors.white,
+          activeControlsWidgetColor: const Color(0xFF2563EB),
+          cropStyle: CropStyle.circle,
+          initAspectRatio: CropAspectRatioPreset.square,
+          lockAspectRatio: true,
+        ),
+        const IOSUiSettings(
+          title: 'Adjust Profile Photo',
+          cropStyle: CropStyle.circle,
+          aspectRatioLockEnabled: true,
+        ),
+      ],
+    );
+
+    if (croppedFile == null) return;
+
+    final File cropped = File(croppedFile.path);
+    final File? compressed = await ImageHelper.compressImage(cropped);
+    onPicked(compressed ?? cropped);
   }
 
   Future<void> _launchUrl() async {
