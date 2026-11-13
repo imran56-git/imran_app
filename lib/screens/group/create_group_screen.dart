@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'dart:io';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
+import 'package:image_cropper/image_cropper.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../services/group_service.dart';
 import '../../utils/image_utils.dart';
@@ -244,12 +246,35 @@ class _CreateGroupScreenState extends State<CreateGroupScreen>
     try {
       final picked = await _picker.pickImage(
         source: ImageSource.gallery,
-        imageQuality: 80,
+        imageQuality: 90,
       );
       if (picked == null) return;
 
+      final CroppedFile? croppedFile = await ImageCropper().cropImage(
+        sourcePath: picked.path,
+        aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
+        uiSettings: [
+          AndroidUiSettings(
+            toolbarTitle: 'Adjust Group Photo',
+            toolbarColor: const Color(0xFF0F172A),
+            toolbarWidgetColor: Colors.white,
+            activeControlsWidgetColor: const Color(0xFF2563EB),
+            cropStyle: CropStyle.circle,
+            initAspectRatio: CropAspectRatioPreset.square,
+            lockAspectRatio: true,
+          ),
+          const IOSUiSettings(
+            title: 'Adjust Group Photo',
+            cropStyle: CropStyle.circle,
+            aspectRatioLockEnabled: true,
+          ),
+        ],
+      );
+
+      if (croppedFile == null) return;
+
       setState(() {
-        _selectedGroupImageFile = File(picked.path);
+        _selectedGroupImageFile = File(croppedFile.path);
         _isUploadingImage = true;
       });
 
@@ -427,8 +452,10 @@ class _CreateGroupScreenState extends State<CreateGroupScreen>
     if (_selectedGroupImageFile != null) {
       imageProvider = FileImage(_selectedGroupImageFile!);
     } else if (_uploadedGroupImageUrl != null &&
-        _uploadedGroupImageUrl!.isNotEmpty) {
-      imageProvider = NetworkImage(_uploadedGroupImageUrl!);
+        _uploadedGroupImageUrl!.isNotEmpty &&
+        (_uploadedGroupImageUrl!.startsWith('http://') ||
+            _uploadedGroupImageUrl!.startsWith('https://'))) {
+      imageProvider = CachedNetworkImageProvider(_uploadedGroupImageUrl!);
     }
 
     return SingleChildScrollView(
@@ -868,6 +895,8 @@ class _CreateGroupScreenState extends State<CreateGroupScreen>
                 final student = selectedStudents[index];
                 final String name = (student['name'] ?? 'S').toString();
                 final String photoUrl = (student['photoUrl'] ?? '').toString();
+                final bool hasValidPhoto = photoUrl.startsWith('http://') ||
+                    photoUrl.startsWith('https://');
 
                 return Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 6),
@@ -879,10 +908,10 @@ class _CreateGroupScreenState extends State<CreateGroupScreen>
                           CircleAvatar(
                             radius: 22,
                             backgroundColor: Colors.blue.shade100,
-                            backgroundImage: photoUrl.isNotEmpty
-                                ? NetworkImage(photoUrl)
+                            backgroundImage: hasValidPhoto
+                                ? CachedNetworkImageProvider(photoUrl)
                                 : null,
-                            child: photoUrl.isEmpty
+                            child: !hasValidPhoto
                                 ? Text(
                                     name.isNotEmpty
                                         ? name[0].toUpperCase()
@@ -955,6 +984,8 @@ class _CreateGroupScreenState extends State<CreateGroupScreen>
                             (student['photoUrl'] ?? '').toString();
                         final String uid =
                             (student['uid'] ?? student['id'] ?? '').toString();
+                        final bool hasValidPhoto = photoUrl.startsWith('http://') ||
+                            photoUrl.startsWith('https://');
 
                         return ListTile(
                           leading: CircleAvatar(
@@ -962,10 +993,10 @@ class _CreateGroupScreenState extends State<CreateGroupScreen>
                             backgroundColor: isSelected
                                 ? Colors.blueAccent
                                 : Colors.blue.shade50,
-                            backgroundImage: photoUrl.isNotEmpty
-                                ? NetworkImage(photoUrl)
+                            backgroundImage: hasValidPhoto
+                                ? CachedNetworkImageProvider(photoUrl)
                                 : null,
-                            child: photoUrl.isEmpty
+                            child: !hasValidPhoto
                                 ? Text(
                                     name.isNotEmpty
                                         ? name[0].toUpperCase()
