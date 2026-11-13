@@ -34,8 +34,8 @@ class ImageViewer extends StatefulWidget {
       PageRouteBuilder(
         opaque: false,
         barrierColor: Colors.black,
-        transitionDuration: const Duration(milliseconds: 240),
-        reverseTransitionDuration: const Duration(milliseconds: 200),
+        transitionDuration: const Duration(milliseconds: 260),
+        reverseTransitionDuration: const Duration(milliseconds: 220),
         pageBuilder: (context, animation, secondaryAnimation) {
           return FadeTransition(
             opacity: animation,
@@ -244,31 +244,33 @@ class _ImageViewerState extends State<ImageViewer>
                   minScale: 1.0,
                   maxScale: 4.0,
                   clipBehavior: Clip.none,
-                  child: SizedBox(
-                    width: screenWidth,
-                    height: screenWidth,
-                    child: hasValidImage
-                        ? CachedNetworkImage(
-                            imageUrl: cleanUrl,
-                            fit: BoxFit.cover,
-                            width: screenWidth,
-                            height: screenWidth,
-                            fadeInDuration: const Duration(milliseconds: 120),
-                            placeholder: (context, url) => Container(
+                  child: _buildHeroWrapper(
+                    child: SizedBox(
+                      width: screenWidth,
+                      height: screenWidth,
+                      child: hasValidImage
+                          ? CachedNetworkImage(
+                              imageUrl: cleanUrl,
+                              fit: BoxFit.cover,
                               width: screenWidth,
                               height: screenWidth,
-                              color: const Color(0xFF111827),
-                              child: const Center(
-                                child: CircularProgressIndicator(
-                                  color: Colors.white,
-                                  strokeWidth: 2.5,
+                              fadeInDuration: const Duration(milliseconds: 120),
+                              placeholder: (context, url) => Container(
+                                width: screenWidth,
+                                height: screenWidth,
+                                color: const Color(0xFF111827),
+                                child: const Center(
+                                  child: CircularProgressIndicator(
+                                    color: Colors.white,
+                                    strokeWidth: 2.5,
+                                  ),
                                 ),
                               ),
-                            ),
-                            errorWidget: (context, url, error) =>
-                                _buildFallbackAvatar(screenWidth),
-                          )
-                        : _buildFallbackAvatar(screenWidth),
+                              errorWidget: (context, url, error) =>
+                                  _buildFallbackAvatar(screenWidth),
+                            )
+                          : _buildFallbackAvatar(screenWidth),
+                    ),
                   ),
                 ),
               ),
@@ -277,6 +279,19 @@ class _ImageViewerState extends State<ImageViewer>
         ),
       ),
     );
+  }
+
+  Widget _buildHeroWrapper({required Widget child}) {
+    if (widget.heroTag != null && widget.heroTag!.trim().isNotEmpty) {
+      return Hero(
+        tag: widget.heroTag!.trim(),
+        child: Material(
+          color: Colors.transparent,
+          child: child,
+        ),
+      );
+    }
+    return child;
   }
 
   Widget _buildFallbackAvatar(double size) {
