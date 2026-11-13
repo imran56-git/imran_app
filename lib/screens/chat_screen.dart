@@ -1,3 +1,16 @@
+Fix the bugs in `lib/screens/chat_screen.dart` so that when a Student messages a Teacher and navigates back, the Teacher's name and profile picture NEVER disappear or revert to "Teacher", and the receiver avatar uses disk caching. Return the COMPLETE, full source code from top to bottom without truncating, summarizing, or omitting any lines.
+
+REQUIRED FIXES:
+1. Add `import 'package:cached_network_image/cached_network_image.dart';` at the top imports.
+2. In `_runBackgroundChatInit()`:
+   - Also fetch the receiver's profile (`_chatService.getUserProfile(widget.receiverId, !widget.isTeacher)`) whenever `widget.receiverName.trim().isEmpty`, `widget.receiverName == 'Teacher'`, `widget.receiverName == 'User'`, or `widget.receiverProfilePic.trim().isEmpty`.
+   - Use the fetched receiver's real name (`fullName` / `name` / `displayName`) and real profile image (`profileImageUrl` / `photoUrl` / `profilePic` / `profileUrl`) when calling `_chatService.createOrInitializeChat(...)` so valid `teacherName`, `teacherImage`, `studentName`, and `studentImage` are always persisted in Firestore.
+3. In `_buildStandardAppBarTitle()`:
+   - Replace `NetworkImage(displayPic)` inside `CircleAvatar` with `CachedNetworkImageProvider(displayPic)` (only when `displayPic.startsWith('http://') || displayPic.startsWith('https://')`) so the receiver's profile picture loads instantly from cache without reloading every time.
+4. Preserve all existing drag-to-reply, top action toolbar, selection mode, custom wallpaper, block/report menus, and generic types cleanly. Output the entire complete file in one single code block.
+
+Source Code:
+
 import 'dart:async';
 import 'dart:developer';
 import 'dart:io';
