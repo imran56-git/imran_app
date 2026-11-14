@@ -301,64 +301,87 @@ class _ChatScreenState extends State<ChatScreen>
 
   Future<void> _runBackgroundChatInit() async {
     try {
-      String myName = 'User';
-      String myImage = '';
+      String? myName;
+      String? myImage;
       try {
         final profile = await _chatService
             .getUserProfile(
               widget.currentUserId,
               widget.isTeacher,
             )
-            .timeout(const Duration(seconds: 2));
+            .timeout(const Duration(seconds: 5));
         if (profile != null) {
-          myName = (profile['fullName'] ??
-                  profile['name'] ??
-                  profile['displayName'] ??
-                  'User')
-              .toString();
-          myImage = (profile['profileImageUrl'] ??
-                  profile['photoUrl'] ??
-                  profile['profilePic'] ??
-                  profile['profileUrl'] ??
-                  '')
-              .toString();
+          for (final key in const ['fullName', 'name', 'displayName']) {
+            final val = profile[key]?.toString().trim();
+            if (val != null && val.isNotEmpty && val != 'User') {
+              myName = val;
+              break;
+            }
+          }
+          for (final key in const [
+            'profileImageUrl',
+            'photoUrl',
+            'profilePic',
+            'profileUrl',
+          ]) {
+            final val = profile[key]?.toString().trim();
+            if (val != null && val.isNotEmpty) {
+              myImage = val;
+              break;
+            }
+          }
         }
       } catch (_) {}
 
-      String receiverName = widget.receiverName;
-      String receiverPic = widget.receiverProfilePic;
-
-      final bool shouldFetchReceiver = receiverName.trim().isEmpty ||
-          receiverName == 'Teacher' ||
-          receiverName == 'User' ||
-          receiverPic.trim().isEmpty;
-
-      if (shouldFetchReceiver) {
-        try {
-          final rProfile = await _chatService
-              .getUserProfile(
-                widget.receiverId,
-                !widget.isTeacher,
-              )
-              .timeout(const Duration(seconds: 2));
-          if (rProfile != null) {
-            final fetchedRName = (rProfile['fullName'] ??
-                    rProfile['name'] ??
-                    rProfile['displayName'])
-                ?.toString();
-            if (fetchedRName != null && fetchedRName.trim().isNotEmpty) {
-              receiverName = fetchedRName.trim();
-            }
-            final fetchedRPic = (rProfile['profileImageUrl'] ??
-                    rProfile['photoUrl'] ??
-                    rProfile['profilePic'] ??
-                    rProfile['profileUrl'])
-                ?.toString();
-            if (fetchedRPic != null && fetchedRPic.trim().isNotEmpty) {
-              receiverPic = fetchedRPic.trim();
+      String? receiverName;
+      String? receiverPic;
+      try {
+        final rProfile = await _chatService
+            .getUserProfile(
+              widget.receiverId,
+              !widget.isTeacher,
+            )
+            .timeout(const Duration(seconds: 5));
+        if (rProfile != null) {
+          for (final key in const ['fullName', 'name', 'displayName']) {
+            final val = rProfile[key]?.toString().trim();
+            if (val != null &&
+                val.isNotEmpty &&
+                val != 'Teacher' &&
+                val != 'User') {
+              receiverName = val;
+              break;
             }
           }
-        } catch (_) {}
+          for (final key in const [
+            'profileImageUrl',
+            'photoUrl',
+            'profilePic',
+            'profileUrl',
+          ]) {
+            final val = rProfile[key]?.toString().trim();
+            if (val != null && val.isNotEmpty) {
+              receiverPic = val;
+              break;
+            }
+          }
+        }
+      } catch (_) {}
+
+      if (receiverName == null || receiverName.isEmpty) {
+        final fallbackName = widget.receiverName.trim();
+        if (fallbackName.isNotEmpty &&
+            fallbackName != 'Teacher' &&
+            fallbackName != 'User') {
+          receiverName = fallbackName;
+        }
+      }
+
+      if (receiverPic == null || receiverPic.isEmpty) {
+        final fallbackPic = widget.receiverProfilePic.trim();
+        if (fallbackPic.isNotEmpty) {
+          receiverPic = fallbackPic;
+        }
       }
 
       final String teacherId =
@@ -366,26 +389,30 @@ class _ChatScreenState extends State<ChatScreen>
       final String studentId =
           widget.isTeacher ? widget.receiverId : widget.currentUserId;
 
-      final String teacherName =
-          widget.isTeacher ? myName : receiverName;
-      final String studentName =
-          widget.isTeacher ? receiverName : myName;
+      final String? teacherName = widget.isTeacher ? myName : receiverName;
+      final String? studentName = widget.isTeacher ? receiverName : myName;
 
-      final String teacherImage =
-          widget.isTeacher ? myImage : receiverPic;
-      final String studentImage =
-          widget.isTeacher ? receiverPic : myImage;
+      final String? teacherImage = widget.isTeacher ? myImage : receiverPic;
+      final String? studentImage = widget.isTeacher ? receiverPic : myImage;
 
       await _chatService
           .createOrInitializeChat(
             teacherId: teacherId,
             studentId: studentId,
-            teacherName: teacherName,
-            studentName: studentName,
-            teacherImage: teacherImage,
-            studentImage: studentImage,
+            teacherName: (teacherName != null && teacherName.isNotEmpty)
+                ? teacherName
+                : null,
+            studentName: (studentName != null && studentName.isNotEmpty)
+                ? studentName
+                : null,
+            teacherImage: (teacherImage != null && teacherImage.isNotEmpty)
+                ? teacherImage
+                : null,
+            studentImage: (studentImage != null && studentImage.isNotEmpty)
+                ? studentImage
+                : null,
           )
-          .timeout(const Duration(seconds: 3));
+          .timeout(const Duration(seconds: 5));
 
       if (mounted) {
         _chatService.updateTypingStatus(
