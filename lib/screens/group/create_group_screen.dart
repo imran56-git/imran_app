@@ -44,8 +44,6 @@ class _CreateGroupScreenState extends State<CreateGroupScreen>
   List<Map<String, dynamic>> allStudentsList = [];
 
   File? _selectedGroupImageFile;
-  String? _uploadedGroupImageUrl;
-  bool _isUploadingImage = false;
 
   bool isLoading = true;
   bool isSearchingUid = false;
@@ -273,30 +271,15 @@ class _CreateGroupScreenState extends State<CreateGroupScreen>
 
       if (croppedFile == null) return;
 
-      setState(() {
-        _selectedGroupImageFile = File(croppedFile.path);
-        _isUploadingImage = true;
-      });
-
-      File? compressed =
-          await ImageHelper.compressImage(_selectedGroupImageFile!);
-      final String tempRefPath =
-          'groups/temp_${DateTime.now().millisecondsSinceEpoch}.jpg';
-      final ref = _storage.ref().child(tempRefPath);
-      await ref.putFile(compressed ?? _selectedGroupImageFile!);
-      final url = await ref.getDownloadURL();
-
       if (mounted) {
         setState(() {
-          _uploadedGroupImageUrl = url;
-          _isUploadingImage = false;
+          _selectedGroupImageFile = File(croppedFile.path);
         });
         _showSnackBar("Group picture selected!");
       }
     } catch (e) {
       if (mounted) {
-        setState(() => _isUploadingImage = false);
-        _showSnackBar("Failed to upload group photo: $e");
+        _showSnackBar("Failed to pick group photo: $e");
       }
     }
   }
@@ -377,13 +360,24 @@ class _CreateGroupScreenState extends State<CreateGroupScreen>
     setState(() => isCreating = true);
 
     try {
+      String groupImageUrl = '';
+      if (_selectedGroupImageFile != null) {
+        final File? compressed =
+            await ImageHelper.compressImage(_selectedGroupImageFile!);
+        final String refPath =
+            'groups/group_${DateTime.now().millisecondsSinceEpoch}.jpg';
+        final ref = _storage.ref().child(refPath);
+        await ref.putFile(compressed ?? _selectedGroupImageFile!);
+        groupImageUrl = await ref.getDownloadURL();
+      }
+
       final List<String> invitedIds =
           selectedStudents.map((s) => s['id'].toString()).toList();
 
       await _groupService.createGroup(
         name: groupName,
         createdBy: widget.teacherId,
-        imageUrl: _uploadedGroupImageUrl ?? '',
+        imageUrl: groupImageUrl,
         teacherName: teacherName,
         description: _descriptionController.text.trim(),
         batchName: _batchNameController.text.trim(),
@@ -448,15 +442,9 @@ class _CreateGroupScreenState extends State<CreateGroupScreen>
   }
 
   Widget _buildGroupDetailsTab() {
-    ImageProvider? imageProvider;
-    if (_selectedGroupImageFile != null) {
-      imageProvider = FileImage(_selectedGroupImageFile!);
-    } else if (_uploadedGroupImageUrl != null &&
-        _uploadedGroupImageUrl!.isNotEmpty &&
-        (_uploadedGroupImageUrl!.startsWith('http://') ||
-            _uploadedGroupImageUrl!.startsWith('https://'))) {
-      imageProvider = CachedNetworkImageProvider(_uploadedGroupImageUrl!);
-    }
+    final ImageProvider? imageProvider = _selectedGroupImageFile != null
+        ? FileImage(_selectedGroupImageFile!)
+        : null;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
@@ -482,26 +470,17 @@ class _CreateGroupScreenState extends State<CreateGroupScreen>
                 Row(
                   children: [
                     GestureDetector(
-                      onTap: _isUploadingImage ? null : _pickGroupImage,
+                      onTap: isCreating ? null : _pickGroupImage,
                       child: Stack(
                         children: [
                           CircleAvatar(
                             radius: 34,
                             backgroundColor: const Color(0xFFEFF6FF),
                             backgroundImage: imageProvider,
-                            child: _isUploadingImage
-                                ? const SizedBox(
-                                    width: 20,
-                                    height: 20,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: Colors.blueAccent,
-                                    ),
-                                  )
-                                : (imageProvider == null
-                                    ? const Icon(Icons.groups_rounded,
-                                        color: Colors.blueAccent, size: 34)
-                                    : null),
+                            child: imageProvider == null
+                                ? const Icon(Icons.groups_rounded,
+                                    color: Colors.blueAccent, size: 34)
+                                : null,
                           ),
                           Positioned(
                             right: 0,
@@ -767,7 +746,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen>
               ),
             ),
           ),
-          const SizedBox(height: 80),
+          const SizedBox(height: 110),
         ],
       ),
     );
@@ -970,7 +949,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen>
                       ),
                     )
                   : ListView.separated(
-                      padding: const EdgeInsets.only(bottom: 90),
+                      padding: const EdgeInsets.only(bottom: 110),
                       itemCount: filteredList.length,
                       separatorBuilder: (_, __) =>
                           const Divider(height: 1, indent: 72),
