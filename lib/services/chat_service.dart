@@ -187,6 +187,7 @@ class ChatService {
             data['teacherName'] ??
             data['studentName'];
         map['profileImageUrl'] = data['profileImageUrl'] ??
+            data['photoUrl'] ??
             data['profilePic'] ??
             data['profileUrl'] ??
             '';
@@ -210,6 +211,7 @@ class ChatService {
             data['teacherName'] ??
             data['studentName'];
         map['profileImageUrl'] = data['profileImageUrl'] ??
+            data['photoUrl'] ??
             data['profilePic'] ??
             data['profileUrl'] ??
             '';
@@ -235,6 +237,7 @@ class ChatService {
             data['teacherName'] ??
             data['studentName'];
         map['profileImageUrl'] = data['profileImageUrl'] ??
+            data['photoUrl'] ??
             data['profilePic'] ??
             data['profileUrl'] ??
             '';
@@ -515,159 +518,130 @@ class ChatService {
       final List<String> sortedParticipants = [senderId, receiverId]..sort();
 
       final Map<String, dynamic>? existingChatData = chatDoc.data();
-      final bool isMissingMetadata = !chatDoc.exists ||
-          existingChatData == null ||
-          existingChatData['teacherName'] == null ||
-          existingChatData['teacherName'].toString().trim().isEmpty ||
-          existingChatData['studentName'] == null ||
-          existingChatData['studentName'].toString().trim().isEmpty ||
-          existingChatData['teacherImage'] == null ||
-          existingChatData['teacherImage'].toString().trim().isEmpty ||
-          existingChatData['studentImage'] == null ||
-          existingChatData['studentImage'].toString().trim().isEmpty;
+      String teacherId = (existingChatData?['teacherId'] as String?) ?? '';
+      String studentId = (existingChatData?['studentId'] as String?) ?? '';
+      String teacherName =
+          (existingChatData?['teacherName'] as String?) ?? '';
+      String studentName =
+          (existingChatData?['studentName'] as String?) ?? '';
+      String teacherImage =
+          (existingChatData?['teacherImage'] as String?) ?? '';
+      String studentImage =
+          (existingChatData?['studentImage'] as String?) ?? '';
 
-      Map<String, dynamic> metadataToMerge = {};
+      Future<Map<String, dynamic>?> safeDocData(
+          String collection, String docId) async {
+        try {
+          final doc = await _firestore.collection(collection).doc(docId).get();
+          if (doc.exists && doc.data() != null) return doc.data();
+        } catch (_) {}
+        return null;
+      }
 
-      if (isMissingMetadata) {
-        String teacherId = (existingChatData?['teacherId'] as String?) ?? '';
-        String studentId = (existingChatData?['studentId'] as String?) ?? '';
+      String pickNonEmpty(
+        List<Map<String, dynamic>?> sources,
+        List<String> keys, {
+        bool excludeGeneric = false,
+      }) {
+        for (final src in sources) {
+          if (src == null) continue;
+          for (final key in keys) {
+            final val = src[key]?.toString().trim() ?? '';
+            if (val.isEmpty) continue;
+            if (excludeGeneric && (val == 'Me' || val == 'User')) continue;
+            return val;
+          }
+        }
+        return '';
+      }
 
-        Map<String, dynamic>? teacherProfile;
-        Map<String, dynamic>? studentProfile;
+      final profileResults = await Future.wait([
+        safeDocData('teachers', senderId),
+        safeDocData('teachers', receiverId),
+        safeDocData('students', senderId),
+        safeDocData('students', receiverId),
+        safeDocData('users', senderId),
+        safeDocData('users', receiverId),
+      ]);
 
-        final senderTeacherDoc =
-            await _firestore.collection('teachers').doc(senderId).get();
-        final receiverTeacherDoc =
-            await _firestore.collection('teachers').doc(receiverId).get();
+      final senderTeacherData = profileResults[0];
+      final receiverTeacherData = profileResults[1];
+      final senderStudentData = profileResults[2];
+      final receiverStudentData = profileResults[3];
+      final senderUserData = profileResults[4];
+      final receiverUserData = profileResults[5];
 
-        if (senderTeacherDoc.exists && senderTeacherDoc.data() != null) {
+      List<Map<String, dynamic>?> teacherSources = [];
+      List<Map<String, dynamic>?> studentSources = [];
+
+      if (senderTeacherData != null) {
+        teacherId = senderId;
+        studentId = receiverId;
+        teacherSources = [senderTeacherData, senderUserData];
+        studentSources = [receiverStudentData, receiverUserData];
+      } else if (receiverTeacherData != null) {
+        teacherId = receiverId;
+        studentId = senderId;
+        teacherSources = [receiverTeacherData, receiverUserData];
+        studentSources = [senderStudentData, senderUserData];
+      } else if (teacherId == senderId) {
+        teacherSources = [senderUserData];
+        studentSources = [receiverStudentData, receiverUserData];
+      } else if (teacherId == receiverId) {
+        teacherSources = [receiverUserData];
+        studentSources = [senderStudentData, senderUserData];
+      } else {
+        final senderRole =
+            (senderUserData?['role'] ?? senderUserData?['userType'] ?? '')
+                .toString()
+                .toLowerCase();
+        if (senderRole == 'teacher') {
           teacherId = senderId;
           studentId = receiverId;
-          teacherProfile = senderTeacherDoc.data();
-          final sDoc =
-              await _firestore.collection('students').doc(receiverId).get();
-          studentProfile = sDoc.data() ??
-              (await _firestore.collection('users').doc(receiverId).get())
-                  .data();
-        } else if (receiverTeacherDoc.exists &&
-            receiverTeacherDoc.data() != null) {
+          teacherSources = [senderUserData];
+          studentSources = [receiverStudentData, receiverUserData];
+        } else {
           teacherId = receiverId;
           studentId = senderId;
-          teacherProfile = receiverTeacherDoc.data();
-          final sDoc =
-              await _firestore.collection('students').doc(senderId).get();
-          studentProfile = sDoc.data() ??
-              (await _firestore.collection('users').doc(senderId).get())
-                  .data();
-        } else {
-          if (teacherId == senderId) {
-            final sDoc =
-                await _firestore.collection('students').doc(receiverId).get();
-            studentProfile = sDoc.data() ??
-                (await _firestore.collection('users').doc(receiverId).get())
-                    .data();
-            teacherProfile =
-                (await _firestore.collection('users').doc(senderId).get())
-                    .data();
-          } else if (teacherId == receiverId) {
-            final sDoc =
-                await _firestore.collection('students').doc(senderId).get();
-            studentProfile = sDoc.data() ??
-                (await _firestore.collection('users').doc(senderId).get())
-                    .data();
-            teacherProfile =
-                (await _firestore.collection('users').doc(receiverId).get())
-                    .data();
-          } else {
-            final senderUserDoc =
-                await _firestore.collection('users').doc(senderId).get();
-            final receiverUserDoc =
-                await _firestore.collection('users').doc(receiverId).get();
-            final senderUserData = senderUserDoc.data() ?? {};
-            final receiverUserData = receiverUserDoc.data() ?? {};
-
-            final senderRole =
-                (senderUserData['role'] ?? senderUserData['userType'] ?? '')
-                    .toString()
-                    .toLowerCase();
-
-            if (senderRole == 'teacher') {
-              teacherId = senderId;
-              studentId = receiverId;
-              teacherProfile = senderUserData;
-              studentProfile = receiverUserData;
-            } else {
-              teacherId = receiverId;
-              studentId = senderId;
-              teacherProfile = receiverUserData;
-              studentProfile = senderUserData;
-            }
-          }
+          teacherSources = [receiverUserData];
+          studentSources = [senderStudentData, senderUserData];
         }
+      }
 
-        String teacherName = (existingChatData?['teacherName'] as String?) ?? '';
-        String studentName = (existingChatData?['studentName'] as String?) ?? '';
-        String teacherImage = (existingChatData?['teacherImage'] as String?) ?? '';
-        String studentImage = (existingChatData?['studentImage'] as String?) ?? '';
+      final fetchedTName = pickNonEmpty(
+        teacherSources,
+        const ['fullName', 'name', 'displayName', 'teacherName'],
+        excludeGeneric: true,
+      );
+      final fetchedTImg = pickNonEmpty(
+        teacherSources,
+        const ['profileImageUrl', 'photoUrl', 'profilePic', 'profileUrl'],
+      );
+      final fetchedSName = pickNonEmpty(
+        studentSources,
+        const ['fullName', 'name', 'displayName', 'studentName'],
+        excludeGeneric: true,
+      );
+      final fetchedSImg = pickNonEmpty(
+        studentSources,
+        const ['profileImageUrl', 'photoUrl', 'profilePic', 'profileUrl'],
+      );
 
-        if (teacherProfile != null) {
-          final fetchedTName = (teacherProfile['fullName'] ??
-                  teacherProfile['name'] ??
-                  teacherProfile['displayName'] ??
-                  teacherProfile['teacherName'] ??
-                  '')
-              .toString()
-              .trim();
-          final fetchedTImg = (teacherProfile['profileImageUrl'] ??
-                  teacherProfile['profilePic'] ??
-                  teacherProfile['profileUrl'] ??
-                  teacherProfile['photoUrl'] ??
-                  '')
-              .toString()
-              .trim();
-          if (fetchedTName.isNotEmpty &&
-              fetchedTName != 'Me' &&
-              fetchedTName != 'User') {
-            teacherName = fetchedTName;
-          }
-          if (fetchedTImg.isNotEmpty) {
-            teacherImage = fetchedTImg;
-          }
-        }
+      if (fetchedTName.isNotEmpty) teacherName = fetchedTName;
+      if (fetchedTImg.isNotEmpty) teacherImage = fetchedTImg;
+      if (fetchedSName.isNotEmpty) studentName = fetchedSName;
+      if (fetchedSImg.isNotEmpty) studentImage = fetchedSImg;
 
-        if (studentProfile != null) {
-          final fetchedSName = (studentProfile['fullName'] ??
-                  studentProfile['name'] ??
-                  studentProfile['displayName'] ??
-                  studentProfile['studentName'] ??
-                  '')
-              .toString()
-              .trim();
-          final fetchedSImg = (studentProfile['profileImageUrl'] ??
-                  studentProfile['profilePic'] ??
-                  studentProfile['profileUrl'] ??
-                  studentProfile['photoUrl'] ??
-                  '')
-              .toString()
-              .trim();
-          if (fetchedSName.isNotEmpty &&
-              fetchedSName != 'Me' &&
-              fetchedSName != 'User') {
-            studentName = fetchedSName;
-          }
-          if (fetchedSImg.isNotEmpty) {
-            studentImage = fetchedSImg;
-          }
-        }
-
-        metadataToMerge = {
-          'teacherId': teacherId,
-          'studentId': studentId,
-          'teacherName': teacherName,
-          'studentName': studentName,
-          'teacherImage': teacherImage,
-          'studentImage': studentImage,
-        };
+      final Map<String, dynamic> metadataToMerge = {};
+      if (teacherId.isNotEmpty) metadataToMerge['teacherId'] = teacherId;
+      if (studentId.isNotEmpty) metadataToMerge['studentId'] = studentId;
+      if (teacherName.isNotEmpty) metadataToMerge['teacherName'] = teacherName;
+      if (studentName.isNotEmpty) metadataToMerge['studentName'] = studentName;
+      if (teacherImage.isNotEmpty) {
+        metadataToMerge['teacherImage'] = teacherImage;
+      }
+      if (studentImage.isNotEmpty) {
+        metadataToMerge['studentImage'] = studentImage;
       }
 
       final Map<String, dynamic> chatUpdateData = {
