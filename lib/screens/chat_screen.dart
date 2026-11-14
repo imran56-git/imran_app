@@ -399,18 +399,10 @@ class _ChatScreenState extends State<ChatScreen>
           .createOrInitializeChat(
             teacherId: teacherId,
             studentId: studentId,
-            teacherName: (teacherName != null && teacherName.isNotEmpty)
-                ? teacherName
-                : null,
-            studentName: (studentName != null && studentName.isNotEmpty)
-                ? studentName
-                : null,
-            teacherImage: (teacherImage != null && teacherImage.isNotEmpty)
-                ? teacherImage
-                : null,
-            studentImage: (studentImage != null && studentImage.isNotEmpty)
-                ? studentImage
-                : null,
+            teacherName: teacherName ?? '',
+            studentName: studentName ?? '',
+            teacherImage: teacherImage ?? '',
+            studentImage: studentImage ?? '',
           )
           .timeout(const Duration(seconds: 5));
 
