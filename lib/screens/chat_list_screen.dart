@@ -82,10 +82,17 @@ class _ChatListScreenState extends State<ChatListScreen>
     });
   }
 
-  Stream<Map<String, dynamic>> _getCachedUserStatusStream(String userId) {
+  Stream<Map<String, dynamic>> _getCachedUserStatusStream(
+    String userId, {
+    bool? isReceiverTeacher,
+  }) {
+    final bool receiverIsTeacher = isReceiverTeacher ?? !widget.isTeacher;
+    final String key = '${userId}_$receiverIsTeacher';
     return _userStatusStreams.putIfAbsent(
-      userId,
-      () => _chatService.getUserStatusStream(userId, !widget.isTeacher),
+      key,
+      () => _chatService
+          .getUserStatusStream(userId, receiverIsTeacher)
+          .asBroadcastStream(),
     );
   }
 
@@ -93,7 +100,9 @@ class _ChatListScreenState extends State<ChatListScreen>
     final key = '${chatDocId}_$receiverId';
     return _typingStreams.putIfAbsent(
       key,
-      () => _chatService.getTypingStatusStream(chatDocId, receiverId),
+      () => _chatService
+          .getTypingStatusStream(chatDocId, receiverId)
+          .asBroadcastStream(),
     );
   }
 
@@ -454,6 +463,14 @@ class _ChatListScreenState extends State<ChatListScreen>
   }
 
   Widget _buildPrivateChatsList() {
+    String firstNonEmpty(List<dynamic> candidates, String defaultVal) {
+      for (final c in candidates) {
+        final s = c?.toString().trim() ?? '';
+        if (s.isNotEmpty) return s;
+      }
+      return defaultVal;
+    }
+
     return StreamBuilder<QuerySnapshot>(
       stream: _chatsStream,
       builder: (context, snapshot) {
@@ -632,34 +649,48 @@ class _ChatListScreenState extends State<ChatListScreen>
             }
             final String receiverId = participantsList.first;
 
-            final String fallbackName = widget.isTeacher
-                ? (chatData['studentName'] ??
-                        chatData['receiverName'] ??
-                        'Student')
-                    .toString()
-                : (chatData['teacherName'] ??
-                        chatData['receiverName'] ??
-                        'Teacher')
-                    .toString();
+            final bool isCurrentUserTeacher = (chatData['teacherId'] != null &&
+                    chatData['teacherId'].toString().isNotEmpty)
+                ? chatData['teacherId'] == widget.currentUserId
+                : widget.isTeacher;
 
-            final String fallbackImageUrl = (widget.isTeacher
-                    ? (chatData['studentPhoto'] ??
-                        chatData['studentImage'] ??
-                        chatData['receiverImage'] ??
-                        '')
-                    : (chatData['teacherPhoto'] ??
-                        chatData['teacherImage'] ??
-                        chatData['receiverImage'] ??
-                        ''))
-                .toString()
-                .trim();
+            final String fallbackName = isCurrentUserTeacher
+                ? firstNonEmpty(
+                    [chatData['studentName'], chatData['receiverName']],
+                    'Student',
+                  )
+                : firstNonEmpty(
+                    [chatData['teacherName'], chatData['receiverName']],
+                    'Teacher',
+                  );
+
+            final String fallbackImageUrl = isCurrentUserTeacher
+                ? firstNonEmpty(
+                    [
+                      chatData['studentPhoto'],
+                      chatData['studentImage'],
+                      chatData['receiverImage'],
+                    ],
+                    '',
+                  )
+                : firstNonEmpty(
+                    [
+                      chatData['teacherPhoto'],
+                      chatData['teacherImage'],
+                      chatData['receiverImage'],
+                    ],
+                    '',
+                  );
 
             final String heroTag = 'chat_avatar_$receiverId';
 
             return KeyedSubtree(
               key: ValueKey('chat_tile_${doc.id}'),
               child: StreamBuilder<Map<String, dynamic>>(
-                stream: _getCachedUserStatusStream(receiverId),
+                stream: _getCachedUserStatusStream(
+                  receiverId,
+                  isReceiverTeacher: !isCurrentUserTeacher,
+                ),
                 builder: (context, userSnapshot) {
                   final mapData = userSnapshot.data;
 
@@ -672,7 +703,7 @@ class _ChatListScreenState extends State<ChatListScreen>
                     final extractedName = (mapData['fullName'] ??
                             mapData['name'] ??
                             mapData['displayName'] ??
-                            (widget.isTeacher
+                            (isCurrentUserTeacher
                                 ? mapData['studentName']
                                 : mapData['teacherName']))
                         ?.toString();
