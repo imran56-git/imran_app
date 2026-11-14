@@ -438,6 +438,10 @@ class _TeacherRegistrationScreenState
 
     setState(() => _isLoading = true);
 
+    String profileUrl = "";
+    String certUrl = "";
+    String idProofUrl = "";
+
     try {
       final UserCredential userCredential =
           await FirebaseAuth.instance.createUserWithEmailAndPassword(
@@ -453,7 +457,6 @@ class _TeacherRegistrationScreenState
 
       final String uid = user.uid;
 
-      String profileUrl = "";
       if (_profileImage != null) {
         try {
           profileUrl = await _processAndUpload(
@@ -464,7 +467,6 @@ class _TeacherRegistrationScreenState
         } catch (_) {}
       }
 
-      String certUrl = "";
       try {
         certUrl = await _processAndUpload(
           _qualificationCertificate!,
@@ -472,7 +474,6 @@ class _TeacherRegistrationScreenState
         );
       } catch (_) {}
 
-      String idProofUrl = "";
       try {
         idProofUrl = await _processAndUpload(
           _idProofImage!,
@@ -582,6 +583,13 @@ class _TeacherRegistrationScreenState
         );
       }
     } on FirebaseAuthException catch (e) {
+      for (final url in [profileUrl, certUrl, idProofUrl]) {
+        if (url.isNotEmpty) {
+          try {
+            await FirebaseStorage.instance.refFromURL(url).delete();
+          } catch (_) {}
+        }
+      }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -591,6 +599,13 @@ class _TeacherRegistrationScreenState
         );
       }
     } catch (e) {
+      for (final url in [profileUrl, certUrl, idProofUrl]) {
+        if (url.isNotEmpty) {
+          try {
+            await FirebaseStorage.instance.refFromURL(url).delete();
+          } catch (_) {}
+        }
+      }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
