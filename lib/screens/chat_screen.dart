@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:developer';
 import 'dart:io';
 import 'dart:ui';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -22,6 +21,7 @@ import 'package:find_your_best_teacher_today/widgets/clear_chat_dialog.dart';
 import 'package:find_your_best_teacher_today/widgets/delete_chat_dialog.dart';
 import 'package:find_your_best_teacher_today/widgets/image_viewer.dart';
 import 'package:find_your_best_teacher_today/widgets/message_bubble.dart';
+import 'package:find_your_best_teacher_today/widgets/permanent_avatar.dart';
 import 'package:find_your_best_teacher_today/widgets/report_dialog.dart';
 import 'student_profile_screen.dart';
 import 'teacher_profile_screen.dart';
@@ -1360,13 +1360,6 @@ class _ChatScreenState extends State<ChatScreen>
               widget.receiverName.isNotEmpty ? widget.receiverName : 'User';
         }
 
-        final String initial = displayName.trim().isNotEmpty
-            ? displayName.trim()[0].toUpperCase()
-            : 'U';
-
-        final bool hasValidUrl = displayPic.startsWith('http://') ||
-            displayPic.startsWith('https://');
-
         return Row(
           children: [
             IconButton(
@@ -1398,22 +1391,11 @@ class _ChatScreenState extends State<ChatScreen>
                           width: 1.5,
                         ),
                       ),
-                      child: CircleAvatar(
+                      child: PermanentProfileAvatar(
+                        userId: widget.receiverId,
+                        imageUrl: displayPic,
+                        fallbackName: displayName,
                         radius: 18,
-                        backgroundColor: const Color(0xFF1E293B),
-                        backgroundImage: hasValidUrl
-                            ? CachedNetworkImageProvider(displayPic)
-                            : null,
-                        child: !hasValidUrl
-                            ? Text(
-                                initial,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w800,
-                                  fontSize: 15,
-                                ),
-                              )
-                            : null,
                       ),
                     ),
                     if (isOnline)
