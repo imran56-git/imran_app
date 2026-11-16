@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -11,6 +12,7 @@ import '../../services/group_service.dart';
 import '../../services/media_compression_service.dart';
 import '../../widgets/badge_details_sheet.dart';
 import '../../widgets/image_viewer.dart';
+import '../../widgets/permanent_avatar.dart';
 
 class GroupInfoScreen extends StatefulWidget {
   final String groupId;
@@ -200,6 +202,8 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
   Future<void> _pickAndUploadGroupPicture() async {
     if (!_isViewerTeacher || _isUploadingGroupPic) return;
 
+    final String previousImageUrl = (_group?.imageUrl ?? '').trim();
+
     try {
       setState(() => _isUploadingGroupPic = true);
 
@@ -216,6 +220,23 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
         await _firestore.collection('groups').doc(widget.groupId).update({
           'imageUrl': downloadUrl,
         });
+
+        if (previousImageUrl.isNotEmpty &&
+            previousImageUrl != downloadUrl.trim() &&
+            previousImageUrl.startsWith('http') &&
+            previousImageUrl.contains('firebasestorage')) {
+          try {
+            await FirebaseStorage.instance
+                .refFromURL(previousImageUrl)
+                .delete();
+          } catch (_) {}
+        }
+
+        unawaited(PermanentAvatarStorage.getOrDownloadAvatar(
+          userId: widget.groupId,
+          imageUrl: downloadUrl,
+        ));
+
         if (mounted) {
           setState(() => _isUploadingGroupPic = false);
           _showSnackBar('Group picture optimized & updated!');
@@ -281,16 +302,12 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
                           Navigator.pop(ctx);
                           _pickAndUploadGroupPicture();
                         },
-                        child: CircleAvatar(
+                        child: PermanentProfileAvatar(
+                          userId: group.id,
+                          imageUrl: group.imageUrl,
+                          fallbackName: group.name,
                           radius: 36,
-                          backgroundColor: const Color(0xFFEFF6FF),
-                          backgroundImage: group.imageUrl.isNotEmpty
-                              ? NetworkImage(group.imageUrl)
-                              : null,
-                          child: group.imageUrl.isEmpty
-                              ? const Icon(Icons.groups_rounded,
-                                  color: Colors.blueAccent, size: 36)
-                              : null,
+                          isGroup: true,
                         ),
                       ),
                       Positioned(
@@ -705,21 +722,11 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
                                     contentPadding:
                                         const EdgeInsets.symmetric(
                                             horizontal: 4, vertical: 4),
-                                    leading: CircleAvatar(
-                                      backgroundColor: Colors.blue.shade50,
-                                      backgroundImage: sPic.isNotEmpty
-                                          ? NetworkImage(sPic)
-                                          : null,
-                                      child: sPic.isEmpty
-                                          ? Text(
-                                              sName.isNotEmpty
-                                                  ? sName[0].toUpperCase()
-                                                  : 'S',
-                                              style: const TextStyle(
-                                                  fontWeight: FontWeight.bold,
-                                                  color: Colors.blueAccent),
-                                            )
-                                          : null,
+                                    leading: PermanentProfileAvatar(
+                                      userId: sId,
+                                      imageUrl: sPic,
+                                      fallbackName: sName,
+                                      radius: 20,
                                     ),
                                     title: Text(
                                       sName,
@@ -853,20 +860,11 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
                     subtitle: creds,
                   );
                 },
-                child: CircleAvatar(
+                child: PermanentProfileAvatar(
+                  userId: group.createdBy,
+                  imageUrl: tPic,
+                  fallbackName: tName,
                   radius: 38,
-                  backgroundColor: Colors.blue.shade50,
-                  backgroundImage: tPic.isNotEmpty ? NetworkImage(tPic) : null,
-                  child: tPic.isEmpty
-                      ? Text(
-                          tName[0].toUpperCase(),
-                          style: const TextStyle(
-                            fontSize: 28,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.blueAccent,
-                          ),
-                        )
-                      : null,
                 ),
               ),
               const SizedBox(height: 12),
@@ -1659,16 +1657,12 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
                   child: Stack(
                     alignment: Alignment.center,
                     children: [
-                      CircleAvatar(
+                      PermanentProfileAvatar(
+                        userId: group.id,
+                        imageUrl: group.imageUrl,
+                        fallbackName: group.name,
                         radius: 44,
-                        backgroundColor: const Color(0xFFEFF6FF),
-                        backgroundImage: group.imageUrl.isNotEmpty
-                            ? NetworkImage(group.imageUrl)
-                            : null,
-                        child: group.imageUrl.isEmpty
-                            ? const Icon(Icons.groups_rounded,
-                                color: Colors.blueAccent, size: 46)
-                            : null,
+                        isGroup: true,
                       ),
                       if (_isUploadingGroupPic)
                         Container(
@@ -1909,21 +1903,11 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
             borderRadius: BorderRadius.circular(12),
             child: Row(
               children: [
-                CircleAvatar(
+                PermanentProfileAvatar(
+                  userId: group.createdBy,
+                  imageUrl: tPic,
+                  fallbackName: tName,
                   radius: 26,
-                  backgroundColor: Colors.blue.shade50,
-                  backgroundImage:
-                      tPic.isNotEmpty ? NetworkImage(tPic) : null,
-                  child: tPic.isEmpty
-                      ? Text(
-                          tName[0].toUpperCase(),
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 18,
-                            color: Colors.blueAccent,
-                          ),
-                        )
-                      : null,
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -2329,19 +2313,11 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
                         subtitle: 'Enrolled Student',
                       );
                     },
-                    child: CircleAvatar(
-                      backgroundColor: Colors.blue.shade50,
-                      backgroundImage:
-                          sPic.isNotEmpty ? NetworkImage(sPic) : null,
-                      child: sPic.isEmpty
-                          ? Text(
-                              sName.isNotEmpty ? sName[0].toUpperCase() : 'S',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                color: Colors.blueAccent,
-                              ),
-                            )
-                          : null,
+                    child: PermanentProfileAvatar(
+                      userId: sUid,
+                      imageUrl: sPic,
+                      fallbackName: sName,
+                      radius: 20,
                     ),
                   ),
                   title: Row(
