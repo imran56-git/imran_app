@@ -1,3 +1,4 @@
+```dart
 import 'dart:async';
 import 'dart:ui';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -15,6 +16,7 @@ import '../services/media_compression_service.dart';
 import '../services/teacher_location_service.dart';
 import '../widgets/follow_button.dart';
 import '../widgets/image_viewer.dart';
+import '../widgets/permanent_avatar.dart';
 import '../widgets/success_toast.dart';
 import '../widgets/badge_details_sheet.dart';
 import '../widgets/teaching_location_card_widget.dart';
@@ -78,6 +80,8 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
   bool _isUploadingProfileImage = false;
   bool _isUploadingBanner = false;
 
+  String? _initialSavedProfileUrl;
+  String? _initialSavedBannerUrl;
   String? _pendingProfileImageUrl;
   String? _pendingBannerImageUrl;
 
@@ -148,6 +152,8 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
         isLoading = true;
         _isProfileNotFound = false;
         teacherData = null;
+        _initialSavedProfileUrl = null;
+        _initialSavedBannerUrl = null;
         _pendingProfileImageUrl = null;
         _pendingBannerImageUrl = null;
         _nameController.clear();
@@ -215,6 +221,21 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
     _instituteController.dispose();
     _experienceController.dispose();
     super.dispose();
+  }
+
+  Future<void> _deleteOldStorageFileIfDifferent(
+      String? oldUrl, String? newUrl) async {
+    final String cleanOld = oldUrl?.trim() ?? '';
+    final String cleanNew = newUrl?.trim() ?? '';
+    if (cleanOld.isEmpty ||
+        !cleanOld.startsWith('http') ||
+        !cleanOld.contains('firebasestorage') ||
+        cleanOld == cleanNew) {
+      return;
+    }
+    try {
+      await _storage.refFromURL(cleanOld).delete();
+    } catch (_) {}
   }
 
   Future<void> fetchTeacherData() async {
@@ -306,11 +327,22 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                 data?['experienceYears'] ??
                 '')
             .toString();
+        final String savedProfile =
+            (data?['profileImageUrl'] ?? data?['photoUrl'] ?? '')
+                .toString()
+                .trim();
+        final String savedBanner =
+            (data?['bannerImageUrl'] ?? data?['coverImageUrl'] ?? '')
+                .toString()
+                .trim();
 
         setState(() {
           _isCurrentUserTeacher = isCurrentTeacher;
           _isProfileNotFound = false;
           teacherData = data;
+          _initialSavedProfileUrl =
+              savedProfile.isNotEmpty ? savedProfile : null;
+          _initialSavedBannerUrl = savedBanner.isNotEmpty ? savedBanner : null;
           _nameController.text =
               (data?['name'] ?? data?['fullName'] ?? '').toString();
           _phoneController.text = (data?['phone'] ?? '').toString();
@@ -376,6 +408,9 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
     final uid = _auth.currentUser?.uid;
     if (uid == null || uid.isEmpty) return;
 
+    final String? previousUrl =
+        _pendingProfileImageUrl ?? _initialSavedProfileUrl;
+
     try {
       setState(() => _isUploadingProfileImage = true);
 
@@ -403,6 +438,23 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
             'profileImageUrl': freshUrl,
             'photoUrl': freshUrl,
           });
+          await _firestore.collection('users').doc(uid).set({
+            'profileImageUrl': freshUrl,
+            'photoUrl': freshUrl,
+          }, SetOptions(merge: true)).catchError((_) {});
+
+          await _deleteOldStorageFileIfDifferent(
+              _initialSavedProfileUrl, freshUrl);
+          _initialSavedProfileUrl = freshUrl;
+          _pendingProfileImageUrl = null;
+          unawaited(PermanentAvatarStorage.getOrDownloadAvatar(
+            userId: uid,
+            imageUrl: freshUrl,
+          ));
+        } else {
+          if (previousUrl != null && previousUrl != _initialSavedProfileUrl) {
+            await _deleteOldStorageFileIfDifferent(previousUrl, freshUrl);
+          }
         }
 
         if (mounted) {
@@ -425,6 +477,9 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
     if (!isOwnProfile || _isUploadingBanner) return;
     final uid = _auth.currentUser?.uid;
     if (uid == null || uid.isEmpty) return;
+
+    final String? previousBannerUrl =
+        _pendingBannerImageUrl ?? _initialSavedBannerUrl;
 
     try {
       setState(() => _isUploadingBanner = true);
@@ -452,6 +507,16 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
             'bannerImageUrl': bannerUrl,
             'coverImageUrl': bannerUrl,
           });
+          await _deleteOldStorageFileIfDifferent(
+              _initialSavedBannerUrl, bannerUrl);
+          _initialSavedBannerUrl = bannerUrl;
+          _pendingBannerImageUrl = null;
+        } else {
+          if (previousBannerUrl != null &&
+              previousBannerUrl != _initialSavedBannerUrl) {
+            await _deleteOldStorageFileIfDifferent(
+                previousBannerUrl, bannerUrl);
+          }
         }
 
         if (mounted) {
@@ -767,6 +832,31 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
         'subjects': selectedSubjects,
         'locations': teacherLocations,
       });
+
+      await _firestore.collection('users').doc(uid).set({
+        'name': _nameController.text.trim(),
+        'fullName': _nameController.text.trim(),
+        if (imageUrl != null && imageUrl.isNotEmpty) ...{
+          'profileImageUrl': imageUrl,
+          'photoUrl': imageUrl,
+        },
+      }, SetOptions(merge: true)).catchError((_) {});
+
+      if (_pendingProfileImageUrl != null) {
+        await _deleteOldStorageFileIfDifferent(
+            _initialSavedProfileUrl, _pendingProfileImageUrl);
+        _initialSavedProfileUrl = _pendingProfileImageUrl;
+        unawaited(PermanentAvatarStorage.getOrDownloadAvatar(
+          userId: uid,
+          imageUrl: _pendingProfileImageUrl!,
+        ));
+      }
+
+      if (_pendingBannerImageUrl != null) {
+        await _deleteOldStorageFileIfDifferent(
+            _initialSavedBannerUrl, _pendingBannerImageUrl);
+        _initialSavedBannerUrl = _pendingBannerImageUrl;
+      }
 
       if (mounted) {
         SuccessToast.show(context, 'Updated Successfully');
@@ -2279,6 +2369,13 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
         ? widget.currentUserId
         : (_auth.currentUser?.uid ?? '');
 
+    if (hasValidUrl && targetId.isNotEmpty) {
+      unawaited(PermanentAvatarStorage.getOrDownloadAvatar(
+        userId: targetId,
+        imageUrl: url,
+      ));
+    }
+
     final bool isVerified = BadgeTierResolver.isTeacherVerified(teacherData);
     final bool hasGolden = BadgeTierResolver.hasGoldenTenureBadge(teacherData);
     final BadgeType? qualityBadge =
@@ -3586,12 +3683,24 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                   borderRadius: BorderRadius.circular(14),
                 ),
               ),
-              onPressed: () {
+              onPressed: () async {
+                final String? discardedProfile = _pendingProfileImageUrl;
+                final String? discardedBanner = _pendingBannerImageUrl;
                 setState(() {
                   isEditing = false;
                   _pendingProfileImageUrl = null;
                   _pendingBannerImageUrl = null;
                 });
+                if (discardedProfile != null &&
+                    discardedProfile != _initialSavedProfileUrl) {
+                  await _deleteOldStorageFileIfDifferent(
+                      discardedProfile, _initialSavedProfileUrl);
+                }
+                if (discardedBanner != null &&
+                    discardedBanner != _initialSavedBannerUrl) {
+                  await _deleteOldStorageFileIfDifferent(
+                      discardedBanner, _initialSavedBannerUrl);
+                }
                 fetchTeacherData();
               },
               child: const Text(
