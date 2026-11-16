@@ -9,6 +9,7 @@ import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
 import '../models/group_model.dart';
 import '../models/message_model.dart';
+import '../widgets/permanent_avatar.dart';
 import 'local_chat_storage_service.dart';
 
 class ChatService {
@@ -186,11 +187,20 @@ class ChatService {
             data['displayName'] ??
             data['teacherName'] ??
             data['studentName'];
-        map['profileImageUrl'] = data['profileImageUrl'] ??
-            data['photoUrl'] ??
-            data['profilePic'] ??
-            data['profileUrl'] ??
-            '';
+        final String resolvedImageUrl = (data['profileImageUrl'] ??
+                data['photoUrl'] ??
+                data['profilePic'] ??
+                data['profileUrl'] ??
+                '')
+            .toString()
+            .trim();
+        map['profileImageUrl'] = resolvedImageUrl;
+        if (resolvedImageUrl.isNotEmpty) {
+          unawaited(PermanentAvatarStorage.getOrDownloadAvatar(
+            userId: userId,
+            imageUrl: resolvedImageUrl,
+          ));
+        }
         map['isVerified'] = data['isVerified'] == true ||
             data['status'] == 'approved' ||
             data['verificationStatus'] == 'verified';
@@ -210,11 +220,20 @@ class ChatService {
             data['displayName'] ??
             data['teacherName'] ??
             data['studentName'];
-        map['profileImageUrl'] = data['profileImageUrl'] ??
-            data['photoUrl'] ??
-            data['profilePic'] ??
-            data['profileUrl'] ??
-            '';
+        final String resolvedImageUrl = (data['profileImageUrl'] ??
+                data['photoUrl'] ??
+                data['profilePic'] ??
+                data['profileUrl'] ??
+                '')
+            .toString()
+            .trim();
+        map['profileImageUrl'] = resolvedImageUrl;
+        if (resolvedImageUrl.isNotEmpty) {
+          unawaited(PermanentAvatarStorage.getOrDownloadAvatar(
+            userId: userId,
+            imageUrl: resolvedImageUrl,
+          ));
+        }
         map['isVerified'] = data['isVerified'] == true ||
             data['status'] == 'approved' ||
             data['verificationStatus'] == 'verified';
@@ -236,11 +255,20 @@ class ChatService {
             data['displayName'] ??
             data['teacherName'] ??
             data['studentName'];
-        map['profileImageUrl'] = data['profileImageUrl'] ??
-            data['photoUrl'] ??
-            data['profilePic'] ??
-            data['profileUrl'] ??
-            '';
+        final String resolvedImageUrl = (data['profileImageUrl'] ??
+                data['photoUrl'] ??
+                data['profilePic'] ??
+                data['profileUrl'] ??
+                '')
+            .toString()
+            .trim();
+        map['profileImageUrl'] = resolvedImageUrl;
+        if (resolvedImageUrl.isNotEmpty) {
+          unawaited(PermanentAvatarStorage.getOrDownloadAvatar(
+            userId: userId,
+            imageUrl: resolvedImageUrl,
+          ));
+        }
         map['isVerified'] = data['isVerified'] == true ||
             data['status'] == 'approved' ||
             data['verificationStatus'] == 'verified';
@@ -279,18 +307,38 @@ class ChatService {
         'isGroup': false,
       };
 
-      if (teacherName.isNotEmpty &&
+      final bool validTeacherName = teacherName.isNotEmpty &&
           teacherName != 'Me' &&
-          teacherName != 'User') {
+          teacherName != 'User';
+      final bool validStudentName = studentName.isNotEmpty &&
+          studentName != 'Me' &&
+          studentName != 'User';
+
+      if (validTeacherName) {
         updateData['teacherName'] = teacherName;
       }
-      if (studentName.isNotEmpty &&
-          studentName != 'Me' &&
-          studentName != 'User') {
+      if (validStudentName) {
         updateData['studentName'] = studentName;
       }
       if (teacherImage.isNotEmpty) updateData['teacherImage'] = teacherImage;
       if (studentImage.isNotEmpty) updateData['studentImage'] = studentImage;
+
+      final Map<String, dynamic> userProfiles = {};
+      if (validTeacherName || teacherImage.isNotEmpty) {
+        userProfiles[teacherId] = {
+          if (validTeacherName) 'name': teacherName,
+          if (teacherImage.isNotEmpty) 'image': teacherImage,
+        };
+      }
+      if (validStudentName || studentImage.isNotEmpty) {
+        userProfiles[studentId] = {
+          if (validStudentName) 'name': studentName,
+          if (studentImage.isNotEmpty) 'image': studentImage,
+        };
+      }
+      if (userProfiles.isNotEmpty) {
+        updateData['userProfiles'] = userProfiles;
+      }
 
       if (!doc.exists) {
         updateData['lastMessage'] = 'Chat initialized';
@@ -555,82 +603,122 @@ class ChatService {
         return '';
       }
 
-      final profileResults = await Future.wait([
+      final userResults = await Future.wait([
+        safeDocData('users', senderId),
+        safeDocData('users', receiverId),
+      ]);
+      final senderUserData = userResults[0];
+      final receiverUserData = userResults[1];
+
+      final String senderRole =
+          (senderUserData?['role'] ?? senderUserData?['userType'] ?? '')
+              .toString()
+              .trim()
+              .toLowerCase();
+      final String receiverRole =
+          (receiverUserData?['role'] ?? receiverUserData?['userType'] ?? '')
+              .toString()
+              .trim()
+              .toLowerCase();
+
+      final roleDocs = await Future.wait([
         safeDocData('teachers', senderId),
         safeDocData('teachers', receiverId),
         safeDocData('students', senderId),
         safeDocData('students', receiverId),
-        safeDocData('users', senderId),
-        safeDocData('users', receiverId),
       ]);
+      final senderTeacherData = roleDocs[0];
+      final receiverTeacherData = roleDocs[1];
+      final senderStudentData = roleDocs[2];
+      final receiverStudentData = roleDocs[3];
 
-      final senderTeacherData = profileResults[0];
-      final receiverTeacherData = profileResults[1];
-      final senderStudentData = profileResults[2];
-      final receiverStudentData = profileResults[3];
-      final senderUserData = profileResults[4];
-      final receiverUserData = profileResults[5];
-
-      List<Map<String, dynamic>?> teacherSources = [];
-      List<Map<String, dynamic>?> studentSources = [];
-
-      if (senderTeacherData != null) {
+      if (senderRole == 'teacher' || receiverRole == 'student') {
         teacherId = senderId;
         studentId = receiverId;
-        teacherSources = [senderTeacherData, senderUserData];
-        studentSources = [receiverStudentData, receiverUserData];
+      } else if (receiverRole == 'teacher' || senderRole == 'student') {
+        teacherId = receiverId;
+        studentId = senderId;
+      } else if (senderTeacherData != null && receiverTeacherData == null) {
+        teacherId = senderId;
+        studentId = receiverId;
+      } else if (receiverTeacherData != null && senderTeacherData == null) {
+        teacherId = receiverId;
+        studentId = senderId;
+      } else if (senderStudentData != null && receiverStudentData == null) {
+        teacherId = receiverId;
+        studentId = senderId;
+      } else if (receiverStudentData != null && senderStudentData == null) {
+        teacherId = senderId;
+        studentId = receiverId;
+      } else if (teacherId == senderId || studentId == receiverId) {
+        teacherId = senderId;
+        studentId = receiverId;
+      } else if (teacherId == receiverId || studentId == senderId) {
+        teacherId = receiverId;
+        studentId = senderId;
+      } else if (senderTeacherData != null) {
+        teacherId = senderId;
+        studentId = receiverId;
       } else if (receiverTeacherData != null) {
         teacherId = receiverId;
         studentId = senderId;
-        teacherSources = [receiverTeacherData, receiverUserData];
-        studentSources = [senderStudentData, senderUserData];
-      } else if (teacherId == senderId) {
-        teacherSources = [senderUserData];
-        studentSources = [receiverStudentData, receiverUserData];
-      } else if (teacherId == receiverId) {
-        teacherSources = [receiverUserData];
-        studentSources = [senderStudentData, senderUserData];
       } else {
-        final senderRole =
-            (senderUserData?['role'] ?? senderUserData?['userType'] ?? '')
-                .toString()
-                .toLowerCase();
-        if (senderRole == 'teacher') {
-          teacherId = senderId;
-          studentId = receiverId;
-          teacherSources = [senderUserData];
-          studentSources = [receiverStudentData, receiverUserData];
-        } else {
-          teacherId = receiverId;
-          studentId = senderId;
-          teacherSources = [receiverUserData];
-          studentSources = [senderStudentData, senderUserData];
-        }
+        teacherId = receiverId;
+        studentId = senderId;
       }
 
-      final fetchedTName = pickNonEmpty(
-        teacherSources,
-        const ['fullName', 'name', 'displayName', 'teacherName'],
+      final List<Map<String, dynamic>?> senderSources = teacherId == senderId
+          ? [senderTeacherData, senderUserData, senderStudentData]
+          : [senderStudentData, senderUserData, senderTeacherData];
+      final List<Map<String, dynamic>?> receiverSources =
+          teacherId == receiverId
+              ? [receiverTeacherData, receiverUserData, receiverStudentData]
+              : [receiverStudentData, receiverUserData, receiverTeacherData];
+
+      final String senderName = pickNonEmpty(
+        senderSources,
+        const ['fullName', 'name', 'displayName', 'teacherName', 'studentName'],
         excludeGeneric: true,
       );
-      final fetchedTImg = pickNonEmpty(
-        teacherSources,
+      final String senderImage = pickNonEmpty(
+        senderSources,
         const ['profileImageUrl', 'photoUrl', 'profilePic', 'profileUrl'],
       );
-      final fetchedSName = pickNonEmpty(
-        studentSources,
-        const ['fullName', 'name', 'displayName', 'studentName'],
+      final String receiverName = pickNonEmpty(
+        receiverSources,
+        const ['fullName', 'name', 'displayName', 'teacherName', 'studentName'],
         excludeGeneric: true,
       );
-      final fetchedSImg = pickNonEmpty(
-        studentSources,
+      final String receiverImage = pickNonEmpty(
+        receiverSources,
         const ['profileImageUrl', 'photoUrl', 'profilePic', 'profileUrl'],
       );
 
-      if (fetchedTName.isNotEmpty) teacherName = fetchedTName;
-      if (fetchedTImg.isNotEmpty) teacherImage = fetchedTImg;
-      if (fetchedSName.isNotEmpty) studentName = fetchedSName;
-      if (fetchedSImg.isNotEmpty) studentImage = fetchedSImg;
+      if (teacherId == senderId) {
+        if (senderName.isNotEmpty) teacherName = senderName;
+        if (senderImage.isNotEmpty) teacherImage = senderImage;
+        if (receiverName.isNotEmpty) studentName = receiverName;
+        if (receiverImage.isNotEmpty) studentImage = receiverImage;
+      } else {
+        if (receiverName.isNotEmpty) teacherName = receiverName;
+        if (receiverImage.isNotEmpty) teacherImage = receiverImage;
+        if (senderName.isNotEmpty) studentName = senderName;
+        if (senderImage.isNotEmpty) studentImage = senderImage;
+      }
+
+      final Map<String, dynamic> userProfiles = {};
+      if (senderName.isNotEmpty || senderImage.isNotEmpty) {
+        userProfiles[senderId] = {
+          if (senderName.isNotEmpty) 'name': senderName,
+          if (senderImage.isNotEmpty) 'image': senderImage,
+        };
+      }
+      if (receiverName.isNotEmpty || receiverImage.isNotEmpty) {
+        userProfiles[receiverId] = {
+          if (receiverName.isNotEmpty) 'name': receiverName,
+          if (receiverImage.isNotEmpty) 'image': receiverImage,
+        };
+      }
 
       final Map<String, dynamic> metadataToMerge = {};
       if (teacherId.isNotEmpty) metadataToMerge['teacherId'] = teacherId;
@@ -642,6 +730,9 @@ class ChatService {
       }
       if (studentImage.isNotEmpty) {
         metadataToMerge['studentImage'] = studentImage;
+      }
+      if (userProfiles.isNotEmpty) {
+        metadataToMerge['userProfiles'] = userProfiles;
       }
 
       final Map<String, dynamic> chatUpdateData = {
