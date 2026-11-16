@@ -1,10 +1,10 @@
 import 'dart:async';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/chat_service.dart';
 import '../widgets/image_viewer.dart';
+import '../widgets/permanent_avatar.dart';
 import 'chat_screen.dart';
 import 'group/create_group_screen.dart';
 import 'group/group_chat_screen.dart';
@@ -609,6 +609,7 @@ class _ChatListScreenState extends State<ChatListScreen>
 
               return _ChatCard(
                 key: ValueKey('chat_tile_${doc.id}'),
+                userId: 'OFFICIAL_FYBTT_DESK',
                 avatarHeroTag: 'official_desk_avatar_${doc.id}',
                 name: officialName,
                 lastMessage: lastMessage.isEmpty
@@ -654,19 +655,37 @@ class _ChatListScreenState extends State<ChatListScreen>
                 ? chatData['teacherId'] == widget.currentUserId
                 : widget.isTeacher;
 
+            final Map<String, dynamic>? userProfilesMap =
+                chatData['userProfiles'] is Map
+                    ? Map<String, dynamic>.from(chatData['userProfiles'])
+                    : null;
+            final Map<String, dynamic>? receiverProfileMeta =
+                (userProfilesMap != null && userProfilesMap[receiverId] is Map)
+                    ? Map<String, dynamic>.from(userProfilesMap[receiverId])
+                    : null;
+
             final String fallbackName = isCurrentUserTeacher
                 ? firstNonEmpty(
-                    [chatData['studentName'], chatData['receiverName']],
+                    [
+                      receiverProfileMeta?['name'],
+                      chatData['studentName'],
+                      chatData['receiverName'],
+                    ],
                     'Student',
                   )
                 : firstNonEmpty(
-                    [chatData['teacherName'], chatData['receiverName']],
+                    [
+                      receiverProfileMeta?['name'],
+                      chatData['teacherName'],
+                      chatData['receiverName'],
+                    ],
                     'Teacher',
                   );
 
             final String fallbackImageUrl = isCurrentUserTeacher
                 ? firstNonEmpty(
                     [
+                      receiverProfileMeta?['image'],
                       chatData['studentPhoto'],
                       chatData['studentImage'],
                       chatData['receiverImage'],
@@ -675,6 +694,7 @@ class _ChatListScreenState extends State<ChatListScreen>
                   )
                 : firstNonEmpty(
                     [
+                      receiverProfileMeta?['image'],
                       chatData['teacherPhoto'],
                       chatData['teacherImage'],
                       chatData['receiverImage'],
@@ -751,6 +771,7 @@ class _ChatListScreenState extends State<ChatListScreen>
                     builder: (context, typingSnap) {
                       final bool isTyping = typingSnap.data == true;
                       return _ChatCard(
+                        userId: receiverId,
                         avatarHeroTag: heroTag,
                         name: finalName,
                         lastMessage:
@@ -1248,6 +1269,7 @@ class _ChatListScreenState extends State<ChatListScreen>
 }
 
 class _ChatCard extends StatelessWidget {
+  final String userId;
   final String avatarHeroTag;
   final String name;
   final String lastMessage;
@@ -1266,6 +1288,7 @@ class _ChatCard extends StatelessWidget {
 
   const _ChatCard({
     super.key,
+    required this.userId,
     required this.avatarHeroTag,
     required this.name,
     required this.lastMessage,
@@ -1295,19 +1318,10 @@ class _ChatCard extends StatelessWidget {
     return gradients[text.codeUnitAt(0) % gradients.length];
   }
 
-  String _getInitials(String fullName) {
-    final parts = fullName.trim().split(RegExp(r'\s+'));
-    if (parts.isEmpty || parts.first.isEmpty) return 'U';
-    if (parts.length == 1) return parts.first[0].toUpperCase();
-    return '${parts.first[0]}${parts.last[0]}'.toUpperCase();
-  }
-
   @override
   Widget build(BuildContext context) {
     final bool hasUnread = unreadCount > 0;
     final avatarColors = _getAvatarGradient(name);
-    final bool hasValidNetworkImage = imageUrl.trim().startsWith('http://') ||
-        imageUrl.trim().startsWith('https://');
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 180),
@@ -1401,43 +1415,13 @@ class _ChatCard extends StatelessWidget {
                                     ),
                                   ),
                                 )
-                              : CircleAvatar(
+                              : PermanentProfileAvatar(
+                                  userId: userId,
+                                  imageUrl: imageUrl,
+                                  fallbackName: name,
                                   radius: 25,
-                                  backgroundColor: avatarColors.first,
-                                  backgroundImage: hasValidNetworkImage
-                                      ? CachedNetworkImageProvider(
-                                          imageUrl.trim(),
-                                        )
-                                      : null,
-                                  child: !hasValidNetworkImage
-                                      ? Container(
-                                          width: 50,
-                                          height: 50,
-                                          alignment: Alignment.center,
-                                          decoration: BoxDecoration(
-                                            shape: BoxShape.circle,
-                                            gradient: LinearGradient(
-                                              colors: avatarColors,
-                                              begin: Alignment.topLeft,
-                                              end: Alignment.bottomRight,
-                                            ),
-                                          ),
-                                          child: isGroup
-                                              ? const Icon(
-                                                  Icons.groups_rounded,
-                                                  color: Colors.white,
-                                                  size: 24,
-                                                )
-                                              : Text(
-                                                  _getInitials(name),
-                                                  style: const TextStyle(
-                                                    color: Colors.white,
-                                                    fontWeight: FontWeight.w800,
-                                                    fontSize: 16,
-                                                  ),
-                                                ),
-                                        )
-                                      : null,
+                                  gradientColors: avatarColors,
+                                  isGroup: isGroup,
                                 ),
                         ),
                         if (isOnline && !isGroup && !isSelected)
