@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:ui';
 import 'package:animate_do/animate_do.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
@@ -11,6 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/media_compression_service.dart';
 import '../widgets/image_viewer.dart';
+import '../widgets/permanent_avatar.dart';
 import 'blocked_users_screen.dart';
 import 'notification_screen.dart';
 import 'privacy_policy_screen.dart';
@@ -53,6 +53,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
   bool hasUnreadNotifications = false;
 
   Map<String, dynamic>? studentData;
+  String? _initialSavedProfileUrl;
   String? _pendingProfileImageUrl;
   bool _isUploadingProfileImage = false;
   bool isLoading = true, isEditing = false, _triggerAnimation = true;
@@ -164,6 +165,21 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
     });
   }
 
+  Future<void> _deleteOldStorageFileIfDifferent(
+      String? oldUrl, String? newUrl) async {
+    final String cleanOld = oldUrl?.trim() ?? '';
+    final String cleanNew = newUrl?.trim() ?? '';
+    if (cleanOld.isEmpty ||
+        !cleanOld.startsWith('http') ||
+        !cleanOld.contains('firebasestorage') ||
+        cleanOld == cleanNew) {
+      return;
+    }
+    try {
+      await _storage.refFromURL(cleanOld).delete();
+    } catch (_) {}
+  }
+
   Future<void> fetchStudentData() async {
     final targetUid = widget.currentUserId.isNotEmpty
         ? widget.currentUserId
@@ -177,8 +193,11 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
           await _firestore.collection('students').doc(targetUid).get();
       final data = docSnap.data() ?? {};
       if (!mounted) return;
+      final savedImg =
+          (data['profileImageUrl'] ?? data['photoUrl'] ?? '').toString().trim();
       setState(() {
         studentData = data;
+        _initialSavedProfileUrl = savedImg.isNotEmpty ? savedImg : null;
         _name.text = (data['name'] ?? data['fullName'] ?? '').toString();
         _phone.text = (data['phone'] ?? '').toString();
         _location.text = (data['location'] ?? '').toString();
@@ -218,6 +237,9 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
     final uid = _auth.currentUser?.uid;
     if (uid == null || uid.isEmpty) return;
 
+    final String? previousUrl =
+        _pendingProfileImageUrl ?? _initialSavedProfileUrl;
+
     try {
       setState(() => _isUploadingProfileImage = true);
 
@@ -249,6 +271,19 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
             'profileImageUrl': freshUrl,
             'photoUrl': freshUrl,
           }, SetOptions(merge: true)).catchError((_) {});
+
+          await _deleteOldStorageFileIfDifferent(
+              _initialSavedProfileUrl, freshUrl);
+          _initialSavedProfileUrl = freshUrl;
+          _pendingProfileImageUrl = null;
+          unawaited(PermanentAvatarStorage.getOrDownloadAvatar(
+            userId: uid,
+            imageUrl: freshUrl,
+          ));
+        } else {
+          if (previousUrl != null && previousUrl != _initialSavedProfileUrl) {
+            await _deleteOldStorageFileIfDifferent(previousUrl, freshUrl);
+          }
         }
 
         if (mounted) {
@@ -633,6 +668,16 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
         },
       }, SetOptions(merge: true)).catchError((_) {});
 
+      if (_pendingProfileImageUrl != null) {
+        await _deleteOldStorageFileIfDifferent(
+            _initialSavedProfileUrl, _pendingProfileImageUrl);
+        _initialSavedProfileUrl = _pendingProfileImageUrl;
+        unawaited(PermanentAvatarStorage.getOrDownloadAvatar(
+          userId: uid,
+          imageUrl: _pendingProfileImageUrl!,
+        ));
+      }
+
       if (mounted) {
         setState(() {
           isEditing = false;
@@ -671,16 +716,6 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
         ),
       );
     }
-  }
-
-  ImageProvider? get _profileImage {
-    final url = _pendingProfileImageUrl ??
-        studentData?['profileImageUrl'] ??
-        studentData?['photoUrl'];
-    final String cleanUrl = (url ?? '').toString().trim();
-    return (cleanUrl.startsWith('http://') || cleanUrl.startsWith('https://'))
-        ? CachedNetworkImageProvider(cleanUrl)
-        : null;
   }
 
   void _openMenu() {
@@ -1119,8 +1154,6 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
     final currentUid = widget.currentUserId.isNotEmpty
         ? widget.currentUserId
         : (_auth.currentUser?.uid ?? 'N/A');
-    final String initial =
-        _name.text.trim().isNotEmpty ? _name.text.trim()[0].toUpperCase() : 'S';
     final String? profilePicUrl = (_pendingProfileImageUrl ??
             studentData?['profileImageUrl'] ??
             studentData?['photoUrl'])
@@ -1203,20 +1236,13 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
                         child: Stack(
                           alignment: Alignment.center,
                           children: [
-                            CircleAvatar(
+                            PermanentProfileAvatar(
+                              userId: currentUid,
+                              imageUrl: profilePicUrl ?? '',
+                              fallbackName: _name.text.trim().isNotEmpty
+                                  ? _name.text.trim()
+                                  : 'Student',
                               radius: 50,
-                              backgroundColor: const Color(0xFF1E293B),
-                              backgroundImage: _profileImage,
-                              child: _profileImage == null
-                                  ? Text(
-                                      initial,
-                                      style: const TextStyle(
-                                        fontSize: 36,
-                                        fontWeight: FontWeight.w900,
-                                        color: Color(0xFF5EEAD4),
-                                      ),
-                                    )
-                                  : null,
                             ),
                             if (_isUploadingProfileImage)
                               Container(
@@ -1883,13 +1909,19 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(14)),
                     ),
-                    onPressed: () {
+                    onPressed: () async {
+                      final String? discardedUrl = _pendingProfileImageUrl;
                       setState(() {
                         isEditing = false;
                         _pendingProfileImageUrl = null;
                         _triggerAnimation = !_triggerAnimation;
                       });
                       _customSubjectController.clear();
+                      if (discardedUrl != null &&
+                          discardedUrl != _initialSavedProfileUrl) {
+                        await _deleteOldStorageFileIfDifferent(
+                            discardedUrl, _initialSavedProfileUrl);
+                      }
                       fetchStudentData();
                     },
                     child: const Text(
