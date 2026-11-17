@@ -65,6 +65,12 @@ class _ChatScreenState extends State<ChatScreen>
   Stream<BlockStatus>? _blockStatusStream;
   List<MessageModel> _latestMessages = [];
 
+  Map<String, dynamic>? _lastUserStatus;
+  DocumentSnapshot? _lastTypingDoc;
+  bool _chatMetaVerified = false;
+  String _chatMetaName = '';
+  String _chatMetaPic = '';
+
   String? _replyToMessageId;
   String? _replyToText;
   String? _customBgImagePath;
@@ -113,19 +119,26 @@ class _ChatScreenState extends State<ChatScreen>
         : (!_isOfficialChannel ? fallbackId : '');
 
     if (!_isOfficialChannel) {
+      if (widget.receiverProfilePic.trim().isNotEmpty) {
+        unawaited(PermanentAvatarStorage.precacheAvatar(
+          userId: widget.receiverId,
+          imageUrl: widget.receiverProfilePic.trim(),
+        ));
+      }
+
       _userStatusStream = _chatService.getUserStatusStream(
         widget.receiverId,
         !widget.isTeacher,
       );
-      _typingDocStream = FirebaseFirestore.instance
-          .collection('typing')
-          .doc(_activeChatRoomId)
-          .snapshots()
-          .handleError((error) => log('Typing Stream Error: $error'));
-      _blockStatusStream = _chatMenuService.getBlockStatusStream(
+      _typingDocStream = _createTypingDocStream(_activeChatRoomId);
+
+      final rawBlockStream = _chatMenuService.getBlockStatusStream(
         widget.currentUserId,
         widget.receiverId,
       );
+      _blockStatusStream = rawBlockStream.isBroadcast
+          ? rawBlockStream
+          : rawBlockStream.asBroadcastStream();
     }
 
     _bounceController = AnimationController(
@@ -156,6 +169,50 @@ class _ChatScreenState extends State<ChatScreen>
           );
         }
       });
+    }
+  }
+
+  Stream<DocumentSnapshot> _createTypingDocStream(String roomId) {
+    if (roomId.trim().isEmpty) return const Stream.empty();
+    return FirebaseFirestore.instance
+        .collection('typing')
+        .doc(roomId)
+        .snapshots()
+        .handleError((error) => log('Typing Stream Error: $error'));
+  }
+
+  void _syncChatMetaFromData(Map<String, dynamic>? chatData) {
+    if (chatData == null) return;
+    final userProfiles = chatData['userProfiles'] is Map
+        ? Map<String, dynamic>.from(chatData['userProfiles'])
+        : null;
+    final receiverMeta =
+        (userProfiles != null && userProfiles[widget.receiverId] is Map)
+            ? Map<String, dynamic>.from(userProfiles[widget.receiverId])
+            : null;
+
+    if (receiverMeta != null) {
+      final bool metaVerified = receiverMeta['isVerified'] == true;
+      final String metaName = (receiverMeta['name'] ?? '').toString().trim();
+      final String metaImg = (receiverMeta['image'] ?? '').toString().trim();
+
+      if (metaImg.isNotEmpty) {
+        unawaited(PermanentAvatarStorage.precacheAvatar(
+          userId: widget.receiverId,
+          imageUrl: metaImg,
+        ));
+      }
+
+      if (mounted &&
+          (metaVerified != _chatMetaVerified ||
+              (metaName.isNotEmpty && metaName != _chatMetaName) ||
+              (metaImg.isNotEmpty && metaImg != _chatMetaPic))) {
+        setState(() {
+          if (metaVerified) _chatMetaVerified = true;
+          if (metaName.isNotEmpty) _chatMetaName = metaName;
+          if (metaImg.isNotEmpty) _chatMetaPic = metaImg;
+        });
+      }
     }
   }
 
@@ -230,48 +287,67 @@ class _ChatScreenState extends State<ChatScreen>
   }
 
   Future<void> _setupChatRoom() async {
-    if (widget.chatRoomId.trim().isEmpty && !_isOfficialChannel) {
-      final String teacherId =
-          widget.isTeacher ? widget.currentUserId : widget.receiverId;
-      final String studentId =
-          widget.isTeacher ? widget.receiverId : widget.currentUserId;
-      final String expectedId = '${teacherId}_$studentId';
+    final String initialRoomId = _activeChatRoomId;
 
-      try {
-        final docSnap = await FirebaseFirestore.instance
-            .collection('chats')
-            .doc(expectedId)
-            .get()
-            .timeout(const Duration(seconds: 2));
+    if (!_isOfficialChannel) {
+      if (widget.chatRoomId.trim().isEmpty) {
+        final String teacherId =
+            widget.isTeacher ? widget.currentUserId : widget.receiverId;
+        final String studentId =
+            widget.isTeacher ? widget.receiverId : widget.currentUserId;
+        final String expectedId = '${teacherId}_$studentId';
 
-        if (docSnap.exists) {
-          _activeChatRoomId = expectedId;
-        } else {
-          final altDocSnap = await FirebaseFirestore.instance
+        try {
+          final docSnap = await FirebaseFirestore.instance
               .collection('chats')
-              .doc('${studentId}_$teacherId')
+              .doc(expectedId)
               .get()
               .timeout(const Duration(seconds: 2));
 
-          if (altDocSnap.exists) {
-            _activeChatRoomId = '${studentId}_$teacherId';
+          if (docSnap.exists) {
+            _activeChatRoomId = expectedId;
+            _syncChatMetaFromData(docSnap.data());
           } else {
-            final querySnap = await FirebaseFirestore.instance
+            final altDocSnap = await FirebaseFirestore.instance
                 .collection('chats')
-                .where('participants', arrayContains: widget.currentUserId)
+                .doc('${studentId}_$teacherId')
                 .get()
                 .timeout(const Duration(seconds: 2));
 
-            for (final doc in querySnap.docs) {
-              final participants = (doc.data()['participants'] as List?) ?? [];
-              if (participants.contains(widget.receiverId)) {
-                _activeChatRoomId = doc.id;
-                break;
+            if (altDocSnap.exists) {
+              _activeChatRoomId = '${studentId}_$teacherId';
+              _syncChatMetaFromData(altDocSnap.data());
+            } else {
+              final querySnap = await FirebaseFirestore.instance
+                  .collection('chats')
+                  .where('participants', arrayContains: widget.currentUserId)
+                  .get()
+                  .timeout(const Duration(seconds: 2));
+
+              for (final doc in querySnap.docs) {
+                final participants =
+                    (doc.data()['participants'] as List?) ?? [];
+                if (participants.contains(widget.receiverId)) {
+                  _activeChatRoomId = doc.id;
+                  _syncChatMetaFromData(doc.data());
+                  break;
+                }
               }
             }
           }
-        }
-      } catch (_) {}
+        } catch (_) {}
+      } else {
+        try {
+          final docSnap = await FirebaseFirestore.instance
+              .collection('chats')
+              .doc(_activeChatRoomId)
+              .get()
+              .timeout(const Duration(seconds: 2));
+          if (docSnap.exists) {
+            _syncChatMetaFromData(docSnap.data());
+          }
+        } catch (_) {}
+      }
     }
 
     try {
@@ -287,6 +363,10 @@ class _ChatScreenState extends State<ChatScreen>
     if (mounted) {
       setState(() {
         _messageStream = _chatService.getMessages(_activeChatRoomId);
+        if (!_isOfficialChannel && _activeChatRoomId != initialRoomId) {
+          _typingDocStream = _createTypingDocStream(_activeChatRoomId);
+          _lastTypingDoc = null;
+        }
         _isInitializing = false;
       });
     }
@@ -303,6 +383,7 @@ class _ChatScreenState extends State<ChatScreen>
     try {
       String? myName;
       String? myImage;
+      bool? myVerified;
       try {
         final profile = await _chatService
             .getUserProfile(
@@ -330,11 +411,15 @@ class _ChatScreenState extends State<ChatScreen>
               break;
             }
           }
+          myVerified = profile['isVerified'] == true ||
+              profile['status'] == 'approved' ||
+              profile['verificationStatus'] == 'verified';
         }
       } catch (_) {}
 
       String? receiverName;
       String? receiverPic;
+      bool? receiverVerified;
       try {
         final rProfile = await _chatService
             .getUserProfile(
@@ -365,6 +450,9 @@ class _ChatScreenState extends State<ChatScreen>
               break;
             }
           }
+          receiverVerified = rProfile['isVerified'] == true ||
+              rProfile['status'] == 'approved' ||
+              rProfile['verificationStatus'] == 'verified';
         }
       } catch (_) {}
 
@@ -395,6 +483,11 @@ class _ChatScreenState extends State<ChatScreen>
       final String? teacherImage = widget.isTeacher ? myImage : receiverPic;
       final String? studentImage = widget.isTeacher ? receiverPic : myImage;
 
+      final bool? isTeacherVerified =
+          widget.isTeacher ? myVerified : receiverVerified;
+      final bool? isStudentVerified =
+          widget.isTeacher ? receiverVerified : myVerified;
+
       await _chatService
           .createOrInitializeChat(
             teacherId: teacherId,
@@ -403,6 +496,8 @@ class _ChatScreenState extends State<ChatScreen>
             studentName: studentName ?? '',
             teacherImage: teacherImage ?? '',
             studentImage: studentImage ?? '',
+            isTeacherVerified: isTeacherVerified,
+            isStudentVerified: isStudentVerified,
           )
           .timeout(const Duration(seconds: 5));
 
@@ -415,24 +510,25 @@ class _ChatScreenState extends State<ChatScreen>
   }
 
   Future<void> _markMessagesAsReadSafe() async {
-    if (_isMarkingRead) return;
+    if (_isMarkingRead || _activeChatRoomId.trim().isEmpty) return;
     _isMarkingRead = true;
     try {
       await _chatService.markAsSeen(_activeChatRoomId, widget.currentUserId);
     } catch (e) {
       log("Error marking as read: $e");
     } finally {
-      if (mounted) {
-        _isMarkingRead = false;
-      }
+      _isMarkingRead = false;
     }
   }
 
   Future<void> _loadCustomTheme() async {
     final prefs = await SharedPreferences.getInstance();
+    final savedPath = prefs.getString('chat_theme_$_activeChatRoomId');
+    final validPath =
+        (savedPath != null && File(savedPath).existsSync()) ? savedPath : null;
     if (mounted) {
       setState(() {
-        _customBgImagePath = prefs.getString('chat_theme_$_activeChatRoomId');
+        _customBgImagePath = validPath;
       });
     }
   }
@@ -1233,7 +1329,7 @@ class _ChatScreenState extends State<ChatScreen>
               color: Colors.white, size: 20),
           onPressed: () async {
             await _markMessagesAsReadSafe();
-            if (context.mounted) Navigator.pop(context);
+            if (mounted) Navigator.pop(context);
           },
         ),
         Container(
@@ -1315,17 +1411,33 @@ class _ChatScreenState extends State<ChatScreen>
   Widget _buildStandardAppBarTitle() {
     return StreamBuilder<Map<String, dynamic>>(
       stream: _userStatusStream,
+      initialData: _lastUserStatus,
       builder: (context, statusSnapshot) {
-        String displayName = widget.receiverName;
-        String displayPic = widget.receiverProfilePic.trim();
+        final data = statusSnapshot.data ?? _lastUserStatus;
+        if (statusSnapshot.hasData && statusSnapshot.data != null) {
+          _lastUserStatus = statusSnapshot.data;
+        }
+
+        String displayName = _chatMetaName.isNotEmpty
+            ? _chatMetaName
+            : widget.receiverName;
+        String displayPic = _chatMetaPic.isNotEmpty
+            ? _chatMetaPic
+            : widget.receiverProfilePic.trim();
         bool isOnline = false;
-        bool isVerified = false;
+        bool isVerified = _chatMetaVerified;
         DateTime? lastSeenDate;
 
-        if (statusSnapshot.hasData && statusSnapshot.data != null) {
-          final data = statusSnapshot.data!;
-          isVerified =
-              data['isVerified'] == true || data['status'] == 'approved';
+        if (data != null && data.isNotEmpty) {
+          if (data.containsKey('isVerified')) {
+            isVerified = data['isVerified'] == true ||
+                data['status'] == 'approved' ||
+                data['verificationStatus'] == 'verified';
+          } else {
+            isVerified = data['status'] == 'approved' ||
+                data['verificationStatus'] == 'verified' ||
+                _chatMetaVerified;
+          }
 
           final extractedName =
               (data['fullName'] ?? data['name'] ?? data['displayName'])
@@ -1369,7 +1481,7 @@ class _ChatScreenState extends State<ChatScreen>
                 _chatService.updateTypingStatus(
                     _activeChatRoomId, widget.currentUserId, false);
                 await _markMessagesAsReadSafe();
-                if (context.mounted) Navigator.pop(context);
+                if (mounted) Navigator.pop(context);
               },
             ),
             GestureDetector(
@@ -1453,12 +1565,18 @@ class _ChatScreenState extends State<ChatScreen>
                     const SizedBox(height: 2),
                     StreamBuilder<DocumentSnapshot>(
                       stream: _typingDocStream,
+                      initialData: _lastTypingDoc,
                       builder: (context, typingSnapshot) {
+                        if (typingSnapshot.hasData) {
+                          _lastTypingDoc = typingSnapshot.data;
+                        }
+                        final typingDoc =
+                            typingSnapshot.data ?? _lastTypingDoc;
+
                         bool isTyping = false;
-                        if (typingSnapshot.hasData &&
-                            typingSnapshot.data!.exists) {
-                          final data = typingSnapshot.data!.data()
-                              as Map<String, dynamic>?;
+                        if (typingDoc != null && typingDoc.exists) {
+                          final data =
+                              typingDoc.data() as Map<String, dynamic>?;
                           isTyping = data?[widget.receiverId] == true;
                         }
 
@@ -1483,7 +1601,7 @@ class _ChatScreenState extends State<ChatScreen>
                           statusSubtitle = 'Online • Tap for profile';
                         } else if (lastSeenDate != null) {
                           statusSubtitle =
-                              'Last seen ${_formatLastSeen(lastSeenDate!)} • Tap for profile';
+                              'Last seen ${_formatLastSeen(lastSeenDate)} • Tap for profile';
                         }
 
                         return Text(
@@ -1539,6 +1657,9 @@ class _ChatScreenState extends State<ChatScreen>
 
   @override
   Widget build(BuildContext context) {
+    final bool hasValidCustomBg = _customBgImagePath != null &&
+        File(_customBgImagePath!).existsSync();
+
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, result) async {
@@ -1552,7 +1673,7 @@ class _ChatScreenState extends State<ChatScreen>
               _activeChatRoomId, widget.currentUserId, false);
         }
         await _markMessagesAsReadSafe();
-        if (context.mounted) {
+        if (mounted) {
           Navigator.of(context).pop();
         }
       },
@@ -1615,7 +1736,7 @@ class _ChatScreenState extends State<ChatScreen>
         body: Container(
           decoration: BoxDecoration(
             color: _scaffoldBg,
-            image: _customBgImagePath != null
+            image: hasValidCustomBg
                 ? DecorationImage(
                     image: FileImage(File(_customBgImagePath!)),
                     fit: BoxFit.cover,
