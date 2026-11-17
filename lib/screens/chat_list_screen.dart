@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -34,13 +33,15 @@ class _ChatListScreenState extends State<ChatListScreen>
   final TextEditingController _searchController = TextEditingController();
   late final TabController _tabController;
 
-  late final Stream<QuerySnapshot> _chatsStream;
-  late final Stream<int> _unreadChatsCountStream;
-  late final Stream<int> _unreadGroupsCountStream;
+  late Stream<QuerySnapshot> _chatsStream;
+  late Stream<int> _unreadChatsCountStream;
+  late Stream<int> _unreadGroupsCountStream;
   QuerySnapshot? _lastChatsSnapshot;
 
   final Map<String, Stream<Map<String, dynamic>>> _userStatusStreams = {};
+  final Map<String, Map<String, dynamic>> _lastUserStatusCache = {};
   final Map<String, Stream<bool>> _typingStreams = {};
+  final Map<String, bool> _lastTypingCache = {};
 
   String _searchText = '';
   String _currentUserName = 'User';
@@ -57,11 +58,7 @@ class _ChatListScreenState extends State<ChatListScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
 
-    _chatsStream = _chatService.getUserChatsStream(widget.currentUserId);
-    _unreadChatsCountStream =
-        _chatService.getTotalUnreadChatsCountStream(widget.currentUserId);
-    _unreadGroupsCountStream =
-        _chatService.getTotalUnreadGroupsCountStream(widget.currentUserId);
+    _initStreams();
 
     _tabController = TabController(length: 2, vsync: this);
     _tabController.addListener(() {
@@ -82,6 +79,29 @@ class _ChatListScreenState extends State<ChatListScreen>
     });
   }
 
+  void _initStreams() {
+    _chatsStream = _chatService.getUserChatsStream(widget.currentUserId);
+    _unreadChatsCountStream =
+        _chatService.getTotalUnreadChatsCountStream(widget.currentUserId);
+    _unreadGroupsCountStream =
+        _chatService.getTotalUnreadGroupsCountStream(widget.currentUserId);
+  }
+
+  @override
+  void didUpdateWidget(covariant ChatListScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.currentUserId != widget.currentUserId ||
+        oldWidget.isTeacher != widget.isTeacher) {
+      _userStatusStreams.clear();
+      _lastUserStatusCache.clear();
+      _typingStreams.clear();
+      _lastTypingCache.clear();
+      _lastChatsSnapshot = null;
+      _initStreams();
+      _loadCurrentUserName();
+    }
+  }
+
   Stream<Map<String, dynamic>> _getCachedUserStatusStream(
     String userId, {
     bool? isReceiverTeacher,
@@ -92,7 +112,16 @@ class _ChatListScreenState extends State<ChatListScreen>
       key,
       () => _chatService
           .getUserStatusStream(userId, receiverIsTeacher)
-          .asBroadcastStream(),
+          .map((data) {
+            _lastUserStatusCache[key] = data;
+            return data;
+          })
+          .asBroadcastStream(
+            onCancel: (sub) {
+              sub.cancel();
+              _userStatusStreams.remove(key);
+            },
+          ),
     );
   }
 
@@ -102,7 +131,16 @@ class _ChatListScreenState extends State<ChatListScreen>
       key,
       () => _chatService
           .getTypingStatusStream(chatDocId, receiverId)
-          .asBroadcastStream(),
+          .map((typing) {
+            _lastTypingCache[key] = typing;
+            return typing;
+          })
+          .asBroadcastStream(
+            onCancel: (sub) {
+              sub.cancel();
+              _typingStreams.remove(key);
+            },
+          ),
     );
   }
 
@@ -595,9 +633,16 @@ class _ChatListScreenState extends State<ChatListScreen>
               if (chatData
                   .containsKey('unreadCount_${widget.currentUserId}')) {
                 unreadCount =
-                    chatData['unreadCount_${widget.currentUserId}'] ?? 0;
+                    (chatData['unreadCount_${widget.currentUserId}'] as num?)
+                            ?.toInt() ??
+                        0;
               } else {
-                unreadCount = chatData['unreadCount'] ?? 0;
+                final String unreadFor =
+                    (chatData['unreadFor'] ?? '').toString();
+                if (unreadFor.isEmpty || unreadFor == widget.currentUserId) {
+                  unreadCount =
+                      (chatData['unreadCount'] as num?)?.toInt() ?? 0;
+                }
               }
             }
 
@@ -702,6 +747,13 @@ class _ChatListScreenState extends State<ChatListScreen>
                     '',
                   );
 
+            final bool fallbackIsVerified =
+                receiverProfileMeta?['isVerified'] == true ||
+                    (!isCurrentUserTeacher &&
+                        chatData['isTeacherVerified'] == true);
+
+            final String statusKey = '${receiverId}_${!isCurrentUserTeacher}';
+            final String typingKey = '${doc.id}_$receiverId';
             final String heroTag = 'chat_avatar_$receiverId';
 
             return KeyedSubtree(
@@ -711,13 +763,18 @@ class _ChatListScreenState extends State<ChatListScreen>
                   receiverId,
                   isReceiverTeacher: !isCurrentUserTeacher,
                 ),
+                initialData: _lastUserStatusCache[statusKey],
                 builder: (context, userSnapshot) {
-                  final mapData = userSnapshot.data;
+                  final mapData =
+                      userSnapshot.data ?? _lastUserStatusCache[statusKey];
+                  if (mapData != null && mapData.isNotEmpty) {
+                    _lastUserStatusCache[statusKey] = mapData;
+                  }
 
                   String finalName = fallbackName;
                   String finalImageUrl = fallbackImageUrl;
                   bool isOnline = false;
-                  bool isVerifiedUser = false;
+                  bool isVerifiedUser = fallbackIsVerified;
 
                   if (mapData != null && mapData.isNotEmpty) {
                     final extractedName = (mapData['fullName'] ??
@@ -757,8 +814,15 @@ class _ChatListScreenState extends State<ChatListScreen>
                       }
                     }
 
-                    isVerifiedUser = mapData['isVerified'] == true ||
-                        mapData['status'] == 'approved';
+                    if (mapData.containsKey('isVerified')) {
+                      isVerifiedUser = mapData['isVerified'] == true ||
+                          mapData['status'] == 'approved' ||
+                          mapData['verificationStatus'] == 'verified';
+                    } else {
+                      isVerifiedUser = mapData['status'] == 'approved' ||
+                          mapData['verificationStatus'] == 'verified' ||
+                          fallbackIsVerified;
+                    }
                   }
 
                   if (!_matchesSearch(chatData, finalName)) {
@@ -767,9 +831,11 @@ class _ChatListScreenState extends State<ChatListScreen>
 
                   return StreamBuilder<bool>(
                     stream: _getCachedTypingStream(doc.id, receiverId),
-                    initialData: false,
+                    initialData: _lastTypingCache[typingKey] ?? false,
                     builder: (context, typingSnap) {
-                      final bool isTyping = typingSnap.data == true;
+                      final bool isTyping = (typingSnap.data ??
+                              _lastTypingCache[typingKey]) ==
+                          true;
                       return _ChatCard(
                         userId: receiverId,
                         avatarHeroTag: heroTag,
