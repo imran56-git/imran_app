@@ -1,3 +1,6 @@
+Here is the complete, updated **Step 6: `lib/screens/student_profile_screen.dart`** for **Roadmap 9.0**.
+
+```dart
 import 'dart:async';
 import 'dart:ui';
 import 'package:animate_do/animate_do.dart';
@@ -125,7 +128,40 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
   }
 
   @override
+  void didUpdateWidget(covariant StudentProfileScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.currentUserId != widget.currentUserId) {
+      setState(() {
+        isLoading = true;
+        isEditing = false;
+        studentData = null;
+        _initialSavedProfileUrl = null;
+        _pendingProfileImageUrl = null;
+        _name.clear();
+        _phone.clear();
+        _location.clear();
+        _bio.clear();
+        _institution.clear();
+        _school.clear();
+        _college.clear();
+        _customSubjectController.clear();
+        gender = null;
+        studentClass = null;
+        selectedSubjects.clear();
+      });
+      fetchStudentData();
+      checkUnreadNotifications();
+    }
+  }
+
+  @override
   void dispose() {
+    if (isEditing &&
+        _pendingProfileImageUrl != null &&
+        _pendingProfileImageUrl != _initialSavedProfileUrl) {
+      unawaited(_deleteOldStorageFileIfDifferent(
+          _pendingProfileImageUrl, _initialSavedProfileUrl));
+    }
     _notifSubscription?.cancel();
     _menuAnimController.dispose();
     for (var c in [
@@ -170,8 +206,9 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
     final String cleanOld = oldUrl?.trim() ?? '';
     final String cleanNew = newUrl?.trim() ?? '';
     if (cleanOld.isEmpty ||
-        !cleanOld.startsWith('http') ||
-        !cleanOld.contains('firebasestorage') ||
+        (!cleanOld.startsWith('http') && !cleanOld.startsWith('gs://')) ||
+        (!cleanOld.contains('firebasestorage') &&
+            !cleanOld.startsWith('gs://')) ||
         cleanOld == cleanNew) {
       return;
     }
@@ -192,9 +229,17 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
       final docSnap =
           await _firestore.collection('students').doc(targetUid).get();
       final data = docSnap.data() ?? {};
-      if (!mounted) return;
       final savedImg =
           (data['profileImageUrl'] ?? data['photoUrl'] ?? '').toString().trim();
+
+      if (savedImg.isNotEmpty) {
+        unawaited(PermanentAvatarStorage.precacheAvatar(
+          userId: targetUid,
+          imageUrl: savedImg,
+        ));
+      }
+
+      if (!mounted) return;
       setState(() {
         studentData = data;
         _initialSavedProfileUrl = savedImg.isNotEmpty ? savedImg : null;
@@ -253,6 +298,11 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
       if (!mounted) return;
 
       if (freshUrl != null && freshUrl.isNotEmpty) {
+        unawaited(PermanentAvatarStorage.precacheAvatar(
+          userId: uid,
+          imageUrl: freshUrl,
+        ));
+
         setState(() {
           _pendingProfileImageUrl = freshUrl;
           studentData ??= {};
@@ -276,10 +326,6 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
               _initialSavedProfileUrl, freshUrl);
           _initialSavedProfileUrl = freshUrl;
           _pendingProfileImageUrl = null;
-          unawaited(PermanentAvatarStorage.getOrDownloadAvatar(
-            userId: uid,
-            imageUrl: freshUrl,
-          ));
         } else {
           if (previousUrl != null && previousUrl != _initialSavedProfileUrl) {
             await _deleteOldStorageFileIfDifferent(previousUrl, freshUrl);
@@ -547,10 +593,12 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
                             .delete()
                             .catchError((_) {});
 
+                        await PermanentAvatarStorage.clearOwnerCache(uid);
+
                         await user.delete();
 
                         passwordController.dispose();
-                        Navigator.pop(dialogCtx);
+                        if (dialogCtx.mounted) Navigator.pop(dialogCtx);
 
                         await _clearLocalSession();
 
@@ -672,7 +720,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
         await _deleteOldStorageFileIfDifferent(
             _initialSavedProfileUrl, _pendingProfileImageUrl);
         _initialSavedProfileUrl = _pendingProfileImageUrl;
-        unawaited(PermanentAvatarStorage.getOrDownloadAvatar(
+        unawaited(PermanentAvatarStorage.precacheAvatar(
           userId: uid,
           imageUrl: _pendingProfileImageUrl!,
         ));
@@ -992,160 +1040,169 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
   @override
   Widget build(BuildContext context) {
     super.build(context);
-    return Scaffold(
-      backgroundColor: _primaryNavy,
-      appBar: AppBar(
+    return PopScope(
+      canPop: !_isMenuExpanded,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        if (_isMenuExpanded) {
+          _closeMenu();
+        }
+      },
+      child: Scaffold(
         backgroundColor: _primaryNavy,
-        foregroundColor: Colors.white,
-        elevation: 0,
-        scrolledUnderElevation: 0,
-        automaticallyImplyLeading: !isOwnProfile,
-        titleSpacing: 20,
-        title: GestureDetector(
-          behavior: HitTestBehavior.translucent,
-          onTapDown: (_) {
-            if (_isMenuExpanded) _closeMenu();
-          },
-          child: Row(
-            children: [
-              Text(
-                isOwnProfile
-                    ? (isEditing ? 'Edit Profile' : 'My Profile')
-                    : 'Student Profile',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 21,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 0.2,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.14),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: Colors.white.withOpacity(0.22)),
-                ),
-                child: const Text(
-                  'STUDENT',
-                  style: TextStyle(
-                    color: Color(0xFF99F6E4),
-                    fontSize: 9.5,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 0.5,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          if (isOwnProfile)
-            Padding(
-              padding: const EdgeInsets.only(right: 14),
-              child: Container(
-                decoration: BoxDecoration(
-                  color: _isMenuExpanded
-                      ? Colors.white.withOpacity(0.18)
-                      : Colors.black.withOpacity(0.28),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.white.withOpacity(0.22)),
-                ),
-                child: IconButton(
-                  visualDensity: VisualDensity.compact,
-                  icon: Icon(
-                    _isMenuExpanded
-                        ? Icons.close_rounded
-                        : Icons.more_vert_rounded,
-                    color: Colors.white,
-                    size: 22,
-                  ),
-                  tooltip: 'Menu',
-                  onPressed: () {
-                    if (_isMenuExpanded) {
-                      _closeMenu();
-                    } else {
-                      _openMenu();
-                    }
-                  },
-                ),
-              ),
-            )
-          else
-            Padding(
-              padding: const EdgeInsets.only(right: 14),
-              child: GestureDetector(
-                onTap: _navigateToNotifications,
-                child: const Icon(
-                  Icons.notifications_none_rounded,
-                  color: Colors.white,
-                  size: 22,
-                ),
-              ),
-            ),
-        ],
-      ),
-      body: Stack(
-        children: [
-          GestureDetector(
+        appBar: AppBar(
+          backgroundColor: _primaryNavy,
+          foregroundColor: Colors.white,
+          elevation: 0,
+          scrolledUnderElevation: 0,
+          automaticallyImplyLeading: !isOwnProfile,
+          titleSpacing: 20,
+          title: GestureDetector(
             behavior: HitTestBehavior.translucent,
             onTapDown: (_) {
               if (_isMenuExpanded) _closeMenu();
             },
-            child: isLoading
-                ? const Center(
-                    child: CircularProgressIndicator(
-                      color: _brandBlue,
-                      strokeWidth: 3.5,
+            child: Row(
+              children: [
+                Text(
+                  isOwnProfile
+                      ? (isEditing ? 'Edit Profile' : 'My Profile')
+                      : 'Student Profile',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 21,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 0.2,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.14),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: Colors.white.withOpacity(0.22)),
+                  ),
+                  child: const Text(
+                    'STUDENT',
+                    style: TextStyle(
+                      color: Color(0xFF99F6E4),
+                      fontSize: 9.5,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.5,
                     ),
-                  )
-                : NotificationListener<ScrollNotification>(
-                    onNotification: (notification) {
-                      if (_isMenuExpanded &&
-                          notification is ScrollStartNotification) {
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            if (isOwnProfile)
+              Padding(
+                padding: const EdgeInsets.only(right: 14),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: _isMenuExpanded
+                        ? Colors.white.withOpacity(0.18)
+                        : Colors.black.withOpacity(0.28),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.white.withOpacity(0.22)),
+                  ),
+                  child: IconButton(
+                    visualDensity: VisualDensity.compact,
+                    icon: Icon(
+                      _isMenuExpanded
+                          ? Icons.close_rounded
+                          : Icons.more_vert_rounded,
+                      color: Colors.white,
+                      size: 22,
+                    ),
+                    tooltip: 'Menu',
+                    onPressed: () {
+                      if (_isMenuExpanded) {
                         _closeMenu();
+                      } else {
+                        _openMenu();
                       }
-                      return false;
                     },
-                    child: SingleChildScrollView(
-                      physics: const ClampingScrollPhysics(),
-                      child: AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 300),
-                        child: Container(
-                          key: ValueKey(_triggerAnimation),
-                          color: _scaffoldBg,
-                          child: Column(
-                            children: [
-                              _buildHeader(),
-                              Padding(
-                                padding:
-                                    const EdgeInsets.fromLTRB(18, 16, 18, 28),
-                                child: isEditing
-                                    ? _buildEditForm()
-                                    : _buildProfileDetails(),
-                              ),
-                            ],
+                  ),
+                ),
+              )
+            else
+              Padding(
+                padding: const EdgeInsets.only(right: 14),
+                child: GestureDetector(
+                  onTap: _navigateToNotifications,
+                  child: const Icon(
+                    Icons.notifications_none_rounded,
+                    color: Colors.white,
+                    size: 22,
+                  ),
+                ),
+              ),
+          ],
+        ),
+        body: Stack(
+          children: [
+            GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onTapDown: (_) {
+                if (_isMenuExpanded) _closeMenu();
+              },
+              child: isLoading
+                  ? const Center(
+                      child: CircularProgressIndicator(
+                        color: _brandBlue,
+                        strokeWidth: 3.5,
+                      ),
+                    )
+                  : NotificationListener<ScrollNotification>(
+                      onNotification: (notification) {
+                        if (_isMenuExpanded &&
+                            notification is ScrollStartNotification) {
+                          _closeMenu();
+                        }
+                        return false;
+                      },
+                      child: SingleChildScrollView(
+                        physics: const ClampingScrollPhysics(),
+                        child: AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 300),
+                          child: Container(
+                            key: ValueKey(_triggerAnimation),
+                            color: _scaffoldBg,
+                            child: Column(
+                              children: [
+                                _buildHeader(),
+                                Padding(
+                                  padding:
+                                      const EdgeInsets.fromLTRB(18, 16, 18, 28),
+                                  child: isEditing
+                                      ? _buildEditForm()
+                                      : _buildProfileDetails(),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       ),
                     ),
+            ),
+            if (_isMenuExpanded) ...[
+              Positioned.fill(
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: _closeMenu,
+                  child: Container(
+                    color: Colors.black.withOpacity(0.25),
                   ),
-          ),
-          if (_isMenuExpanded) ...[
-            Positioned.fill(
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: _closeMenu,
-                child: Container(
-                  color: Colors.black.withOpacity(0.25),
                 ),
               ),
-            ),
-            _buildVerticalGlassDropdown(),
+              _buildVerticalGlassDropdown(),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }
@@ -2042,4 +2099,847 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
       );
 
   Widget _gap() => const SizedBox(height: 14);
+}
+```
+
+### Summary of Fixes & Improvements (Step 6)
+1. **Instant Frame-1 Avatar & Pre-Caching:** Uses `PermanentProfileAvatar` with `PermanentAvatarStorage.precacheAvatar` on `fetchStudentData()`, `_pickCropAndUploadProfileImage()`, and `updateStudentProfile()` for instant 0ms rendering.
+2. **Zero Orphaned Storage & Local Cache Cleanup:** Added `dispose()` cleanup for unsaved pending uploads if the user leaves while editing, broadened Storage URL cleanup in `_deleteOldStorageFileIfDifferent`, and cleared local avatar cache on account deletion.
+3. **Edge-Case & Lifecycle Fixes:** Added `didUpdateWidget` to reload when `currentUserId` changes, `PopScope` to close the glass dropdown menu on back press, and `dialogCtx.mounted` check before popping the password verification dialog.
+
+---
+**Next Step:** Please paste the current code for **Step 7 (Final Step): `lib/screens/group/group_info_screen.dart`**.
+Here is the complete, updated **Step 7 (Final Step): `lib/screens/group/group_info_screen.dart`** for **Roadmap 9.0**.
+
+```dart
+import 'dart:async';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:flutter/material.dart';
+import '../../models/group_model.dart';
+import '../../services/group_service.dart';
+import '../../services/media_compression_service.dart';
+import '../../widgets/image_viewer.dart';
+import '../../widgets/permanent_avatar.dart';
+import 'add_group_member_screen.dart';
+
+class GroupInfoScreen extends StatefulWidget {
+  final String groupId;
+  final String currentUserId;
+
+  const GroupInfoScreen({
+    super.key,
+    required this.groupId,
+    required this.currentUserId,
+  });
+
+  @override
+  State<GroupInfoScreen> createState() => _GroupInfoScreenState();
+}
+
+class _GroupInfoScreenState extends State<GroupInfoScreen> {
+  final GroupService _groupService = GroupService();
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseStorage _storage = FirebaseStorage.instance;
+
+  late Stream<GroupModel?> _groupStream;
+  GroupModel? _lastGroup;
+  final Map<String, Future<Map<String, dynamic>>> _memberFutureCache = {};
+  bool _isActionLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _groupStream = _groupService.streamGroup(widget.groupId);
+  }
+
+  @override
+  void didUpdateWidget(covariant GroupInfoScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.groupId != widget.groupId) {
+      _lastGroup = null;
+      _memberFutureCache.clear();
+      _groupStream = _groupService.streamGroup(widget.groupId);
+    }
+  }
+
+  Future<void> _deleteOldStorageFileIfDifferent(
+      String? oldUrl, String? newUrl) async {
+    final String cleanOld = oldUrl?.trim() ?? '';
+    final String cleanNew = newUrl?.trim() ?? '';
+    if (cleanOld.isEmpty ||
+        (!cleanOld.startsWith('http') && !cleanOld.startsWith('gs://')) ||
+        (!cleanOld.contains('firebasestorage') &&
+            !cleanOld.startsWith('gs://')) ||
+        cleanOld == cleanNew) {
+      return;
+    }
+    try {
+      await _storage.refFromURL(cleanOld).delete();
+    } catch (_) {}
+  }
+
+  Future<void> _editGroupName(GroupModel group) async {
+    final controller = TextEditingController(text: group.name);
+    final descController = TextEditingController(text: group.description);
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Edit Group Info"),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: controller,
+              decoration: const InputDecoration(
+                labelText: "Group Name",
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: descController,
+              maxLines: 2,
+              decoration: const InputDecoration(
+                labelText: "Description",
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text("Cancel"),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF0052CC),
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () async {
+              final nextName = controller.text.trim();
+              final nextDesc = descController.text.trim();
+              Navigator.pop(ctx);
+              await _groupService.updateGroupInfo(
+                groupId: group.groupId,
+                teacherId: widget.currentUserId,
+                name: nextName.isNotEmpty ? nextName : group.name,
+                description: nextDesc,
+              );
+            },
+            child: const Text("Save"),
+          ),
+        ],
+      ),
+    );
+
+    controller.dispose();
+    descController.dispose();
+  }
+
+  Future<void> _updateGroupIcon(GroupModel group) async {
+    if (_isActionLoading) return;
+    try {
+      setState(() => _isActionLoading = true);
+      final String? oldUrl = group.groupIconUrl;
+
+      final String? url =
+          await MediaCompressionService.pickCropCompressAndUpload(
+        context: context,
+        uploadType: MediaUploadType.groupIcon,
+        ownerId: group.groupId,
+      );
+
+      if (url != null && url.isNotEmpty) {
+        unawaited(PermanentAvatarStorage.precacheAvatar(
+          userId: 'group_${group.groupId}',
+          imageUrl: url,
+        ));
+        await _groupService.updateGroupInfo(
+          groupId: group.groupId,
+          teacherId: widget.currentUserId,
+          groupIconUrl: url,
+        );
+        await _deleteOldStorageFileIfDifferent(oldUrl, url);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text("Group icon optimized & updated!"),
+              backgroundColor: Color(0xFF10B981),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Failed to update icon: $e")),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isActionLoading = false);
+    }
+  }
+
+  Future<void> _confirmDismissGroup(GroupModel group) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Dismiss Study Group?"),
+        content: const Text(
+          "This will permanently dismiss the group for all students. Students will no longer be able to view or send messages in this group.",
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text("Cancel"),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text("Dismiss Group"),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      setState(() => _isActionLoading = true);
+      try {
+        await _groupService.dismissGroup(group.groupId, widget.currentUserId);
+        await PermanentAvatarStorage.clearOwnerCache('group_${group.groupId}');
+        if (mounted) {
+          Navigator.of(context).popUntil((route) => route.isFirst);
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text("Failed: $e")),
+          );
+        }
+      } finally {
+        if (mounted) setState(() => _isActionLoading = false);
+      }
+    }
+  }
+
+  Future<void> _confirmExitGroup(GroupModel group) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Exit Group?"),
+        content: const Text(
+            "You will leave this study group and will need a new invitation from the teacher to rejoin."),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text("Cancel"),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text("Exit"),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      setState(() => _isActionLoading = true);
+      try {
+        await _groupService.exitGroup(group.groupId, widget.currentUserId);
+        if (mounted) {
+          Navigator.of(context).popUntil((route) => route.isFirst);
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text("Failed: $e")),
+          );
+        }
+      } finally {
+        if (mounted) setState(() => _isActionLoading = false);
+      }
+    }
+  }
+
+  void _openFullScreenImageViewer(
+    String imageUrl,
+    String title, {
+    String? subtitle,
+    String? heroTag,
+  }) {
+    ImageViewer.open(
+      context,
+      imageUrl: imageUrl,
+      title: title,
+      subtitle: subtitle,
+      heroTag: heroTag,
+    );
+  }
+
+  Future<Map<String, dynamic>> _getCachedMemberDisplayInfo(
+      String memberId, GroupModel group) {
+    final bool isMuted = group.isStudentMuted(memberId);
+    final String cacheKey = '${memberId}_$isMuted';
+    return _memberFutureCache.putIfAbsent(
+      cacheKey,
+      () => _fetchMemberDisplayInfo(memberId, group),
+    );
+  }
+
+  Future<Map<String, dynamic>> _fetchMemberDisplayInfo(
+      String memberId, GroupModel group) async {
+    final bool isTeacherMember = group.isSingleAdmin(memberId);
+    if (isTeacherMember) {
+      final tDoc = await _firestore.collection('teachers').doc(memberId).get();
+      if (tDoc.exists && tDoc.data() != null) {
+        final d = tDoc.data()!;
+        final photo = (d['profileImageUrl'] ??
+                d['photoUrl'] ??
+                group.teacherProfilePic)
+            .toString()
+            .trim();
+        if (photo.isNotEmpty) {
+          unawaited(PermanentAvatarStorage.precacheAvatar(
+            userId: memberId,
+            imageUrl: photo,
+          ));
+        }
+        return {
+          'name': d['name'] ?? d['fullName'] ?? group.teacherName,
+          'photo': photo,
+          'role': 'Teacher (Admin)',
+          'isTeacher': true,
+        };
+      }
+      return {
+        'name': group.teacherName,
+        'photo': group.teacherProfilePic,
+        'role': 'Teacher (Admin)',
+        'isTeacher': true,
+      };
+    }
+
+    final sDoc = await _firestore.collection('students').doc(memberId).get();
+    if (sDoc.exists && sDoc.data() != null) {
+      final d = sDoc.data()!;
+      final photo =
+          (d['profileImageUrl'] ?? d['photoUrl'] ?? '').toString().trim();
+      if (photo.isNotEmpty) {
+        unawaited(PermanentAvatarStorage.precacheAvatar(
+          userId: memberId,
+          imageUrl: photo,
+        ));
+      }
+      return {
+        'name': d['name'] ?? d['fullName'] ?? 'Student',
+        'photo': photo,
+        'role': group.isStudentMuted(memberId) ? 'Muted Student' : 'Student',
+        'isTeacher': false,
+      };
+    }
+    return {
+      'name': 'Student',
+      'photo': '',
+      'role': 'Student',
+      'isTeacher': false,
+    };
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFF5F7FB),
+      appBar: AppBar(
+        title: const Text(
+          "Group Info",
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        backgroundColor: const Color(0xFF0052CC),
+        foregroundColor: Colors.white,
+        elevation: 0,
+      ),
+      body: StreamBuilder<GroupModel?>(
+        stream: _groupStream,
+        initialData: _lastGroup,
+        builder: (context, snapshot) {
+          if (snapshot.hasData) {
+            _lastGroup = snapshot.data;
+          }
+
+          final group = snapshot.data ?? _lastGroup;
+          if (group == null &&
+              snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(
+              child: CircularProgressIndicator(color: Color(0xFF0052CC)),
+            );
+          }
+
+          if (group == null) {
+            return const Center(child: Text("Group not found."));
+          }
+
+          final bool isTeacherAdmin = group.isSingleAdmin(widget.currentUserId);
+          final String groupIconUrl = (group.groupIconUrl ?? '').trim();
+
+          return Stack(
+            children: [
+              ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(18),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.04),
+                          blurRadius: 10,
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      children: [
+                        Stack(
+                          children: [
+                            GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onTap: () => _openFullScreenImageViewer(
+                                groupIconUrl,
+                                group.name,
+                                subtitle: '${group.members.length} Members',
+                                heroTag: 'group_icon_${group.groupId}',
+                              ),
+                              child: Hero(
+                                tag: 'group_icon_${group.groupId}',
+                                child: PermanentProfileAvatar(
+                                  userId: 'group_${group.groupId}',
+                                  imageUrl: groupIconUrl,
+                                  fallbackName: group.name,
+                                  radius: 44,
+                                  gradientColors: const [
+                                    Color(0xFF0052CC),
+                                    Color(0xFF2563EB),
+                                  ],
+                                  isGroup: true,
+                                ),
+                              ),
+                            ),
+                            if (isTeacherAdmin)
+                              Positioned(
+                                bottom: 0,
+                                right: 0,
+                                child: InkWell(
+                                  onTap: () => _updateGroupIcon(group),
+                                  child: Container(
+                                    padding: const EdgeInsets.all(6),
+                                    decoration: const BoxDecoration(
+                                      color: Color(0xFF0052CC),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: const Icon(Icons.camera_alt,
+                                        color: Colors.white, size: 16),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: 14),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Flexible(
+                              child: Text(
+                                group.name,
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF1A1F36),
+                                ),
+                              ),
+                            ),
+                            if (isTeacherAdmin)
+                              IconButton(
+                                icon: const Icon(Icons.edit,
+                                    size: 18, color: Color(0xFF0052CC)),
+                                onPressed: () => _editGroupName(group),
+                              ),
+                          ],
+                        ),
+                        if (group.description.isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            group.description,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                                color: Colors.grey.shade600, fontSize: 13),
+                          ),
+                        ],
+                        const SizedBox(height: 10),
+                        Text(
+                          "Study Group • ${group.members.length} Members",
+                          style: const TextStyle(
+                            color: Color(0xFF0052CC),
+                            fontWeight: FontWeight.w600,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  if (isTeacherAdmin) ...[
+                    Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Column(
+                        children: [
+                          SwitchListTile(
+                            title: const Text(
+                              "Only Teacher Can Send Messages",
+                              style: TextStyle(
+                                  fontWeight: FontWeight.w600, fontSize: 14),
+                            ),
+                            subtitle: const Text(
+                              "Restrict student messaging (Broadcast mode)",
+                              style: TextStyle(fontSize: 12),
+                            ),
+                            activeColor: const Color(0xFF0052CC),
+                            value: group.onlyAdminCanPost,
+                            onChanged: (val) async {
+                              await _groupService.toggleOnlyAdminCanPost(
+                                groupId: group.groupId,
+                                teacherId: widget.currentUserId,
+                                onlyAdminCanPost: val,
+                              );
+                            },
+                          ),
+                          const Divider(height: 1),
+                          ListTile(
+                            leading: const CircleAvatar(
+                              backgroundColor: Color(0xFFE8F5E9),
+                              child: Icon(Icons.person_add,
+                                  color: Color(0xFF00875A)),
+                            ),
+                            title: const Text(
+                              "Invite Students",
+                              style: TextStyle(fontWeight: FontWeight.w600),
+                            ),
+                            trailing:
+                                const Icon(Icons.arrow_forward_ios, size: 15),
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => AddGroupMemberScreen(
+                                    group: group,
+                                    teacherId: widget.currentUserId,
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+                  if (isTeacherAdmin) ...[
+                    Text(
+                      "Members (${group.members.length})",
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15,
+                        color: Color(0xFF1A1F36),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: ListView.separated(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        itemCount: group.members.length,
+                        separatorBuilder: (_, __) => const Divider(height: 1),
+                        itemBuilder: (context, index) {
+                          final memberId = group.members[index];
+                          return FutureBuilder<Map<String, dynamic>>(
+                            future:
+                                _getCachedMemberDisplayInfo(memberId, group),
+                            builder: (context, mSnap) {
+                              final info = mSnap.data ??
+                                  {
+                                    'name': 'Loading...',
+                                    'photo': '',
+                                    'role': 'Member',
+                                    'isTeacher': false,
+                                  };
+                              final bool isThisTeacher =
+                                  info['isTeacher'] == true;
+                              final bool isMuted =
+                                  group.isStudentMuted(memberId);
+                              final String photo =
+                                  (info['photo'] ?? '').toString().trim();
+                              final String memberName =
+                                  (info['name'] ?? 'Member').toString();
+
+                              return ListTile(
+                                leading: GestureDetector(
+                                  behavior: HitTestBehavior.opaque,
+                                  onTap: () => _openFullScreenImageViewer(
+                                    photo,
+                                    memberName,
+                                    subtitle: (info['role'] ?? 'Member')
+                                        .toString(),
+                                    heroTag:
+                                        'group_member_${group.groupId}_$memberId',
+                                  ),
+                                  child: Hero(
+                                    tag:
+                                        'group_member_${group.groupId}_$memberId',
+                                    child: PermanentProfileAvatar(
+                                      userId: memberId,
+                                      imageUrl: photo,
+                                      fallbackName: memberName,
+                                      radius: 20,
+                                      gradientColors: const [
+                                        Color(0xFF0052CC),
+                                        Color(0xFF2563EB),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                                title: Row(
+                                  children: [
+                                    Flexible(
+                                      child: Text(
+                                        memberName,
+                                        style: const TextStyle(
+                                            fontWeight: FontWeight.w600),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                    if (isThisTeacher &&
+                                        group.isTeacherVerified) ...[
+                                      const SizedBox(width: 4),
+                                      const Icon(Icons.verified,
+                                          color: Color(0xFF0052CC), size: 15),
+                                    ],
+                                    if (isThisTeacher &&
+                                        group.hasGoldenBadge) ...[
+                                      const SizedBox(width: 3),
+                                      const Icon(Icons.workspace_premium,
+                                          color: Color(0xFFD97706), size: 15),
+                                    ],
+                                  ],
+                                ),
+                                subtitle: Text(
+                                  info['role'] ?? '',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: isThisTeacher
+                                        ? const Color(0xFF0052CC)
+                                        : (isMuted
+                                            ? Colors.red
+                                            : Colors.grey.shade600),
+                                    fontWeight: isThisTeacher
+                                        ? FontWeight.w600
+                                        : FontWeight.normal,
+                                  ),
+                                ),
+                                trailing: !isThisTeacher
+                                    ? PopupMenuButton<String>(
+                                        onSelected: (val) async {
+                                          if (val == 'mute') {
+                                            await _groupService
+                                                .toggleMuteStudent(
+                                              groupId: group.groupId,
+                                              teacherId: widget.currentUserId,
+                                              studentId: memberId,
+                                              mute: !isMuted,
+                                            );
+                                          } else if (val == 'remove') {
+                                            await _groupService.removeStudent(
+                                              groupId: group.groupId,
+                                              teacherId: widget.currentUserId,
+                                              studentId: memberId,
+                                            );
+                                          }
+                                        },
+                                        itemBuilder: (_) => [
+                                          PopupMenuItem(
+                                            value: 'mute',
+                                            child: Text(isMuted
+                                                ? "Unmute Student"
+                                                : "Mute Student"),
+                                          ),
+                                          const PopupMenuItem(
+                                            value: 'remove',
+                                            child: Text(
+                                              "Remove from Group",
+                                              style:
+                                                  TextStyle(color: Colors.red),
+                                            ),
+                                          ),
+                                        ],
+                                      )
+                                    : null,
+                              );
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                  ] else ...[
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            "Group Admin",
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 14,
+                              color: Color(0xFF1A1F36),
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            leading: GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onTap: () => _openFullScreenImageViewer(
+                                group.teacherProfilePic,
+                                group.teacherName,
+                                subtitle: 'Group Admin • Verified Educator',
+                                heroTag:
+                                    'group_admin_${group.groupId}_${group.teacherId}',
+                              ),
+                              child: Hero(
+                                tag:
+                                    'group_admin_${group.groupId}_${group.teacherId}',
+                                child: PermanentProfileAvatar(
+                                  userId: group.teacherId,
+                                  imageUrl: group.teacherProfilePic,
+                                  fallbackName: group.teacherName,
+                                  radius: 20,
+                                  gradientColors: const [
+                                    Color(0xFF0052CC),
+                                    Color(0xFF2563EB),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            title: Row(
+                              children: [
+                                Flexible(
+                                  child: Text(
+                                    group.teacherName,
+                                    style: const TextStyle(
+                                        fontWeight: FontWeight.bold),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                if (group.isTeacherVerified) ...[
+                                  const SizedBox(width: 4),
+                                  const Icon(Icons.verified,
+                                      color: Color(0xFF0052CC), size: 15),
+                                ],
+                                if (group.hasGoldenBadge) ...[
+                                  const SizedBox(width: 3),
+                                  const Icon(Icons.workspace_premium,
+                                      color: Color(0xFFD97706), size: 15),
+                                ],
+                              ],
+                            ),
+                            subtitle: const Text(
+                              "Teacher (Admin)",
+                              style: TextStyle(
+                                  fontSize: 12, color: Color(0xFF0052CC)),
+                            ),
+                          ),
+                          const Divider(),
+                          Row(
+                            children: [
+                              const Icon(Icons.lock_outline,
+                                  size: 16, color: Colors.grey),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  "Member directory is private and visible only to the teacher.",
+                                  style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey.shade600),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 24),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.red,
+                        side: const BorderSide(color: Colors.red),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                      onPressed: () {
+                        if (isTeacherAdmin) {
+                          _confirmDismissGroup(group);
+                        } else {
+                          _confirmExitGroup(group);
+                        }
+                      },
+                      icon: Icon(isTeacherAdmin
+                          ? Icons.delete_forever
+                          : Icons.exit_to_app),
+                      label: Text(
+                        isTeacherAdmin ? "Dismiss Group" : "Exit Group",
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              if (_isActionLoading)
+                Container(
+                  color: Colors.black26,
+                  child: const Center(
+                    child: CircularProgressIndicator(color: Colors.white),
+                  ),
+                ),
+            ],
+          );
+        },
+      ),
+    );
+  }
 }
