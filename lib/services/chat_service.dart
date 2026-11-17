@@ -6,7 +6,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
-import 'package:sqflite/sqflite.dart';
 import '../models/group_model.dart';
 import '../models/message_model.dart';
 import '../widgets/permanent_avatar.dart';
@@ -20,6 +19,50 @@ class ChatService {
   final Map<String, DateTime> _recentClientMessages = {};
 
   String get _currentUserId => _auth.currentUser?.uid ?? '';
+
+  Future<Map<String, dynamic>?> _safeDocData(
+      String collection, String docId) async {
+    if (docId.trim().isEmpty) return null;
+    try {
+      final doc = await _firestore.collection(collection).doc(docId).get();
+      if (doc.exists && doc.data() != null) return doc.data();
+    } catch (_) {}
+    return null;
+  }
+
+  bool _resolveIsVerified(
+    List<Map<String, dynamic>?> sources, {
+    bool fallback = false,
+  }) {
+    bool hasAnySource = false;
+    for (final src in sources) {
+      if (src == null) continue;
+      hasAnySource = true;
+      if (src['isVerified'] == true ||
+          src['status'] == 'approved' ||
+          src['verificationStatus'] == 'verified') {
+        return true;
+      }
+    }
+    return hasAnySource ? false : fallback;
+  }
+
+  String _pickNonEmpty(
+    List<Map<String, dynamic>?> sources,
+    List<String> keys, {
+    bool excludeGeneric = false,
+  }) {
+    for (final src in sources) {
+      if (src == null) continue;
+      for (final key in keys) {
+        final val = src[key]?.toString().trim() ?? '';
+        if (val.isEmpty) continue;
+        if (excludeGeneric && (val == 'Me' || val == 'User')) continue;
+        return val;
+      }
+    }
+    return '';
+  }
 
   Future<Map<String, dynamic>?> getUserProfile(
       String userId, bool isTeacher) async {
@@ -170,109 +213,55 @@ class ChatService {
 
     final String primaryCollection = isTeacher ? 'teachers' : 'students';
 
+    Map<String, dynamic> normalizeProfileMap(Map<String, dynamic> data) {
+      final map = Map<String, dynamic>.from(data);
+      map['status'] =
+          data['status'] ?? (data['isOnline'] == true ? 'Online' : 'Offline');
+      map['isOnline'] = data['isOnline'] == true;
+      map['lastSeen'] = data['lastSeen'] as Timestamp?;
+      map['fullName'] = data['fullName'] ??
+          data['name'] ??
+          data['displayName'] ??
+          data['teacherName'] ??
+          data['studentName'];
+      final String resolvedImageUrl = (data['profileImageUrl'] ??
+              data['photoUrl'] ??
+              data['profilePic'] ??
+              data['profileUrl'] ??
+              '')
+          .toString()
+          .trim();
+      map['profileImageUrl'] = resolvedImageUrl;
+      if (resolvedImageUrl.isNotEmpty) {
+        unawaited(PermanentAvatarStorage.precacheAvatar(
+          userId: userId,
+          imageUrl: resolvedImageUrl,
+        ));
+      }
+      map['isVerified'] = data['isVerified'] == true ||
+          data['status'] == 'approved' ||
+          data['verificationStatus'] == 'verified';
+      return map;
+    }
+
     return _firestore
         .collection(primaryCollection)
         .doc(userId)
         .snapshots()
         .asyncMap((doc) async {
       if (doc.exists && doc.data() != null) {
-        final data = doc.data()!;
-        final map = Map<String, dynamic>.from(data);
-        map['status'] =
-            data['status'] ?? (data['isOnline'] == true ? 'Online' : 'Offline');
-        map['isOnline'] = data['isOnline'] == true;
-        map['lastSeen'] = data['lastSeen'] as Timestamp?;
-        map['fullName'] = data['fullName'] ??
-            data['name'] ??
-            data['displayName'] ??
-            data['teacherName'] ??
-            data['studentName'];
-        final String resolvedImageUrl = (data['profileImageUrl'] ??
-                data['photoUrl'] ??
-                data['profilePic'] ??
-                data['profileUrl'] ??
-                '')
-            .toString()
-            .trim();
-        map['profileImageUrl'] = resolvedImageUrl;
-        if (resolvedImageUrl.isNotEmpty) {
-          unawaited(PermanentAvatarStorage.getOrDownloadAvatar(
-            userId: userId,
-            imageUrl: resolvedImageUrl,
-          ));
-        }
-        map['isVerified'] = data['isVerified'] == true ||
-            data['status'] == 'approved' ||
-            data['verificationStatus'] == 'verified';
-        return map;
+        return normalizeProfileMap(doc.data()!);
       }
 
-      final userDoc = await _firestore.collection('users').doc(userId).get();
-      if (userDoc.exists && userDoc.data() != null) {
-        final data = userDoc.data()!;
-        final map = Map<String, dynamic>.from(data);
-        map['status'] =
-            data['status'] ?? (data['isOnline'] == true ? 'Online' : 'Offline');
-        map['isOnline'] = data['isOnline'] == true;
-        map['lastSeen'] = data['lastSeen'] as Timestamp?;
-        map['fullName'] = data['fullName'] ??
-            data['name'] ??
-            data['displayName'] ??
-            data['teacherName'] ??
-            data['studentName'];
-        final String resolvedImageUrl = (data['profileImageUrl'] ??
-                data['photoUrl'] ??
-                data['profilePic'] ??
-                data['profileUrl'] ??
-                '')
-            .toString()
-            .trim();
-        map['profileImageUrl'] = resolvedImageUrl;
-        if (resolvedImageUrl.isNotEmpty) {
-          unawaited(PermanentAvatarStorage.getOrDownloadAvatar(
-            userId: userId,
-            imageUrl: resolvedImageUrl,
-          ));
-        }
-        map['isVerified'] = data['isVerified'] == true ||
-            data['status'] == 'approved' ||
-            data['verificationStatus'] == 'verified';
-        return map;
+      final userData = await _safeDocData('users', userId);
+      if (userData != null) {
+        return normalizeProfileMap(userData);
       }
 
       final String altCollection = isTeacher ? 'students' : 'teachers';
-      final altDoc =
-          await _firestore.collection(altCollection).doc(userId).get();
-      if (altDoc.exists && altDoc.data() != null) {
-        final data = altDoc.data()!;
-        final map = Map<String, dynamic>.from(data);
-        map['status'] =
-            data['status'] ?? (data['isOnline'] == true ? 'Online' : 'Offline');
-        map['isOnline'] = data['isOnline'] == true;
-        map['lastSeen'] = data['lastSeen'] as Timestamp?;
-        map['fullName'] = data['fullName'] ??
-            data['name'] ??
-            data['displayName'] ??
-            data['teacherName'] ??
-            data['studentName'];
-        final String resolvedImageUrl = (data['profileImageUrl'] ??
-                data['photoUrl'] ??
-                data['profilePic'] ??
-                data['profileUrl'] ??
-                '')
-            .toString()
-            .trim();
-        map['profileImageUrl'] = resolvedImageUrl;
-        if (resolvedImageUrl.isNotEmpty) {
-          unawaited(PermanentAvatarStorage.getOrDownloadAvatar(
-            userId: userId,
-            imageUrl: resolvedImageUrl,
-          ));
-        }
-        map['isVerified'] = data['isVerified'] == true ||
-            data['status'] == 'approved' ||
-            data['verificationStatus'] == 'verified';
-        return map;
+      final altData = await _safeDocData(altCollection, userId);
+      if (altData != null) {
+        return normalizeProfileMap(altData);
       }
 
       return {'status': 'Offline', 'lastSeen': null, 'isOnline': false};
@@ -293,52 +282,129 @@ class ChatService {
     required String studentName,
     required String teacherImage,
     required String studentImage,
+    bool? isTeacherVerified,
+    bool? isStudentVerified,
   }) async {
     try {
-      final String chatId = '${teacherId.trim()}_${studentId.trim()}';
+      final String cleanTeacherId = teacherId.trim();
+      final String cleanStudentId = studentId.trim();
+      final String chatId = '${cleanTeacherId}_$cleanStudentId';
       final chatRef = _firestore.collection('chats').doc(chatId);
-      final doc = await chatRef.get();
 
-      Map<String, dynamic> updateData = {
+      final results = await Future.wait([
+        chatRef.get(),
+        _safeDocData('teachers', cleanTeacherId),
+        _safeDocData('users', cleanTeacherId),
+        _safeDocData('students', cleanStudentId),
+        _safeDocData('users', cleanStudentId),
+      ]);
+
+      final doc = results[0] as DocumentSnapshot<Map<String, dynamic>>;
+      final teacherData = results[1] as Map<String, dynamic>?;
+      final teacherUserData = results[2] as Map<String, dynamic>?;
+      final studentData = results[3] as Map<String, dynamic>?;
+      final studentUserData = results[4] as Map<String, dynamic>?;
+
+      final existingData = doc.data();
+      final existingProfiles =
+          existingData?['userProfiles'] as Map<String, dynamic>?;
+      final existingTeacherProfile =
+          existingProfiles?[cleanTeacherId] as Map<String, dynamic>?;
+      final existingStudentProfile =
+          existingProfiles?[cleanStudentId] as Map<String, dynamic>?;
+
+      final String resolvedTeacherName = (teacherName.trim().isNotEmpty &&
+              teacherName.trim() != 'Me' &&
+              teacherName.trim() != 'User')
+          ? teacherName.trim()
+          : _pickNonEmpty(
+              [teacherData, teacherUserData],
+              const ['fullName', 'name', 'displayName', 'teacherName'],
+              excludeGeneric: true,
+            );
+
+      final String resolvedStudentName = (studentName.trim().isNotEmpty &&
+              studentName.trim() != 'Me' &&
+              studentName.trim() != 'User')
+          ? studentName.trim()
+          : _pickNonEmpty(
+              [studentData, studentUserData],
+              const ['fullName', 'name', 'displayName', 'studentName'],
+              excludeGeneric: true,
+            );
+
+      final String resolvedTeacherImage = teacherImage.trim().isNotEmpty
+          ? teacherImage.trim()
+          : _pickNonEmpty(
+              [teacherData, teacherUserData],
+              const ['profileImageUrl', 'photoUrl', 'profilePic', 'profileUrl'],
+            );
+
+      final String resolvedStudentImage = studentImage.trim().isNotEmpty
+          ? studentImage.trim()
+          : _pickNonEmpty(
+              [studentData, studentUserData],
+              const ['profileImageUrl', 'photoUrl', 'profilePic', 'profileUrl'],
+            );
+
+      final bool resolvedTeacherVerified = isTeacherVerified ??
+          _resolveIsVerified(
+            [teacherData, teacherUserData],
+            fallback: existingTeacherProfile?['isVerified'] == true,
+          );
+
+      final bool resolvedStudentVerified = isStudentVerified ??
+          _resolveIsVerified(
+            [studentData, studentUserData],
+            fallback: existingStudentProfile?['isVerified'] == true,
+          );
+
+      if (resolvedTeacherImage.isNotEmpty) {
+        unawaited(PermanentAvatarStorage.precacheAvatar(
+          userId: cleanTeacherId,
+          imageUrl: resolvedTeacherImage,
+        ));
+      }
+      if (resolvedStudentImage.isNotEmpty) {
+        unawaited(PermanentAvatarStorage.precacheAvatar(
+          userId: cleanStudentId,
+          imageUrl: resolvedStudentImage,
+        ));
+      }
+
+      final Map<String, dynamic> updateData = {
         'chatId': chatId,
-        'teacherId': teacherId,
-        'studentId': studentId,
-        'participants': [teacherId, studentId]..sort(),
+        'teacherId': cleanTeacherId,
+        'studentId': cleanStudentId,
+        'participants': [cleanTeacherId, cleanStudentId]..sort(),
         'isGroup': false,
       };
 
-      final bool validTeacherName = teacherName.isNotEmpty &&
-          teacherName != 'Me' &&
-          teacherName != 'User';
-      final bool validStudentName = studentName.isNotEmpty &&
-          studentName != 'Me' &&
-          studentName != 'User';
+      if (resolvedTeacherName.isNotEmpty) {
+        updateData['teacherName'] = resolvedTeacherName;
+      }
+      if (resolvedStudentName.isNotEmpty) {
+        updateData['studentName'] = resolvedStudentName;
+      }
+      if (resolvedTeacherImage.isNotEmpty) {
+        updateData['teacherImage'] = resolvedTeacherImage;
+      }
+      if (resolvedStudentImage.isNotEmpty) {
+        updateData['studentImage'] = resolvedStudentImage;
+      }
 
-      if (validTeacherName) {
-        updateData['teacherName'] = teacherName;
-      }
-      if (validStudentName) {
-        updateData['studentName'] = studentName;
-      }
-      if (teacherImage.isNotEmpty) updateData['teacherImage'] = teacherImage;
-      if (studentImage.isNotEmpty) updateData['studentImage'] = studentImage;
-
-      final Map<String, dynamic> userProfiles = {};
-      if (validTeacherName || teacherImage.isNotEmpty) {
-        userProfiles[teacherId] = {
-          if (validTeacherName) 'name': teacherName,
-          if (teacherImage.isNotEmpty) 'image': teacherImage,
-        };
-      }
-      if (validStudentName || studentImage.isNotEmpty) {
-        userProfiles[studentId] = {
-          if (validStudentName) 'name': studentName,
-          if (studentImage.isNotEmpty) 'image': studentImage,
-        };
-      }
-      if (userProfiles.isNotEmpty) {
-        updateData['userProfiles'] = userProfiles;
-      }
+      updateData['userProfiles'] = {
+        cleanTeacherId: {
+          if (resolvedTeacherName.isNotEmpty) 'name': resolvedTeacherName,
+          if (resolvedTeacherImage.isNotEmpty) 'image': resolvedTeacherImage,
+          'isVerified': resolvedTeacherVerified,
+        },
+        cleanStudentId: {
+          if (resolvedStudentName.isNotEmpty) 'name': resolvedStudentName,
+          if (resolvedStudentImage.isNotEmpty) 'image': resolvedStudentImage,
+          'isVerified': resolvedStudentVerified,
+        },
+      };
 
       if (!doc.exists) {
         updateData['lastMessage'] = 'Chat initialized';
@@ -557,9 +623,10 @@ class ChatService {
       if (chatDoc.exists && chatDoc.data() != null) {
         final data = chatDoc.data()!;
         if (data.containsKey('unreadCount_$receiverId')) {
-          currentUnread = (data['unreadCount_$receiverId'] ?? 0) as int;
+          currentUnread =
+              (data['unreadCount_$receiverId'] as num?)?.toInt() ?? 0;
         } else if (data['unreadFor'] == receiverId) {
-          currentUnread = (data['unreadCount'] ?? 0) as int;
+          currentUnread = (data['unreadCount'] as num?)?.toInt() ?? 0;
         }
       }
 
@@ -577,35 +644,9 @@ class ChatService {
       String studentImage =
           (existingChatData?['studentImage'] as String?) ?? '';
 
-      Future<Map<String, dynamic>?> safeDocData(
-          String collection, String docId) async {
-        try {
-          final doc = await _firestore.collection(collection).doc(docId).get();
-          if (doc.exists && doc.data() != null) return doc.data();
-        } catch (_) {}
-        return null;
-      }
-
-      String pickNonEmpty(
-        List<Map<String, dynamic>?> sources,
-        List<String> keys, {
-        bool excludeGeneric = false,
-      }) {
-        for (final src in sources) {
-          if (src == null) continue;
-          for (final key in keys) {
-            final val = src[key]?.toString().trim() ?? '';
-            if (val.isEmpty) continue;
-            if (excludeGeneric && (val == 'Me' || val == 'User')) continue;
-            return val;
-          }
-        }
-        return '';
-      }
-
       final userResults = await Future.wait([
-        safeDocData('users', senderId),
-        safeDocData('users', receiverId),
+        _safeDocData('users', senderId),
+        _safeDocData('users', receiverId),
       ]);
       final senderUserData = userResults[0];
       final receiverUserData = userResults[1];
@@ -622,10 +663,10 @@ class ChatService {
               .toLowerCase();
 
       final roleDocs = await Future.wait([
-        safeDocData('teachers', senderId),
-        safeDocData('teachers', receiverId),
-        safeDocData('students', senderId),
-        safeDocData('students', receiverId),
+        _safeDocData('teachers', senderId),
+        _safeDocData('teachers', receiverId),
+        _safeDocData('students', senderId),
+        _safeDocData('students', receiverId),
       ]);
       final senderTeacherData = roleDocs[0];
       final receiverTeacherData = roleDocs[1];
@@ -675,24 +716,53 @@ class ChatService {
               ? [receiverTeacherData, receiverUserData, receiverStudentData]
               : [receiverStudentData, receiverUserData, receiverTeacherData];
 
-      final String senderName = pickNonEmpty(
+      final String senderName = _pickNonEmpty(
         senderSources,
         const ['fullName', 'name', 'displayName', 'teacherName', 'studentName'],
         excludeGeneric: true,
       );
-      final String senderImage = pickNonEmpty(
+      final String senderImage = _pickNonEmpty(
         senderSources,
         const ['profileImageUrl', 'photoUrl', 'profilePic', 'profileUrl'],
       );
-      final String receiverName = pickNonEmpty(
+      final String receiverName = _pickNonEmpty(
         receiverSources,
         const ['fullName', 'name', 'displayName', 'teacherName', 'studentName'],
         excludeGeneric: true,
       );
-      final String receiverImage = pickNonEmpty(
+      final String receiverImage = _pickNonEmpty(
         receiverSources,
         const ['profileImageUrl', 'photoUrl', 'profilePic', 'profileUrl'],
       );
+
+      final existingProfiles =
+          existingChatData?['userProfiles'] as Map<String, dynamic>?;
+      final existingSenderProfile =
+          existingProfiles?[senderId] as Map<String, dynamic>?;
+      final existingReceiverProfile =
+          existingProfiles?[receiverId] as Map<String, dynamic>?;
+
+      final bool senderVerified = _resolveIsVerified(
+        senderSources,
+        fallback: existingSenderProfile?['isVerified'] == true,
+      );
+      final bool receiverVerified = _resolveIsVerified(
+        receiverSources,
+        fallback: existingReceiverProfile?['isVerified'] == true,
+      );
+
+      if (senderImage.isNotEmpty) {
+        unawaited(PermanentAvatarStorage.precacheAvatar(
+          userId: senderId,
+          imageUrl: senderImage,
+        ));
+      }
+      if (receiverImage.isNotEmpty) {
+        unawaited(PermanentAvatarStorage.precacheAvatar(
+          userId: receiverId,
+          imageUrl: receiverImage,
+        ));
+      }
 
       if (teacherId == senderId) {
         if (senderName.isNotEmpty) teacherName = senderName;
@@ -706,19 +776,18 @@ class ChatService {
         if (senderImage.isNotEmpty) studentImage = senderImage;
       }
 
-      final Map<String, dynamic> userProfiles = {};
-      if (senderName.isNotEmpty || senderImage.isNotEmpty) {
-        userProfiles[senderId] = {
+      final Map<String, dynamic> userProfiles = {
+        senderId: {
           if (senderName.isNotEmpty) 'name': senderName,
           if (senderImage.isNotEmpty) 'image': senderImage,
-        };
-      }
-      if (receiverName.isNotEmpty || receiverImage.isNotEmpty) {
-        userProfiles[receiverId] = {
+          'isVerified': senderVerified,
+        },
+        receiverId: {
           if (receiverName.isNotEmpty) 'name': receiverName,
           if (receiverImage.isNotEmpty) 'image': receiverImage,
-        };
-      }
+          'isVerified': receiverVerified,
+        },
+      };
 
       final Map<String, dynamic> metadataToMerge = {};
       if (teacherId.isNotEmpty) metadataToMerge['teacherId'] = teacherId;
@@ -731,9 +800,7 @@ class ChatService {
       if (studentImage.isNotEmpty) {
         metadataToMerge['studentImage'] = studentImage;
       }
-      if (userProfiles.isNotEmpty) {
-        metadataToMerge['userProfiles'] = userProfiles;
-      }
+      metadataToMerge['userProfiles'] = userProfiles;
 
       final Map<String, dynamic> chatUpdateData = {
         'chatId': correctChatId,
@@ -843,6 +910,13 @@ class ChatService {
                 (uData['photoUrl'] ?? uData['profileUrl'] ?? '').toString();
           }
         }
+      }
+
+      if (senderProfilePic.trim().isNotEmpty) {
+        unawaited(PermanentAvatarStorage.precacheAvatar(
+          userId: senderId,
+          imageUrl: senderProfilePic.trim(),
+        ));
       }
 
       DateTime? expiresAt;
@@ -1185,107 +1259,167 @@ class ChatService {
       return Stream.value(const []);
     }
 
-    _firestore
-        .collection('chats')
-        .doc(chatId)
-        .collection('messages')
-        .snapshots(includeMetadataChanges: false)
-        .listen((snapshot) async {
-      if (snapshot.docs.isNotEmpty) {
-        final List<MessageModel> incomingMessages = [];
-        final List<DocumentReference> docsToDeleteFromCloud = [];
+    late final StreamController<List<MessageModel>> controller;
+    StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? firestoreSub;
+    StreamSubscription<List<MessageModel>>? localSub;
 
-        for (final doc in snapshot.docs) {
-          final data = doc.data();
-          data['messageId'] = doc.id;
-          final msg = MessageModel.fromMap(data);
-          incomingMessages.add(msg);
+    controller = StreamController<List<MessageModel>>(
+      onListen: () {
+        localSub = _localStorage
+            .streamLocalMessages(chatRoomId: chatId)
+            .listen(
+          (messages) {
+            if (!controller.isClosed) {
+              controller.add(messages);
+            }
+          },
+          onError: (Object error, StackTrace stackTrace) {
+            if (!controller.isClosed) {
+              controller.addError(error, stackTrace);
+            }
+          },
+        );
 
-          if (_currentUserId.isNotEmpty && msg.receiverId == _currentUserId) {
-            docsToDeleteFromCloud.add(doc.reference);
-            if (msg.type == 'image' ||
-                msg.type == 'video' ||
-                msg.type == 'audio' ||
-                msg.type == 'document') {
-              _downloadAndCacheMediaLocally(msg.content, msg.messageId)
-                  .then((localPath) {
-                if (localPath != null) {
-                  _localStorage.updateLocalMediaPath(
-                    messageId: msg.messageId,
-                    chatRoomId: chatId,
-                    localPath: localPath,
-                  );
+        firestoreSub = _firestore
+            .collection('chats')
+            .doc(chatId)
+            .collection('messages')
+            .snapshots(includeMetadataChanges: false)
+            .listen((snapshot) async {
+          if (snapshot.docs.isNotEmpty) {
+            final List<MessageModel> incomingMessages = [];
+            final List<DocumentReference> docsToDeleteFromCloud = [];
+
+            for (final doc in snapshot.docs) {
+              final data = doc.data();
+              data['messageId'] = doc.id;
+              final msg = MessageModel.fromMap(data);
+              incomingMessages.add(msg);
+
+              if (_currentUserId.isNotEmpty &&
+                  msg.receiverId == _currentUserId) {
+                docsToDeleteFromCloud.add(doc.reference);
+                if (msg.type == 'image' ||
+                    msg.type == 'video' ||
+                    msg.type == 'audio' ||
+                    msg.type == 'document') {
+                  _downloadAndCacheMediaLocally(msg.content, msg.messageId)
+                      .then((localPath) {
+                    if (localPath != null) {
+                      _localStorage.updateLocalMediaPath(
+                        messageId: msg.messageId,
+                        chatRoomId: chatId,
+                        localPath: localPath,
+                      );
+                    }
+                  });
                 }
-              });
+              }
+            }
+
+            await _localStorage.saveMessagesBatch(incomingMessages, chatId);
+
+            if (docsToDeleteFromCloud.isNotEmpty) {
+              final batch = _firestore.batch();
+              for (final ref in docsToDeleteFromCloud) {
+                batch.delete(ref);
+              }
+              await batch.commit().catchError((_) {});
             }
           }
-        }
+        }, onError: (e) {
+          _handleError('getMessages (Listener error)', e);
+        });
+      },
+      onCancel: () async {
+        await firestoreSub?.cancel();
+        await localSub?.cancel();
+      },
+    );
 
-        await _localStorage.saveMessagesBatch(incomingMessages, chatId);
-
-        if (docsToDeleteFromCloud.isNotEmpty) {
-          final batch = _firestore.batch();
-          for (final ref in docsToDeleteFromCloud) {
-            batch.delete(ref);
-          }
-          await batch.commit().catchError((_) {});
-        }
-      }
-    }, onError: (e) {
-      _handleError('getMessages (Listener error)', e);
-    });
-
-    return _localStorage.streamLocalMessages(chatRoomId: chatId);
+    return controller.stream;
   }
 
   Stream<List<MessageModel>> getGroupMessagesStream(
     String groupId, {
     String? categoryFilter,
   }) {
-    _firestore
-        .collection('groups')
-        .doc(groupId)
-        .collection('messages')
-        .snapshots(includeMetadataChanges: false)
-        .listen((snapshot) async {
-      if (snapshot.docs.isNotEmpty) {
-        final List<MessageModel> incomingGroupMessages = [];
+    if (groupId.trim().isEmpty) {
+      return Stream.value(const []);
+    }
 
-        for (final doc in snapshot.docs) {
-          final data = doc.data();
-          data['messageId'] = doc.id;
-          final msg = MessageModel.fromMap(data);
-          incomingGroupMessages.add(msg);
+    late final StreamController<List<MessageModel>> controller;
+    StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? firestoreSub;
+    StreamSubscription<List<MessageModel>>? localSub;
 
-          if (_currentUserId.isNotEmpty &&
-              msg.senderId != _currentUserId &&
-              (msg.type == 'image' ||
-                  msg.type == 'video' ||
-                  msg.type == 'audio' ||
-                  msg.type == 'document')) {
-            _downloadAndCacheMediaLocally(msg.content, msg.messageId)
-                .then((localPath) {
-              if (localPath != null) {
-                _localStorage.updateLocalMediaPath(
-                  messageId: msg.messageId,
-                  chatRoomId: groupId,
-                  localPath: localPath,
-                );
+    controller = StreamController<List<MessageModel>>(
+      onListen: () {
+        localSub = _localStorage
+            .streamLocalMessages(
+          chatRoomId: groupId,
+          categoryFilter: categoryFilter,
+        )
+            .listen(
+          (messages) {
+            if (!controller.isClosed) {
+              controller.add(messages);
+            }
+          },
+          onError: (Object error, StackTrace stackTrace) {
+            if (!controller.isClosed) {
+              controller.addError(error, stackTrace);
+            }
+          },
+        );
+
+        firestoreSub = _firestore
+            .collection('groups')
+            .doc(groupId)
+            .collection('messages')
+            .snapshots(includeMetadataChanges: false)
+            .listen((snapshot) async {
+          if (snapshot.docs.isNotEmpty) {
+            final List<MessageModel> incomingGroupMessages = [];
+
+            for (final doc in snapshot.docs) {
+              final data = doc.data();
+              data['messageId'] = doc.id;
+              final msg = MessageModel.fromMap(data);
+              incomingGroupMessages.add(msg);
+
+              if (_currentUserId.isNotEmpty &&
+                  msg.senderId != _currentUserId &&
+                  (msg.type == 'image' ||
+                      msg.type == 'video' ||
+                      msg.type == 'audio' ||
+                      msg.type == 'document')) {
+                _downloadAndCacheMediaLocally(msg.content, msg.messageId)
+                    .then((localPath) {
+                  if (localPath != null) {
+                    _localStorage.updateLocalMediaPath(
+                      messageId: msg.messageId,
+                      chatRoomId: groupId,
+                      localPath: localPath,
+                    );
+                  }
+                });
               }
-            });
+            }
+
+            await _localStorage.saveMessagesBatch(
+                incomingGroupMessages, groupId);
           }
-        }
-
-        await _localStorage.saveMessagesBatch(incomingGroupMessages, groupId);
-      }
-    }, onError: (e) {
-      _handleError('getGroupMessagesStream (Listener error)', e);
-    });
-
-    return _localStorage.streamLocalMessages(
-      chatRoomId: groupId,
-      categoryFilter: categoryFilter,
+        }, onError: (e) {
+          _handleError('getGroupMessagesStream (Listener error)', e);
+        });
+      },
+      onCancel: () async {
+        await firestoreSub?.cancel();
+        await localSub?.cancel();
+      },
     );
+
+    return controller.stream;
   }
 
   Future<List<MessageModel>> getPaginatedMessages({
