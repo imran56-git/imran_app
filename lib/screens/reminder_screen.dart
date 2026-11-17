@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../services/reminder_service.dart';
 import '../../widgets/success_toast.dart';
+import 'diary_screen.dart';
 
 class ReminderScreen extends StatefulWidget {
   final String currentUserId;
@@ -588,6 +589,19 @@ class _ReminderScreenState extends State<ReminderScreen> {
                           Navigator.pop(sheetContext);
                           if (widget.onCreateDiary != null) {
                             widget.onCreateDiary!(studentId, studentName, amount);
+                          } else {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => DiaryScreen(
+                                  currentUserId: widget.currentUserId,
+                                  currentUserName: widget.currentUserName,
+                                  prefillStudentId: studentId,
+                                  prefillStudentName: studentName,
+                                  prefillAmount: amount,
+                                ),
+                              ),
+                            );
                           }
                         },
                       ),
