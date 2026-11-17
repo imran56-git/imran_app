@@ -1,6 +1,3 @@
-Here is the complete, updated **Step 6: `lib/screens/student_profile_screen.dart`** for **Roadmap 9.0**.
-
-```dart
 import 'dart:async';
 import 'dart:ui';
 import 'package:animate_do/animate_do.dart';
