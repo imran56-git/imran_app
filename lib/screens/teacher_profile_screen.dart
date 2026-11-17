@@ -1,6 +1,8 @@
+Here is the complete, updated **Step 5: `lib/screens/teacher_profile_screen.dart`** for **Roadmap 9.0**.
+
+```dart
 import 'dart:async';
 import 'dart:ui';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
@@ -56,8 +58,6 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
   bool _isCurrentUserTeacher = false;
   bool _isProfileNotFound = false;
 
-  late AnimationController _glowController;
-  late Animation<double> _glowAnimation;
   late AnimationController _menuMenuAnimController;
   late Animation<double> _menuScaleAnimation;
   late Animation<double> _menuFadeAnimation;
@@ -117,15 +117,6 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
     _initCachedStreams();
     fetchTeacherData();
     checkUnreadNotifications();
-
-    _glowController = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 2),
-    )..repeat(reverse: true);
-
-    _glowAnimation = Tween<double>(begin: 0.3, end: 0.9).animate(
-      CurvedAnimation(parent: _glowController, curve: Curves.easeInOut),
-    );
 
     _menuMenuAnimController = AnimationController(
       vsync: this,
@@ -209,8 +200,19 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
 
   @override
   void dispose() {
+    if (isEditing) {
+      if (_pendingProfileImageUrl != null &&
+          _pendingProfileImageUrl != _initialSavedProfileUrl) {
+        unawaited(_deleteOldStorageFileIfDifferent(
+            _pendingProfileImageUrl, _initialSavedProfileUrl));
+      }
+      if (_pendingBannerImageUrl != null &&
+          _pendingBannerImageUrl != _initialSavedBannerUrl) {
+        unawaited(_deleteOldStorageFileIfDifferent(
+            _pendingBannerImageUrl, _initialSavedBannerUrl));
+      }
+    }
     _notifSubscription?.cancel();
-    _glowController.dispose();
     _menuMenuAnimController.dispose();
     _nameController.dispose();
     _phoneController.dispose();
@@ -227,8 +229,9 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
     final String cleanOld = oldUrl?.trim() ?? '';
     final String cleanNew = newUrl?.trim() ?? '';
     if (cleanOld.isEmpty ||
-        !cleanOld.startsWith('http') ||
-        !cleanOld.contains('firebasestorage') ||
+        (!cleanOld.startsWith('http') && !cleanOld.startsWith('gs://')) ||
+        (!cleanOld.contains('firebasestorage') &&
+            !cleanOld.startsWith('gs://')) ||
         cleanOld == cleanNew) {
       return;
     }
@@ -320,21 +323,34 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
         return;
       }
 
-      if (mounted) {
-        final String expVal = (data?['experience'] ??
-                data?['teachingExperience'] ??
-                data?['experienceYears'] ??
-                '')
-            .toString();
-        final String savedProfile =
-            (data?['profileImageUrl'] ?? data?['photoUrl'] ?? '')
-                .toString()
-                .trim();
-        final String savedBanner =
-            (data?['bannerImageUrl'] ?? data?['coverImageUrl'] ?? '')
-                .toString()
-                .trim();
+      final String expVal = (data?['experience'] ??
+              data?['teachingExperience'] ??
+              data?['experienceYears'] ??
+              '')
+          .toString();
+      final String savedProfile =
+          (data?['profileImageUrl'] ?? data?['photoUrl'] ?? '')
+              .toString()
+              .trim();
+      final String savedBanner =
+          (data?['bannerImageUrl'] ?? data?['coverImageUrl'] ?? '')
+              .toString()
+              .trim();
 
+      if (savedProfile.isNotEmpty) {
+        unawaited(PermanentAvatarStorage.precacheAvatar(
+          userId: targetId,
+          imageUrl: savedProfile,
+        ));
+      }
+      if (savedBanner.isNotEmpty) {
+        unawaited(PermanentAvatarStorage.precacheBanner(
+          userId: targetId,
+          imageUrl: savedBanner,
+        ));
+      }
+
+      if (mounted) {
         setState(() {
           _isCurrentUserTeacher = isCurrentTeacher;
           _isProfileNotFound = false;
@@ -423,6 +439,11 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
       if (!mounted) return;
 
       if (freshUrl != null && freshUrl.isNotEmpty) {
+        unawaited(PermanentAvatarStorage.precacheAvatar(
+          userId: uid,
+          imageUrl: freshUrl,
+        ));
+
         setState(() {
           _pendingProfileImageUrl = freshUrl;
           teacherData ??= {};
@@ -446,10 +467,6 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
               _initialSavedProfileUrl, freshUrl);
           _initialSavedProfileUrl = freshUrl;
           _pendingProfileImageUrl = null;
-          unawaited(PermanentAvatarStorage.getOrDownloadAvatar(
-            userId: uid,
-            imageUrl: freshUrl,
-          ));
         } else {
           if (previousUrl != null && previousUrl != _initialSavedProfileUrl) {
             await _deleteOldStorageFileIfDifferent(previousUrl, freshUrl);
@@ -493,6 +510,11 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
       if (!mounted) return;
 
       if (bannerUrl != null && bannerUrl.isNotEmpty) {
+        unawaited(PermanentAvatarStorage.precacheBanner(
+          userId: uid,
+          imageUrl: bannerUrl,
+        ));
+
         setState(() {
           _pendingBannerImageUrl = bannerUrl;
           teacherData ??= {};
@@ -720,10 +742,14 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                             .delete()
                             .catchError((_) {});
 
+                        await PermanentAvatarStorage.clearOwnerCache(uid);
+                        await PermanentAvatarStorage.clearOwnerCache(
+                            '${PermanentAvatarStorage.bannerPrefix}$uid');
+
                         await user.delete();
 
                         passwordController.dispose();
-                        Navigator.pop(dialogCtx);
+                        if (dialogCtx.mounted) Navigator.pop(dialogCtx);
 
                         await _clearLocalSessionAndNavigate();
                       } on FirebaseAuthException catch (e) {
@@ -845,7 +871,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
         await _deleteOldStorageFileIfDifferent(
             _initialSavedProfileUrl, _pendingProfileImageUrl);
         _initialSavedProfileUrl = _pendingProfileImageUrl;
-        unawaited(PermanentAvatarStorage.getOrDownloadAvatar(
+        unawaited(PermanentAvatarStorage.precacheAvatar(
           userId: uid,
           imageUrl: _pendingProfileImageUrl!,
         ));
@@ -855,6 +881,10 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
         await _deleteOldStorageFileIfDifferent(
             _initialSavedBannerUrl, _pendingBannerImageUrl);
         _initialSavedBannerUrl = _pendingBannerImageUrl;
+        unawaited(PermanentAvatarStorage.precacheBanner(
+          userId: uid,
+          imageUrl: _pendingBannerImageUrl!,
+        ));
       }
 
       if (mounted) {
@@ -1578,16 +1608,6 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
     );
   }
 
-  ImageProvider? _resolveBannerImageProvider() {
-    final String? bannerUrl = _pendingBannerImageUrl ??
-        (teacherData?['bannerImageUrl'] ?? teacherData?['coverImageUrl'])
-            ?.toString();
-    final String cleanUrl = (bannerUrl ?? '').trim();
-    return (cleanUrl.startsWith('http://') || cleanUrl.startsWith('https://'))
-        ? CachedNetworkImageProvider(cleanUrl)
-        : null;
-  }
-
   @override
   Widget build(BuildContext context) {
     super.build(context);
@@ -1705,10 +1725,18 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
     final double bannerHeight = 205.0 + topInset;
     const double profileRadius = 56.0;
     final bool canPopScreen = Navigator.canPop(context) && !isOwnProfile;
-    final ImageProvider? bannerProvider = _resolveBannerImageProvider();
-    final String? currentBannerUrl = _pendingBannerImageUrl ??
-        (teacherData?['bannerImageUrl'] ?? teacherData?['coverImageUrl'])
-            ?.toString();
+
+    final String targetId = widget.currentUserId.isNotEmpty
+        ? widget.currentUserId
+        : (_auth.currentUser?.uid ?? '');
+
+    final String cleanBannerUrl = (_pendingBannerImageUrl ??
+            (teacherData?['bannerImageUrl'] ?? teacherData?['coverImageUrl'])
+                ?.toString() ??
+            '')
+        .trim();
+    final bool hasValidBanner = cleanBannerUrl.startsWith('http://') ||
+        cleanBannerUrl.startsWith('https://');
 
     return PopScope(
       canPop: !_isMenuExpanded,
@@ -1748,11 +1776,9 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                             GestureDetector(
                               behavior: HitTestBehavior.opaque,
                               onTap: () {
-                                if (!isEditing &&
-                                    currentBannerUrl != null &&
-                                    currentBannerUrl.isNotEmpty) {
+                                if (!isEditing && hasValidBanner) {
                                   _openFullScreenImageViewer(
-                                    currentBannerUrl,
+                                    cleanBannerUrl,
                                     _nameController.text.isEmpty
                                         ? 'Cover Banner'
                                         : _nameController.text,
@@ -1773,266 +1799,249 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                                     begin: Alignment.topLeft,
                                     end: Alignment.bottomRight,
                                   ),
-                                  image: bannerProvider != null
-                                      ? DecorationImage(
-                                          image: bannerProvider,
-                                          fit: BoxFit.cover,
-                                        )
-                                      : null,
-                                  borderRadius:
-                                      const BorderRadius.vertical(
+                                  borderRadius: const BorderRadius.vertical(
                                     bottom: Radius.circular(30),
                                   ),
                                   boxShadow: [
                                     BoxShadow(
-                                      color:
-                                          _primaryNavy.withOpacity(0.16),
+                                      color: _primaryNavy.withOpacity(0.16),
                                       blurRadius: 20,
                                       offset: const Offset(0, 8),
                                     ),
                                   ],
                                 ),
-                                child: Stack(
-                                  fit: StackFit.expand,
-                                  children: [
-                                    if (bannerProvider == null)
-                                      Positioned(
-                                        right: -30,
-                                        top: -20,
-                                        child: Container(
-                                          width: 170,
-                                          height: 170,
-                                          decoration: BoxDecoration(
-                                            shape: BoxShape.circle,
-                                            color: Colors.white
-                                                .withOpacity(0.05),
+                                child: ClipRRect(
+                                  borderRadius: const BorderRadius.vertical(
+                                    bottom: Radius.circular(30),
+                                  ),
+                                  child: Stack(
+                                    fit: StackFit.expand,
+                                    children: [
+                                      if (hasValidBanner)
+                                        Positioned.fill(
+                                          child: PermanentCoverBanner(
+                                            userId: targetId,
+                                            imageUrl: cleanBannerUrl,
+                                            width: double.infinity,
+                                            height: bannerHeight,
+                                            fit: BoxFit.cover,
+                                            gradientColors: const [
+                                              Color(0xFF0F172A),
+                                              Color(0xFF1E3A8A),
+                                              Color(0xFF1E4C7A),
+                                            ],
+                                          ),
+                                        )
+                                      else
+                                        Positioned(
+                                          right: -30,
+                                          top: -20,
+                                          child: Container(
+                                            width: 170,
+                                            height: 170,
+                                            decoration: BoxDecoration(
+                                              shape: BoxShape.circle,
+                                              color:
+                                                  Colors.white.withOpacity(0.05),
+                                            ),
+                                          ),
+                                        ),
+                                      Container(
+                                        decoration: BoxDecoration(
+                                          gradient: LinearGradient(
+                                            begin: Alignment.topCenter,
+                                            end: Alignment.bottomCenter,
+                                            colors: [
+                                              Colors.black.withOpacity(0.48),
+                                              Colors.transparent,
+                                              Colors.black.withOpacity(0.42),
+                                            ],
                                           ),
                                         ),
                                       ),
-                                    Container(
-                                      decoration: BoxDecoration(
-                                        borderRadius:
-                                            const BorderRadius.vertical(
-                                          bottom: Radius.circular(30),
-                                        ),
-                                        gradient: LinearGradient(
-                                          begin: Alignment.topCenter,
-                                          end: Alignment.bottomCenter,
-                                          colors: [
-                                            Colors.black
-                                                .withOpacity(0.48),
-                                            Colors.transparent,
-                                            Colors.black
-                                                .withOpacity(0.42),
+                                      Positioned(
+                                        top: topInset + 10,
+                                        left: 14,
+                                        right: 14,
+                                        child: Row(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.spaceBetween,
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.center,
+                                          children: [
+                                            Expanded(
+                                              child: Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  if (canPopScreen)
+                                                    Container(
+                                                      margin:
+                                                          const EdgeInsets.only(
+                                                              right: 8),
+                                                      decoration: BoxDecoration(
+                                                        color: Colors.black
+                                                            .withOpacity(0.28),
+                                                        borderRadius:
+                                                            BorderRadius
+                                                                .circular(12),
+                                                      ),
+                                                      child: IconButton(
+                                                        icon: const Icon(
+                                                          Icons
+                                                              .arrow_back_ios_new_rounded,
+                                                          color: Colors.white,
+                                                          size: 18,
+                                                        ),
+                                                        onPressed: () =>
+                                                            Navigator.pop(
+                                                                context),
+                                                      ),
+                                                    )
+                                                  else
+                                                    const SizedBox(width: 4),
+                                                  Flexible(
+                                                    child: Text(
+                                                      isOwnProfile
+                                                          ? (isEditing
+                                                              ? 'Edit Profile'
+                                                              : 'My Profile')
+                                                          : 'Educator Profile',
+                                                      maxLines: 1,
+                                                      overflow:
+                                                          TextOverflow.ellipsis,
+                                                      style: const TextStyle(
+                                                        fontWeight:
+                                                            FontWeight.w900,
+                                                        color: Colors.white,
+                                                        fontSize: 20,
+                                                        letterSpacing: 0.2,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Container(
+                                              decoration: BoxDecoration(
+                                                color: _isMenuExpanded
+                                                    ? Colors.white
+                                                        .withOpacity(0.18)
+                                                    : Colors.black
+                                                        .withOpacity(0.28),
+                                                borderRadius:
+                                                    BorderRadius.circular(12),
+                                                border: Border.all(
+                                                    color: Colors.white
+                                                        .withOpacity(0.22)),
+                                              ),
+                                              child: IconButton(
+                                                visualDensity:
+                                                    VisualDensity.compact,
+                                                icon: Icon(
+                                                  _isMenuExpanded
+                                                      ? Icons.close_rounded
+                                                      : Icons.more_vert_rounded,
+                                                  color: Colors.white,
+                                                  size: 22,
+                                                ),
+                                                tooltip: 'Menu',
+                                                onPressed: () {
+                                                  if (_isMenuExpanded) {
+                                                    _closeMenu();
+                                                  } else {
+                                                    _openMenu();
+                                                  }
+                                                },
+                                              ),
+                                            ),
                                           ],
                                         ),
                                       ),
-                                    ),
-                                    Positioned(
-                                      top: topInset + 10,
-                                      left: 14,
-                                      right: 14,
-                                      child: Row(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment
-                                                .spaceBetween,
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.center,
-                                        children: [
-                                          Expanded(
-                                            child: Row(
-                                              mainAxisSize:
-                                                  MainAxisSize.min,
-                                              children: [
-                                                if (canPopScreen)
-                                                  Container(
-                                                    margin:
-                                                        const EdgeInsets
-                                                            .only(
-                                                            right: 8),
-                                                    decoration:
-                                                        BoxDecoration(
+                                      if (isOwnProfile)
+                                        Positioned(
+                                          right: 16,
+                                          bottom: 14,
+                                          child: Material(
+                                            color: Colors.transparent,
+                                            child: InkWell(
+                                              borderRadius:
+                                                  BorderRadius.circular(20),
+                                              onTap: _isUploadingBanner
+                                                  ? null
+                                                  : _pickAndUploadBanner,
+                                              child: ClipRRect(
+                                                borderRadius:
+                                                    BorderRadius.circular(20),
+                                                child: BackdropFilter(
+                                                  filter: ImageFilter.blur(
+                                                      sigmaX: 10, sigmaY: 10),
+                                                  child: Container(
+                                                    padding: const EdgeInsets
+                                                        .symmetric(
+                                                      horizontal: 12,
+                                                      vertical: 7,
+                                                    ),
+                                                    decoration: BoxDecoration(
                                                       color: Colors.black
-                                                          .withOpacity(
-                                                              0.28),
+                                                          .withOpacity(0.45),
                                                       borderRadius:
-                                                          BorderRadius
-                                                              .circular(
-                                                                  12),
-                                                    ),
-                                                    child: IconButton(
-                                                      icon: const Icon(
-                                                        Icons
-                                                            .arrow_back_ios_new_rounded,
-                                                        color:
-                                                            Colors.white,
-                                                        size: 18,
+                                                          BorderRadius.circular(
+                                                              20),
+                                                      border: Border.all(
+                                                        color: Colors.white
+                                                            .withOpacity(0.35),
+                                                        width: 1,
                                                       ),
-                                                      onPressed: () =>
-                                                          Navigator.pop(
-                                                              context),
                                                     ),
-                                                  )
-                                                else
-                                                  const SizedBox(
-                                                      width: 4),
-                                                Flexible(
-                                                  child: Text(
-                                                    isOwnProfile
-                                                        ? (isEditing
-                                                            ? 'Edit Profile'
-                                                            : 'My Profile')
-                                                        : 'Educator Profile',
-                                                    maxLines: 1,
-                                                    overflow:
-                                                        TextOverflow
-                                                            .ellipsis,
-                                                    style:
-                                                        const TextStyle(
-                                                      fontWeight:
-                                                          FontWeight.w900,
-                                                      color: Colors.white,
-                                                      fontSize: 20,
-                                                      letterSpacing: 0.2,
-                                                    ),
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                          const SizedBox(width: 8),
-                                          Container(
-                                            decoration: BoxDecoration(
-                                              color: _isMenuExpanded
-                                                  ? Colors.white
-                                                      .withOpacity(0.18)
-                                                  : Colors.black
-                                                      .withOpacity(0.28),
-                                              borderRadius:
-                                                  BorderRadius.circular(
-                                                      12),
-                                              border: Border.all(
-                                                  color: Colors.white
-                                                      .withOpacity(0.22)),
-                                            ),
-                                            child: IconButton(
-                                              visualDensity:
-                                                  VisualDensity.compact,
-                                              icon: Icon(
-                                                _isMenuExpanded
-                                                    ? Icons.close_rounded
-                                                    : Icons
-                                                        .more_vert_rounded,
-                                                color: Colors.white,
-                                                size: 22,
-                                              ),
-                                              tooltip: 'Menu',
-                                              onPressed: () {
-                                                if (_isMenuExpanded) {
-                                                  _closeMenu();
-                                                } else {
-                                                  _openMenu();
-                                                }
-                                              },
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    if (isOwnProfile)
-                                      Positioned(
-                                        right: 16,
-                                        bottom: 14,
-                                        child: Material(
-                                          color: Colors.transparent,
-                                          child: InkWell(
-                                            borderRadius:
-                                                BorderRadius.circular(20),
-                                            onTap: _isUploadingBanner
-                                                ? null
-                                                : _pickAndUploadBanner,
-                                            child: ClipRRect(
-                                              borderRadius:
-                                                  BorderRadius.circular(
-                                                      20),
-                                              child: BackdropFilter(
-                                                filter: ImageFilter.blur(
-                                                    sigmaX: 10,
-                                                    sigmaY: 10),
-                                                child: Container(
-                                                  padding:
-                                                      const EdgeInsets
-                                                          .symmetric(
-                                                    horizontal: 12,
-                                                    vertical: 7,
-                                                  ),
-                                                  decoration:
-                                                      BoxDecoration(
-                                                    color: Colors.black
-                                                        .withOpacity(
-                                                            0.45),
-                                                    borderRadius:
-                                                        BorderRadius
-                                                            .circular(20),
-                                                    border: Border.all(
-                                                      color: Colors.white
-                                                          .withOpacity(
-                                                              0.35),
-                                                      width: 1,
-                                                    ),
-                                                  ),
-                                                  child: Row(
-                                                    mainAxisSize:
-                                                        MainAxisSize.min,
-                                                    children: [
-                                                      if (_isUploadingBanner)
-                                                        const SizedBox(
-                                                          width: 14,
-                                                          height: 14,
-                                                          child:
-                                                              CircularProgressIndicator(
-                                                            strokeWidth:
-                                                                2,
-                                                            color: Colors
-                                                                .white,
+                                                    child: Row(
+                                                      mainAxisSize:
+                                                          MainAxisSize.min,
+                                                      children: [
+                                                        if (_isUploadingBanner)
+                                                          const SizedBox(
+                                                            width: 14,
+                                                            height: 14,
+                                                            child:
+                                                                CircularProgressIndicator(
+                                                              strokeWidth: 2,
+                                                              color:
+                                                                  Colors.white,
+                                                            ),
+                                                          )
+                                                        else
+                                                          const Icon(
+                                                            Icons
+                                                                .photo_camera_back_rounded,
+                                                            color: Colors.white,
+                                                            size: 15,
                                                           ),
-                                                        )
-                                                      else
-                                                        const Icon(
-                                                          Icons
-                                                              .photo_camera_back_rounded,
-                                                          color: Colors
-                                                              .white,
-                                                          size: 15,
+                                                        const SizedBox(
+                                                            width: 6),
+                                                        Text(
+                                                          _isUploadingBanner
+                                                              ? 'Compressing...'
+                                                              : (hasValidBanner
+                                                                  ? 'Change Cover'
+                                                                  : 'Add Cover'),
+                                                          style:
+                                                              const TextStyle(
+                                                            color: Colors.white,
+                                                            fontSize: 11.5,
+                                                            fontWeight:
+                                                                FontWeight.w700,
+                                                          ),
                                                         ),
-                                                      const SizedBox(
-                                                          width: 6),
-                                                      Text(
-                                                        _isUploadingBanner
-                                                            ? 'Compressing...'
-                                                            : (bannerProvider !=
-                                                                    null
-                                                                ? 'Change Cover'
-                                                                : 'Add Cover'),
-                                                        style:
-                                                            const TextStyle(
-                                                          color: Colors
-                                                              .white,
-                                                          fontSize: 11.5,
-                                                          fontWeight:
-                                                              FontWeight
-                                                                  .w700,
-                                                        ),
-                                                      ),
-                                                    ],
+                                                      ],
+                                                    ),
                                                   ),
                                                 ),
                                               ),
                                             ),
                                           ),
                                         ),
-                                      ),
-                                  ],
+                                    ],
+                                  ),
                                 ),
                               ),
                             ),
@@ -2355,25 +2364,13 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
 
   Widget _buildProfileImage(double radius) {
     final rawUrl = _pendingProfileImageUrl ?? teacherData?['profileImageUrl'];
-    final String? url =
-        (rawUrl != null && rawUrl.toString().trim().isNotEmpty)
-            ? rawUrl.toString().trim()
-            : null;
-    final bool hasValidUrl = url != null &&
-        (url.startsWith('http://') || url.startsWith('https://'));
+    final String url = (rawUrl?.toString() ?? '').trim();
     final String nameText = _nameController.text.trim().isNotEmpty
         ? _nameController.text.trim()
         : 'T';
     final String targetId = widget.currentUserId.isNotEmpty
         ? widget.currentUserId
         : (_auth.currentUser?.uid ?? '');
-
-    if (hasValidUrl && targetId.isNotEmpty) {
-      unawaited(PermanentAvatarStorage.getOrDownloadAvatar(
-        userId: targetId,
-        imageUrl: url,
-      ));
-    }
 
     final bool isVerified = BadgeTierResolver.isTeacherVerified(teacherData);
     final bool hasGolden = BadgeTierResolver.hasGoldenTenureBadge(teacherData);
@@ -2398,7 +2395,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
               ? _pickCropAndUploadProfileImage
               : () {
                   _openFullScreenImageViewer(
-                    url ?? '',
+                    url,
                     nameText,
                     subtitle: _instituteController.text.trim().isNotEmpty
                         ? _instituteController.text.trim()
@@ -2424,21 +2421,12 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
               child: Stack(
                 alignment: Alignment.center,
                 children: [
-                  CircleAvatar(
+                  PermanentProfileAvatar(
+                    userId: targetId,
+                    imageUrl: url,
+                    fallbackName: nameText,
                     radius: radius,
-                    backgroundColor: const Color(0xFFE0F2FE),
-                    backgroundImage:
-                        hasValidUrl ? CachedNetworkImageProvider(url!) : null,
-                    child: !hasValidUrl
-                        ? Text(
-                            nameText[0].toUpperCase(),
-                            style: const TextStyle(
-                              fontSize: 36,
-                              fontWeight: FontWeight.w900,
-                              color: _brandBlue,
-                            ),
-                          )
-                        : null,
+                    gradientColors: const [_brandBlue, _accentBlue],
                   ),
                   if (_isUploadingProfileImage)
                     Container(
