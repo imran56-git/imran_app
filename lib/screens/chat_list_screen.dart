@@ -184,7 +184,29 @@ class _ChatListScreenState extends State<ChatListScreen>
     );
   }
 
-  void _toggleSelection(String docId) {
+  bool _isOfficialChatDoc(String docId, Map<String, dynamic> data) {
+    final List<dynamic> participants =
+        (data['participants'] as List<dynamic>?) ?? const [];
+    return data['isOfficial'] == true ||
+        docId.startsWith('official_desk_') ||
+        data['senderId'] == 'OFFICIAL_FYBTT_DESK' ||
+        data['lastSenderId'] == 'OFFICIAL_FYBTT_DESK' ||
+        participants.contains('OFFICIAL_FYBTT_DESK');
+  }
+
+  void _toggleSelection(String docId, {bool isOfficial = false}) {
+    if (isOfficial) {
+      HapticFeedback.lightImpact();
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('FYBTT official channel is protected and cannot be deleted.'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
     HapticFeedback.selectionClick();
     setState(() {
       if (_selectedChatDocIds.contains(docId)) {
@@ -270,6 +292,7 @@ class _ChatListScreenState extends State<ChatListScreen>
               _clearSelection();
 
               for (final String docId in idsToDelete) {
+                if (docId.startsWith('official_desk_')) continue;
                 try {
                   final chatRef =
                       FirebaseFirestore.instance.collection('chats').doc(docId);
@@ -375,6 +398,10 @@ class _ChatListScreenState extends State<ChatListScreen>
     final lastMessage =
         (chatData['lastMessage'] ?? '').toString().toLowerCase();
     return name.contains(_searchText) || lastMessage.contains(_searchText);
+  }
+
+  String _formatSingleLinePreview(String text) {
+    return text.replaceAll(RegExp(r'\s+'), ' ').trim();
   }
 
   Widget _buildAdvancedSegmentedTabs() {
@@ -539,20 +566,33 @@ class _ChatListScreenState extends State<ChatListScreen>
         final rawChatDocs = activeData.docs;
         final Map<String, DocumentSnapshot> uniqueChatsMap = {};
 
-        for (var doc in rawChatDocs) {
+        for (final doc in rawChatDocs) {
           final data = doc.data() as Map<String, dynamic>;
-          final List<dynamic> deletedBy =
-              (data['deletedBy'] as List<dynamic>?) ?? const [];
-          if (deletedBy.contains(widget.currentUserId)) continue;
+          final bool isOfficial = _isOfficialChatDoc(doc.id, data);
+
+          if (!isOfficial) {
+            final List<dynamic> deletedBy =
+                (data['deletedBy'] as List<dynamic>?) ?? const [];
+            if (deletedBy.contains(widget.currentUserId)) continue;
+          }
 
           final bool isGroup = data['isGroup'] == true;
           if (isGroup) continue;
 
-          final bool isOfficial = data['isOfficial'] == true ||
-              doc.id.startsWith('official_desk_');
-
           if (isOfficial) {
-            uniqueChatsMap['official_desk'] = doc;
+            if (!uniqueChatsMap.containsKey('official_desk')) {
+              uniqueChatsMap['official_desk'] = doc;
+            } else {
+              final existingData =
+                  uniqueChatsMap['official_desk']!.data() as Map<String, dynamic>;
+              final existingTime = existingData['lastMessageTime'] as Timestamp?;
+              final currentTime = data['lastMessageTime'] as Timestamp?;
+              if (currentTime != null &&
+                  (existingTime == null ||
+                      currentTime.compareTo(existingTime) > 0)) {
+                uniqueChatsMap['official_desk'] = doc;
+              }
+            }
           } else {
             final List<dynamic> participants = data['participants'] ?? [];
             final List<String> participantsList =
@@ -587,10 +627,8 @@ class _ChatListScreenState extends State<ChatListScreen>
           final aData = a.data() as Map<String, dynamic>;
           final bData = b.data() as Map<String, dynamic>;
 
-          final aIsOfficial = aData['isOfficial'] == true ||
-              a.id.startsWith('official_desk_');
-          final bIsOfficial = bData['isOfficial'] == true ||
-              b.id.startsWith('official_desk_');
+          final aIsOfficial = _isOfficialChatDoc(a.id, aData);
+          final bIsOfficial = _isOfficialChatDoc(b.id, bData);
 
           if (aIsOfficial && !bIsOfficial) return -1;
           if (!aIsOfficial && bIsOfficial) return 1;
@@ -615,11 +653,11 @@ class _ChatListScreenState extends State<ChatListScreen>
           itemBuilder: (context, index) {
             final doc = chatDocs[index];
             final chatData = doc.data() as Map<String, dynamic>;
-            final bool isOfficial = chatData['isOfficial'] == true ||
-                doc.id.startsWith('official_desk_');
+            final bool isOfficial = _isOfficialChatDoc(doc.id, chatData);
 
-            final String lastMessage =
+            final String rawLastMessage =
                 (chatData['lastMessage'] ?? '').toString();
+            final String lastMessage = _formatSingleLinePreview(rawLastMessage);
             final Timestamp? lastTime =
                 chatData['lastMessageTime'] as Timestamp?;
             final bool isSelected = _selectedChatDocIds.contains(doc.id);
@@ -669,19 +707,18 @@ class _ChatListScreenState extends State<ChatListScreen>
                 isVerified: true,
                 isSelected: isSelected,
                 onAvatarTap: null,
-                onLongPress: () => _toggleSelection(doc.id),
+                onLongPress: () => _toggleSelection(doc.id, isOfficial: true),
                 onTap: () {
                   if (_isSelectionMode) {
-                    _toggleSelection(doc.id);
-                  } else {
-                    _openChat(
-                      chatData: chatData,
-                      chatDocId: doc.id,
-                      receiverName: officialName,
-                      receiverId: 'OFFICIAL_FYBTT_DESK',
-                      receiverImage: 'assets/images/app_logo.png',
-                    );
+                    _clearSelection();
                   }
+                  _openChat(
+                    chatData: chatData,
+                    chatDocId: doc.id,
+                    receiverName: officialName,
+                    receiverId: 'OFFICIAL_FYBTT_DESK',
+                    receiverImage: 'assets/images/app_logo.png',
+                  );
                 },
               );
             }
@@ -1686,6 +1723,15 @@ class _ChatCard extends StatelessWidget {
                             fontSize: 10.5,
                             fontWeight: FontWeight.w900,
                           ),
+                        ),
+                      )
+                    else if (isOfficial && !hasUnread)
+                      const Text(
+                        'Verified',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF059669),
                         ),
                       )
                     else if (isOnline && !hasUnread)
