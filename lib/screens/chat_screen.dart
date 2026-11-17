@@ -1,3 +1,6 @@
+Here is the complete, upgraded code for **Step 4 (Final Step): Chat Screen** (`lib/screens/chat_screen.dart`).
+
+```dart
 import 'dart:async';
 import 'dart:developer';
 import 'dart:io';
@@ -101,7 +104,8 @@ class _ChatScreenState extends State<ChatScreen>
 
   bool get _isOfficialChannel =>
       widget.receiverId == 'OFFICIAL_FYBTT_DESK' ||
-      widget.chatRoomId.startsWith('official_desk_');
+      widget.chatRoomId.startsWith('official_desk_') ||
+      widget.receiverName.trim().toLowerCase() == 'fybtt official';
 
   @override
   void initState() {
@@ -114,9 +118,13 @@ class _ChatScreenState extends State<ChatScreen>
         widget.isTeacher ? widget.receiverId : widget.currentUserId;
     final String fallbackId = '${teacherId}_$studentId';
 
-    _activeChatRoomId = widget.chatRoomId.trim().isNotEmpty
-        ? widget.chatRoomId.trim()
-        : (!_isOfficialChannel ? fallbackId : '');
+    if (widget.chatRoomId.trim().isNotEmpty) {
+      _activeChatRoomId = widget.chatRoomId.trim();
+    } else if (_isOfficialChannel) {
+      _activeChatRoomId = 'official_desk_${widget.currentUserId}';
+    } else {
+      _activeChatRoomId = fallbackId;
+    }
 
     if (!_isOfficialChannel) {
       if (widget.receiverProfilePic.trim().isNotEmpty) {
@@ -514,6 +522,17 @@ class _ChatScreenState extends State<ChatScreen>
     _isMarkingRead = true;
     try {
       await _chatService.markAsSeen(_activeChatRoomId, widget.currentUserId);
+      if (_isOfficialChannel) {
+        try {
+          await FirebaseFirestore.instance
+              .collection('chats')
+              .doc(_activeChatRoomId)
+              .update({
+            'unreadCount_${widget.currentUserId}': 0,
+            'unreadCount': 0,
+          });
+        } catch (_) {}
+      }
     } catch (e) {
       log("Error marking as read: $e");
     } finally {
@@ -568,6 +587,7 @@ class _ChatScreenState extends State<ChatScreen>
   }
 
   bool _canEditSingleMessage(MessageModel msg) {
+    if (_isOfficialChannel) return false;
     if (msg.senderId != widget.currentUserId) return false;
     if (msg.type.toLowerCase() != 'text') return false;
     if (msg.isDeletedForEveryone) return false;
@@ -841,7 +861,7 @@ class _ChatScreenState extends State<ChatScreen>
           ],
         );
       },
-    );
+    ).then((_) => editCtrl.dispose());
   }
 
   Future<void> _executeCopyMessages([MessageModel? droppedMsg]) async {
@@ -1321,6 +1341,132 @@ class _ChatScreenState extends State<ChatScreen>
     );
   }
 
+  Widget _buildOfficialNoticeBubble(MessageModel message) {
+    final String timeStr = message.timestamp != null
+        ? DateFormat('hh:mm a').format(message.timestamp!)
+        : '';
+
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      width: double.infinity,
+      constraints: BoxConstraints(
+        maxWidth: MediaQuery.of(context).size.width * 0.88,
+      ),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFBBF7D0), width: 1.25),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF065F46).withOpacity(0.06),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.all(15),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Image.asset(
+                  'assets/images/app_logo.png',
+                  width: 26,
+                  height: 26,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => CircleAvatar(
+                    radius: 13,
+                    backgroundColor: Colors.teal.shade50,
+                    child: const Icon(Icons.verified_rounded,
+                        color: Colors.teal, size: 16),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              const Text(
+                'FYBTT official',
+                style: TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 13.5,
+                  color: Color(0xFF0F766E),
+                ),
+              ),
+              const SizedBox(width: 4),
+              Image.asset(
+                'assets/images/Verified_Batch.png',
+                width: 14,
+                height: 14,
+                fit: BoxFit.contain,
+                errorBuilder: (_, __, ___) => const Icon(
+                  Icons.verified_rounded,
+                  color: Color(0xFF0284C7),
+                  size: 14,
+                ),
+              ),
+              const Spacer(),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFECFDF5),
+                  borderRadius: BorderRadius.circular(7),
+                  border: Border.all(color: const Color(0xFFA7F3D0)),
+                ),
+                child: const Text(
+                  'Official Notice',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF059669),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 10),
+            child: Divider(height: 1, thickness: 1, color: Color(0xFFF1F5F9)),
+          ),
+          Text(
+            message.content,
+            style: const TextStyle(
+              fontSize: 13.8,
+              color: Color(0xFF1E293B),
+              height: 1.48,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'FYBTT Automated Desk',
+                style: TextStyle(
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.teal.shade700.withOpacity(0.75),
+                ),
+              ),
+              if (timeStr.isNotEmpty)
+                Text(
+                  timeStr,
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.grey.shade500,
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildOfficialAppBarTitle() {
     return Row(
       children: [
@@ -1642,12 +1788,15 @@ class _ChatScreenState extends State<ChatScreen>
         children: [
           Icon(Icons.wifi_off_rounded, color: Colors.white, size: 14),
           SizedBox(width: 6),
-          Text(
-            'You are offline • Showing cached chats',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 11.5,
-              fontWeight: FontWeight.w700,
+          Flexible(
+            child: Text(
+              'You are offline • Showing cached chats',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 11.5,
+                fontWeight: FontWeight.w700,
+              ),
+              overflow: TextOverflow.ellipsis,
             ),
           ),
         ],
@@ -1747,6 +1896,37 @@ class _ChatScreenState extends State<ChatScreen>
             children: [
               Column(
                 children: [
+                  if (_isOfficialChannel)
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 8),
+                      decoration: const BoxDecoration(
+                        color: Color(0xFFECFDF5),
+                        border: Border(
+                          bottom: BorderSide(color: Color(0xFFA7F3D0)),
+                        ),
+                      ),
+                      child: const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.verified_user_rounded,
+                              size: 15, color: Color(0xFF059669)),
+                          SizedBox(width: 6),
+                          Flexible(
+                            child: Text(
+                              'FYBTT Official Desk • Verified tuition fee & platform notices',
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF065F46),
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   Expanded(
                     child: _isInitializing && _latestMessages.isEmpty
                         ? const Center(
@@ -1862,6 +2042,11 @@ class _ChatScreenState extends State<ChatScreen>
                                       _resolveMessageWithReplyText(rawMsg);
                                   final bool isMe =
                                       message.senderId == widget.currentUserId;
+                                  final bool isOfficialMsg =
+                                      (_isOfficialChannel ||
+                                              message.senderId ==
+                                                  'OFFICIAL_FYBTT_DESK') &&
+                                          !message.isDeletedForEveryone;
                                   final bool isSelected = _selectedMessageIds
                                       .contains(message.messageId);
 
@@ -1908,6 +2093,10 @@ class _ChatScreenState extends State<ChatScreen>
                                             ? () => _toggleMessageSelection(
                                                 message)
                                             : null,
+                                        onLongPress: isOfficialMsg
+                                            ? () => _toggleMessageSelection(
+                                                message)
+                                            : null,
                                         child: AnimatedContainer(
                                           duration:
                                               const Duration(milliseconds: 180),
@@ -1940,146 +2129,170 @@ class _ChatScreenState extends State<ChatScreen>
                                                   ),
                                                 ),
                                               Expanded(
-                                                child: LongPressDraggable<
-                                                    MessageModel>(
-                                                  delay: const Duration(
-                                                      milliseconds: 500),
-                                                  data: message,
-                                                  onDragStarted: () {
-                                                    HapticFeedback
-                                                        .mediumImpact();
-                                                    setState(() {
-                                                      _didDropOnTarget = false;
-                                                      _isDraggingMessage = true;
-                                                      _draggedMessage = message;
-                                                    });
-                                                  },
-                                                  onDragUpdate: (details) {
-                                                    if (_isOfficialChannel) {
-                                                      return;
-                                                    }
-                                                    final screenH =
-                                                        MediaQuery.of(context)
-                                                            .size
-                                                            .height;
-                                                    final bottomInset =
-                                                        MediaQuery.of(context)
-                                                            .viewInsets
-                                                            .bottom;
-                                                    final replyTriggerLine =
-                                                        screenH -
-                                                            bottomInset -
-                                                            140;
-                                                    final nearInput = details
-                                                            .globalPosition
-                                                            .dy >=
-                                                        replyTriggerLine;
-                                                    if (nearInput !=
-                                                        _isDragHoveringInput) {
-                                                      HapticFeedback
-                                                          .selectionClick();
-                                                      setState(() {
-                                                        _isDragHoveringInput =
-                                                            nearInput;
-                                                      });
-                                                    }
-                                                  },
-                                                  onDragEnd: (details) {
-                                                    if (_isDragHoveringInput &&
-                                                        !_didDropOnTarget &&
-                                                        _draggedMessage !=
-                                                            null) {
-                                                      _didDropOnTarget = true;
-                                                      _triggerReply(
-                                                          _draggedMessage!);
-                                                      return;
-                                                    }
+                                                child: isOfficialMsg
+                                                    ? _buildOfficialNoticeBubble(
+                                                        message)
+                                                    : LongPressDraggable<
+                                                        MessageModel>(
+                                                        delay: const Duration(
+                                                            milliseconds: 500),
+                                                        data: message,
+                                                        onDragStarted: () {
+                                                          HapticFeedback
+                                                              .mediumImpact();
+                                                          setState(() {
+                                                            _didDropOnTarget =
+                                                                false;
+                                                            _isDraggingMessage =
+                                                                true;
+                                                            _draggedMessage =
+                                                                message;
+                                                          });
+                                                        },
+                                                        onDragUpdate:
+                                                            (details) {
+                                                          if (_isOfficialChannel) {
+                                                            return;
+                                                          }
+                                                          final screenH =
+                                                              MediaQuery.of(
+                                                                      context)
+                                                                  .size
+                                                                  .height;
+                                                          final bottomInset =
+                                                              MediaQuery.of(
+                                                                      context)
+                                                                  .viewInsets
+                                                                  .bottom;
+                                                          final replyTriggerLine =
+                                                              screenH -
+                                                                  bottomInset -
+                                                                  140;
+                                                          final nearInput =
+                                                              details
+                                                                      .globalPosition
+                                                                      .dy >=
+                                                                  replyTriggerLine;
+                                                          if (nearInput !=
+                                                              _isDragHoveringInput) {
+                                                            HapticFeedback
+                                                                .selectionClick();
+                                                            setState(() {
+                                                              _isDragHoveringInput =
+                                                                  nearInput;
+                                                            });
+                                                          }
+                                                        },
+                                                        onDragEnd: (details) {
+                                                          if (_isDragHoveringInput &&
+                                                              !_didDropOnTarget &&
+                                                              _draggedMessage !=
+                                                                  null) {
+                                                            _didDropOnTarget =
+                                                                true;
+                                                            _triggerReply(
+                                                                _draggedMessage!);
+                                                            return;
+                                                          }
 
-                                                    setState(() {
-                                                      _isDraggingMessage =
-                                                          false;
-                                                      if (!_didDropOnTarget) {
-                                                        _selectedMessageIds.add(
-                                                            message.messageId);
-                                                      }
-                                                      _draggedMessage = null;
-                                                      _hoveredTopAction = null;
-                                                      _isDragHoveringInput =
-                                                          false;
-                                                    });
-                                                  },
-                                                  feedback: Material(
-                                                    color: Colors.transparent,
-                                                    child: Transform.scale(
-                                                      scale: 1.06,
-                                                      child: Container(
-                                                        width: MediaQuery.of(
-                                                                    context)
-                                                                .size
-                                                                .width *
-                                                            0.85,
-                                                        decoration:
-                                                            BoxDecoration(
-                                                          boxShadow: [
-                                                            BoxShadow(
-                                                              color: _primaryNavy
-                                                                  .withOpacity(
-                                                                      0.26),
-                                                              blurRadius: 20,
-                                                              spreadRadius: 2,
-                                                              offset:
-                                                                  const Offset(
-                                                                      0, 8),
+                                                          setState(() {
+                                                            _isDraggingMessage =
+                                                                false;
+                                                            if (!_didDropOnTarget) {
+                                                              _selectedMessageIds
+                                                                  .add(message
+                                                                      .messageId);
+                                                            }
+                                                            _draggedMessage =
+                                                                null;
+                                                            _hoveredTopAction =
+                                                                null;
+                                                            _isDragHoveringInput =
+                                                                false;
+                                                          });
+                                                        },
+                                                        feedback: Material(
+                                                          color: Colors
+                                                              .transparent,
+                                                          child:
+                                                              Transform.scale(
+                                                            scale: 1.06,
+                                                            child: Container(
+                                                              width: MediaQuery.of(
+                                                                          context)
+                                                                      .size
+                                                                      .width *
+                                                                  0.85,
+                                                              decoration:
+                                                                  BoxDecoration(
+                                                                boxShadow: [
+                                                                  BoxShadow(
+                                                                    color: _primaryNavy
+                                                                        .withOpacity(
+                                                                            0.26),
+                                                                    blurRadius:
+                                                                        20,
+                                                                    spreadRadius:
+                                                                        2,
+                                                                    offset: const Offset(
+                                                                        0, 8),
+                                                                  ),
+                                                                ],
+                                                              ),
+                                                              child:
+                                                                  IgnorePointer(
+                                                                child:
+                                                                    MessageBubble(
+                                                                  message:
+                                                                      message,
+                                                                  isMe: isMe,
+                                                                  chatRoomId:
+                                                                      _activeChatRoomId,
+                                                                  currentUserId:
+                                                                      widget
+                                                                          .currentUserId,
+                                                                  onReplyPressed:
+                                                                      (_) {},
+                                                                ),
+                                                              ),
                                                             ),
-                                                          ],
-                                                        ),
-                                                        child: IgnorePointer(
-                                                          child: MessageBubble(
-                                                            message: message,
-                                                            isMe: isMe,
-                                                            chatRoomId:
-                                                                _activeChatRoomId,
-                                                            currentUserId: widget
-                                                                .currentUserId,
-                                                            onReplyPressed:
-                                                                (_) {},
                                                           ),
                                                         ),
+                                                        childWhenDragging:
+                                                            Opacity(
+                                                          opacity: 0.25,
+                                                          child: IgnorePointer(
+                                                            child:
+                                                                MessageBubble(
+                                                              message: message,
+                                                              isMe: isMe,
+                                                              chatRoomId:
+                                                                  _activeChatRoomId,
+                                                              currentUserId: widget
+                                                                  .currentUserId,
+                                                              onReplyPressed:
+                                                                  (_) {},
+                                                            ),
+                                                          ),
+                                                        ),
+                                                        child: MessageBubble(
+                                                          message: message,
+                                                          isMe: isMe,
+                                                          chatRoomId:
+                                                              _activeChatRoomId,
+                                                          currentUserId: widget
+                                                              .currentUserId,
+                                                          onReplyPressed:
+                                                              (repliedMessage) {
+                                                            _triggerReply(
+                                                                repliedMessage);
+                                                          },
+                                                          onReplyPreviewTap: () =>
+                                                              _scrollToOriginalMessage(
+                                                                  message
+                                                                      .replyToMessageId),
+                                                        ),
                                                       ),
-                                                    ),
-                                                  ),
-                                                  childWhenDragging: Opacity(
-                                                    opacity: 0.25,
-                                                    child: IgnorePointer(
-                                                      child: MessageBubble(
-                                                        message: message,
-                                                        isMe: isMe,
-                                                        chatRoomId:
-                                                            _activeChatRoomId,
-                                                        currentUserId:
-                                                            widget.currentUserId,
-                                                        onReplyPressed: (_) {},
-                                                      ),
-                                                    ),
-                                                  ),
-                                                  child: MessageBubble(
-                                                    message: message,
-                                                    isMe: isMe,
-                                                    chatRoomId:
-                                                        _activeChatRoomId,
-                                                    currentUserId:
-                                                        widget.currentUserId,
-                                                    onReplyPressed:
-                                                        (repliedMessage) {
-                                                      _triggerReply(
-                                                          repliedMessage);
-                                                    },
-                                                    onReplyPreviewTap: () =>
-                                                        _scrollToOriginalMessage(
-                                                            message
-                                                                .replyToMessageId),
-                                                  ),
-                                                ),
                                               ),
                                             ],
                                           ),
@@ -2104,6 +2317,9 @@ class _ChatScreenState extends State<ChatScreen>
                       ),
                       decoration: BoxDecoration(
                         color: Colors.white,
+                        border: const Border(
+                          top: BorderSide(color: Color(0xFFE2E8F0)),
+                        ),
                         boxShadow: [
                           BoxShadow(
                             color: Colors.black.withOpacity(0.04),
@@ -2118,12 +2334,15 @@ class _ChatScreenState extends State<ChatScreen>
                           Icon(Icons.lock_outline_rounded,
                               size: 16, color: Colors.grey.shade600),
                           const SizedBox(width: 8),
-                          Text(
-                            'Only official announcements are delivered here.',
-                            style: TextStyle(
-                              color: Colors.grey.shade600,
-                              fontSize: 12.5,
-                              fontWeight: FontWeight.w600,
+                          Flexible(
+                            child: Text(
+                              'Read-only official desk. Replies are disabled.',
+                              style: TextStyle(
+                                color: Colors.grey.shade600,
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w600,
+                              ),
+                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
                         ],
@@ -2227,12 +2446,15 @@ class _ChatScreenState extends State<ChatScreen>
                                   Icon(Icons.info_outline_rounded,
                                       size: 18, color: Color(0xFF64748B)),
                                   SizedBox(width: 8),
-                                  Text(
-                                    'You cannot send messages to this contact.',
-                                    style: TextStyle(
-                                      color: Color(0xFF475569),
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w600,
+                                  Flexible(
+                                    child: Text(
+                                      'You cannot send messages to this contact.',
+                                      style: TextStyle(
+                                        color: Color(0xFF475569),
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
                                     ),
                                   ),
                                 ],
