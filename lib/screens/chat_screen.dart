@@ -1,6 +1,3 @@
-Here is the complete, upgraded code for **Step 4 (Final Step): Chat Screen** (`lib/screens/chat_screen.dart`).
-
-```dart
 import 'dart:async';
 import 'dart:developer';
 import 'dart:io';
