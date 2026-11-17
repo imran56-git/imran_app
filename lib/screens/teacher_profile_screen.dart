@@ -1,6 +1,3 @@
-Here is the complete, updated **Step 5: `lib/screens/teacher_profile_screen.dart`** for **Roadmap 9.0**.
-
-```dart
 import 'dart:async';
 import 'dart:ui';
 import 'package:cloud_firestore/cloud_firestore.dart';
