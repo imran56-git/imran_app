@@ -1,3 +1,8 @@
+Here is the complete updated **`lib/screens/chat_screen.dart`**. I updated `_isOfficialChannel` and `isOfficialMsg` to recognize both `OFFICIAL_FYBTT_DESK` and `fybtt_official`, hid the **Delete for Me** action on official channel messages so `FYBTT official` remains strictly read-only and non-deletable (while still allowing Copy), and switched the official read-receipt update to `SetOptions(merge: true)` for safety.
+
+**Next Step:** After copying this file, please reply **"update functions/index.js"** so I can send the final aligned `functions/index.js` using your confirmed `monthStatuses` (`'DUE'` / `'PAID'`) schema (or paste any parent `HomeScreen` / `StudentDashboardScreen` file if it has a Chat Hub unread badge that should exclude `FYBTT official`).
+
+```dart
 import 'dart:async';
 import 'dart:developer';
 import 'dart:io';
@@ -101,6 +106,7 @@ class _ChatScreenState extends State<ChatScreen>
 
   bool get _isOfficialChannel =>
       widget.receiverId == 'OFFICIAL_FYBTT_DESK' ||
+      widget.receiverId == 'fybtt_official' ||
       widget.chatRoomId.startsWith('official_desk_') ||
       widget.receiverName.trim().toLowerCase() == 'fybtt official';
 
@@ -524,10 +530,11 @@ class _ChatScreenState extends State<ChatScreen>
           await FirebaseFirestore.instance
               .collection('chats')
               .doc(_activeChatRoomId)
-              .update({
+              .set({
             'unreadCount_${widget.currentUserId}': 0,
             'unreadCount': 0,
-          });
+            'unreadFor': '',
+          }, SetOptions(merge: true));
         } catch (_) {}
       }
     } catch (e) {
@@ -888,6 +895,7 @@ class _ChatScreenState extends State<ChatScreen>
   }
 
   Future<void> _executeDeleteForMe([MessageModel? droppedMsg]) async {
+    if (_isOfficialChannel) return;
     final targets = _getTargetMessages(droppedMsg);
     _clearMessageSelection();
     if (targets.isEmpty) return;
@@ -907,6 +915,7 @@ class _ChatScreenState extends State<ChatScreen>
   }
 
   Future<void> _executeDeleteForEveryone([MessageModel? droppedMsg]) async {
+    if (_isOfficialChannel) return;
     final targets = _getTargetMessages(droppedMsg)
         .where((m) =>
             m.senderId == widget.currentUserId && !m.isDeletedForEveryone)
@@ -928,6 +937,7 @@ class _ChatScreenState extends State<ChatScreen>
   }
 
   Future<void> _clearChatSafe() async {
+    if (_isOfficialChannel) return;
     await _localStorage.clearRoomLocally(_activeChatRoomId);
 
     final chatRef =
@@ -952,6 +962,7 @@ class _ChatScreenState extends State<ChatScreen>
   }
 
   Future<void> _deleteConversationSafe() async {
+    if (_isOfficialChannel) return;
     await _clearChatSafe();
     final chatRef =
         FirebaseFirestore.instance.collection('chats').doc(_activeChatRoomId);
@@ -1061,6 +1072,7 @@ class _ChatScreenState extends State<ChatScreen>
   }
 
   void _handleMenuActionWithBlock(ChatMenuAction action, bool isBlockedByMe) {
+    if (_isOfficialChannel) return;
     if (action == ChatMenuAction.blockUser) {
       if (isBlockedByMe) {
         _confirmUnblockUser();
@@ -1073,6 +1085,7 @@ class _ChatScreenState extends State<ChatScreen>
   }
 
   void _handleMenuAction(ChatMenuAction action) {
+    if (_isOfficialChannel) return;
     switch (action) {
       case ChatMenuAction.viewProfile:
         _openReceiverProfile();
@@ -1314,13 +1327,14 @@ class _ChatScreenState extends State<ChatScreen>
                         }
                       },
                     ),
-                  _buildTopActionIcon(
-                    actionKey: 'delete_me',
-                    icon: Icons.delete_outline_rounded,
-                    tooltip: 'Delete for Me',
-                    color: Colors.orangeAccent,
-                    onExecute: _executeDeleteForMe,
-                  ),
+                  if (!_isOfficialChannel)
+                    _buildTopActionIcon(
+                      actionKey: 'delete_me',
+                      icon: Icons.delete_outline_rounded,
+                      tooltip: 'Delete for Me',
+                      color: Colors.orangeAccent,
+                      onExecute: _executeDeleteForMe,
+                    ),
                   if (canDeleteForEveryone)
                     _buildTopActionIcon(
                       actionKey: 'delete_all',
@@ -2042,7 +2056,9 @@ class _ChatScreenState extends State<ChatScreen>
                                   final bool isOfficialMsg =
                                       (_isOfficialChannel ||
                                               message.senderId ==
-                                                  'OFFICIAL_FYBTT_DESK') &&
+                                                  'OFFICIAL_FYBTT_DESK' ||
+                                              message.senderId ==
+                                                  'fybtt_official') &&
                                           !message.isDeletedForEveryone;
                                   final bool isSelected = _selectedMessageIds
                                       .contains(message.messageId);
