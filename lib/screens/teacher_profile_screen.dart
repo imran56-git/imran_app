@@ -1,8 +1,3 @@
-Here is the complete updated **`lib/screens/teacher_profile_screen.dart`**. The **Teacher Dashboard ("Pending Payments")** card and the **Pending Tuition Fees** popup (`_showPendingDuesSheet`) now calculate `Total Outstanding Due` and `Due (X Mo)` dynamically from the exact same `monthStatuses` map used by `DiaryScreen` and `DiaryHistoryScreen`.
-
-**Next Step:** Once you have copied and replaced this file, please paste **`lib/screens/chat_screen.dart`** (or your private chat room screen) so we can verify that `FYBTT official` remains strictly read-only and non-deletable, and then do our final sync check on `functions/index.js`.
-
-```dart
 import 'dart:async';
 import 'dart:ui';
 import 'package:cloud_firestore/cloud_firestore.dart';
