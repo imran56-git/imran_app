@@ -13,7 +13,8 @@ class ReminderScreen extends StatefulWidget {
   final String? prefillStudentId;
   final String? prefillStudentName;
   final double? prefillAmount;
-  final void Function(String studentId, String studentName, double amount)? onCreateDiary;
+  final void Function(String studentId, String studentName, double amount)?
+      onCreateDiary;
 
   const ReminderScreen({
     super.key,
@@ -66,7 +67,8 @@ class _ReminderScreenState extends State<ReminderScreen> {
     super.initState();
     final nowIst = _nowInIst();
     _selectedMonth = _months[nowIst.month - 1];
-    _selectedDueDate = DateTime(nowIst.year, nowIst.month, nowIst.day).add(const Duration(days: 5));
+    _selectedDueDate =
+        DateTime(nowIst.year, nowIst.month, nowIst.day).add(const Duration(days: 5));
 
     if (widget.prefillAmount != null && widget.prefillAmount! > 0) {
       _amountController.text = widget.prefillAmount! % 1 == 0
@@ -74,7 +76,8 @@ class _ReminderScreenState extends State<ReminderScreen> {
           : widget.prefillAmount!.toStringAsFixed(2);
     }
 
-    if (widget.prefillStudentId != null && widget.prefillStudentId!.trim().isNotEmpty) {
+    if (widget.prefillStudentId != null &&
+        widget.prefillStudentId!.trim().isNotEmpty) {
       _searchController.text = widget.prefillStudentId!.trim();
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _loadPrefilledStudent();
@@ -140,10 +143,12 @@ class _ReminderScreenState extends State<ReminderScreen> {
     });
 
     try {
-      Map<String, dynamic>? student = await _reminderService.searchStudentById(prefillId);
+      Map<String, dynamic>? student =
+          await _reminderService.searchStudentById(prefillId);
       student ??= {
         'uid': prefillId,
-        'name': (widget.prefillStudentName != null && widget.prefillStudentName!.trim().isNotEmpty)
+        'name': (widget.prefillStudentName != null &&
+                widget.prefillStudentName!.trim().isNotEmpty)
             ? widget.prefillStudentName!.trim()
             : 'Student',
       };
@@ -162,7 +167,8 @@ class _ReminderScreenState extends State<ReminderScreen> {
       setState(() {
         _foundStudent = {
           'uid': prefillId,
-          'name': (widget.prefillStudentName != null && widget.prefillStudentName!.trim().isNotEmpty)
+          'name': (widget.prefillStudentName != null &&
+                  widget.prefillStudentName!.trim().isNotEmpty)
               ? widget.prefillStudentName!.trim()
               : 'Student',
         };
@@ -189,7 +195,8 @@ class _ReminderScreenState extends State<ReminderScreen> {
             child: FadeTransition(
               opacity: anim,
               child: AlertDialog(
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20)),
                 title: Text(
                   title,
                   style: const TextStyle(
@@ -200,18 +207,22 @@ class _ReminderScreenState extends State<ReminderScreen> {
                 ),
                 content: Text(
                   message,
-                  style: const TextStyle(fontSize: 14.5, color: Colors.black87, height: 1.4),
+                  style: const TextStyle(
+                      fontSize: 14.5, color: Colors.black87, height: 1.4),
                 ),
                 actions: [
                   ElevatedButton(
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.blue[800],
                       foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 18, vertical: 10),
                     ),
                     onPressed: () => Navigator.pop(context),
-                    child: const Text('OK', style: TextStyle(fontWeight: FontWeight.bold)),
+                    child: const Text('OK',
+                        style: TextStyle(fontWeight: FontWeight.bold)),
                   ),
                 ],
               ),
@@ -222,7 +233,8 @@ class _ReminderScreenState extends State<ReminderScreen> {
     );
   }
 
-  Future<bool> _checkIfActiveReminderExists(String studentId, {String? excludeReminderId}) async {
+  Future<bool> _checkIfActiveReminderExists(String studentId,
+      {String? excludeReminderId}) async {
     try {
       final querySnapshot = await _firestore
           .collection('fee_reminders')
@@ -231,7 +243,9 @@ class _ReminderScreenState extends State<ReminderScreen> {
           .get();
 
       return querySnapshot.docs.any((doc) {
-        if (excludeReminderId != null && doc.id == excludeReminderId) return false;
+        if (excludeReminderId != null && doc.id == excludeReminderId) {
+          return false;
+        }
         return doc.data()['isActive'] == true;
       });
     } catch (_) {
@@ -298,24 +312,14 @@ class _ReminderScreenState extends State<ReminderScreen> {
     } catch (_) {
       if (mounted) {
         setState(() => _isSearching = false);
-        _showErrorPopup('Query Error', 'Unable to retrieve student data. Please check network connection.');
+        _showErrorPopup('Query Error',
+            'Unable to retrieve student data. Please check network connection.');
       }
     }
   }
 
   void _showScrollWheelTimePicker() {
-    int tempHour = _selectedTime.hourOfPeriod == 0 ? 12 : _selectedTime.hourOfPeriod;
-    int tempMinute = _selectedTime.minute;
-    bool isAm = _selectedTime.period == DayPeriod.am;
-
-    final FixedExtentScrollController hourController =
-        FixedExtentScrollController(initialItem: tempHour - 1);
-    final FixedExtentScrollController minuteController =
-        FixedExtentScrollController(initialItem: tempMinute);
-    final FixedExtentScrollController periodController =
-        FixedExtentScrollController(initialItem: isAm ? 0 : 1);
-
-    showGeneralDialog(
+    showGeneralDialog<TimeOfDay>(
       context: context,
       barrierDismissible: true,
       barrierLabel: 'Dismiss',
@@ -328,142 +332,14 @@ class _ReminderScreenState extends State<ReminderScreen> {
             scale: Tween<double>(begin: 0.9, end: 1.0).animate(
               CurvedAnimation(parent: anim, curve: Curves.easeOutBack),
             ),
-            child: AlertDialog(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-              contentPadding: const EdgeInsets.fromLTRB(16, 20, 16, 12),
-              title: const Center(
-                child: Text(
-                  'Set Reminder Time (IST)',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Color(0xFF1E3A8A)),
-                ),
-              ),
-              content: SizedBox(
-                height: 180,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    SizedBox(
-                      width: 60,
-                      child: CupertinoPicker(
-                        scrollController: hourController,
-                        itemExtent: 42,
-                        selectionOverlay: Container(
-                          decoration: BoxDecoration(
-                            border: Border.symmetric(
-                              horizontal: BorderSide(color: Colors.blue.shade300, width: 1.5),
-                            ),
-                          ),
-                        ),
-                        onSelectedItemChanged: (index) {
-                          HapticFeedback.selectionClick();
-                          tempHour = index + 1;
-                        },
-                        children: List.generate(
-                          12,
-                          (i) => Center(
-                            child: Text(
-                              '${i + 1}'.padLeft(2, '0'),
-                              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const Text(':', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-                    SizedBox(
-                      width: 60,
-                      child: CupertinoPicker(
-                        scrollController: minuteController,
-                        itemExtent: 42,
-                        selectionOverlay: Container(
-                          decoration: BoxDecoration(
-                            border: Border.symmetric(
-                              horizontal: BorderSide(color: Colors.blue.shade300, width: 1.5),
-                            ),
-                          ),
-                        ),
-                        onSelectedItemChanged: (index) {
-                          HapticFeedback.selectionClick();
-                          tempMinute = index;
-                        },
-                        children: List.generate(
-                          60,
-                          (i) => Center(
-                            child: Text(
-                              '$i'.padLeft(2, '0'),
-                              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    SizedBox(
-                      width: 68,
-                      child: CupertinoPicker(
-                        scrollController: periodController,
-                        itemExtent: 42,
-                        selectionOverlay: Container(
-                          decoration: BoxDecoration(
-                            border: Border.symmetric(
-                              horizontal: BorderSide(color: Colors.blue.shade300, width: 1.5),
-                            ),
-                          ),
-                        ),
-                        onSelectedItemChanged: (index) {
-                          HapticFeedback.selectionClick();
-                          isAm = index == 0;
-                        },
-                        children: const [
-                          Center(
-                            child: Text(
-                              'AM',
-                              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.blue),
-                            ),
-                          ),
-                          Center(
-                            child: Text(
-                              'PM',
-                              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.indigo),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
-                ),
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.blue[800],
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  ),
-                  onPressed: () {
-                    int convertedHour = tempHour;
-                    if (isAm && convertedHour == 12) convertedHour = 0;
-                    if (!isAm && convertedHour != 12) convertedHour += 12;
-
-                    setState(() {
-                      _selectedTime = TimeOfDay(hour: convertedHour, minute: tempMinute);
-                    });
-                    Navigator.pop(context);
-                  },
-                  child: const Text('Set Time', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                ),
-              ],
-            ),
+            child: _IstTimePickerDialog(initialTime: _selectedTime),
           ),
         );
       },
-    ).then((_) {
-      hourController.dispose();
-      minuteController.dispose();
-      periodController.dispose();
+    ).then((pickedTime) {
+      if (pickedTime != null && mounted) {
+        setState(() => _selectedTime = pickedTime);
+      }
     });
   }
 
@@ -509,7 +385,8 @@ class _ReminderScreenState extends State<ReminderScreen> {
                         color: const Color(0xFFEFF6FF),
                         borderRadius: BorderRadius.circular(14),
                       ),
-                      child: Icon(Icons.menu_book_rounded, color: Colors.blue[800], size: 26),
+                      child: Icon(Icons.menu_book_rounded,
+                          color: Colors.blue[800], size: 26),
                     ),
                     const SizedBox(width: 14),
                     const Expanded(
@@ -566,10 +443,12 @@ class _ReminderScreenState extends State<ReminderScreen> {
                           foregroundColor: Colors.grey.shade700,
                           side: BorderSide(color: Colors.grey.shade300),
                           padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14)),
                         ),
                         onPressed: () => Navigator.pop(sheetContext),
-                        child: const Text('Cancel', style: TextStyle(fontWeight: FontWeight.bold)),
+                        child: const Text('Cancel',
+                            style: TextStyle(fontWeight: FontWeight.bold)),
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -580,15 +459,19 @@ class _ReminderScreenState extends State<ReminderScreen> {
                           backgroundColor: Colors.blue[800],
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14)),
                           elevation: 1,
                         ),
-                        icon: const Icon(Icons.add_circle_outline_rounded, size: 20),
-                        label: const Text('Create Diary', style: TextStyle(fontWeight: FontWeight.bold)),
+                        icon: const Icon(Icons.add_circle_outline_rounded,
+                            size: 20),
+                        label: const Text('Create Diary',
+                            style: TextStyle(fontWeight: FontWeight.bold)),
                         onPressed: () {
                           Navigator.pop(sheetContext);
                           if (widget.onCreateDiary != null) {
-                            widget.onCreateDiary!(studentId, studentName, amount);
+                            widget.onCreateDiary!(
+                                studentId, studentName, amount);
                           } else {
                             Navigator.push(
                               context,
@@ -622,7 +505,8 @@ class _ReminderScreenState extends State<ReminderScreen> {
 
     final double? amount = double.tryParse(_amountController.text.trim());
     if (amount == null || amount <= 0) {
-      _showErrorPopup('Invalid Amount', 'Please enter a valid fee amount greater than 0.');
+      _showErrorPopup('Invalid Amount',
+          'Please enter a valid fee amount greater than 0.');
       return;
     }
 
@@ -640,14 +524,19 @@ class _ReminderScreenState extends State<ReminderScreen> {
       return;
     }
 
-    final String targetStudentId = (_foundStudent!['uid'] ?? _searchController.text.trim()).toString();
-    final String targetStudentName = (_foundStudent!['name'] ?? 'Student').toString().trim();
-    final String teacherName = widget.currentUserName.trim().isEmpty ? 'Teacher' : widget.currentUserName.trim();
+    final String targetStudentId =
+        (_foundStudent!['uid'] ?? _searchController.text.trim()).toString();
+    final String targetStudentName =
+        (_foundStudent!['name'] ?? 'Student').toString().trim();
+    final String teacherName = widget.currentUserName.trim().isEmpty
+        ? 'Teacher'
+        : widget.currentUserName.trim();
 
     setState(() => _isSending = true);
 
     try {
-      final bool alreadyExists = await _checkIfActiveReminderExists(targetStudentId);
+      final bool alreadyExists =
+          await _checkIfActiveReminderExists(targetStudentId);
 
       if (alreadyExists) {
         if (mounted) {
@@ -663,7 +552,8 @@ class _ReminderScreenState extends State<ReminderScreen> {
         return;
       }
 
-      final String reminderId = '${widget.currentUserId}_${targetStudentId}_${DateTime.now().millisecondsSinceEpoch}';
+      final String reminderId =
+          '${widget.currentUserId}_${targetStudentId}_${DateTime.now().millisecondsSinceEpoch}';
       final String dueDateText = _formatDateDdMmYyyy(_selectedDueDate);
 
       await _firestore.collection('fee_reminders').doc(reminderId).set({
@@ -707,7 +597,8 @@ class _ReminderScreenState extends State<ReminderScreen> {
     } catch (_) {
       if (mounted) {
         setState(() => _isSending = false);
-        _showErrorPopup('Failed', 'Could not schedule the reminder. Please try again.');
+        _showErrorPopup(
+            'Failed', 'Could not schedule the reminder. Please try again.');
       }
     }
   }
@@ -753,8 +644,10 @@ class _ReminderScreenState extends State<ReminderScreen> {
       context: context,
       builder: (dialogContext) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        title: const Text('Delete Reminder?', style: TextStyle(fontWeight: FontWeight.bold)),
-        content: Text('Are you sure you want to permanently delete the scheduled reminder for $studentName?'),
+        title: const Text('Delete Reminder?',
+            style: TextStyle(fontWeight: FontWeight.bold)),
+        content: Text(
+            'Are you sure you want to permanently delete the scheduled reminder for $studentName?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, false),
@@ -764,7 +657,8 @@ class _ReminderScreenState extends State<ReminderScreen> {
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.redAccent,
               foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10)),
             ),
             onPressed: () => Navigator.pop(dialogContext, true),
             child: const Text('Delete'),
@@ -781,7 +675,8 @@ class _ReminderScreenState extends State<ReminderScreen> {
         SuccessToast.show(context, 'Reminder Deleted');
       }
     } catch (_) {
-      _showErrorPopup('Delete Failed', 'Could not delete the reminder. Please try again.');
+      _showErrorPopup(
+          'Delete Failed', 'Could not delete the reminder. Please try again.');
     }
   }
 
@@ -807,7 +702,8 @@ class _ReminderScreenState extends State<ReminderScreen> {
                     padding: const EdgeInsets.fromLTRB(20, 12, 14, 14),
                     decoration: const BoxDecoration(
                       color: Colors.white,
-                      borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
+                      borderRadius:
+                          BorderRadius.vertical(top: Radius.circular(26)),
                     ),
                     child: Column(
                       children: [
@@ -822,7 +718,8 @@ class _ReminderScreenState extends State<ReminderScreen> {
                         ),
                         Row(
                           children: [
-                            Icon(Icons.notifications_active_rounded, color: Colors.blue[800], size: 24),
+                            Icon(Icons.notifications_active_rounded,
+                                color: Colors.blue[800], size: 24),
                             const SizedBox(width: 10),
                             const Expanded(
                               child: Text(
@@ -851,20 +748,27 @@ class _ReminderScreenState extends State<ReminderScreen> {
                           .where('teacherId', isEqualTo: widget.currentUserId)
                           .snapshots(),
                       builder: (context, snapshot) {
-                        if (snapshot.connectionState == ConnectionState.waiting) {
-                          return const Center(child: CircularProgressIndicator());
+                        if (snapshot.connectionState ==
+                            ConnectionState.waiting) {
+                          return const Center(
+                              child: CircularProgressIndicator());
                         }
                         if (snapshot.hasError) {
-                          return const Center(child: Text('Unable to load reminders.'));
+                          return const Center(
+                              child: Text('Unable to load reminders.'));
                         }
 
                         final docs = [...(snapshot.data?.docs ?? [])];
                         docs.sort((a, b) {
-                          final aMap = a.data() as Map<String, dynamic>;
-                          final bMap = b.data() as Map<String, dynamic>;
+                          final aMap =
+                              (a.data() as Map<String, dynamic>?) ?? {};
+                          final bMap =
+                              (b.data() as Map<String, dynamic>?) ?? {};
                           final aActive = aMap['isActive'] == true ? 1 : 0;
                           final bActive = bMap['isActive'] == true ? 1 : 0;
-                          if (aActive != bActive) return bActive.compareTo(aActive);
+                          if (aActive != bActive) {
+                            return bActive.compareTo(aActive);
+                          }
                           final aTs = aMap['createdAt'] as Timestamp?;
                           final bTs = bMap['createdAt'] as Timestamp?;
                           return (bTs?.millisecondsSinceEpoch ?? 0)
@@ -878,7 +782,8 @@ class _ReminderScreenState extends State<ReminderScreen> {
                               child: Column(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Icon(Icons.event_note_rounded, size: 52, color: Colors.grey.shade400),
+                                  Icon(Icons.event_note_rounded,
+                                      size: 52, color: Colors.grey.shade400),
                                   const SizedBox(height: 12),
                                   Text(
                                     'No fee reminders scheduled yet.',
@@ -898,25 +803,40 @@ class _ReminderScreenState extends State<ReminderScreen> {
                           controller: scrollController,
                           padding: const EdgeInsets.all(16),
                           itemCount: docs.length,
-                          separatorBuilder: (_, __) => const SizedBox(height: 12),
+                          separatorBuilder: (_, __) =>
+                              const SizedBox(height: 12),
                           itemBuilder: (context, index) {
                             final doc = docs[index];
-                            final data = doc.data() as Map<String, dynamic>;
-                            final String studentId = (data['studentId'] ?? '').toString();
-                            final String studentName = (data['studentName'] ?? 'Student').toString();
+                            final data =
+                                (doc.data() as Map<String, dynamic>?) ?? {};
+                            final String studentId =
+                                (data['studentId'] ?? '').toString();
+                            final String studentName =
+                                (data['studentName'] ?? 'Student').toString();
                             final double amount = (data['amount'] is num)
                                 ? (data['amount'] as num).toDouble()
-                                : double.tryParse(data['amount']?.toString() ?? '0') ?? 0;
-                            final String monthName = (data['monthName'] ?? '').toString();
-                            final String dueDateText = (data['dueDateText'] ?? '').toString();
-                            final int hour = (data['hour'] is num) ? (data['hour'] as num).toInt() : 16;
-                            final int minute = (data['minute'] is num) ? (data['minute'] as num).toInt() : 0;
-                            final bool isRecurring = data['isRecurring'] == true;
+                                : double.tryParse(
+                                        data['amount']?.toString() ?? '0') ??
+                                    0;
+                            final String monthName =
+                                (data['monthName'] ?? '').toString();
+                            final String dueDateText =
+                                (data['dueDateText'] ?? '').toString();
+                            final int hour = (data['hour'] is num)
+                                ? (data['hour'] as num).toInt()
+                                : 16;
+                            final int minute = (data['minute'] is num)
+                                ? (data['minute'] as num).toInt()
+                                : 0;
+                            final bool isRecurring =
+                                data['isRecurring'] != false;
                             final bool isActive = data['isActive'] == true;
-                            final Timestamp? nextRunTs = data['nextRunAt'] as Timestamp?;
+                            final Timestamp? nextRunTs =
+                                data['nextRunAt'] as Timestamp?;
                             String nextRunLabel = dueDateText;
                             if (nextRunTs != null) {
-                              final nextIst = nextRunTs.toDate().toUtc().add(_istOffset);
+                              final nextIst =
+                                  nextRunTs.toDate().toUtc().add(_istOffset);
                               nextRunLabel =
                                   '${_formatDateDdMmYyyy(nextIst)} at ${_formatTime24To12(nextIst.hour, nextIst.minute)}';
                             }
@@ -927,7 +847,9 @@ class _ReminderScreenState extends State<ReminderScreen> {
                                 color: Colors.white,
                                 borderRadius: BorderRadius.circular(18),
                                 border: Border.all(
-                                  color: isActive ? Colors.blue.shade100 : Colors.grey.shade200,
+                                  color: isActive
+                                      ? Colors.blue.shade100
+                                      : Colors.grey.shade200,
                                 ),
                                 boxShadow: [
                                   BoxShadow(
@@ -944,7 +866,8 @@ class _ReminderScreenState extends State<ReminderScreen> {
                                     children: [
                                       Expanded(
                                         child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
                                           children: [
                                             Text(
                                               studentName,
@@ -971,7 +894,8 @@ class _ReminderScreenState extends State<ReminderScreen> {
                                       Switch.adaptive(
                                         value: isActive,
                                         activeColor: const Color(0xFF10B981),
-                                        onChanged: (val) => _toggleReminderStatus(
+                                        onChanged: (val) =>
+                                            _toggleReminderStatus(
                                           docId: doc.id,
                                           studentId: studentId,
                                           studentName: studentName,
@@ -979,9 +903,12 @@ class _ReminderScreenState extends State<ReminderScreen> {
                                         ),
                                       ),
                                       IconButton(
-                                        icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent),
+                                        icon: const Icon(
+                                            Icons.delete_outline_rounded,
+                                            color: Colors.redAccent),
                                         tooltip: 'Delete reminder',
-                                        onPressed: () => _deleteReminder(doc.id, studentName),
+                                        onPressed: () => _deleteReminder(
+                                            doc.id, studentName),
                                       ),
                                     ],
                                   ),
@@ -991,41 +918,58 @@ class _ReminderScreenState extends State<ReminderScreen> {
                                     runSpacing: 6,
                                     children: [
                                       Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 9, vertical: 4),
                                         decoration: BoxDecoration(
-                                          color: isActive ? const Color(0xFFECFDF5) : Colors.grey.shade100,
-                                          borderRadius: BorderRadius.circular(8),
+                                          color: isActive
+                                              ? const Color(0xFFECFDF5)
+                                              : Colors.grey.shade100,
+                                          borderRadius:
+                                              BorderRadius.circular(8),
                                         ),
                                         child: Text(
                                           isActive ? 'Active' : 'Paused',
                                           style: TextStyle(
                                             fontSize: 11.5,
                                             fontWeight: FontWeight.bold,
-                                            color: isActive ? const Color(0xFF059669) : Colors.grey.shade600,
+                                            color: isActive
+                                                ? const Color(0xFF059669)
+                                                : Colors.grey.shade600,
                                           ),
                                         ),
                                       ),
                                       Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 9, vertical: 4),
                                         decoration: BoxDecoration(
-                                          color: isRecurring ? const Color(0xFFEFF6FF) : Colors.orange.shade50,
-                                          borderRadius: BorderRadius.circular(8),
+                                          color: isRecurring
+                                              ? const Color(0xFFEFF6FF)
+                                              : Colors.orange.shade50,
+                                          borderRadius:
+                                              BorderRadius.circular(8),
                                         ),
                                         child: Text(
-                                          isRecurring ? 'Monthly Auto-Repeat' : 'One-Time',
+                                          isRecurring
+                                              ? 'Monthly Auto-Repeat'
+                                              : 'One-Time',
                                           style: TextStyle(
                                             fontSize: 11.5,
                                             fontWeight: FontWeight.w600,
-                                            color: isRecurring ? Colors.blue[800] : Colors.orange.shade800,
+                                            color: isRecurring
+                                                ? Colors.blue[800]
+                                                : Colors.orange.shade800,
                                           ),
                                         ),
                                       ),
                                       Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 9, vertical: 4),
                                         decoration: BoxDecoration(
                                           color: const Color(0xFFF8FAFC),
-                                          borderRadius: BorderRadius.circular(8),
-                                          border: Border.all(color: Colors.grey.shade200),
+                                          borderRadius:
+                                              BorderRadius.circular(8),
+                                          border: Border.all(
+                                              color: Colors.grey.shade200),
                                         ),
                                         child: Text(
                                           '${_formatTime24To12(hour, minute)} IST',
@@ -1069,14 +1013,16 @@ class _ReminderScreenState extends State<ReminderScreen> {
     final isAm = _selectedTime.period == DayPeriod.am;
     final nowIst = _nowInIst();
     final todayIst = DateTime(nowIst.year, nowIst.month, nowIst.day);
-    final safeInitialDate = _selectedDueDate.isBefore(todayIst) ? todayIst : _selectedDueDate;
+    final safeInitialDate =
+        _selectedDueDate.isBefore(todayIst) ? todayIst : _selectedDueDate;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF7F9FC),
       appBar: AppBar(
         title: const Text(
           'Fee Reminder',
-          style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 19),
+          style: TextStyle(
+              fontWeight: FontWeight.bold, color: Colors.white, fontSize: 19),
         ),
         backgroundColor: Colors.blue[800],
         foregroundColor: Colors.white,
@@ -1111,7 +1057,10 @@ class _ReminderScreenState extends State<ReminderScreen> {
                 children: [
                   const Text(
                     'Search Student',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF1B1B1B)),
+                    style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF1B1B1B)),
                   ),
                   const SizedBox(height: 14),
                   Row(
@@ -1121,23 +1070,29 @@ class _ReminderScreenState extends State<ReminderScreen> {
                           controller: _searchController,
                           decoration: InputDecoration(
                             hintText: 'Enter Student User ID',
-                            hintStyle: TextStyle(color: Colors.grey[400], fontSize: 14),
-                            prefixIcon: Icon(Icons.tag_rounded, color: Colors.blue[800], size: 22),
+                            hintStyle: TextStyle(
+                                color: Colors.grey[400], fontSize: 14),
+                            prefixIcon: Icon(Icons.tag_rounded,
+                                color: Colors.blue[800], size: 22),
                             filled: true,
                             fillColor: const Color(0xFFF8FAFC),
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(14),
-                              borderSide: BorderSide(color: Colors.grey.shade200),
+                              borderSide:
+                                  BorderSide(color: Colors.grey.shade200),
                             ),
                             enabledBorder: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(14),
-                              borderSide: BorderSide(color: Colors.grey.shade200),
+                              borderSide:
+                                  BorderSide(color: Colors.grey.shade200),
                             ),
                             focusedBorder: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(14),
-                              borderSide: BorderSide(color: Colors.blue.shade400, width: 1.5),
+                              borderSide: BorderSide(
+                                  color: Colors.blue.shade400, width: 1.5),
                             ),
-                            contentPadding: const EdgeInsets.symmetric(vertical: 14),
+                            contentPadding:
+                                const EdgeInsets.symmetric(vertical: 14),
                           ),
                           onSubmitted: (_) => _searchStudent(),
                         ),
@@ -1147,8 +1102,10 @@ class _ReminderScreenState extends State<ReminderScreen> {
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.blue[800],
                           foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 15),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 18, vertical: 15),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14)),
                           elevation: 2,
                         ),
                         onPressed: _isSearching ? null : _searchStudent,
@@ -1156,7 +1113,8 @@ class _ReminderScreenState extends State<ReminderScreen> {
                             ? const SizedBox(
                                 width: 22,
                                 height: 22,
-                                child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5),
+                                child: CircularProgressIndicator(
+                                    color: Colors.white, strokeWidth: 2.5),
                               )
                             : const Icon(Icons.search_rounded, size: 22),
                       ),
@@ -1188,11 +1146,13 @@ class _ReminderScreenState extends State<ReminderScreen> {
                         decoration: BoxDecoration(
                           color: Colors.amber.shade50,
                           borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: Colors.amber.shade300, width: 1.2),
+                          border: Border.all(
+                              color: Colors.amber.shade300, width: 1.2),
                         ),
                         child: Row(
                           children: [
-                            Icon(Icons.warning_amber_rounded, color: Colors.amber.shade900, size: 24),
+                            Icon(Icons.warning_amber_rounded,
+                                color: Colors.amber.shade900, size: 24),
                             const SizedBox(width: 10),
                             Expanded(
                               child: Text(
@@ -1234,15 +1194,22 @@ class _ReminderScreenState extends State<ReminderScreen> {
                               ),
                               child: ClipRRect(
                                 borderRadius: BorderRadius.circular(24),
-                                child: (_foundStudent!['profileImageUrl'] != null &&
-                                        _foundStudent!['profileImageUrl'].toString().isNotEmpty)
+                                child: (_foundStudent!['profileImageUrl'] !=
+                                            null &&
+                                        _foundStudent!['profileImageUrl']
+                                            .toString()
+                                            .isNotEmpty)
                                     ? Image.network(
-                                        _foundStudent!['profileImageUrl'].toString(),
+                                        _foundStudent!['profileImageUrl']
+                                            .toString(),
                                         fit: BoxFit.cover,
-                                        errorBuilder: (_, __, ___) =>
-                                            Icon(Icons.person_rounded, color: Colors.blue[800], size: 26),
+                                        errorBuilder: (_, __, ___) => Icon(
+                                            Icons.person_rounded,
+                                            color: Colors.blue[800],
+                                            size: 26),
                                       )
-                                    : Icon(Icons.person_rounded, color: Colors.blue[800], size: 26),
+                                    : Icon(Icons.person_rounded,
+                                        color: Colors.blue[800], size: 26),
                               ),
                             ),
                             title: Text(
@@ -1267,22 +1234,32 @@ class _ReminderScreenState extends State<ReminderScreen> {
                           ),
                           const Padding(
                             padding: EdgeInsets.symmetric(vertical: 16.0),
-                            child: Divider(height: 1, thickness: 1, color: Color(0xFFF1F5F9)),
+                            child: Divider(
+                                height: 1,
+                                thickness: 1,
+                                color: Color(0xFFF1F5F9)),
                           ),
                           TextField(
                             controller: _amountController,
-                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                            keyboardType:
+                                const TextInputType.numberWithOptions(
+                                    decimal: true),
                             inputFormatters: [
-                              FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}')),
+                              FilteringTextInputFormatter.allow(
+                                  RegExp(r'^\d+\.?\d{0,2}')),
                             ],
                             decoration: InputDecoration(
                               labelText: 'Amount (₹)',
-                              labelStyle: TextStyle(color: Colors.grey[600], fontSize: 14),
-                              prefixIcon: Icon(Icons.currency_rupee_rounded, color: Colors.blue[800], size: 20),
-                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+                              labelStyle: TextStyle(
+                                  color: Colors.grey[600], fontSize: 14),
+                              prefixIcon: Icon(Icons.currency_rupee_rounded,
+                                  color: Colors.blue[800], size: 20),
+                              border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(14)),
                               focusedBorder: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(14),
-                                borderSide: BorderSide(color: Colors.blue.shade400, width: 1.5),
+                                borderSide: BorderSide(
+                                    color: Colors.blue.shade400, width: 1.5),
                               ),
                             ),
                             onChanged: (_) => setState(() {}),
@@ -1292,21 +1269,27 @@ class _ReminderScreenState extends State<ReminderScreen> {
                             value: _selectedMonth,
                             decoration: InputDecoration(
                               labelText: 'Month',
-                              labelStyle: TextStyle(color: Colors.grey[600], fontSize: 14),
-                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+                              labelStyle: TextStyle(
+                                  color: Colors.grey[600], fontSize: 14),
+                              border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(14)),
                               focusedBorder: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(14),
-                                borderSide: BorderSide(color: Colors.blue.shade400, width: 1.5),
+                                borderSide: BorderSide(
+                                    color: Colors.blue.shade400, width: 1.5),
                               ),
                             ),
                             items: _months
                                 .map((m) => DropdownMenuItem(
                                       value: m,
-                                      child: Text(m, style: const TextStyle(fontSize: 14)),
+                                      child: Text(m,
+                                          style: const TextStyle(fontSize: 14)),
                                     ))
                                 .toList(),
                             onChanged: (val) {
-                              if (val != null) setState(() => _selectedMonth = val);
+                              if (val != null) {
+                                setState(() => _selectedMonth = val);
+                              }
                             },
                           ),
                           const SizedBox(height: 18),
@@ -1319,7 +1302,8 @@ class _ReminderScreenState extends State<ReminderScreen> {
                                       context: context,
                                       initialDate: safeInitialDate,
                                       firstDate: todayIst,
-                                      lastDate: todayIst.add(const Duration(days: 365)),
+                                      lastDate: todayIst
+                                          .add(const Duration(days: 365)),
                                     );
                                     if (picked != null && mounted) {
                                       setState(() => _selectedDueDate = picked);
@@ -1328,17 +1312,33 @@ class _ReminderScreenState extends State<ReminderScreen> {
                                   child: InputDecorator(
                                     decoration: InputDecoration(
                                       labelText: 'Due Date',
-                                      labelStyle: TextStyle(color: Colors.grey[600], fontSize: 14),
-                                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+                                      labelStyle: TextStyle(
+                                          color: Colors.grey[600],
+                                          fontSize: 14),
+                                      border: OutlineInputBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(14)),
                                     ),
                                     child: Row(
-                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.spaceBetween,
                                       children: [
-                                        Text(
-                                          _formatDateDdMmYyyy(_selectedDueDate),
-                                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                                        Flexible(
+                                          child: FittedBox(
+                                            fit: BoxFit.scaleDown,
+                                            alignment: Alignment.centerLeft,
+                                            child: Text(
+                                              _formatDateDdMmYyyy(
+                                                  _selectedDueDate),
+                                              style: const TextStyle(
+                                                  fontSize: 13,
+                                                  fontWeight: FontWeight.w600),
+                                            ),
+                                          ),
                                         ),
-                                        Icon(Icons.calendar_today_rounded, size: 18, color: Colors.blue[800]),
+                                        const SizedBox(width: 4),
+                                        Icon(Icons.calendar_today_rounded,
+                                            size: 18, color: Colors.blue[800]),
                                       ],
                                     ),
                                   ),
@@ -1351,41 +1351,73 @@ class _ReminderScreenState extends State<ReminderScreen> {
                                   child: InputDecorator(
                                     decoration: InputDecoration(
                                       labelText: 'Send Time (IST)',
-                                      labelStyle: TextStyle(color: Colors.grey[600], fontSize: 14),
-                                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+                                      labelStyle: TextStyle(
+                                          color: Colors.grey[600],
+                                          fontSize: 14),
+                                      border: OutlineInputBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(14)),
                                     ),
                                     child: Row(
-                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.spaceBetween,
                                       children: [
-                                        Row(
-                                          children: [
-                                            Text(
-                                              _formatHourMinute(_selectedTime),
-                                              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
-                                            ),
-                                            const SizedBox(width: 6),
-                                            Container(
-                                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                              decoration: BoxDecoration(
-                                                color: isAm ? Colors.blue.shade50 : Colors.indigo.shade50,
-                                                borderRadius: BorderRadius.circular(6),
-                                                border: Border.all(
-                                                  color: isAm ? Colors.blue.shade300 : Colors.indigo.shade300,
-                                                  width: 1,
+                                        Flexible(
+                                          child: FittedBox(
+                                            fit: BoxFit.scaleDown,
+                                            alignment: Alignment.centerLeft,
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Text(
+                                                  _formatHourMinute(
+                                                      _selectedTime),
+                                                  style: const TextStyle(
+                                                      fontSize: 14,
+                                                      fontWeight:
+                                                          FontWeight.bold),
                                                 ),
-                                              ),
-                                              child: Text(
-                                                isAm ? 'AM' : 'PM',
-                                                style: TextStyle(
-                                                  fontSize: 11,
-                                                  fontWeight: FontWeight.w800,
-                                                  color: isAm ? Colors.blue.shade800 : Colors.indigo.shade800,
+                                                const SizedBox(width: 6),
+                                                Container(
+                                                  padding: const EdgeInsets
+                                                      .symmetric(
+                                                      horizontal: 6,
+                                                      vertical: 2),
+                                                  decoration: BoxDecoration(
+                                                    color: isAm
+                                                        ? Colors.blue.shade50
+                                                        : Colors.indigo.shade50,
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                            6),
+                                                    border: Border.all(
+                                                      color: isAm
+                                                          ? Colors.blue.shade300
+                                                          : Colors
+                                                              .indigo.shade300,
+                                                      width: 1,
+                                                    ),
+                                                  ),
+                                                  child: Text(
+                                                    isAm ? 'AM' : 'PM',
+                                                    style: TextStyle(
+                                                      fontSize: 11,
+                                                      fontWeight:
+                                                          FontWeight.w800,
+                                                      color: isAm
+                                                          ? Colors.blue.shade800
+                                                          : Colors
+                                                              .indigo.shade800,
+                                                    ),
+                                                  ),
                                                 ),
-                                              ),
+                                              ],
                                             ),
-                                          ],
+                                          ),
                                         ),
-                                        Icon(Icons.access_time_rounded, size: 18, color: Colors.blue[800]),
+                                        const SizedBox(width: 4),
+                                        Icon(Icons.access_time_rounded,
+                                            size: 18, color: Colors.blue[800]),
                                       ],
                                     ),
                                   ),
@@ -1395,7 +1427,8 @@ class _ReminderScreenState extends State<ReminderScreen> {
                           ),
                           const SizedBox(height: 16),
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 14, vertical: 8),
                             decoration: BoxDecoration(
                               color: const Color(0xFFF8FAFC),
                               borderRadius: BorderRadius.circular(14),
@@ -1403,11 +1436,13 @@ class _ReminderScreenState extends State<ReminderScreen> {
                             ),
                             child: Row(
                               children: [
-                                Icon(Icons.repeat_rounded, color: Colors.blue[800], size: 20),
+                                Icon(Icons.repeat_rounded,
+                                    color: Colors.blue[800], size: 20),
                                 const SizedBox(width: 10),
                                 Expanded(
                                   child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
                                       const Text(
                                         'Monthly Auto-Repeat',
@@ -1421,7 +1456,9 @@ class _ReminderScreenState extends State<ReminderScreen> {
                                         _isRecurring
                                             ? 'Repeats automatically on day ${_selectedDueDate.day} every month'
                                             : 'Sends once on ${_formatDateDdMmYyyy(_selectedDueDate)}',
-                                        style: TextStyle(fontSize: 11.5, color: Colors.grey.shade600),
+                                        style: TextStyle(
+                                            fontSize: 11.5,
+                                            color: Colors.grey.shade600),
                                       ),
                                     ],
                                   ),
@@ -1429,7 +1466,8 @@ class _ReminderScreenState extends State<ReminderScreen> {
                                 Switch.adaptive(
                                   value: _isRecurring,
                                   activeColor: Colors.blue[800],
-                                  onChanged: (val) => setState(() => _isRecurring = val),
+                                  onChanged: (val) =>
+                                      setState(() => _isRecurring = val),
                                 ),
                               ],
                             ),
@@ -1440,7 +1478,10 @@ class _ReminderScreenState extends State<ReminderScreen> {
                     const SizedBox(height: 24),
                     const Text(
                       'Official Channel Preview',
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF1B1B1B)),
+                      style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF1B1B1B)),
                     ),
                     const SizedBox(height: 10),
                     Container(
@@ -1448,7 +1489,8 @@ class _ReminderScreenState extends State<ReminderScreen> {
                       decoration: BoxDecoration(
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: const Color(0xFFBBF7D0), width: 1.2),
+                        border: Border.all(
+                            color: const Color(0xFFBBF7D0), width: 1.2),
                         boxShadow: [
                           BoxShadow(
                             color: Colors.black.withOpacity(0.02),
@@ -1473,7 +1515,8 @@ class _ReminderScreenState extends State<ReminderScreen> {
                                   errorBuilder: (_, __, ___) => CircleAvatar(
                                     radius: 15,
                                     backgroundColor: Colors.teal.shade50,
-                                    child: const Icon(Icons.verified_rounded, color: Colors.teal, size: 18),
+                                    child: const Icon(Icons.verified_rounded,
+                                        color: Colors.teal, size: 18),
                                   ),
                                 ),
                               ),
@@ -1492,16 +1535,20 @@ class _ReminderScreenState extends State<ReminderScreen> {
                                 width: 14,
                                 height: 14,
                                 fit: BoxFit.contain,
-                                errorBuilder: (_, __, ___) =>
-                                    const Icon(Icons.verified_rounded, color: Color(0xFF0284C7), size: 14),
+                                errorBuilder: (_, __, ___) => const Icon(
+                                    Icons.verified_rounded,
+                                    color: Color(0xFF0284C7),
+                                    size: 14),
                               ),
                               const Spacer(),
                               Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 7, vertical: 2),
                                 decoration: BoxDecoration(
                                   color: const Color(0xFFECFDF5),
                                   borderRadius: BorderRadius.circular(6),
-                                  border: Border.all(color: const Color(0xFFA7F3D0)),
+                                  border: Border.all(
+                                      color: const Color(0xFFA7F3D0)),
                                 ),
                                 child: const Text(
                                   'Official Notice',
@@ -1516,7 +1563,10 @@ class _ReminderScreenState extends State<ReminderScreen> {
                           ),
                           const Padding(
                             padding: EdgeInsets.symmetric(vertical: 12.0),
-                            child: Divider(height: 1, thickness: 1, color: Color(0xFFF1F5F9)),
+                            child: Divider(
+                                height: 1,
+                                thickness: 1,
+                                color: Color(0xFFF1F5F9)),
                           ),
                           Text(
                             "Hello ${_foundStudent!['name'] ?? 'Student'},\n\n"
@@ -1543,27 +1593,34 @@ class _ReminderScreenState extends State<ReminderScreen> {
                       height: 54,
                       child: ElevatedButton.icon(
                         style: ElevatedButton.styleFrom(
-                          backgroundColor:
-                              _hasActiveReminder ? Colors.grey.shade400 : const Color(0xFF10B981),
+                          backgroundColor: _hasActiveReminder
+                              ? Colors.grey.shade400
+                              : const Color(0xFF10B981),
                           foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16)),
                           elevation: 2,
                         ),
-                        onPressed:
-                            _isSending || _amountController.text.trim().isEmpty || _hasActiveReminder
-                                ? null
-                                : _sendReminder,
+                        onPressed: _isSending ||
+                                _amountController.text.trim().isEmpty ||
+                                _hasActiveReminder
+                            ? null
+                            : _sendReminder,
                         icon: _isSending
                             ? const SizedBox.shrink()
-                            : const Icon(Icons.calendar_month_rounded, size: 20),
+                            : const Icon(Icons.calendar_month_rounded,
+                                size: 20),
                         label: _isSending
                             ? const SizedBox(
                                 width: 24,
                                 height: 24,
-                                child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5),
+                                child: CircularProgressIndicator(
+                                    color: Colors.white, strokeWidth: 2.5),
                               )
                             : Text(
-                                _hasActiveReminder ? 'REMINDER ALREADY ACTIVE' : 'SCHEDULE REMINDER',
+                                _hasActiveReminder
+                                    ? 'REMINDER ALREADY ACTIVE'
+                                    : 'SCHEDULE REMINDER',
                                 style: const TextStyle(
                                   fontWeight: FontWeight.bold,
                                   fontSize: 15,
@@ -1605,7 +1662,8 @@ class _ReminderScreenState extends State<ReminderScreen> {
                         color: Colors.white.withOpacity(0.15),
                         borderRadius: BorderRadius.circular(14),
                       ),
-                      child: const Icon(Icons.notifications_active_rounded, color: Colors.white, size: 26),
+                      child: const Icon(Icons.notifications_active_rounded,
+                          color: Colors.white, size: 26),
                     ),
                     const SizedBox(width: 16),
                     Expanded(
@@ -1614,19 +1672,24 @@ class _ReminderScreenState extends State<ReminderScreen> {
                         children: [
                           const Text(
                             'Active Reminders',
-                            style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.bold),
+                            style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 17,
+                                fontWeight: FontWeight.bold),
                           ),
                           const SizedBox(height: 4),
                           StreamBuilder<QuerySnapshot>(
                             stream: _firestore
                                 .collection('fee_reminders')
-                                .where('teacherId', isEqualTo: widget.currentUserId)
+                                .where('teacherId',
+                                    isEqualTo: widget.currentUserId)
                                 .snapshots(),
                             builder: (context, snapshot) {
                               int activeCount = 0;
                               if (snapshot.hasData) {
                                 activeCount = snapshot.data!.docs.where((d) {
-                                  final data = d.data() as Map<String, dynamic>;
+                                  final data =
+                                      (d.data() as Map<String, dynamic>?) ?? {};
                                   return data['isActive'] == true;
                                 }).length;
                               }
@@ -1645,7 +1708,8 @@ class _ReminderScreenState extends State<ReminderScreen> {
                         ],
                       ),
                     ),
-                    const Icon(Icons.arrow_forward_ios_rounded, color: Colors.white, size: 16),
+                    const Icon(Icons.arrow_forward_ios_rounded,
+                        color: Colors.white, size: 16),
                   ],
                 ),
               ),
@@ -1653,6 +1717,202 @@ class _ReminderScreenState extends State<ReminderScreen> {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _IstTimePickerDialog extends StatefulWidget {
+  final TimeOfDay initialTime;
+
+  const _IstTimePickerDialog({required this.initialTime});
+
+  @override
+  State<_IstTimePickerDialog> createState() => _IstTimePickerDialogState();
+}
+
+class _IstTimePickerDialogState extends State<_IstTimePickerDialog> {
+  late int _tempHour;
+  late int _tempMinute;
+  late bool _isAm;
+  late FixedExtentScrollController _hourController;
+  late FixedExtentScrollController _minuteController;
+  late FixedExtentScrollController _periodController;
+
+  @override
+  void initState() {
+    super.initState();
+    _tempHour = widget.initialTime.hourOfPeriod == 0
+        ? 12
+        : widget.initialTime.hourOfPeriod;
+    _tempMinute = widget.initialTime.minute;
+    _isAm = widget.initialTime.period == DayPeriod.am;
+
+    _hourController =
+        FixedExtentScrollController(initialItem: _tempHour - 1);
+    _minuteController =
+        FixedExtentScrollController(initialItem: _tempMinute);
+    _periodController =
+        FixedExtentScrollController(initialItem: _isAm ? 0 : 1);
+  }
+
+  @override
+  void dispose() {
+    _hourController.dispose();
+    _minuteController.dispose();
+    _periodController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      contentPadding: const EdgeInsets.fromLTRB(16, 20, 16, 12),
+      title: const Center(
+        child: Text(
+          'Set Reminder Time (IST)',
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: 18,
+            color: Color(0xFF1E3A8A),
+          ),
+        ),
+      ),
+      content: SizedBox(
+        height: 180,
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            SizedBox(
+              width: 60,
+              child: CupertinoPicker(
+                scrollController: _hourController,
+                itemExtent: 42,
+                selectionOverlay: Container(
+                  decoration: BoxDecoration(
+                    border: Border.symmetric(
+                      horizontal:
+                          BorderSide(color: Colors.blue.shade300, width: 1.5),
+                    ),
+                  ),
+                ),
+                onSelectedItemChanged: (index) {
+                  HapticFeedback.selectionClick();
+                  _tempHour = index + 1;
+                },
+                children: List.generate(
+                  12,
+                  (i) => Center(
+                    child: Text(
+                      '${i + 1}'.padLeft(2, '0'),
+                      style: const TextStyle(
+                          fontSize: 20, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            const Text(':',
+                style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+            SizedBox(
+              width: 60,
+              child: CupertinoPicker(
+                scrollController: _minuteController,
+                itemExtent: 42,
+                selectionOverlay: Container(
+                  decoration: BoxDecoration(
+                    border: Border.symmetric(
+                      horizontal:
+                          BorderSide(color: Colors.blue.shade300, width: 1.5),
+                    ),
+                  ),
+                ),
+                onSelectedItemChanged: (index) {
+                  HapticFeedback.selectionClick();
+                  _tempMinute = index;
+                },
+                children: List.generate(
+                  60,
+                  (i) => Center(
+                    child: Text(
+                      '$i'.padLeft(2, '0'),
+                      style: const TextStyle(
+                          fontSize: 20, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            SizedBox(
+              width: 68,
+              child: CupertinoPicker(
+                scrollController: _periodController,
+                itemExtent: 42,
+                selectionOverlay: Container(
+                  decoration: BoxDecoration(
+                    border: Border.symmetric(
+                      horizontal:
+                          BorderSide(color: Colors.blue.shade300, width: 1.5),
+                    ),
+                  ),
+                ),
+                onSelectedItemChanged: (index) {
+                  HapticFeedback.selectionClick();
+                  _isAm = index == 0;
+                },
+                children: const [
+                  Center(
+                    child: Text(
+                      'AM',
+                      style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.blue),
+                    ),
+                  ),
+                  Center(
+                    child: Text(
+                      'PM',
+                      style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.indigo),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+        ),
+        ElevatedButton(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.blue[800],
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+          onPressed: () {
+            int convertedHour = _tempHour;
+            if (_isAm && convertedHour == 12) convertedHour = 0;
+            if (!_isAm && convertedHour != 12) convertedHour += 12;
+
+            Navigator.pop(
+              context,
+              TimeOfDay(hour: convertedHour, minute: _tempMinute),
+            );
+          },
+          child: const Text(
+            'Set Time',
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+          ),
+        ),
+      ],
     );
   }
 }
