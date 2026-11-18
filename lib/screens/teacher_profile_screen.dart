@@ -1,15 +1,3 @@
-Here is the complete, upgraded, and bug-free `TeacherProfileScreen` file (which houses the Teacher Dashboard and Pending Tuition Fees popup modal).
-
-### Architectural Improvements Applied:
-1. **Dynamic & Drift-Free Ledger Calculation:**
-   - Upgraded `_computeLedgerDue` to ingest `monthlyStatus`, `monthStatuses`, and direct root month properties identically to `diary_history_screen.dart`.
-   - Expanded unit fee resolution to inspect both `monthlyFee` and `feeAmount`.
-   - Guaranteed that the dashboard card (`Pending Payments`) and the red **"Pending Tuition Fees"** popup match the Tuition Diary ledger with 100% accuracy.
-2. **Safe Student Avatar Fallbacks:**
-   - Introduced `_buildStudentMiniAvatar` inside the **"Pending Tuition Fees"** modal: renders the student's actual profile photo with loading state and stylized two-letter initials fallback so missing or broken image URLs never render blank white circles.
-3. **Strict English UI & Type Safety:** Fully audited for null safety and strict English UI terminology across all widgets, dialogs, badges, and sheets.
-
-```dart
 import 'dart:async';
 import 'dart:ui';
 import 'package:cloud_firestore/cloud_firestore.dart';
