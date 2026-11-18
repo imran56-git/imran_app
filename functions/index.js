@@ -14,6 +14,17 @@ const OFFICIAL_SENDER_ID = "OFFICIAL_FYBTT_DESK";
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
 
 /**
+ * Creates a baseline 12-month ledger with default "not_enrolled" status
+ */
+function createDefaultMonthlyStatus() {
+  const statusMap = {};
+  for (const month of MONTH_NAMES) {
+    statusMap[month] = "not_enrolled";
+  }
+  return statusMap;
+}
+
+/**
  * Helper: Fetch receiver's FCM token from users, teachers, or students collection
  */
 async function getReceiverFcmToken(receiverId) {
@@ -153,31 +164,12 @@ function normalizeMonthName(rawMonth, fallbackDate) {
 }
 
 /**
- * Helper: Detects the monthly status map field on a student_fees document
- */
-function resolveStatusMapKey(diaryData) {
-  const candidateKeys = [
-    "monthlyStatus",
-    "monthlyStatuses",
-    "months",
-    "statusMap",
-    "monthlyLedger",
-  ];
-  for (const key of candidateKeys) {
-    const val = diaryData[key];
-    if (val && typeof val === "object" && !Array.isArray(val)) {
-      return key;
-    }
-  }
-  return "monthlyStatus";
-}
-
-/**
  * Helper: Calculates ledger totals strictly from the monthly status map
  */
 function computeLedgerSummary(statusMap, unitFee) {
   let dueMonthsCount = 0;
   let paidMonthsCount = 0;
+  let notEnrolledCount = 0;
 
   for (const rawStatus of Object.values(statusMap || {})) {
     const normalized = (rawStatus || "").toString().trim().toLowerCase();
@@ -185,14 +177,21 @@ function computeLedgerSummary(statusMap, unitFee) {
       dueMonthsCount += 1;
     } else if (normalized === "paid") {
       paidMonthsCount += 1;
+    } else {
+      notEnrolledCount += 1;
     }
   }
 
+  const safeUnitFee = Number.isFinite(unitFee) && unitFee > 0 ? unitFee : 0;
+
   return {
-    dueMonthsCount,
-    paidMonthsCount,
-    totalDue: dueMonthsCount * unitFee,
-    totalCollected: paidMonthsCount * unitFee,
+    dueMonths: dueMonthsCount,
+    dueMonthsCount: dueMonthsCount,
+    paidMonths: paidMonthsCount,
+    paidMonthsCount: paidMonthsCount,
+    notEnrolledCount: notEnrolledCount,
+    totalDue: dueMonthsCount * safeUnitFee,
+    totalCollected: paidMonthsCount * safeUnitFee,
   };
 }
 
@@ -255,7 +254,7 @@ exports.processScheduledFeeReminders = onSchedule(
           ).padStart(2, "0")}/${targetYear}`;
         const timeStr = formatTime12Hour(hour, minute);
 
-        // Official Channel Message (Exact Preview Format)
+        // Official Channel Message Format
         const officialMessageText =
           `Hello ${studentName},\n\n` +
           `This is an official tuition fee reminder on behalf of ${teacherName}. ` +
@@ -273,7 +272,7 @@ exports.processScheduledFeeReminders = onSchedule(
 
         const batch = db.batch();
 
-        // Send message inside FYBTT official channel (isolated from personal teacher chats)
+        // Send message inside FYBTT official channel (isolated from personal chats)
         batch.set(msgRef, {
           messageId: msgRef.id,
           senderId: OFFICIAL_SENDER_ID,
@@ -294,7 +293,7 @@ exports.processScheduledFeeReminders = onSchedule(
           officialChatRef,
           {
             chatId: officialChatId,
-            participants: [studentId],
+            participants: [studentId, OFFICIAL_SENDER_ID],
             isGroup: false,
             isOfficial: true,
             chatCategory: "official_fees",
@@ -325,7 +324,7 @@ exports.processScheduledFeeReminders = onSchedule(
           status: "pending",
         });
 
-        // Ecosystem Sync: Update student_fees monthly status ledger & fee_entries subcollection
+        // Ecosystem Sync: Find or create the student's student_fees document
         const diaryQuery = await db
           .collection("student_fees")
           .where("teacherId", "==", teacherId)
@@ -335,22 +334,28 @@ exports.processScheduledFeeReminders = onSchedule(
         let diaryUpdated = false;
         let alreadyPaid = false;
 
+        let diaryDocRef = null;
+        let ledgerStatusMap = createDefaultMonthlyStatus();
+        let unitFee = amount;
+
         if (!diaryQuery.empty) {
-          const diaryDoc =
+          const matchedDoc =
             diaryQuery.docs.find((d) => Number((d.data() || {}).year) === targetYear) ||
             diaryQuery.docs[0];
-          const diaryData = diaryDoc.data() || {};
+          diaryDocRef = matchedDoc.ref;
+          const diaryData = matchedDoc.data() || {};
 
-          const statusMapKey = resolveStatusMapKey(diaryData);
-          const updatedStatusMap = { ...(diaryData[statusMapKey] || {}) };
+          // Reconcile unit fee
+          unitFee = Number(
+            diaryData.monthlyFee ?? diaryData.feeAmount ?? diaryData.monthlyAmount ?? amount
+          );
+          if (!Number.isFinite(unitFee) || unitFee <= 0) unitFee = amount;
 
-          // Match existing month key case-insensitively, defaulting to Title Case monthName
-          const existingMonthKey =
-            Object.keys(updatedStatusMap).find(
-              (k) => k.trim().toLowerCase() === monthName.toLowerCase()
-            ) || monthName;
+          // Merge existing status map with full 12-month baseline
+          const existingMap = diaryData.monthlyStatus || diaryData.monthlyStatuses || {};
+          ledgerStatusMap = { ...ledgerStatusMap, ...existingMap };
 
-          const currentMonthStatus = (updatedStatusMap[existingMonthKey] || "")
+          const currentMonthStatus = (ledgerStatusMap[monthName] || "")
             .toString()
             .trim()
             .toLowerCase();
@@ -358,61 +363,79 @@ exports.processScheduledFeeReminders = onSchedule(
           if (currentMonthStatus === "paid") {
             alreadyPaid = true;
           } else {
-            updatedStatusMap[existingMonthKey] = "due";
+            ledgerStatusMap[monthName] = "due";
+            diaryUpdated = true;
+          }
+        } else {
+          // Initialize a brand new student_fees document if not existing
+          diaryDocRef = db.collection("student_fees").doc();
+          ledgerStatusMap[monthName] = "due";
+          diaryUpdated = true;
+        }
 
-            // Also sync fee_entries subcollection without duplicating entries for the same month
-            const existingEntriesSnap = await diaryDoc.ref
-              .collection("fee_entries")
-              .where("month", "==", monthName)
-              .limit(1)
-              .get();
+        if (diaryUpdated && !alreadyPaid) {
+          const summary = computeLedgerSummary(ledgerStatusMap, unitFee);
 
-            if (!existingEntriesSnap.empty) {
-              const existingEntryDoc = existingEntriesSnap.docs[0];
-              const existingEntryStatus = ((existingEntryDoc.data() || {}).status || "")
-                .toString()
-                .trim()
-                .toLowerCase();
-
-              if (existingEntryStatus !== "paid") {
-                batch.update(existingEntryDoc.ref, {
-                  month: monthName,
-                  dueDate: dueDateStr,
-                  amount: amount,
-                  status: "due",
-                  source: "auto_fee_reminder",
-                  updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-                });
-              }
-            } else {
-              const ledgerRef = diaryDoc.ref.collection("fee_entries").doc();
-              batch.set(ledgerRef, {
-                entryId: ledgerRef.id,
-                month: monthName,
-                dueDate: dueDateStr,
-                amount: amount,
-                status: "due",
-                source: "auto_fee_reminder",
-                createdAt: admin.firestore.FieldValue.serverTimestamp(),
-              });
-            }
-
-            const unitFee = Number(
-              diaryData.monthlyFee ?? diaryData.feeAmount ?? diaryData.monthlyAmount ?? amount ?? 0
-            );
-            const summary = computeLedgerSummary(updatedStatusMap, unitFee);
-
-            batch.update(diaryDoc.ref, {
-              [statusMapKey]: updatedStatusMap,
+          // Update main student_fees record
+          batch.set(
+            diaryDocRef,
+            {
+              teacherId: teacherId,
+              teacherName: teacherName,
+              studentId: studentId,
+              studentName: studentName,
+              year: targetYear,
+              monthlyFee: unitFee,
+              monthlyStatus: ledgerStatusMap,
+              // Direct root-level month key for flat lookups
+              [monthName]: "due",
               totalDue: summary.totalDue,
               totalCollected: summary.totalCollected,
+              dueMonths: summary.dueMonths,
               dueMonthsCount: summary.dueMonthsCount,
+              paidMonths: summary.paidMonths,
               paidMonthsCount: summary.paidMonthsCount,
               lastReminderMonth: monthName,
               lastUpdated: admin.firestore.FieldValue.serverTimestamp(),
-            });
+            },
+            { merge: true }
+          );
 
-            diaryUpdated = true;
+          // Sync fee_entries subcollection entry
+          const existingEntriesSnap = await diaryDocRef
+            .collection("fee_entries")
+            .where("month", "==", monthName)
+            .limit(1)
+            .get();
+
+          if (!existingEntriesSnap.empty) {
+            const entryDoc = existingEntriesSnap.docs[0];
+            const currentEntryStatus = ((entryDoc.data() || {}).status || "")
+              .toString()
+              .trim()
+              .toLowerCase();
+
+            if (currentEntryStatus !== "paid") {
+              batch.update(entryDoc.ref, {
+                month: monthName,
+                dueDate: dueDateStr,
+                amount: unitFee,
+                status: "due",
+                source: "auto_fee_reminder",
+                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+              });
+            }
+          } else {
+            const newEntryRef = diaryDocRef.collection("fee_entries").doc();
+            batch.set(newEntryRef, {
+              entryId: newEntryRef.id,
+              month: monthName,
+              dueDate: dueDateStr,
+              amount: unitFee,
+              status: "due",
+              source: "auto_fee_reminder",
+              createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
           }
         }
 
@@ -434,7 +457,7 @@ exports.processScheduledFeeReminders = onSchedule(
           status: "pending",
         });
 
-        // Schedule Next Month Automatically (or deactivate if one-time)
+        // Reschedule for next monthly cycle or deactivate if non-recurring
         if (isRecurring) {
           const nextSchedule = calculateNextMonthlyRun(
             currentRunDate,
