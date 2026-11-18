@@ -1,8 +1,3 @@
-Here is the complete updated **`lib/screens/chat_screen.dart`**. I updated `_isOfficialChannel` and `isOfficialMsg` to recognize both `OFFICIAL_FYBTT_DESK` and `fybtt_official`, hid the **Delete for Me** action on official channel messages so `FYBTT official` remains strictly read-only and non-deletable (while still allowing Copy), and switched the official read-receipt update to `SetOptions(merge: true)` for safety.
-
-**Next Step:** After copying this file, please reply **"update functions/index.js"** so I can send the final aligned `functions/index.js` using your confirmed `monthStatuses` (`'DUE'` / `'PAID'`) schema (or paste any parent `HomeScreen` / `StudentDashboardScreen` file if it has a Chat Hub unread badge that should exclude `FYBTT official`).
-
-```dart
 import 'dart:async';
 import 'dart:developer';
 import 'dart:io';
