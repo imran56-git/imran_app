@@ -31,10 +31,9 @@ class _ChatListScreenState extends State<ChatListScreen>
         SingleTickerProviderStateMixin {
   final ChatService _chatService = ChatService();
   final TextEditingController _searchController = TextEditingController();
-  late final TabController _tabController;
+  late TabController _tabController;
 
   late Stream<QuerySnapshot> _chatsStream;
-  late Stream<int> _unreadChatsCountStream;
   late Stream<int> _unreadGroupsCountStream;
   QuerySnapshot? _lastChatsSnapshot;
 
@@ -49,6 +48,7 @@ class _ChatListScreenState extends State<ChatListScreen>
   final Set<String> _selectedChatDocIds = {};
 
   bool get _isSelectionMode => _selectedChatDocIds.isNotEmpty;
+  bool get _isStudent => !widget.isTeacher;
 
   @override
   bool get wantKeepAlive => true;
@@ -59,14 +59,7 @@ class _ChatListScreenState extends State<ChatListScreen>
     WidgetsBinding.instance.addObserver(this);
 
     _initStreams();
-
-    _tabController = TabController(length: 2, vsync: this);
-    _tabController.addListener(() {
-      if (_tabController.index == 1 && _isSelectionMode) {
-        _clearSelection();
-      }
-      if (mounted) setState(() {});
-    });
+    _initTabController();
 
     _loadCurrentUserName();
     _searchController.addListener(() {
@@ -79,10 +72,19 @@ class _ChatListScreenState extends State<ChatListScreen>
     });
   }
 
+  void _initTabController() {
+    final int tabLength = widget.isTeacher ? 2 : 3;
+    _tabController = TabController(length: tabLength, vsync: this);
+    _tabController.addListener(() {
+      if (_tabController.index != 0 && _isSelectionMode) {
+        _clearSelection();
+      }
+      if (mounted) setState(() {});
+    });
+  }
+
   void _initStreams() {
     _chatsStream = _chatService.getUserChatsStream(widget.currentUserId);
-    _unreadChatsCountStream =
-        _chatService.getTotalUnreadChatsCountStream(widget.currentUserId);
     _unreadGroupsCountStream =
         _chatService.getTotalUnreadGroupsCountStream(widget.currentUserId);
   }
@@ -99,6 +101,11 @@ class _ChatListScreenState extends State<ChatListScreen>
       _lastChatsSnapshot = null;
       _initStreams();
       _loadCurrentUserName();
+
+      if (oldWidget.isTeacher != widget.isTeacher) {
+        _tabController.dispose();
+        _initTabController();
+      }
     }
   }
 
@@ -190,8 +197,54 @@ class _ChatListScreenState extends State<ChatListScreen>
     return data['isOfficial'] == true ||
         docId.startsWith('official_desk_') ||
         data['senderId'] == 'OFFICIAL_FYBTT_DESK' ||
+        data['senderId'] == 'fybtt_official' ||
         data['lastSenderId'] == 'OFFICIAL_FYBTT_DESK' ||
-        participants.contains('OFFICIAL_FYBTT_DESK');
+        data['chatCategory'] == 'official_fees' ||
+        participants.contains('OFFICIAL_FYBTT_DESK') ||
+        participants.contains('fybtt_official');
+  }
+
+  int _calculateUnreadForChat(Map<String, dynamic> chatData) {
+    final String lastSenderId =
+        (chatData['lastSenderId'] ?? chatData['senderId'] ?? '').toString();
+    if (lastSenderId == widget.currentUserId) return 0;
+
+    if (chatData.containsKey('unreadCount_${widget.currentUserId}')) {
+      return (chatData['unreadCount_${widget.currentUserId}'] as num?)?.toInt() ?? 0;
+    }
+    final String unreadFor = (chatData['unreadFor'] ?? '').toString();
+    if (unreadFor.isEmpty || unreadFor == widget.currentUserId) {
+      return (chatData['unreadCount'] as num?)?.toInt() ?? 0;
+    }
+    return 0;
+  }
+
+  int _getPersonalChatsUnreadCount(QuerySnapshot? snapshot) {
+    if (snapshot == null) return 0;
+    int count = 0;
+    for (final doc in snapshot.docs) {
+      final data = doc.data() as Map<String, dynamic>;
+      if (data['isGroup'] == true) continue;
+      if (_isStudent && _isOfficialChatDoc(doc.id, data)) continue;
+
+      final List<dynamic> deletedBy =
+          (data['deletedBy'] as List<dynamic>?) ?? const [];
+      if (deletedBy.contains(widget.currentUserId)) continue;
+
+      count += _calculateUnreadForChat(data);
+    }
+    return count;
+  }
+
+  int _getOfficialFeesUnreadCount(QuerySnapshot? snapshot) {
+    if (snapshot == null) return 0;
+    int count = 0;
+    for (final doc in snapshot.docs) {
+      final data = doc.data() as Map<String, dynamic>;
+      if (!_isOfficialChatDoc(doc.id, data)) continue;
+      count += _calculateUnreadForChat(data);
+    }
+    return count;
   }
 
   void _toggleSelection(String docId, {bool isOfficial = false}) {
@@ -200,7 +253,8 @@ class _ChatListScreenState extends State<ChatListScreen>
       ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('FYBTT official channel is protected and cannot be deleted.'),
+          content:
+              Text('FYBTT official channel is protected and cannot be deleted.'),
           duration: Duration(seconds: 2),
         ),
       );
@@ -438,31 +492,32 @@ class _ChatListScreenState extends State<ChatListScreen>
           labelColor: Colors.white,
           unselectedLabelColor: const Color(0xFF64748B),
           labelStyle: const TextStyle(
-            fontSize: 13.5,
+            fontSize: 13,
             fontWeight: FontWeight.w800,
             letterSpacing: 0.2,
           ),
           unselectedLabelStyle: const TextStyle(
-            fontSize: 13.5,
+            fontSize: 13,
             fontWeight: FontWeight.w700,
           ),
           tabs: [
             Tab(
-              child: StreamBuilder<int>(
-                stream: _unreadChatsCountStream,
+              child: StreamBuilder<QuerySnapshot>(
+                stream: _chatsStream,
                 builder: (context, snapshot) {
-                  final int count = snapshot.data ?? 0;
+                  final snap = snapshot.data ?? _lastChatsSnapshot;
+                  final int count = _getPersonalChatsUnreadCount(snap);
                   return Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       const Icon(Icons.forum_rounded, size: 16),
-                      const SizedBox(width: 7),
+                      const SizedBox(width: 6),
                       const Text('Chats'),
                       if (count > 0) ...[
-                        const SizedBox(width: 6),
+                        const SizedBox(width: 5),
                         Container(
                           padding: const EdgeInsets.symmetric(
-                            horizontal: 6.5,
+                            horizontal: 6,
                             vertical: 1.5,
                           ),
                           decoration: BoxDecoration(
@@ -472,7 +527,7 @@ class _ChatListScreenState extends State<ChatListScreen>
                           child: Text(
                             count > 99 ? '99+' : '$count',
                             style: const TextStyle(
-                              fontSize: 10.5,
+                              fontSize: 10,
                               fontWeight: FontWeight.w900,
                               color: Colors.white,
                             ),
@@ -493,13 +548,13 @@ class _ChatListScreenState extends State<ChatListScreen>
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       const Icon(Icons.groups_rounded, size: 18),
-                      const SizedBox(width: 7),
+                      const SizedBox(width: 6),
                       const Text('Groups'),
                       if (count > 0) ...[
-                        const SizedBox(width: 6),
+                        const SizedBox(width: 5),
                         Container(
                           padding: const EdgeInsets.symmetric(
-                            horizontal: 6.5,
+                            horizontal: 6,
                             vertical: 1.5,
                           ),
                           decoration: BoxDecoration(
@@ -509,7 +564,7 @@ class _ChatListScreenState extends State<ChatListScreen>
                           child: Text(
                             count > 99 ? '99+' : '$count',
                             style: const TextStyle(
-                              fontSize: 10.5,
+                              fontSize: 10,
                               fontWeight: FontWeight.w900,
                               color: Colors.white,
                             ),
@@ -521,13 +576,52 @@ class _ChatListScreenState extends State<ChatListScreen>
                 },
               ),
             ),
+            if (_isStudent)
+              Tab(
+                child: StreamBuilder<QuerySnapshot>(
+                  stream: _chatsStream,
+                  builder: (context, snapshot) {
+                    final snap = snapshot.data ?? _lastChatsSnapshot;
+                    final int count = _getOfficialFeesUnreadCount(snap);
+                    return Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.receipt_long_rounded, size: 16),
+                        const SizedBox(width: 6),
+                        const Text('Fees'),
+                        if (count > 0) ...[
+                          const SizedBox(width: 5),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 1.5,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF059669),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Text(
+                              count > 99 ? '99+' : '$count',
+                              style: const TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w900,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    );
+                  },
+                ),
+              ),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildPrivateChatsList() {
+  Widget _buildPrivateChatsList({required bool isFeesTab}) {
     String firstNonEmpty(List<dynamic> candidates, String defaultVal) {
       for (final c in candidates) {
         final s = c?.toString().trim() ?? '';
@@ -560,7 +654,7 @@ class _ChatListScreenState extends State<ChatListScreen>
           );
         }
         if (activeData == null || activeData.docs.isEmpty) {
-          return _buildEmptyState();
+          return isFeesTab ? _buildFeesEmptyState() : _buildEmptyState();
         }
 
         final rawChatDocs = activeData.docs;
@@ -569,6 +663,13 @@ class _ChatListScreenState extends State<ChatListScreen>
         for (final doc in rawChatDocs) {
           final data = doc.data() as Map<String, dynamic>;
           final bool isOfficial = _isOfficialChatDoc(doc.id, data);
+
+          // Role & Tab Partitioning
+          if (isFeesTab) {
+            if (!isOfficial) continue;
+          } else {
+            if (_isStudent && isOfficial) continue; // Isolate from personal chats
+          }
 
           if (!isOfficial) {
             final List<dynamic> deletedBy =
@@ -642,11 +743,12 @@ class _ChatListScreenState extends State<ChatListScreen>
         });
 
         if (chatDocs.isEmpty) {
-          return _buildEmptyState();
+          return isFeesTab ? _buildFeesEmptyState() : _buildEmptyState();
         }
 
         return ListView.builder(
-          key: const PageStorageKey<String>('private_chats_list_view'),
+          key: PageStorageKey<String>(
+              isFeesTab ? 'fees_chats_list_view' : 'private_chats_list_view'),
           padding: const EdgeInsets.fromLTRB(14, 10, 14, 90),
           physics: const BouncingScrollPhysics(),
           itemCount: chatDocs.length,
@@ -661,28 +763,7 @@ class _ChatListScreenState extends State<ChatListScreen>
             final Timestamp? lastTime =
                 chatData['lastMessageTime'] as Timestamp?;
             final bool isSelected = _selectedChatDocIds.contains(doc.id);
-
-            final String lastSenderId =
-                (chatData['lastSenderId'] ?? chatData['senderId'] ?? '')
-                    .toString();
-            int unreadCount = 0;
-
-            if (lastSenderId != widget.currentUserId) {
-              if (chatData
-                  .containsKey('unreadCount_${widget.currentUserId}')) {
-                unreadCount =
-                    (chatData['unreadCount_${widget.currentUserId}'] as num?)
-                            ?.toInt() ??
-                        0;
-              } else {
-                final String unreadFor =
-                    (chatData['unreadFor'] ?? '').toString();
-                if (unreadFor.isEmpty || unreadFor == widget.currentUserId) {
-                  unreadCount =
-                      (chatData['unreadCount'] as num?)?.toInt() ?? 0;
-                }
-              }
-            }
+            final int unreadCount = _calculateUnreadForChat(chatData);
 
             if (isOfficial) {
               const String officialName = 'FYBTT official';
@@ -696,7 +777,7 @@ class _ChatListScreenState extends State<ChatListScreen>
                 avatarHeroTag: 'official_desk_avatar_${doc.id}',
                 name: officialName,
                 lastMessage: lastMessage.isEmpty
-                    ? 'Official Communication Desk'
+                    ? 'Official Tuition Fee Reminder'
                     : lastMessage,
                 timeText: _formatTime(lastTime),
                 unreadCount: unreadCount,
@@ -941,7 +1022,7 @@ class _ChatListScreenState extends State<ChatListScreen>
                 controller: _tabController,
                 children: [
                   RepaintBoundary(
-                    child: _buildPrivateChatsList(),
+                    child: _buildPrivateChatsList(isFeesTab: false),
                   ),
                   RepaintBoundary(
                     child: GroupListScreen(
@@ -950,6 +1031,10 @@ class _ChatListScreenState extends State<ChatListScreen>
                       isEmbedded: true,
                     ),
                   ),
+                  if (_isStudent)
+                    RepaintBoundary(
+                      child: _buildPrivateChatsList(isFeesTab: true),
+                    ),
                 ],
               ),
             ),
@@ -1144,7 +1229,7 @@ class _ChatListScreenState extends State<ChatListScreen>
                             Text(
                               widget.isTeacher
                                   ? 'Direct messages & academic batch groups'
-                                  : 'Connect with your teachers & study batches',
+                                  : 'Connect with teachers, study batches & fee notices',
                               style: TextStyle(
                                 color: Colors.white.withOpacity(0.74),
                                 fontSize: 12,
@@ -1311,6 +1396,58 @@ class _ChatListScreenState extends State<ChatListScreen>
               : null,
           border: InputBorder.none,
           contentPadding: const EdgeInsets.symmetric(vertical: 11),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFeesEmptyState() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 82,
+              height: 82,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    const Color(0xFF059669).withOpacity(0.14),
+                    const Color(0xFF10B981).withOpacity(0.06),
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.receipt_long_rounded,
+                size: 40,
+                color: Color(0xFF059669),
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'No fee reminders yet',
+              style: TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.w800,
+                color: Color(0xFF0F172A),
+              ),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'Official tuition fee notices and payment alerts from your teachers will appear here.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 13,
+                color: Color(0xFF64748B),
+                height: 1.4,
+              ),
+            ),
+          ],
         ),
       ),
     );
