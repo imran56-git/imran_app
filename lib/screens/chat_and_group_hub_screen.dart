@@ -40,8 +40,15 @@ class _ChatAndGroupHubScreenState extends State<ChatAndGroupHubScreen>
 
   late TabController _tabController;
   String _chatSearchQuery = '';
+  String _feesSearchQuery = '';
   String _selectedChatFilter = 'all';
   bool _isTeacherRole = false;
+
+  static const String _officialSenderId = 'OFFICIAL_FYBTT_DESK';
+  static const String _legacyOfficialSenderId = 'fybtt_official';
+  static const String _officialName = 'FYBTT official';
+  static const String _officialLogoAsset = 'assets/images/app_logo.png';
+  static const String _verifiedBadgeAsset = 'assets/images/Verified_Batch.png';
 
   @override
   void initState() {
@@ -49,9 +56,9 @@ class _ChatAndGroupHubScreenState extends State<ChatAndGroupHubScreen>
     WidgetsBinding.instance.addObserver(this);
     _isTeacherRole = widget.isTeacher;
     _tabController = TabController(
-      length: 2,
+      length: 3,
       vsync: this,
-      initialIndex: widget.initialTabIndex.clamp(0, 1),
+      initialIndex: widget.initialTabIndex.clamp(0, 2),
     );
     _tabController.addListener(() {
       if (mounted) setState(() {});
@@ -112,6 +119,37 @@ class _ChatAndGroupHubScreenState extends State<ChatAndGroupHubScreen>
     super.dispose();
   }
 
+  bool _isOfficialFeeThread(String docId, Map<String, dynamic> data) {
+    final String chatId = (data['chatId'] ?? docId).toString().trim();
+    final String lastSenderId = (data['lastSenderId'] ?? '').toString().trim();
+    final String teacherId = (data['teacherId'] ?? '').toString().trim();
+    final String senderId = (data['senderId'] ?? '').toString().trim();
+    final String teacherName =
+        (data['teacherName'] ?? '').toString().trim().toLowerCase();
+    final String chatCategory =
+        (data['chatCategory'] ?? '').toString().trim().toLowerCase();
+    final List<dynamic> participants =
+        (data['participants'] as List<dynamic>?) ?? const [];
+
+    final bool hasOfficialParticipant = participants.any((p) {
+      final id = p.toString().trim();
+      return id == _officialSenderId || id == _legacyOfficialSenderId;
+    });
+
+    return data['isOfficial'] == true ||
+        chatId.startsWith('official_desk_') ||
+        docId.startsWith('official_desk_') ||
+        chatCategory == 'official_fees' ||
+        lastSenderId == _officialSenderId ||
+        lastSenderId == _legacyOfficialSenderId ||
+        teacherId == _officialSenderId ||
+        teacherId == _legacyOfficialSenderId ||
+        senderId == _officialSenderId ||
+        senderId == _legacyOfficialSenderId ||
+        teacherName == 'fybtt official' ||
+        hasOfficialParticipant;
+  }
+
   String _formatChatTime(Timestamp? timestamp) {
     if (timestamp == null) return '';
     final DateTime date = timestamp.toDate();
@@ -152,6 +190,46 @@ class _ChatAndGroupHubScreenState extends State<ChatAndGroupHubScreen>
       return (chatData['unreadCount'] as num?)?.toInt() ?? 0;
     }
     return 0;
+  }
+
+  Stream<int> _getFilteredChatsUnreadCountStream() {
+    return _chatService.getUserChatsStream(widget.currentUserId).map((snap) {
+      int total = 0;
+      for (final doc in snap.docs) {
+        final data = (doc.data() as Map<String, dynamic>?) ?? {};
+        if (data['isGroup'] == true) continue;
+        if (_isOfficialFeeThread(doc.id, data)) continue;
+
+        final List<dynamic> deletedBy =
+            (data['deletedBy'] as List<dynamic>?) ?? const [];
+        if (deletedBy.contains(widget.currentUserId)) continue;
+
+        final List<dynamic> archivedBy =
+            (data['archivedBy'] as List<dynamic>?) ?? const [];
+        if (archivedBy.contains(widget.currentUserId)) continue;
+
+        total += _extractUnreadCount(data);
+      }
+      return total;
+    });
+  }
+
+  Stream<int> _getFeesUnreadCountStream() {
+    return _chatService.getUserChatsStream(widget.currentUserId).map((snap) {
+      int total = 0;
+      for (final doc in snap.docs) {
+        final data = (doc.data() as Map<String, dynamic>?) ?? {};
+        if (data['isGroup'] == true) continue;
+        if (!_isOfficialFeeThread(doc.id, data)) continue;
+
+        final List<dynamic> deletedBy =
+            (data['deletedBy'] as List<dynamic>?) ?? const [];
+        if (deletedBy.contains(widget.currentUserId)) continue;
+
+        total += _extractUnreadCount(data);
+      }
+      return total;
+    });
   }
 
   void _showPrivateChatActionsSheet({
@@ -284,6 +362,61 @@ class _ChatAndGroupHubScreenState extends State<ChatAndGroupHubScreen>
     );
   }
 
+  Widget _buildTabItem({
+    required int tabIndex,
+    required IconData icon,
+    required String label,
+    required Stream<int> unreadStream,
+    Color activeBadgeTextColor = Colors.blueAccent,
+    Color inactiveBadgeColor = Colors.blueAccent,
+  }) {
+    final bool isSelected = _tabController.index == tabIndex;
+    return Tab(
+      child: StreamBuilder<int>(
+        stream: unreadStream,
+        builder: (context, snapshot) {
+          final int unread = snapshot.data ?? 0;
+          return FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(icon, size: 17),
+                  const SizedBox(width: 5),
+                  Text(label),
+                  if (unread > 0) ...[
+                    const SizedBox(width: 5),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: isSelected ? Colors.white : inactiveBadgeColor,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        unread > 99 ? '99+' : '$unread',
+                        style: TextStyle(
+                          color: isSelected
+                              ? activeBadgeTextColor
+                              : Colors.white,
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   Widget _buildNetworkStyleTabSwitcher() {
     return Container(
       color: const Color(0xFF0F172A),
@@ -298,6 +431,7 @@ class _ChatAndGroupHubScreenState extends State<ChatAndGroupHubScreen>
           controller: _tabController,
           indicatorSize: TabBarIndicatorSize.tab,
           dividerColor: Colors.transparent,
+          labelPadding: const EdgeInsets.symmetric(horizontal: 4),
           indicator: BoxDecoration(
             color: Colors.blueAccent,
             borderRadius: BorderRadius.circular(12),
@@ -313,92 +447,33 @@ class _ChatAndGroupHubScreenState extends State<ChatAndGroupHubScreen>
           unselectedLabelColor: Colors.white70,
           labelStyle: const TextStyle(
             fontWeight: FontWeight.bold,
-            fontSize: 14.5,
+            fontSize: 13.5,
           ),
           unselectedLabelStyle: const TextStyle(
             fontWeight: FontWeight.w600,
-            fontSize: 14,
+            fontSize: 13,
           ),
           tabs: [
-            Tab(
-              child: StreamBuilder<int>(
-                stream: _chatService
-                    .getTotalUnreadChatsCountStream(widget.currentUserId),
-                builder: (context, snapshot) {
-                  final int unread = snapshot.data ?? 0;
-                  return Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(Icons.chat_bubble_outline_rounded, size: 18),
-                      const SizedBox(width: 7),
-                      const Text('Chats'),
-                      if (unread > 0) ...[
-                        const SizedBox(width: 6),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: _tabController.index == 0
-                                ? Colors.white
-                                : Colors.blueAccent,
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Text(
-                            unread > 99 ? '99+' : '$unread',
-                            style: TextStyle(
-                              color: _tabController.index == 0
-                                  ? Colors.blueAccent
-                                  : Colors.white,
-                              fontSize: 11,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ],
-                  );
-                },
-              ),
+            _buildTabItem(
+              tabIndex: 0,
+              icon: Icons.chat_bubble_outline_rounded,
+              label: 'Chats',
+              unreadStream: _getFilteredChatsUnreadCountStream(),
             ),
-            Tab(
-              child: StreamBuilder<int>(
-                stream: _chatService
-                    .getTotalUnreadGroupsCountStream(widget.currentUserId),
-                builder: (context, snapshot) {
-                  final int unread = snapshot.data ?? 0;
-                  return Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(Icons.groups_rounded, size: 20),
-                      const SizedBox(width: 7),
-                      const Text('Groups'),
-                      if (unread > 0) ...[
-                        const SizedBox(width: 6),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: _tabController.index == 1
-                                ? Colors.white
-                                : Colors.blueAccent,
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Text(
-                            unread > 99 ? '99+' : '$unread',
-                            style: TextStyle(
-                              color: _tabController.index == 1
-                                  ? Colors.blueAccent
-                                  : Colors.white,
-                              fontSize: 11,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ],
-                  );
-                },
-              ),
+            _buildTabItem(
+              tabIndex: 1,
+              icon: Icons.groups_rounded,
+              label: 'Groups',
+              unreadStream: _chatService
+                  .getTotalUnreadGroupsCountStream(widget.currentUserId),
+            ),
+            _buildTabItem(
+              tabIndex: 2,
+              icon: Icons.receipt_long_rounded,
+              label: 'Fees',
+              unreadStream: _getFeesUnreadCountStream(),
+              activeBadgeTextColor: const Color(0xFF059669),
+              inactiveBadgeColor: const Color(0xFF10B981),
             ),
           ],
         ),
@@ -493,8 +568,13 @@ class _ChatAndGroupHubScreenState extends State<ChatAndGroupHubScreen>
               }
 
               final allDocs = snapshot.data!.docs.where((doc) {
-                final data = doc.data() as Map<String, dynamic>;
+                final data = (doc.data() as Map<String, dynamic>?) ?? {};
                 if (data['isGroup'] == true) return false;
+                if (_isOfficialFeeThread(doc.id, data)) return false;
+
+                final List<dynamic> deletedBy =
+                    (data['deletedBy'] as List<dynamic>?) ?? const [];
+                if (deletedBy.contains(widget.currentUserId)) return false;
 
                 final List<dynamic> archivedBy =
                     (data['archivedBy'] as List<dynamic>?) ?? const [];
@@ -535,8 +615,8 @@ class _ChatAndGroupHubScreenState extends State<ChatAndGroupHubScreen>
               }).toList();
 
               allDocs.sort((a, b) {
-                final aData = a.data() as Map<String, dynamic>;
-                final bData = b.data() as Map<String, dynamic>;
+                final aData = (a.data() as Map<String, dynamic>?) ?? {};
+                final bData = (b.data() as Map<String, dynamic>?) ?? {};
 
                 final bool aPinned = ((aData['pinnedBy'] as List<dynamic>?) ??
                         const [])
@@ -569,7 +649,7 @@ class _ChatAndGroupHubScreenState extends State<ChatAndGroupHubScreen>
                 ),
                 itemBuilder: (context, index) {
                   final doc = allDocs[index];
-                  final data = doc.data() as Map<String, dynamic>;
+                  final data = (doc.data() as Map<String, dynamic>?) ?? {};
                   final String chatId =
                       (data['chatId'] ?? doc.id).toString();
 
@@ -652,10 +732,11 @@ class _ChatAndGroupHubScreenState extends State<ChatAndGroupHubScreen>
                             CircleAvatar(
                               radius: 26,
                               backgroundColor: Colors.blue.shade50,
-                              backgroundImage: resolvedImage.isNotEmpty
-                                  ? NetworkImage(resolvedImage)
-                                  : null,
-                              child: resolvedImage.isEmpty
+                              backgroundImage:
+                                  resolvedImage.startsWith('http')
+                                      ? NetworkImage(resolvedImage)
+                                      : null,
+                              child: !resolvedImage.startsWith('http')
                                   ? Text(
                                       resolvedName.isNotEmpty
                                           ? resolvedName[0].toUpperCase()
@@ -851,6 +932,283 @@ class _ChatAndGroupHubScreenState extends State<ChatAndGroupHubScreen>
     );
   }
 
+  Widget _buildFeesTab() {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
+          child: Container(
+            height: 44,
+            decoration: BoxDecoration(
+              color: const Color(0xFFF0F2F5),
+              borderRadius: BorderRadius.circular(24),
+            ),
+            child: TextField(
+              onChanged: (value) =>
+                  setState(() => _feesSearchQuery = value.trim().toLowerCase()),
+              decoration: const InputDecoration(
+                hintText: 'Search official fee notices...',
+                hintStyle: TextStyle(color: Colors.grey, fontSize: 14.5),
+                prefixIcon: Icon(Icons.search, color: Colors.grey, size: 20),
+                border: InputBorder.none,
+                contentPadding: EdgeInsets.symmetric(vertical: 10),
+              ),
+            ),
+          ),
+        ),
+        Container(
+          margin: const EdgeInsets.fromLTRB(12, 4, 12, 6),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: const Color(0xFFECFDF5),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFFA7F3D0)),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.verified_user_rounded,
+                  color: Color(0xFF059669), size: 18),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Official FYBTT fee reminders and payment notices are read-only.',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.teal.shade900,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: StreamBuilder<QuerySnapshot>(
+            stream: _chatService.getUserChatsStream(widget.currentUserId),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(
+                  child: CircularProgressIndicator(color: Color(0xFF059669)),
+                );
+              }
+
+              if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                return _buildEmptyFeesState();
+              }
+
+              final feeDocs = snapshot.data!.docs.where((doc) {
+                final data = (doc.data() as Map<String, dynamic>?) ?? {};
+                if (data['isGroup'] == true) return false;
+                if (!_isOfficialFeeThread(doc.id, data)) return false;
+
+                final List<dynamic> deletedBy =
+                    (data['deletedBy'] as List<dynamic>?) ?? const [];
+                if (deletedBy.contains(widget.currentUserId)) return false;
+
+                if (_feesSearchQuery.isEmpty) return true;
+
+                final String title =
+                    (data['teacherName'] ?? _officialName).toString().toLowerCase();
+                final String lastMsg =
+                    (data['lastMessage'] ?? data['lastMessageContent'] ?? '')
+                        .toString()
+                        .toLowerCase();
+                return title.contains(_feesSearchQuery) ||
+                    lastMsg.contains(_feesSearchQuery);
+              }).toList();
+
+              feeDocs.sort((a, b) {
+                final aData = (a.data() as Map<String, dynamic>?) ?? {};
+                final bData = (b.data() as Map<String, dynamic>?) ?? {};
+                final Timestamp? aTime = aData['lastMessageTime'] as Timestamp?;
+                final Timestamp? bTime = bData['lastMessageTime'] as Timestamp?;
+                if (aTime == null && bTime == null) return 0;
+                if (aTime == null) return 1;
+                if (bTime == null) return -1;
+                return bTime.compareTo(aTime);
+              });
+
+              if (feeDocs.isEmpty) {
+                return _buildEmptyFeesState();
+              }
+
+              return ListView.separated(
+                itemCount: feeDocs.length,
+                separatorBuilder: (_, __) => const Divider(
+                  height: 1,
+                  indent: 78,
+                  color: Color(0xFFEEEEEE),
+                ),
+                itemBuilder: (context, index) {
+                  final doc = feeDocs[index];
+                  final data = (doc.data() as Map<String, dynamic>?) ?? {};
+                  final String chatId = (data['chatId'] ?? doc.id).toString();
+                  final String displayName =
+                      (data['teacherName'] ?? _officialName).toString().trim().isNotEmpty
+                          ? (data['teacherName'] ?? _officialName).toString()
+                          : _officialName;
+                  final String lastMessage = (data['lastMessage'] ??
+                          data['lastMessageContent'] ??
+                          'Official tuition fee notice')
+                      .toString();
+                  final Timestamp? lastMessageTime =
+                      data['lastMessageTime'] as Timestamp?;
+                  final int unreadCount = _extractUnreadCount(data);
+
+                  return ListTile(
+                    contentPadding:
+                        const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    leading: Container(
+                      width: 52,
+                      height: 52,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: const Color(0xFFECFDF5),
+                        border: Border.all(
+                            color: const Color(0xFF6EE7B7), width: 1.5),
+                      ),
+                      child: ClipOval(
+                        child: Image.asset(
+                          _officialLogoAsset,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => const Icon(
+                            Icons.account_balance_wallet_rounded,
+                            color: Color(0xFF059669),
+                            size: 26,
+                          ),
+                        ),
+                      ),
+                    ),
+                    title: Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            displayName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontWeight: unreadCount > 0
+                                  ? FontWeight.bold
+                                  : FontWeight.w700,
+                              fontSize: 16,
+                              color: const Color(0xFF0F766E),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Image.asset(
+                          _verifiedBadgeAsset,
+                          width: 15,
+                          height: 15,
+                          fit: BoxFit.contain,
+                          errorBuilder: (_, __, ___) => const Icon(
+                            Icons.verified_rounded,
+                            color: Color(0xFF0284C7),
+                            size: 15,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFECFDF5),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(color: const Color(0xFFA7F3D0)),
+                          ),
+                          child: const Text(
+                            'Official',
+                            style: TextStyle(
+                              fontSize: 9.5,
+                              fontWeight: FontWeight.w800,
+                              color: Color(0xFF059669),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    subtitle: Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text(
+                        lastMessage,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: unreadCount > 0
+                              ? Colors.black87
+                              : Colors.grey.shade700,
+                          fontWeight: unreadCount > 0
+                              ? FontWeight.w600
+                              : FontWeight.normal,
+                          fontSize: 13.5,
+                          height: 1.3,
+                        ),
+                      ),
+                    ),
+                    trailing: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Text(
+                          _formatChatTime(lastMessageTime),
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: unreadCount > 0
+                                ? const Color(0xFF059669)
+                                : Colors.grey,
+                            fontWeight: unreadCount > 0
+                                ? FontWeight.bold
+                                : FontWeight.normal,
+                          ),
+                        ),
+                        const SizedBox(height: 5),
+                        if (unreadCount > 0)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 7, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF10B981),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              unreadCount > 99 ? '99+' : '$unreadCount',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          )
+                        else
+                          Icon(
+                            Icons.lock_outline_rounded,
+                            size: 14,
+                            color: Colors.grey.shade400,
+                          ),
+                      ],
+                    ),
+                    onTap: () {
+                      _chatService.markAsSeen(chatId, widget.currentUserId);
+                      if (widget.onOpenPrivateChat != null) {
+                        widget.onOpenPrivateChat!(
+                          chatId,
+                          _officialSenderId,
+                          displayName,
+                          _officialLogoAsset,
+                          false,
+                        );
+                      }
+                    },
+                  );
+                },
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildEmptyChatsState() {
     return Center(
       child: Column(
@@ -874,13 +1232,50 @@ class _ChatAndGroupHubScreenState extends State<ChatAndGroupHubScreen>
           ),
           const SizedBox(height: 4),
           Text(
-            'Switch to the Groups tab to view batch discussions.',
+            'Switch to Groups or Fees tabs to view batches or official notices.',
             style: TextStyle(
               color: Colors.grey.shade500,
               fontSize: 13,
             ),
+            textAlign: TextAlign.center,
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildEmptyFeesState() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 28),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.receipt_long_rounded,
+              size: 64,
+              color: Colors.teal.shade100,
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'No official fee notices yet',
+              style: TextStyle(
+                color: Colors.grey,
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Official fee reminders from FYBTT official will appear here.',
+              style: TextStyle(
+                color: Colors.grey.shade500,
+                fontSize: 13,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -893,7 +1288,7 @@ class _ChatAndGroupHubScreenState extends State<ChatAndGroupHubScreen>
         backgroundColor: const Color(0xFF0F172A),
         elevation: 0,
         title: const Text(
-          'Messages & Batches',
+          'FYBTT Chats',
           style: TextStyle(
             color: Colors.white,
             fontWeight: FontWeight.bold,
@@ -981,6 +1376,7 @@ class _ChatAndGroupHubScreenState extends State<ChatAndGroupHubScreen>
                   currentUserName: widget.currentUserName,
                   isEmbedded: true,
                 ),
+                _buildFeesTab(),
               ],
             ),
           ),
