@@ -1,14 +1,3 @@
-Here is the complete, upgraded, and verified `lib/screens/group/group_info_screen.dart` (or `lib/screens/group_info_screen.dart`) file.
-
-### Architectural Improvements Applied:
-1. **Teacher Admin Profile Picture Resolution:**
-   - Implemented `_fetchAdminTeacherProfile`: If the group document does not have the teacher's profile picture or has an outdated URL, it queries the `teachers` collection followed by the `users` collection using the teacher's UID (`group.createdBy` / `group.adminId`).
-   - Syncs any resolved photo back to the `groups` document in the background so all students and members cache it instantly on subsequent opens.
-2. **Safe Image Loading & Styled Fallbacks:**
-   - Implemented `_buildTeacherAvatar`: loads the teacher's actual photo using safe network streaming with progress indicators, image caching, and graceful two-letter initials fallback (`MM`, `JD`, etc.) so missing or broken URLs never render blank white circles.
-3. **100% Consistency:** Updated both the **`GROUP ADMIN (TEACHER ONLY)`** card and the **Teacher Profile Shortcut** modal to use the resolved image URL.
-
-```dart
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
