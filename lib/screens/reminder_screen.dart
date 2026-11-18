@@ -96,7 +96,7 @@ class _ReminderScreenState extends State<ReminderScreen> {
     return DateTime.now().toUtc().add(_istOffset);
   }
 
-  /// Converts the user's chosen IST date & time (at :00 seconds) into the exact UTC DateTime.
+  /// Converts the user's chosen IST date & time into the exact UTC DateTime.
   DateTime _calculateNextRunUtc({
     required DateTime dueDate,
     required TimeOfDay time,
@@ -130,6 +130,78 @@ class _ReminderScreenState extends State<ReminderScreen> {
     final hour12 = hour24 % 12 == 0 ? 12 : hour24 % 12;
     final minStr = minute.toString().padLeft(2, '0');
     return '$hour12:$minStr ${isAm ? 'AM' : 'PM'}';
+  }
+
+  Map<String, String> _buildDefaultMonthlyStatus() {
+    final Map<String, String> map = {};
+    for (final month in _months) {
+      map[month] = 'not_enrolled';
+    }
+    return map;
+  }
+
+  Widget _buildStudentAvatar(String? photoUrl, String name, {double size = 48}) {
+    final initials = name.trim().isNotEmpty
+        ? name
+            .trim()
+            .split(' ')
+            .where((p) => p.isNotEmpty)
+            .map((e) => e[0])
+            .take(2)
+            .join()
+            .toUpperCase()
+        : 'ST';
+
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: Colors.blue.shade100,
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: (photoUrl != null && photoUrl.trim().isNotEmpty)
+          ? Image.network(
+              photoUrl.trim(),
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => Center(
+                child: Text(
+                  initials,
+                  style: TextStyle(
+                    color: Colors.blue[900],
+                    fontWeight: FontWeight.bold,
+                    fontSize: size * 0.38,
+                  ),
+                ),
+              ),
+              loadingBuilder: (context, child, progress) {
+                if (progress == null) return child;
+                return Center(
+                  child: SizedBox(
+                    width: size * 0.4,
+                    height: size * 0.4,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      value: progress.expectedTotalBytes != null
+                          ? progress.cumulativeBytesLoaded /
+                              progress.expectedTotalBytes!
+                          : null,
+                    ),
+                  ),
+                );
+              },
+            )
+          : Center(
+              child: Text(
+                initials,
+                style: TextStyle(
+                  color: Colors.blue[900],
+                  fontWeight: FontWeight.bold,
+                  fontSize: size * 0.38,
+                ),
+              ),
+            ),
+    );
   }
 
   Future<void> _loadPrefilledStudent() async {
@@ -341,6 +413,136 @@ class _ReminderScreenState extends State<ReminderScreen> {
         setState(() => _selectedTime = pickedTime);
       }
     });
+  }
+
+  /// Synchronizes the student's 12-month ledger and aggregates with the selected month
+  Future<void> _syncStudentFeesLedger({
+    required String teacherId,
+    required String teacherName,
+    required String studentId,
+    required String studentName,
+    required double amount,
+    required String monthName,
+    required int year,
+    required String dueDateText,
+  }) async {
+    final diaryQuery = await _firestore
+        .collection('student_fees')
+        .where('teacherId', isEqualTo: teacherId)
+        .where('studentId', isEqualTo: studentId)
+        .get();
+
+    final batch = _firestore.batch();
+    DocumentReference diaryDocRef;
+    Map<String, dynamic> statusMap = _buildDefaultMonthlyStatus();
+    double unitFee = amount;
+
+    if (diaryQuery.docs.isNotEmpty) {
+      final matchedDoc = diaryQuery.docs.firstWhere(
+        (d) => ((d.data()['year'] as num?)?.toInt() ?? 0) == year,
+        orElse: () => diaryQuery.docs.first,
+      );
+      diaryDocRef = matchedDoc.reference;
+      final diaryData = matchedDoc.data();
+
+      unitFee = (diaryData['monthlyFee'] as num?)?.toDouble() ??
+          (diaryData['feeAmount'] as num?)?.toDouble() ??
+          (diaryData['monthlyAmount'] as num?)?.toDouble() ??
+          amount;
+      if (unitFee <= 0) unitFee = amount;
+
+      final existingStatus =
+          (diaryData['monthlyStatus'] as Map<String, dynamic>?) ??
+              (diaryData['monthlyStatuses'] as Map<String, dynamic>?) ??
+              {};
+      for (final entry in existingStatus.entries) {
+        statusMap[entry.key] = entry.value.toString();
+      }
+
+      // If month is already paid, keep it as paid
+      final currentMonthStatus =
+          (statusMap[monthName] ?? '').toString().trim().toLowerCase();
+      if (currentMonthStatus != 'paid') {
+        statusMap[monthName] = 'due';
+      }
+    } else {
+      diaryDocRef = _firestore.collection('student_fees').doc();
+      statusMap[monthName] = 'due';
+    }
+
+    // Dynamic ledger calculation
+    int dueMonthsCount = 0;
+    int paidMonthsCount = 0;
+    for (final rawStatus in statusMap.values) {
+      final normalized = rawStatus.toString().trim().toLowerCase();
+      if (normalized == 'due' || normalized == 'pending') {
+        dueMonthsCount++;
+      } else if (normalized == 'paid') {
+        paidMonthsCount++;
+      }
+    }
+
+    final double totalDue = dueMonthsCount * unitFee;
+    final double totalCollected = paidMonthsCount * unitFee;
+
+    batch.set(
+      diaryDocRef,
+      {
+        'feeId': diaryDocRef.id,
+        'teacherId': teacherId,
+        'teacherName': teacherName,
+        'studentId': studentId,
+        'studentName': studentName,
+        'year': year,
+        'monthlyFee': unitFee,
+        'monthlyStatus': statusMap,
+        monthName: statusMap[monthName] ?? 'due',
+        'totalDue': totalDue,
+        'totalCollected': totalCollected,
+        'dueMonths': dueMonthsCount,
+        'dueMonthsCount': dueMonthsCount,
+        'paidMonths': paidMonthsCount,
+        'paidMonthsCount': paidMonthsCount,
+        'lastReminderMonth': monthName,
+        'lastUpdated': FieldValue.serverTimestamp(),
+      },
+      SetOptions(merge: true),
+    );
+
+    // Sync fee_entries subcollection
+    final existingEntries = await diaryDocRef
+        .collection('fee_entries')
+        .where('month', isEqualTo: monthName)
+        .limit(1)
+        .get();
+
+    if (existingEntries.docs.isNotEmpty) {
+      final entryDoc = existingEntries.docs.first;
+      final entryStatus = (entryDoc.data()['status'] ?? '').toString().toLowerCase();
+      if (entryStatus != 'paid') {
+        batch.update(entryDoc.reference, {
+          'month': monthName,
+          'dueDate': dueDateText,
+          'amount': unitFee,
+          'status': 'due',
+          'source': 'manual_fee_reminder',
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+      }
+    } else {
+      final newEntryRef = diaryDocRef.collection('fee_entries').doc();
+      batch.set(newEntryRef, {
+        'entryId': newEntryRef.id,
+        'month': monthName,
+        'dueDate': dueDateText,
+        'amount': unitFee,
+        'status': 'due',
+        'source': 'manual_fee_reminder',
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+    }
+
+    await batch.commit();
   }
 
   Future<void> _showCreateDiaryRecommendationSheet({
@@ -556,6 +758,7 @@ class _ReminderScreenState extends State<ReminderScreen> {
           '${widget.currentUserId}_${targetStudentId}_${DateTime.now().millisecondsSinceEpoch}';
       final String dueDateText = _formatDateDdMmYyyy(_selectedDueDate);
 
+      // Save scheduled reminder
       await _firestore.collection('fee_reminders').doc(reminderId).set({
         'reminderId': reminderId,
         'teacherId': widget.currentUserId,
@@ -573,6 +776,18 @@ class _ReminderScreenState extends State<ReminderScreen> {
         'createdAt': FieldValue.serverTimestamp(),
         'nextRunAt': Timestamp.fromDate(nextRunUtc),
       });
+
+      // Synchronize monthly ledger immediately
+      await _syncStudentFeesLedger(
+        teacherId: widget.currentUserId,
+        teacherName: teacherName,
+        studentId: targetStudentId,
+        studentName: targetStudentName,
+        amount: amount,
+        monthName: _selectedMonth,
+        year: _selectedDueDate.year,
+        dueDateText: dueDateText,
+      );
 
       final bool hasDiary = await _checkIfTuitionDiaryExists(targetStudentId);
 
@@ -1185,32 +1400,11 @@ class _ReminderScreenState extends State<ReminderScreen> {
                         children: [
                           ListTile(
                             contentPadding: EdgeInsets.zero,
-                            leading: Container(
-                              width: 48,
-                              height: 48,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: Colors.blue.shade50,
-                              ),
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(24),
-                                child: (_foundStudent!['profileImageUrl'] !=
-                                            null &&
-                                        _foundStudent!['profileImageUrl']
-                                            .toString()
-                                            .isNotEmpty)
-                                    ? Image.network(
-                                        _foundStudent!['profileImageUrl']
-                                            .toString(),
-                                        fit: BoxFit.cover,
-                                        errorBuilder: (_, __, ___) => Icon(
-                                            Icons.person_rounded,
-                                            color: Colors.blue[800],
-                                            size: 26),
-                                      )
-                                    : Icon(Icons.person_rounded,
-                                        color: Colors.blue[800], size: 26),
-                              ),
+                            leading: _buildStudentAvatar(
+                              _foundStudent!['profileImageUrl']?.toString() ??
+                                  _foundStudent!['photoUrl']?.toString(),
+                              _foundStudent!['name']?.toString() ?? 'Student',
+                              size: 48,
                             ),
                             title: Text(
                               _foundStudent!['name'] ?? 'Student',
