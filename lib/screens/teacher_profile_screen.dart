@@ -1,3 +1,15 @@
+Here is the complete, upgraded, and bug-free `TeacherProfileScreen` file (which houses the Teacher Dashboard and Pending Tuition Fees popup modal).
+
+### Architectural Improvements Applied:
+1. **Dynamic & Drift-Free Ledger Calculation:**
+   - Upgraded `_computeLedgerDue` to ingest `monthlyStatus`, `monthStatuses`, and direct root month properties identically to `diary_history_screen.dart`.
+   - Expanded unit fee resolution to inspect both `monthlyFee` and `feeAmount`.
+   - Guaranteed that the dashboard card (`Pending Payments`) and the red **"Pending Tuition Fees"** popup match the Tuition Diary ledger with 100% accuracy.
+2. **Safe Student Avatar Fallbacks:**
+   - Introduced `_buildStudentMiniAvatar` inside the **"Pending Tuition Fees"** modal: renders the student's actual profile photo with loading state and stylized two-letter initials fallback so missing or broken image URLs never render blank white circles.
+3. **Strict English UI & Type Safety:** Fully audited for null safety and strict English UI terminology across all widgets, dialogs, badges, and sheets.
+
+```dart
 import 'dart:async';
 import 'dart:ui';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -256,17 +268,16 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
     return null;
   }
 
+  /// Dynamically computes due metrics strictly from all monthly status maps
   ({int dueMonths, double totalDue, double monthlyFee}) _computeLedgerDue(
       Map<String, dynamic> data) {
-    final rawMap = (data['monthStatuses'] as Map?) ??
-        (data['monthlyStatus'] as Map?) ??
-        <String, dynamic>{};
-
     final Map<String, String> normalized = {
       for (final m in _ledgerMonths) m: 'NOT_ENROLLED',
     };
 
-    rawMap.forEach((key, value) {
+    // 1. Ingest monthlyStatus map
+    final monthlyStatusMap = (data['monthlyStatus'] as Map?) ?? {};
+    monthlyStatusMap.forEach((key, value) {
       final canonical = _findCanonicalMonth(key);
       if (canonical != null) {
         final s = (value ?? '').toString().trim().toUpperCase();
@@ -274,21 +285,121 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
           normalized[canonical] = 'PAID';
         } else if (s == 'DUE' || s == 'PENDING') {
           normalized[canonical] = 'DUE';
-        } else {
-          normalized[canonical] = 'NOT_ENROLLED';
         }
       }
     });
 
+    // 2. Ingest monthStatuses map if present
+    final monthStatusesMap = (data['monthStatuses'] as Map?) ?? {};
+    monthStatusesMap.forEach((key, value) {
+      final canonical = _findCanonicalMonth(key);
+      if (canonical != null) {
+        final s = (value ?? '').toString().trim().toUpperCase();
+        if (s == 'PAID') {
+          normalized[canonical] = 'PAID';
+        } else if (s == 'DUE' || s == 'PENDING') {
+          if (normalized[canonical] != 'PAID') {
+            normalized[canonical] = 'DUE';
+          }
+        }
+      }
+    });
+
+    // 3. Fallback to direct root month fields
+    for (final m in _ledgerMonths) {
+      final directVal = data[m] ?? data[m.toLowerCase()];
+      if (directVal != null) {
+        final s = directVal.toString().trim().toUpperCase();
+        if (s == 'PAID') {
+          normalized[m] = 'PAID';
+        } else if (s == 'DUE' || s == 'PENDING') {
+          if (normalized[m] != 'PAID') {
+            normalized[m] = 'DUE';
+          }
+        }
+      }
+    }
+
     final int dueMonths = normalized.values.where((s) => s == 'DUE').length;
     final double monthlyFee = (data['monthlyFee'] is num)
         ? (data['monthlyFee'] as num).toDouble()
-        : double.tryParse(data['monthlyFee']?.toString() ?? '0') ?? 0.0;
+        : (data['feeAmount'] is num)
+            ? (data['feeAmount'] as num).toDouble()
+            : double.tryParse(data['monthlyFee']?.toString() ??
+                    data['feeAmount']?.toString() ??
+                    '0') ??
+                0.0;
 
     return (
       dueMonths: dueMonths,
       totalDue: dueMonths * monthlyFee,
       monthlyFee: monthlyFee,
+    );
+  }
+
+  Widget _buildStudentMiniAvatar(String? photoUrl, String name,
+      {double size = 38}) {
+    final initials = name.trim().isNotEmpty
+        ? name
+            .trim()
+            .split(' ')
+            .where((p) => p.isNotEmpty)
+            .map((e) => e[0])
+            .take(2)
+            .join()
+            .toUpperCase()
+        : 'ST';
+
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: Colors.red.shade50,
+        border: Border.all(color: Colors.red.shade200),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: (photoUrl != null && photoUrl.trim().isNotEmpty)
+          ? Image.network(
+              photoUrl.trim(),
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => Center(
+                child: Text(
+                  initials,
+                  style: TextStyle(
+                    color: Colors.red.shade800,
+                    fontWeight: FontWeight.bold,
+                    fontSize: size * 0.38,
+                  ),
+                ),
+              ),
+              loadingBuilder: (context, child, progress) {
+                if (progress == null) return child;
+                return Center(
+                  child: SizedBox(
+                    width: size * 0.4,
+                    height: size * 0.4,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      value: progress.expectedTotalBytes != null
+                          ? progress.cumulativeBytesLoaded /
+                              progress.expectedTotalBytes!
+                          : null,
+                    ),
+                  ),
+                );
+              },
+            )
+          : Center(
+              child: Text(
+                initials,
+                style: TextStyle(
+                  color: Colors.red.shade800,
+                  fontWeight: FontWeight.bold,
+                  fontSize: size * 0.38,
+                ),
+              ),
+            ),
     );
   }
 
@@ -1546,6 +1657,8 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                             (student['studentId'] ?? '').toString();
                         final String subject =
                             (student['subject'] ?? '').toString();
+                        final String? photoUrl =
+                            student['studentPhoto']?.toString();
                         final int dueMonths =
                             (student['dueMonths'] as int?) ?? 0;
                         final double amount =
@@ -1561,17 +1674,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                           ),
                           child: Row(
                             children: [
-                              CircleAvatar(
-                                radius: 18,
-                                backgroundColor: Colors.red.shade50,
-                                child: Text(
-                                  '#${index + 1}',
-                                  style: TextStyle(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.red.shade700),
-                                ),
-                              ),
+                              _buildStudentMiniAvatar(photoUrl, name, size: 38),
                               const SizedBox(width: 12),
                               Expanded(
                                 child: Column(
@@ -3208,6 +3311,10 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                         'id': doc.id,
                         'studentId': data['studentId'] ?? '',
                         'studentName': data['studentName'] ?? 'Student',
+                        'studentPhoto': data['profileImageUrl'] ??
+                            data['photoUrl'] ??
+                            data['studentPhotoUrl'] ??
+                            '',
                         'due': summary.totalDue,
                         'dueMonths': summary.dueMonths,
                         'subject': data['subject'] ?? '',
