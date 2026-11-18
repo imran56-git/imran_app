@@ -19,7 +19,49 @@ class ChatService {
   final LocalChatStorageService _localStorage = LocalChatStorageService();
   final Map<String, DateTime> _recentClientMessages = {};
 
+  static const String officialSenderId = 'OFFICIAL_FYBTT_DESK';
+  static const String legacyOfficialSenderId = 'fybtt_official';
+
   String get _currentUserId => _auth.currentUser?.uid ?? '';
+
+  static bool isOfficialFeeThread(String docId, Map<String, dynamic> data) {
+    final String chatId = (data['chatId'] ?? docId).toString().trim();
+    final String lastSenderId = (data['lastSenderId'] ?? '').toString().trim();
+    final String teacherId = (data['teacherId'] ?? '').toString().trim();
+    final String senderId = (data['senderId'] ?? '').toString().trim();
+    final String teacherName =
+        (data['teacherName'] ?? '').toString().trim().toLowerCase();
+    final String chatCategory =
+        (data['chatCategory'] ?? '').toString().trim().toLowerCase();
+    final List<dynamic> participants =
+        (data['participants'] as List<dynamic>?) ?? const [];
+
+    final bool hasOfficialParticipant = participants.any((p) {
+      final id = p.toString().trim();
+      return id == officialSenderId || id == legacyOfficialSenderId;
+    });
+
+    return data['isOfficial'] == true ||
+        chatId.startsWith('official_desk_') ||
+        docId.startsWith('official_desk_') ||
+        chatCategory == 'official_fees' ||
+        lastSenderId == officialSenderId ||
+        lastSenderId == legacyOfficialSenderId ||
+        teacherId == officialSenderId ||
+        teacherId == legacyOfficialSenderId ||
+        senderId == officialSenderId ||
+        senderId == legacyOfficialSenderId ||
+        teacherName == 'fybtt official' ||
+        hasOfficialParticipant;
+  }
+
+  static bool isOfficialChatIdOrReceiver(String chatId, [String receiverId = '']) {
+    final cleanChatId = chatId.trim();
+    final cleanReceiver = receiverId.trim();
+    return cleanChatId.startsWith('official_desk_') ||
+        cleanReceiver == officialSenderId ||
+        cleanReceiver == legacyOfficialSenderId;
+  }
 
   Future<Map<String, dynamic>?> _safeDocData(
       String collection, String docId) async {
@@ -110,6 +152,13 @@ class ChatService {
       int total = 0;
       for (final doc in snapshot.docs) {
         final data = doc.data();
+        if (data['isGroup'] == true) continue;
+        if (isOfficialFeeThread(doc.id, data)) continue;
+
+        final List<dynamic> deletedBy =
+            (data['deletedBy'] as List<dynamic>?) ?? const [];
+        if (deletedBy.contains(userId)) continue;
+
         final List<dynamic> archivedBy =
             (data['archivedBy'] as List<dynamic>?) ?? const [];
         if (archivedBy.contains(userId)) continue;
@@ -123,6 +172,35 @@ class ChatService {
       return total;
     }).handleError((e) {
       _handleError('getTotalUnreadChatsCountStream', e);
+    });
+  }
+
+  Stream<int> getTotalUnreadFeesCountStream(String userId) {
+    if (userId.trim().isEmpty) return Stream.value(0);
+    return _firestore
+        .collection('chats')
+        .where('participants', arrayContains: userId)
+        .snapshots()
+        .map((snapshot) {
+      int total = 0;
+      for (final doc in snapshot.docs) {
+        final data = doc.data();
+        if (data['isGroup'] == true) continue;
+        if (!isOfficialFeeThread(doc.id, data)) continue;
+
+        final List<dynamic> deletedBy =
+            (data['deletedBy'] as List<dynamic>?) ?? const [];
+        if (deletedBy.contains(userId)) continue;
+
+        if (data.containsKey('unreadCount_$userId')) {
+          total += (data['unreadCount_$userId'] as num?)?.toInt() ?? 0;
+        } else if (data['unreadFor'] == userId) {
+          total += (data['unreadCount'] as num?)?.toInt() ?? 0;
+        }
+      }
+      return total;
+    }).handleError((e) {
+      _handleError('getTotalUnreadFeesCountStream', e);
     });
   }
 
@@ -492,6 +570,10 @@ class ChatService {
     DateTime? scheduledAt,
     String? clientMessageId,
   }) async {
+    if (isOfficialChatIdOrReceiver(chatId, receiverId)) {
+      throw Exception('FYBTT official channel is read-only.');
+    }
+
     if (receiverId == 'group') {
       await sendGroupMessage(
         groupId: chatId,
@@ -529,6 +611,9 @@ class ChatService {
       int disappearingHours = 0;
       if (chatDoc.exists && chatDoc.data() != null) {
         final chatData = chatDoc.data()!;
+        if (isOfficialFeeThread(correctChatId, chatData)) {
+          throw Exception('FYBTT official channel is read-only.');
+        }
         final List<dynamic> blockedBy =
             (chatData['blockedBy'] as List<dynamic>?) ?? const [];
         if (blockedBy.isNotEmpty) {
@@ -1501,6 +1586,7 @@ class ChatService {
   Future<void> editMessage(
       String chatId, String messageId, String newText,
       {bool? isGroup}) async {
+    if (isOfficialChatIdOrReceiver(chatId)) return;
     try {
       await _localStorage.updateMessageContentLocally(
         messageId: messageId,
@@ -1522,6 +1608,7 @@ class ChatService {
   Future<void> deleteMessageForEveryone(
       String chatId, String messageId,
       {bool? isGroup}) async {
+    if (isOfficialChatIdOrReceiver(chatId)) return;
     try {
       await _localStorage.deleteMessageForEveryoneLocally(messageId, chatId);
 
@@ -1535,6 +1622,7 @@ class ChatService {
   Future<void> deleteMessageForMe(
       String chatId, String messageId, String userId,
       {bool? isGroup}) async {
+    if (isOfficialChatIdOrReceiver(chatId)) return;
     try {
       await _localStorage.deleteMessageForMeLocally(messageId, chatId, userId);
 
@@ -1607,6 +1695,7 @@ class ChatService {
 
   Future<void> toggleArchiveChat(
       String chatId, String userId, bool archive) async {
+    if (isOfficialChatIdOrReceiver(chatId)) return;
     try {
       await _firestore.collection('chats').doc(chatId).update({
         'archivedBy': archive
@@ -1632,6 +1721,7 @@ class ChatService {
 
   Future<void> toggleBlockChat(
       String chatId, String userId, bool block) async {
+    if (isOfficialChatIdOrReceiver(chatId)) return;
     try {
       await _firestore.collection('chats').doc(chatId).update({
         'blockedBy': block
