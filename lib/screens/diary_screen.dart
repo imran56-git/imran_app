@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui';
 import 'package:flutter/material.dart';
@@ -41,6 +42,7 @@ class _DiaryScreenState extends State<DiaryScreen> {
   bool _isSaving = false;
   bool _isLoadingHistory = false;
   bool _isSettlingPayment = false;
+  bool _hasUnsavedGridEdits = false;
 
   late int _selectedYear;
   final List<int> _availableYears = [2024, 2025, 2026, 2027, 2028, 2029];
@@ -61,7 +63,7 @@ class _DiaryScreenState extends State<DiaryScreen> {
   ];
 
   final Map<String, String> _monthStatuses = {};
-  double _loadedGridDue = 0.0;
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _diarySubscription;
 
   @override
   void initState() {
@@ -79,7 +81,8 @@ class _DiaryScreenState extends State<DiaryScreen> {
           : widget.prefillAmount!.toStringAsFixed(2);
     }
 
-    if (widget.prefillStudentId != null && widget.prefillStudentId!.trim().isNotEmpty) {
+    if (widget.prefillStudentId != null &&
+        widget.prefillStudentId!.trim().isNotEmpty) {
       _searchController.text = widget.prefillStudentId!.trim();
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _loadPrefilledStudent();
@@ -95,16 +98,61 @@ class _DiaryScreenState extends State<DiaryScreen> {
 
   @override
   void dispose() {
+    _diarySubscription?.cancel();
     _searchController.dispose();
     _subjectController.dispose();
     _monthlyFeeController.dispose();
     super.dispose();
   }
 
-  double get _monthlyFee => double.tryParse(_monthlyFeeController.text.trim()) ?? 0.0;
+  double get _monthlyFee =>
+      double.tryParse(_monthlyFeeController.text.trim()) ?? 0.0;
 
-  int get _paidMonthsCount => _monthStatuses.values.where((status) => status == 'PAID').length;
-  int get _dueMonthsCount => _monthStatuses.values.where((status) => status == 'DUE').length;
+  String _normalizeStatus(dynamic rawStatus) {
+    final s = (rawStatus ?? '').toString().trim().toUpperCase();
+    if (s == 'PAID') return 'PAID';
+    if (s == 'DUE' || s == 'PENDING') return 'DUE';
+    return 'NOT_ENROLLED';
+  }
+
+  String? _findCanonicalMonth(dynamic rawMonth) {
+    final cleaned = (rawMonth ?? '').toString().trim().toLowerCase();
+    if (cleaned.isEmpty) return null;
+    for (final m in _months) {
+      if (m.toLowerCase() == cleaned) return m;
+    }
+    if (cleaned.length >= 3) {
+      for (final m in _months) {
+        if (m.toLowerCase().startsWith(cleaned.substring(0, 3))) return m;
+      }
+    }
+    return null;
+  }
+
+  Map<String, String> _extractStatusMap(Map<String, dynamic> data) {
+    final rawMap = (data['monthStatuses'] as Map?) ??
+        (data['monthlyStatus'] as Map?) ??
+        <String, dynamic>{};
+
+    final Map<String, String> normalized = {
+      for (final m in _months) m: 'NOT_ENROLLED',
+    };
+
+    rawMap.forEach((key, value) {
+      final canonical = _findCanonicalMonth(key);
+      if (canonical != null) {
+        normalized[canonical] = _normalizeStatus(value);
+      }
+    });
+
+    return normalized;
+  }
+
+  int get _paidMonthsCount =>
+      _monthStatuses.values.where((status) => status == 'PAID').length;
+
+  int get _dueMonthsCount =>
+      _monthStatuses.values.where((status) => status == 'DUE').length;
 
   double get _totalPaid => _paidMonthsCount * _monthlyFee;
   double get _gridDue => _dueMonthsCount * _monthlyFee;
@@ -114,7 +162,42 @@ class _DiaryScreenState extends State<DiaryScreen> {
   }
 
   String _formatCurrency(double amount) {
-    return amount % 1 == 0 ? amount.toInt().toString() : amount.toStringAsFixed(2);
+    return amount % 1 == 0
+        ? amount.toInt().toString()
+        : amount.toStringAsFixed(2);
+  }
+
+  void _subscribeToDiaryDoc(
+    String studentId, {
+    bool preservePrefillAmount = false,
+  }) {
+    _diarySubscription?.cancel();
+    final docId = _currentDiaryDocId(studentId);
+    _diarySubscription = _firestore
+        .collection('student_fees')
+        .doc(docId)
+        .snapshots()
+        .listen((doc) {
+      if (!mounted || _hasUnsavedGridEdits) return;
+      if (doc.exists && doc.data() != null) {
+        final data = doc.data()!;
+        final double savedMonthlyFee = (data['monthlyFee'] is num)
+            ? (data['monthlyFee'] as num).toDouble()
+            : 0.0;
+        final normalized = _extractStatusMap(data);
+        setState(() {
+          if (savedMonthlyFee > 0) {
+            _monthlyFeeController.text = _formatCurrency(savedMonthlyFee);
+          } else if (!preservePrefillAmount) {
+            _monthlyFeeController.clear();
+          }
+          _subjectController.text = (data['subject'] ?? '').toString();
+          _monthStatuses
+            ..clear()
+            ..addAll(normalized);
+        });
+      }
+    });
   }
 
   Future<void> _loadPrefilledStudent() async {
@@ -124,13 +207,16 @@ class _DiaryScreenState extends State<DiaryScreen> {
     setState(() {
       _isSearching = true;
       _foundStudent = null;
+      _hasUnsavedGridEdits = false;
     });
 
     try {
-      Map<String, dynamic>? student = await _reminderService.searchStudentById(prefillId);
+      Map<String, dynamic>? student =
+          await _reminderService.searchStudentById(prefillId);
       student ??= {
         'uid': prefillId,
-        'name': (widget.prefillStudentName != null && widget.prefillStudentName!.trim().isNotEmpty)
+        'name': (widget.prefillStudentName != null &&
+                widget.prefillStudentName!.trim().isNotEmpty)
             ? widget.prefillStudentName!.trim()
             : 'Student',
       };
@@ -141,13 +227,16 @@ class _DiaryScreenState extends State<DiaryScreen> {
         _isSearching = false;
       });
 
-      await _fetchStudentFeeHistory((student['uid'] ?? prefillId).toString(), preservePrefillAmount: true);
+      final String resolvedId = (student['uid'] ?? prefillId).toString();
+      await _fetchStudentFeeHistory(resolvedId, preservePrefillAmount: true);
+      _subscribeToDiaryDoc(resolvedId, preservePrefillAmount: true);
     } catch (_) {
       if (!mounted) return;
       setState(() {
         _foundStudent = {
           'uid': prefillId,
-          'name': (widget.prefillStudentName != null && widget.prefillStudentName!.trim().isNotEmpty)
+          'name': (widget.prefillStudentName != null &&
+                  widget.prefillStudentName!.trim().isNotEmpty)
               ? widget.prefillStudentName!.trim()
               : 'Student',
         };
@@ -161,7 +250,10 @@ class _DiaryScreenState extends State<DiaryScreen> {
     bool preservePrefillAmount = false,
   }) async {
     if (!mounted) return;
-    setState(() => _isLoadingHistory = true);
+    setState(() {
+      _isLoadingHistory = true;
+      _hasUnsavedGridEdits = false;
+    });
     try {
       final docId = _currentDiaryDocId(studentId);
       final doc = await _firestore.collection('student_fees').doc(docId).get();
@@ -170,7 +262,7 @@ class _DiaryScreenState extends State<DiaryScreen> {
 
       if (doc.exists && doc.data() != null) {
         final data = doc.data()!;
-        final savedStatuses = data['monthStatuses'] as Map<String, dynamic>?;
+        final normalized = _extractStatusMap(data);
         final double savedMonthlyFee = (data['monthlyFee'] is num)
             ? (data['monthlyFee'] as num).toDouble()
             : 0.0;
@@ -182,23 +274,14 @@ class _DiaryScreenState extends State<DiaryScreen> {
             _monthlyFeeController.clear();
           }
           _subjectController.text = (data['subject'] ?? '').toString();
-          if (savedStatuses != null) {
-            for (final month in _months) {
-              _monthStatuses[month] = savedStatuses[month]?.toString() ?? 'NOT_ENROLLED';
-            }
-          } else {
-            _resetMonthStatuses();
-          }
-          final int dueCount = _monthStatuses.values.where((s) => s == 'DUE').length;
-          _loadedGridDue = (data['gridDueAmount'] is num)
-              ? (data['gridDueAmount'] as num).toDouble()
-              : dueCount * savedMonthlyFee;
+          _monthStatuses
+            ..clear()
+            ..addAll(normalized);
         });
       } else {
         setState(() {
           _resetMonthStatuses();
           _subjectController.clear();
-          _loadedGridDue = 0.0;
           if (!preservePrefillAmount) {
             _monthlyFeeController.clear();
           }
@@ -215,9 +298,11 @@ class _DiaryScreenState extends State<DiaryScreen> {
     final searchId = _searchController.text.trim();
     if (searchId.isEmpty) return;
 
+    _diarySubscription?.cancel();
     setState(() {
       _isSearching = true;
       _foundStudent = null;
+      _hasUnsavedGridEdits = false;
     });
 
     try {
@@ -230,7 +315,9 @@ class _DiaryScreenState extends State<DiaryScreen> {
       });
 
       if (student != null) {
-        await _fetchStudentFeeHistory((student['uid'] ?? searchId).toString());
+        final resolvedId = (student['uid'] ?? searchId).toString();
+        await _fetchStudentFeeHistory(resolvedId);
+        _subscribeToDiaryDoc(resolvedId);
       } else {
         _showErrorPopup(
           'Student Not Found',
@@ -240,7 +327,8 @@ class _DiaryScreenState extends State<DiaryScreen> {
     } catch (_) {
       if (!mounted) return;
       setState(() => _isSearching = false);
-      _showErrorPopup('Error', 'Failed to retrieve student data from the database.');
+      _showErrorPopup(
+          'Error', 'Failed to retrieve student data from the database.');
     }
   }
 
@@ -262,7 +350,8 @@ class _DiaryScreenState extends State<DiaryScreen> {
             child: FadeTransition(
               opacity: anim,
               child: AlertDialog(
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20)),
                 title: Text(
                   title,
                   style: const TextStyle(
@@ -271,16 +360,20 @@ class _DiaryScreenState extends State<DiaryScreen> {
                     color: Colors.redAccent,
                   ),
                 ),
-                content: Text(message, style: const TextStyle(fontSize: 15, color: Colors.black87)),
+                content: Text(message,
+                    style:
+                        const TextStyle(fontSize: 15, color: Colors.black87)),
                 actions: [
                   ElevatedButton(
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.blue[800],
                       foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
                     ),
                     onPressed: () => Navigator.pop(context),
-                    child: const Text('OK', style: TextStyle(fontWeight: FontWeight.bold)),
+                    child: const Text('OK',
+                        style: TextStyle(fontWeight: FontWeight.bold)),
                   ),
                 ],
               ),
@@ -408,10 +501,12 @@ class _DiaryScreenState extends State<DiaryScreen> {
                           foregroundColor: Colors.grey.shade700,
                           side: BorderSide(color: Colors.grey.shade300),
                           padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14)),
                         ),
                         onPressed: () => Navigator.pop(sheetContext),
-                        child: const Text('Cancel', style: TextStyle(fontWeight: FontWeight.bold)),
+                        child: const Text('Cancel',
+                            style: TextStyle(fontWeight: FontWeight.bold)),
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -422,11 +517,13 @@ class _DiaryScreenState extends State<DiaryScreen> {
                           backgroundColor: const Color(0xFF10B981),
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14)),
                           elevation: 1,
                         ),
                         icon: const Icon(Icons.alarm_add_rounded, size: 20),
-                        label: const Text('Set Fee Reminder', style: TextStyle(fontWeight: FontWeight.bold)),
+                        label: const Text('Set Fee Reminder',
+                            style: TextStyle(fontWeight: FontWeight.bold)),
                         onPressed: () {
                           Navigator.pop(sheetContext);
                           Navigator.push(
@@ -459,30 +556,19 @@ class _DiaryScreenState extends State<DiaryScreen> {
     if (_foundStudent == null) return;
 
     setState(() => _isSaving = true);
-    final String studentId = (_foundStudent!['uid'] ?? _searchController.text.trim()).toString();
+    final String studentId =
+        (_foundStudent!['uid'] ?? _searchController.text.trim()).toString();
     final String studentName = (_foundStudent!['name'] ?? 'Student').toString();
     final String docId = _currentDiaryDocId(studentId);
-    final double newGridDue = _gridDue;
-    final double newTotalPaid = _totalPaid;
+    final double computedTotalDue = _gridDue;
+    final double computedTotalPaid = _totalPaid;
+    final Map<String, String> statusesCopy = Map<String, String>.from(_monthStatuses);
 
     try {
       final docRef = _firestore.collection('student_fees').doc(docId);
       final monthlyRef = _firestore.collection('monthly_fee').doc(studentId);
 
-      final double savedTotalDue = await _firestore.runTransaction<double>((transaction) async {
-        final snap = await transaction.get(docRef);
-        double updatedTotalDue = newGridDue;
-
-        if (snap.exists && snap.data() != null) {
-          final data = snap.data()!;
-          final double serverTotalDue =
-              (data['totalDue'] is num) ? (data['totalDue'] as num).toDouble() : 0.0;
-          final double serverGridDue =
-              (data['gridDueAmount'] is num) ? (data['gridDueAmount'] as num).toDouble() : _loadedGridDue;
-          final double deltaDue = newGridDue - serverGridDue;
-          updatedTotalDue = math.max(0.0, serverTotalDue + deltaDue);
-        }
-
+      await _firestore.runTransaction<void>((transaction) async {
         transaction.set(
           docRef,
           {
@@ -495,12 +581,13 @@ class _DiaryScreenState extends State<DiaryScreen> {
             'subject': _subjectController.text.trim(),
             'year': _selectedYear,
             'monthlyFee': _monthlyFee,
-            'monthStatuses': _monthStatuses,
+            'monthStatuses': statusesCopy,
             'paidMonthsCount': _paidMonthsCount,
             'dueMonthsCount': _dueMonthsCount,
-            'gridDueAmount': newGridDue,
-            'totalPaid': newTotalPaid,
-            'totalDue': updatedTotalDue,
+            'gridDueAmount': computedTotalDue,
+            'totalPaid': computedTotalPaid,
+            'totalCollected': computedTotalPaid,
+            'totalDue': computedTotalDue,
             'lastUpdated': FieldValue.serverTimestamp(),
           },
           SetOptions(merge: true),
@@ -513,24 +600,60 @@ class _DiaryScreenState extends State<DiaryScreen> {
             'studentName': studentName,
             'subject': _subjectController.text.trim(),
             'teacherId': widget.currentUserId,
-            'pendingAmount': updatedTotalDue,
-            'totalPaid': newTotalPaid,
+            'pendingAmount': computedTotalDue,
+            'totalPaid': computedTotalPaid,
             'monthlyFee': _monthlyFee,
             'lastUpdated': FieldValue.serverTimestamp(),
           },
           SetOptions(merge: true),
         );
-
-        return updatedTotalDue;
       });
 
-      _loadedGridDue = newGridDue;
+      // Keep fee_entries subcollection statuses synced with monthStatuses
+      final entriesSnap = await docRef.collection('fee_entries').get();
+      if (entriesSnap.docs.isNotEmpty) {
+        final batch = _firestore.batch();
+        bool hasBatchOps = false;
+        for (final entryDoc in entriesSnap.docs) {
+          final entryData = entryDoc.data();
+          final canonicalMonth =
+              _findCanonicalMonth(entryData['month'] ?? entryData['monthName']);
+          if (canonicalMonth != null) {
+            final ledgerStatus = statusesCopy[canonicalMonth];
+            if (ledgerStatus == 'PAID' &&
+                (entryData['status'] ?? '').toString().toLowerCase() !=
+                    'paid') {
+              batch.update(entryDoc.reference, {
+                'status': 'paid',
+                'paidAt': FieldValue.serverTimestamp(),
+              });
+              hasBatchOps = true;
+            } else if (ledgerStatus == 'DUE' &&
+                (entryData['status'] ?? '').toString().toLowerCase() ==
+                    'paid') {
+              batch.update(entryDoc.reference, {
+                'status': 'due',
+                'updatedAt': FieldValue.serverTimestamp(),
+              });
+              hasBatchOps = true;
+            }
+          }
+        }
+        if (hasBatchOps) {
+          await batch.commit();
+        }
+      }
 
-      final bool hasActiveReminder = await _checkIfActiveFeeReminderExists(studentId);
+      final bool hasActiveReminder =
+          await _checkIfActiveFeeReminderExists(studentId);
 
       if (!mounted) return;
-      SuccessToast.show(context, 'Fee Record Saved (Due: ₹${_formatCurrency(savedTotalDue)})');
-      setState(() => _isSaving = false);
+      setState(() {
+        _hasUnsavedGridEdits = false;
+        _isSaving = false;
+      });
+      SuccessToast.show(
+          context, 'Fee Record Saved (Due: ₹${_formatCurrency(computedTotalDue)})');
 
       if (!hasActiveReminder) {
         await _showSetReminderRecommendationSheet(
@@ -542,7 +665,8 @@ class _DiaryScreenState extends State<DiaryScreen> {
     } catch (_) {
       if (!mounted) return;
       setState(() => _isSaving = false);
-      _showErrorPopup('Save Failed', 'Unable to write fee record to database. Please check connection.');
+      _showErrorPopup('Save Failed',
+          'Unable to write fee record to database. Please check connection.');
     }
   }
 
@@ -558,9 +682,10 @@ class _DiaryScreenState extends State<DiaryScreen> {
       context: context,
       builder: (dialogContext) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        title: const Text('Mark Fee as Paid?', style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text('Mark Fee as Paid?',
+            style: TextStyle(fontWeight: FontWeight.bold)),
         content: Text(
-          'Confirm receipt of ₹${_formatCurrency(entryAmount)} for $label?\n\nThis will safely reduce Pending Dues and mark this entry as Paid.',
+          'Confirm receipt of ₹${_formatCurrency(entryAmount)} for $label?\n\nThis will update the Monthly Ledger to Paid and recalculate Pending Dues.',
         ),
         actions: [
           TextButton(
@@ -571,10 +696,12 @@ class _DiaryScreenState extends State<DiaryScreen> {
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF10B981),
               foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10)),
             ),
             onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('Mark Paid', style: TextStyle(fontWeight: FontWeight.bold)),
+            child: const Text('Mark Paid',
+                style: TextStyle(fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -584,9 +711,12 @@ class _DiaryScreenState extends State<DiaryScreen> {
     setState(() => _isSettlingPayment = true);
 
     try {
-      final diaryRef = _firestore.collection('student_fees').doc(_currentDiaryDocId(studentId));
+      final diaryRef =
+          _firestore.collection('student_fees').doc(_currentDiaryDocId(studentId));
       final entryRef = diaryRef.collection('fee_entries').doc(entryId);
       final monthlyRef = _firestore.collection('monthly_fee').doc(studentId);
+
+      Map<String, String>? updatedStatusesResult;
 
       await _firestore.runTransaction((transaction) async {
         final diarySnap = await transaction.get(diaryRef);
@@ -594,22 +724,31 @@ class _DiaryScreenState extends State<DiaryScreen> {
 
         if (!entrySnap.exists) return;
         final entryData = entrySnap.data() ?? {};
-        if ((entryData['status'] ?? '').toString().toLowerCase() == 'paid') return;
-
-        final double currentAmount = (entryData['amount'] is num)
-            ? (entryData['amount'] as num).toDouble()
-            : entryAmount;
+        if ((entryData['status'] ?? '').toString().toLowerCase() == 'paid') {
+          return;
+        }
 
         final diaryData = diarySnap.data() ?? {};
-        final double currentTotalDue = (diaryData['totalDue'] is num)
-            ? (diaryData['totalDue'] as num).toDouble()
-            : 0.0;
-        final double currentTotalPaid = (diaryData['totalPaid'] is num)
-            ? (diaryData['totalPaid'] as num).toDouble()
-            : 0.0;
+        final Map<String, String> statuses = _extractStatusMap(diaryData);
 
-        final double newTotalDue = math.max(0.0, currentTotalDue - currentAmount);
-        final double newTotalPaid = currentTotalPaid + currentAmount;
+        final String? targetMonth = _findCanonicalMonth(
+          entryData['month'] ?? entryData['monthName'] ?? label,
+        );
+        if (targetMonth != null) {
+          statuses[targetMonth] = 'PAID';
+        }
+
+        final double savedMonthlyFee = (diaryData['monthlyFee'] is num)
+            ? (diaryData['monthlyFee'] as num).toDouble()
+            : _monthlyFee;
+        final double unitFee =
+            savedMonthlyFee > 0 ? savedMonthlyFee : entryAmount;
+
+        final int newPaidCount =
+            statuses.values.where((s) => s == 'PAID').length;
+        final int newDueCount = statuses.values.where((s) => s == 'DUE').length;
+        final double newTotalPaid = newPaidCount * unitFee;
+        final double newTotalDue = newDueCount * unitFee;
 
         transaction.update(entryRef, {
           'status': 'paid',
@@ -619,8 +758,13 @@ class _DiaryScreenState extends State<DiaryScreen> {
         transaction.set(
           diaryRef,
           {
+            'monthStatuses': statuses,
+            'paidMonthsCount': newPaidCount,
+            'dueMonthsCount': newDueCount,
+            'gridDueAmount': newTotalDue,
             'totalDue': newTotalDue,
             'totalPaid': newTotalPaid,
+            'totalCollected': newTotalPaid,
             'lastUpdated': FieldValue.serverTimestamp(),
           },
           SetOptions(merge: true),
@@ -635,13 +779,25 @@ class _DiaryScreenState extends State<DiaryScreen> {
           },
           SetOptions(merge: true),
         );
+
+        updatedStatusesResult = statuses;
       });
 
       if (mounted) {
-        SuccessToast.show(context, 'Marked ₹${_formatCurrency(entryAmount)} as Paid');
+        if (updatedStatusesResult != null) {
+          setState(() {
+            _monthStatuses
+              ..clear()
+              ..addAll(updatedStatusesResult!);
+            _hasUnsavedGridEdits = false;
+          });
+        }
+        SuccessToast.show(
+            context, 'Marked ₹${_formatCurrency(entryAmount)} as Paid');
       }
     } catch (_) {
-      _showErrorPopup('Settlement Failed', 'Could not update payment status. Please try again.');
+      _showErrorPopup('Settlement Failed',
+          'Could not update payment status. Please try again.');
     } finally {
       if (mounted) setState(() => _isSettlingPayment = false);
     }
@@ -660,7 +816,8 @@ class _DiaryScreenState extends State<DiaryScreen> {
       context: context,
       builder: (dialogContext) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('Record Payment', style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text('Record Payment',
+            style: TextStyle(fontWeight: FontWeight.bold)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -676,14 +833,17 @@ class _DiaryScreenState extends State<DiaryScreen> {
             const SizedBox(height: 14),
             TextField(
               controller: payController,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
               inputFormatters: [
                 FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}')),
               ],
               decoration: InputDecoration(
                 labelText: 'Amount Paid (₹)',
-                prefixIcon: Icon(Icons.currency_rupee_rounded, color: Colors.blue[800], size: 20),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                prefixIcon: Icon(Icons.currency_rupee_rounded,
+                    color: Colors.blue[800], size: 20),
+                border:
+                    OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
               ),
             ),
             const SizedBox(height: 12),
@@ -692,7 +852,8 @@ class _DiaryScreenState extends State<DiaryScreen> {
               decoration: InputDecoration(
                 labelText: 'Note (Optional)',
                 hintText: 'e.g. Cash / UPI payment',
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                border:
+                    OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
               ),
             ),
           ],
@@ -706,10 +867,12 @@ class _DiaryScreenState extends State<DiaryScreen> {
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF10B981),
               foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
             ),
             onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('Confirm Paid', style: TextStyle(fontWeight: FontWeight.bold)),
+            child: const Text('Confirm Paid',
+                style: TextStyle(fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -723,44 +886,84 @@ class _DiaryScreenState extends State<DiaryScreen> {
     if (confirmed != true || !mounted) return;
 
     if (paidAmount == null || paidAmount <= 0) {
-      _showErrorPopup('Invalid Amount', 'Please enter a valid payment amount greater than 0.');
+      _showErrorPopup(
+          'Invalid Amount', 'Please enter a valid payment amount greater than 0.');
       return;
     }
 
     setState(() => _isSettlingPayment = true);
     try {
-      final diaryRef = _firestore.collection('student_fees').doc(_currentDiaryDocId(studentId));
+      final diaryRef =
+          _firestore.collection('student_fees').doc(_currentDiaryDocId(studentId));
       final entryRef = diaryRef.collection('fee_entries').doc();
       final monthlyRef = _firestore.collection('monthly_fee').doc(studentId);
+      Map<String, String>? updatedStatusesResult;
 
       await _firestore.runTransaction((transaction) async {
         final diarySnap = await transaction.get(diaryRef);
         final diaryData = diarySnap.data() ?? {};
+        final Map<String, String> statuses = _extractStatusMap(diaryData);
+        final double unitFee = (diaryData['monthlyFee'] is num &&
+                (diaryData['monthlyFee'] as num).toDouble() > 0)
+            ? (diaryData['monthlyFee'] as num).toDouble()
+            : _monthlyFee;
 
-        final double serverDue = (diaryData['totalDue'] is num)
-            ? (diaryData['totalDue'] as num).toDouble()
-            : currentDue;
-        final double serverPaid = (diaryData['totalPaid'] is num)
-            ? (diaryData['totalPaid'] as num).toDouble()
-            : _totalPaid;
+        // Convert as many DUE months as covered by paidAmount (full months)
+        if (unitFee > 0) {
+          int monthsCovered = (paidAmount / unitFee).floor();
+          if (paidAmount >= currentDue) {
+            for (final m in _months) {
+              if (statuses[m] == 'DUE') {
+                statuses[m] = 'PAID';
+              }
+            }
+          } else if (monthsCovered > 0) {
+            for (final m in _months) {
+              if (monthsCovered <= 0) break;
+              if (statuses[m] == 'DUE') {
+                statuses[m] = 'PAID';
+                monthsCovered--;
+              }
+            }
+          }
+        } else if (paidAmount >= currentDue) {
+          for (final m in _months) {
+            if (statuses[m] == 'DUE') {
+              statuses[m] = 'PAID';
+            }
+          }
+        }
 
-        final double newDue = math.max(0.0, serverDue - paidAmount);
-        final double newPaid = serverPaid + paidAmount;
+        final int newPaidCount =
+            statuses.values.where((s) => s == 'PAID').length;
+        final int newDueCount = statuses.values.where((s) => s == 'DUE').length;
+        final double newDue = unitFee > 0
+            ? newDueCount * unitFee
+            : math.max(0.0, currentDue - paidAmount);
+        final double newPaid =
+            unitFee > 0 ? newPaidCount * unitFee : (_totalPaid + paidAmount);
 
         transaction.set(
           diaryRef,
           {
+            'monthStatuses': statuses,
+            'paidMonthsCount': newPaidCount,
+            'dueMonthsCount': newDueCount,
+            'gridDueAmount': newDue,
             'totalDue': newDue,
             'totalPaid': newPaid,
+            'totalCollected': newPaid,
             'lastUpdated': FieldValue.serverTimestamp(),
           },
           SetOptions(merge: true),
         );
 
         transaction.set(entryRef, {
+          'entryId': entryRef.id,
           'amount': paidAmount,
           'status': 'paid',
           'source': 'manual_payment',
+          'month': noteText.isNotEmpty ? noteText : 'Manual Payment',
           'monthName': noteText.isNotEmpty ? noteText : 'Manual Payment',
           'createdAt': FieldValue.serverTimestamp(),
           'paidAt': FieldValue.serverTimestamp(),
@@ -775,10 +978,21 @@ class _DiaryScreenState extends State<DiaryScreen> {
           },
           SetOptions(merge: true),
         );
+
+        updatedStatusesResult = statuses;
       });
 
       if (mounted) {
-        SuccessToast.show(context, 'Payment of ₹${_formatCurrency(paidAmount)} Recorded');
+        if (updatedStatusesResult != null) {
+          setState(() {
+            _monthStatuses
+              ..clear()
+              ..addAll(updatedStatusesResult!);
+            _hasUnsavedGridEdits = false;
+          });
+        }
+        SuccessToast.show(
+            context, 'Payment of ₹${_formatCurrency(paidAmount)} Recorded');
       }
     } catch (_) {
       _showErrorPopup('Error', 'Could not record payment. Please try again.');
@@ -811,7 +1025,9 @@ class _DiaryScreenState extends State<DiaryScreen> {
         String? remoteImg;
         if (snapshot.hasData && snapshot.data!.exists) {
           final data = snapshot.data!.data() as Map<String, dynamic>?;
-          remoteImg = data?['profileImageUrl'] ?? data?['profilePic'] ?? data?['imageUrl'];
+          remoteImg = data?['profileImageUrl'] ??
+              data?['profilePic'] ??
+              data?['imageUrl'];
         }
 
         if (remoteImg != null && remoteImg.isNotEmpty) {
@@ -847,13 +1063,15 @@ class _DiaryScreenState extends State<DiaryScreen> {
       child: Center(
         child: Text(
           name.isNotEmpty ? name[0].toUpperCase() : 'S',
-          style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 18),
+          style: const TextStyle(
+              fontWeight: FontWeight.bold, color: Colors.white, fontSize: 18),
         ),
       ),
     );
   }
 
-  Widget _buildStatusChip(String month, String status, String label, Color activeBgColor) {
+  Widget _buildStatusChip(
+      String month, String status, String label, Color activeBgColor) {
     final bool isSelected = _monthStatuses[month] == status;
 
     return Expanded(
@@ -861,6 +1079,7 @@ class _DiaryScreenState extends State<DiaryScreen> {
         onTap: () {
           HapticFeedback.selectionClick();
           setState(() {
+            _hasUnsavedGridEdits = true;
             _monthStatuses[month] = status;
           });
         },
@@ -951,7 +1170,8 @@ class _DiaryScreenState extends State<DiaryScreen> {
             children: [
               _buildStatusChip(month, 'PAID', 'Paid', const Color(0xFF10B981)),
               _buildStatusChip(month, 'DUE', 'Due', const Color(0xFFEF4444)),
-              _buildStatusChip(month, 'NOT_ENROLLED', 'Not Enrolled', const Color(0xFF64748B)),
+              _buildStatusChip(
+                  month, 'NOT_ENROLLED', 'Not Enrolled', const Color(0xFF64748B)),
             ],
           ),
         ],
@@ -973,14 +1193,17 @@ class _DiaryScreenState extends State<DiaryScreen> {
         }
         final docs = [...(snapshot.data?.docs ?? [])];
         docs.sort((a, b) {
-          final aData = a.data() as Map<String, dynamic>;
-          final bData = b.data() as Map<String, dynamic>;
-          final aPending = (aData['status'] ?? '').toString().toLowerCase() == 'pending' ? 1 : 0;
-          final bPending = (bData['status'] ?? '').toString().toLowerCase() == 'pending' ? 1 : 0;
-          if (aPending != bPending) return bPending.compareTo(aPending);
+          final aData = (a.data() as Map<String, dynamic>?) ?? {};
+          final bData = (b.data() as Map<String, dynamic>?) ?? {};
+          final aStatus = (aData['status'] ?? '').toString().toLowerCase();
+          final bStatus = (bData['status'] ?? '').toString().toLowerCase();
+          final aUnpaid = (aStatus == 'pending' || aStatus == 'due') ? 1 : 0;
+          final bUnpaid = (bStatus == 'pending' || bStatus == 'due') ? 1 : 0;
+          if (aUnpaid != bUnpaid) return bUnpaid.compareTo(aUnpaid);
           final aTs = (aData['createdAt'] ?? aData['paidAt']) as Timestamp?;
           final bTs = (bData['createdAt'] ?? bData['paidAt']) as Timestamp?;
-          return (bTs?.millisecondsSinceEpoch ?? 0).compareTo(aTs?.millisecondsSinceEpoch ?? 0);
+          return (bTs?.millisecondsSinceEpoch ?? 0)
+              .compareTo(aTs?.millisecondsSinceEpoch ?? 0);
         });
 
         if (docs.isEmpty) {
@@ -994,12 +1217,16 @@ class _DiaryScreenState extends State<DiaryScreen> {
             ),
             child: Row(
               children: [
-                Icon(Icons.receipt_long_rounded, color: Colors.grey.shade400, size: 22),
+                Icon(Icons.receipt_long_rounded,
+                    color: Colors.grey.shade400, size: 22),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
                     'No automated or manual fee entries yet. When scheduled reminders fire, pending entries appear here.',
-                    style: TextStyle(fontSize: 12.5, color: Colors.grey.shade600, height: 1.35),
+                    style: TextStyle(
+                        fontSize: 12.5,
+                        color: Colors.grey.shade600,
+                        height: 1.35),
                   ),
                 ),
               ],
@@ -1009,18 +1236,25 @@ class _DiaryScreenState extends State<DiaryScreen> {
 
         return Column(
           children: docs.map((doc) {
-            final data = doc.data() as Map<String, dynamic>;
+            final data = (doc.data() as Map<String, dynamic>?) ?? {};
             final double amount = (data['amount'] is num)
                 ? (data['amount'] as num).toDouble()
                 : double.tryParse(data['amount']?.toString() ?? '0') ?? 0.0;
-            final String status = (data['status'] ?? 'pending').toString().toLowerCase();
+            final String status =
+                (data['status'] ?? 'due').toString().toLowerCase();
             final bool isPaid = status == 'paid';
-            final String monthLabel = (data['monthName'] ?? data['month'] ?? 'Monthly Fee').toString();
-            final String dueDateText = (data['dueDateText'] ?? '').toString();
-            final Timestamp? ts = (isPaid ? (data['paidAt'] ?? data['createdAt']) : data['createdAt']) as Timestamp?;
+            final String monthLabel =
+                (data['monthName'] ?? data['month'] ?? 'Monthly Fee')
+                    .toString();
+            final String dueDateText =
+                (data['dueDateText'] ?? data['dueDate'] ?? '').toString();
+            final Timestamp? ts =
+                (isPaid ? (data['paidAt'] ?? data['createdAt']) : data['createdAt'])
+                    as Timestamp?;
             String dateLabel = dueDateText;
             if (ts != null) {
-              final dt = ts.toDate().toUtc().add(const Duration(hours: 5, minutes: 30));
+              final dt =
+                  ts.toDate().toUtc().add(const Duration(hours: 5, minutes: 30));
               final d = dt.day.toString().padLeft(2, '0');
               final m = dt.month.toString().padLeft(2, '0');
               dateLabel = '$d/$m/${dt.year}';
@@ -1033,7 +1267,9 @@ class _DiaryScreenState extends State<DiaryScreen> {
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(
-                  color: isPaid ? const Color(0xFFBBF7D0) : const Color(0xFFFECACA),
+                  color: isPaid
+                      ? const Color(0xFFBBF7D0)
+                      : const Color(0xFFFECACA),
                 ),
                 boxShadow: [
                   BoxShadow(
@@ -1048,12 +1284,18 @@ class _DiaryScreenState extends State<DiaryScreen> {
                   Container(
                     padding: const EdgeInsets.all(9),
                     decoration: BoxDecoration(
-                      color: isPaid ? const Color(0xFFECFDF5) : const Color(0xFFFEF2F2),
+                      color: isPaid
+                          ? const Color(0xFFECFDF5)
+                          : const Color(0xFFFEF2F2),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Icon(
-                      isPaid ? Icons.check_circle_rounded : Icons.schedule_rounded,
-                      color: isPaid ? const Color(0xFF10B981) : const Color(0xFFEF4444),
+                      isPaid
+                          ? Icons.check_circle_rounded
+                          : Icons.schedule_rounded,
+                      color: isPaid
+                          ? const Color(0xFF10B981)
+                          : const Color(0xFFEF4444),
                       size: 20,
                     ),
                   ),
@@ -1074,17 +1316,22 @@ class _DiaryScreenState extends State<DiaryScreen> {
                             ),
                             const SizedBox(width: 8),
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 7, vertical: 2),
                               decoration: BoxDecoration(
-                                color: isPaid ? const Color(0xFFECFDF5) : const Color(0xFFFEF2F2),
+                                color: isPaid
+                                    ? const Color(0xFFECFDF5)
+                                    : const Color(0xFFFEF2F2),
                                 borderRadius: BorderRadius.circular(6),
                               ),
                               child: Text(
-                                isPaid ? 'PAID' : 'PENDING',
+                                isPaid ? 'PAID' : 'DUE',
                                 style: TextStyle(
                                   fontSize: 10,
                                   fontWeight: FontWeight.w800,
-                                  color: isPaid ? const Color(0xFF059669) : const Color(0xFFDC2626),
+                                  color: isPaid
+                                      ? const Color(0xFF059669)
+                                      : const Color(0xFFDC2626),
                                 ),
                               ),
                             ),
@@ -1092,8 +1339,11 @@ class _DiaryScreenState extends State<DiaryScreen> {
                         ),
                         const SizedBox(height: 3),
                         Text(
-                          dateLabel.isNotEmpty ? '$monthLabel • $dateLabel' : monthLabel,
-                          style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                          dateLabel.isNotEmpty
+                              ? '$monthLabel • $dateLabel'
+                              : monthLabel,
+                          style: TextStyle(
+                              fontSize: 12, color: Colors.grey.shade600),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -1105,8 +1355,10 @@ class _DiaryScreenState extends State<DiaryScreen> {
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF10B981),
                         foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 8),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10)),
                         elevation: 0,
                       ),
                       onPressed: _isSettlingPayment
@@ -1119,7 +1371,8 @@ class _DiaryScreenState extends State<DiaryScreen> {
                               ),
                       child: const Text(
                         'Mark Paid',
-                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                        style: TextStyle(
+                            fontSize: 12, fontWeight: FontWeight.bold),
                       ),
                     ),
                 ],
@@ -1133,15 +1386,17 @@ class _DiaryScreenState extends State<DiaryScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final String activeStudentId =
-        _foundStudent != null ? (_foundStudent!['uid'] ?? _searchController.text.trim()).toString() : '';
+    final String activeStudentId = _foundStudent != null
+        ? (_foundStudent!['uid'] ?? _searchController.text.trim()).toString()
+        : '';
 
     return Scaffold(
       backgroundColor: const Color(0xFFF7F9FC),
       appBar: AppBar(
         title: const Text(
           'My Diary',
-          style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 19),
+          style: TextStyle(
+              fontWeight: FontWeight.bold, color: Colors.white, fontSize: 19),
         ),
         backgroundColor: Colors.blue[800],
         foregroundColor: Colors.white,
@@ -1176,7 +1431,10 @@ class _DiaryScreenState extends State<DiaryScreen> {
                 children: [
                   const Text(
                     'Select Student',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF1B1B1B)),
+                    style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF1B1B1B)),
                   ),
                   const SizedBox(height: 14),
                   Row(
@@ -1186,23 +1444,29 @@ class _DiaryScreenState extends State<DiaryScreen> {
                           controller: _searchController,
                           decoration: InputDecoration(
                             hintText: 'Enter Student User ID',
-                            hintStyle: TextStyle(color: Colors.grey[400], fontSize: 14),
-                            prefixIcon: Icon(Icons.tag_rounded, color: Colors.blue[800], size: 22),
+                            hintStyle: TextStyle(
+                                color: Colors.grey[400], fontSize: 14),
+                            prefixIcon: Icon(Icons.tag_rounded,
+                                color: Colors.blue[800], size: 22),
                             filled: true,
                             fillColor: const Color(0xFFF8FAFC),
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(14),
-                              borderSide: BorderSide(color: Colors.grey.shade200),
+                              borderSide:
+                                  BorderSide(color: Colors.grey.shade200),
                             ),
                             enabledBorder: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(14),
-                              borderSide: BorderSide(color: Colors.grey.shade200),
+                              borderSide:
+                                  BorderSide(color: Colors.grey.shade200),
                             ),
                             focusedBorder: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(14),
-                              borderSide: BorderSide(color: Colors.blue.shade400, width: 1.5),
+                              borderSide: BorderSide(
+                                  color: Colors.blue.shade400, width: 1.5),
                             ),
-                            contentPadding: const EdgeInsets.symmetric(vertical: 14),
+                            contentPadding:
+                                const EdgeInsets.symmetric(vertical: 14),
                           ),
                           onSubmitted: (_) => _searchStudent(),
                         ),
@@ -1212,8 +1476,10 @@ class _DiaryScreenState extends State<DiaryScreen> {
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.blue[800],
                           foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 15),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 18, vertical: 15),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14)),
                           elevation: 2,
                         ),
                         onPressed: _isSearching ? null : _searchStudent,
@@ -1221,7 +1487,8 @@ class _DiaryScreenState extends State<DiaryScreen> {
                             ? const SizedBox(
                                 width: 22,
                                 height: 22,
-                                child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5),
+                                child: CircularProgressIndicator(
+                                    color: Colors.white, strokeWidth: 2.5),
                               )
                             : const Icon(Icons.search_rounded, size: 22),
                       ),
@@ -1256,7 +1523,8 @@ class _DiaryScreenState extends State<DiaryScreen> {
                             children: [
                               _buildStudentAvatar(
                                 activeStudentId,
-                                (_foundStudent!['name'] ?? 'Student').toString(),
+                                (_foundStudent!['name'] ?? 'Student')
+                                    .toString(),
                               ),
                               const SizedBox(width: 12),
                               Expanded(
@@ -1264,7 +1532,8 @@ class _DiaryScreenState extends State<DiaryScreen> {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
-                                      (_foundStudent!['name'] ?? 'Student').toString(),
+                                      (_foundStudent!['name'] ?? 'Student')
+                                          .toString(),
                                       style: const TextStyle(
                                         fontWeight: FontWeight.bold,
                                         fontSize: 17,
@@ -1291,7 +1560,8 @@ class _DiaryScreenState extends State<DiaryScreen> {
                           ),
                         ),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 4),
                           decoration: BoxDecoration(
                             color: Colors.blue.shade50,
                             borderRadius: BorderRadius.circular(12),
@@ -1300,7 +1570,8 @@ class _DiaryScreenState extends State<DiaryScreen> {
                           child: DropdownButtonHideUnderline(
                             child: DropdownButton<int>(
                               value: _selectedYear,
-                              icon: Icon(Icons.arrow_drop_down, color: Colors.blue[800]),
+                              icon: Icon(Icons.arrow_drop_down,
+                                  color: Colors.blue[800]),
                               items: _availableYears.map((year) {
                                 return DropdownMenuItem<int>(
                                   value: year,
@@ -1318,6 +1589,7 @@ class _DiaryScreenState extends State<DiaryScreen> {
                                 if (year != null) {
                                   setState(() => _selectedYear = year);
                                   _fetchStudentFeeHistory(activeStudentId);
+                                  _subscribeToDiaryDoc(activeStudentId);
                                 }
                               },
                             ),
@@ -1327,37 +1599,50 @@ class _DiaryScreenState extends State<DiaryScreen> {
                     ),
                     const Padding(
                       padding: EdgeInsets.symmetric(vertical: 14.0),
-                      child: Divider(height: 1, thickness: 1, color: Color(0xFFF1F5F9)),
+                      child: Divider(
+                          height: 1, thickness: 1, color: Color(0xFFF1F5F9)),
                     ),
                     TextField(
                       controller: _subjectController,
                       decoration: InputDecoration(
                         labelText: 'Subject Taught',
                         hintText: 'e.g. Mathematics, Science, English',
-                        prefixIcon: Icon(Icons.menu_book_rounded, color: Colors.blue[800], size: 20),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+                        prefixIcon: Icon(Icons.menu_book_rounded,
+                            color: Colors.blue[800], size: 20),
+                        border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(14)),
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(14),
-                          borderSide: BorderSide(color: Colors.blue.shade400, width: 1.5),
+                          borderSide: BorderSide(
+                              color: Colors.blue.shade400, width: 1.5),
                         ),
                       ),
                     ),
                     const SizedBox(height: 14),
                     TextField(
                       controller: _monthlyFeeController,
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                      inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'^\d+\.?\d{0,2}'))],
+                      keyboardType:
+                          const TextInputType.numberWithOptions(decimal: true),
+                      inputFormatters: [
+                        FilteringTextInputFormatter.allow(
+                            RegExp(r'^\d+\.?\d{0,2}')),
+                      ],
                       decoration: InputDecoration(
                         labelText: 'Monthly Tuition Fee (₹)',
                         hintText: 'e.g. 1000',
-                        prefixIcon: Icon(Icons.currency_rupee_rounded, color: Colors.blue[800]),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+                        prefixIcon: Icon(Icons.currency_rupee_rounded,
+                            color: Colors.blue[800]),
+                        border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(14)),
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(14),
-                          borderSide: BorderSide(color: Colors.blue.shade400, width: 1.5),
+                          borderSide: BorderSide(
+                              color: Colors.blue.shade400, width: 1.5),
                         ),
                       ),
-                      onChanged: (_) => setState(() {}),
+                      onChanged: (_) => setState(() {
+                        _hasUnsavedGridEdits = true;
+                      }),
                     ),
                     const SizedBox(height: 14),
                     StreamBuilder<DocumentSnapshot>(
@@ -1366,26 +1651,36 @@ class _DiaryScreenState extends State<DiaryScreen> {
                           .doc(_currentDiaryDocId(activeStudentId))
                           .snapshots(),
                       builder: (context, snapshot) {
-                        double displayPaid = _totalPaid;
-                        double displayDue = _gridDue;
+                        Map<String, String> effectiveStatuses = _monthStatuses;
+                        double effectiveFee = _monthlyFee;
 
-                        if (snapshot.hasData && snapshot.data!.exists) {
-                          final data = snapshot.data!.data() as Map<String, dynamic>?;
+                        if (!_hasUnsavedGridEdits &&
+                            snapshot.hasData &&
+                            snapshot.data!.exists) {
+                          final data =
+                              snapshot.data!.data() as Map<String, dynamic>?;
                           if (data != null) {
-                            final double serverDue = (data['totalDue'] is num)
-                                ? (data['totalDue'] as num).toDouble()
-                                : 0.0;
-                            final double serverGridDue = (data['gridDueAmount'] is num)
-                                ? (data['gridDueAmount'] as num).toDouble()
-                                : _loadedGridDue;
-                            displayDue = math.max(0.0, serverDue + (_gridDue - serverGridDue));
-
-                            final double serverPaid = (data['totalPaid'] is num)
-                                ? (data['totalPaid'] as num).toDouble()
-                                : _totalPaid;
-                            displayPaid = math.max(serverPaid, _totalPaid);
+                            effectiveStatuses = _extractStatusMap(data);
+                            final double serverFee =
+                                (data['monthlyFee'] is num)
+                                    ? (data['monthlyFee'] as num).toDouble()
+                                    : 0.0;
+                            if (serverFee > 0) {
+                              effectiveFee = serverFee;
+                            }
                           }
                         }
+
+                        final int effectivePaidCount = effectiveStatuses.values
+                            .where((s) => s == 'PAID')
+                            .length;
+                        final int effectiveDueCount = effectiveStatuses.values
+                            .where((s) => s == 'DUE')
+                            .length;
+                        final double displayPaid =
+                            effectivePaidCount * effectiveFee;
+                        final double displayDue =
+                            effectiveDueCount * effectiveFee;
 
                         return Column(
                           children: [
@@ -1394,16 +1689,18 @@ class _DiaryScreenState extends State<DiaryScreen> {
                               decoration: BoxDecoration(
                                 color: const Color(0xFFF8FAFC),
                                 borderRadius: BorderRadius.circular(14),
-                                border: Border.all(color: const Color(0xFFE2E8F0)),
+                                border:
+                                    Border.all(color: const Color(0xFFE2E8F0)),
                               ),
                               child: Row(
                                 children: [
                                   Expanded(
                                     child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
                                       children: [
                                         const Text(
-                                          'Total Paid',
+                                          'Total Collected',
                                           style: TextStyle(
                                             fontSize: 12,
                                             color: Color(0xFF64748B),
@@ -1420,21 +1717,27 @@ class _DiaryScreenState extends State<DiaryScreen> {
                                           ),
                                         ),
                                         Text(
-                                          '($_paidMonthsCount Months)',
-                                          style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                                          'Paid ($effectivePaidCount Mo)',
+                                          style: const TextStyle(
+                                              fontSize: 11,
+                                              color: Color(0xFF64748B)),
                                         ),
                                       ],
                                     ),
                                   ),
-                                  Container(width: 1, height: 40, color: const Color(0xFFCBD5E1)),
+                                  Container(
+                                      width: 1,
+                                      height: 40,
+                                      color: const Color(0xFFCBD5E1)),
                                   Expanded(
                                     child: Padding(
                                       padding: const EdgeInsets.only(left: 14),
                                       child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
                                         children: [
                                           const Text(
-                                            'Pending Dues',
+                                            'Total Outstanding Due',
                                             style: TextStyle(
                                               fontSize: 12,
                                               color: Color(0xFF64748B),
@@ -1451,8 +1754,10 @@ class _DiaryScreenState extends State<DiaryScreen> {
                                             ),
                                           ),
                                           Text(
-                                            '($_dueMonthsCount Months + Auto)',
-                                            style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                                            'Due ($effectiveDueCount Mo)',
+                                            style: const TextStyle(
+                                                fontSize: 11,
+                                                color: Color(0xFF64748B)),
                                           ),
                                         ],
                                       ),
@@ -1461,23 +1766,30 @@ class _DiaryScreenState extends State<DiaryScreen> {
                                 ],
                               ),
                             ),
-                            if (displayDue > 0 && snapshot.hasData && snapshot.data!.exists) ...[
+                            if (displayDue > 0 &&
+                                snapshot.hasData &&
+                                snapshot.data!.exists) ...[
                               const SizedBox(height: 10),
                               SizedBox(
                                 width: double.infinity,
                                 child: OutlinedButton.icon(
                                   style: OutlinedButton.styleFrom(
                                     foregroundColor: const Color(0xFF059669),
-                                    side: const BorderSide(color: Color(0xFF10B981)),
-                                    padding: const EdgeInsets.symmetric(vertical: 11),
+                                    side: const BorderSide(
+                                        color: Color(0xFF10B981)),
+                                    padding: const EdgeInsets.symmetric(
+                                        vertical: 11),
                                     shape: RoundedRectangleBorder(
                                       borderRadius: BorderRadius.circular(12),
                                     ),
                                   ),
-                                  icon: const Icon(Icons.payments_outlined, size: 18),
+                                  icon: const Icon(Icons.payments_outlined,
+                                      size: 18),
                                   label: const Text(
                                     'Record Payment / Settle Due',
-                                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                                    style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 13),
                                   ),
                                   onPressed: _isSettlingPayment
                                       ? null
@@ -1498,7 +1810,10 @@ class _DiaryScreenState extends State<DiaryScreen> {
               const SizedBox(height: 22),
               const Text(
                 'Automated & Payment Ledger',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+                style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF0F172A)),
               ),
               const SizedBox(height: 10),
               _buildFeeEntriesLedger(activeStudentId),
@@ -1532,7 +1847,8 @@ class _DiaryScreenState extends State<DiaryScreen> {
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF10B981),
                     foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16)),
                     elevation: 2,
                   ),
                   onPressed: _isSaving ? null : _saveFeeRecord,
@@ -1543,11 +1859,15 @@ class _DiaryScreenState extends State<DiaryScreen> {
                       ? const SizedBox(
                           width: 24,
                           height: 24,
-                          child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5),
+                          child: CircularProgressIndicator(
+                              color: Colors.white, strokeWidth: 2.5),
                         )
                       : const Text(
                           'SAVE FEE RECORD',
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, letterSpacing: 0.5),
+                          style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 15,
+                              letterSpacing: 0.5),
                         ),
                 ),
               ),
@@ -1591,7 +1911,8 @@ class _DiaryScreenState extends State<DiaryScreen> {
                         color: Colors.white.withOpacity(0.15),
                         borderRadius: BorderRadius.circular(14),
                       ),
-                      child: const Icon(Icons.auto_stories_rounded, color: Colors.white, size: 26),
+                      child: const Icon(Icons.auto_stories_rounded,
+                          color: Colors.white, size: 26),
                     ),
                     const SizedBox(width: 16),
                     Expanded(
@@ -1600,17 +1921,23 @@ class _DiaryScreenState extends State<DiaryScreen> {
                         children: [
                           const Text(
                             'Diary History',
-                            style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.bold),
+                            style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 17,
+                                fontWeight: FontWeight.bold),
                           ),
                           const SizedBox(height: 4),
                           Text(
                             'Search, filter and update entries globally',
-                            style: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 13),
+                            style: TextStyle(
+                                color: Colors.white.withOpacity(0.8),
+                                fontSize: 13),
                           ),
                         ],
                       ),
                     ),
-                    const Icon(Icons.arrow_forward_ios_rounded, color: Colors.white, size: 18),
+                    const Icon(Icons.arrow_forward_ios_rounded,
+                        color: Colors.white, size: 18),
                   ],
                 ),
               ),
