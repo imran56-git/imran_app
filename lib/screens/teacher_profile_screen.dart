@@ -1,3 +1,8 @@
+Here is the complete updated **`lib/screens/teacher_profile_screen.dart`**. The **Teacher Dashboard ("Pending Payments")** card and the **Pending Tuition Fees** popup (`_showPendingDuesSheet`) now calculate `Total Outstanding Due` and `Due (X Mo)` dynamically from the exact same `monthStatuses` map used by `DiaryScreen` and `DiaryHistoryScreen`.
+
+**Next Step:** Once you have copied and replaced this file, please paste **`lib/screens/chat_screen.dart`** (or your private chat room screen) so we can verify that `FYBTT official` remains strictly read-only and non-deletable, and then do our final sync check on `functions/index.js`.
+
+```dart
 import 'dart:async';
 import 'dart:ui';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -99,6 +104,21 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
   static const Color _brandBlue = Color(0xFF1E4C7A);
   static const Color _accentBlue = Color(0xFF2563EB);
   static const Color _scaffoldBg = Color(0xFFF8FAFC);
+
+  static const List<String> _ledgerMonths = [
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December',
+  ];
 
   bool get isOwnProfile =>
       _isCurrentUserTeacher &&
@@ -221,6 +241,62 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
     super.dispose();
   }
 
+  String _formatCurrency(double amount) {
+    return amount % 1 == 0
+        ? amount.toInt().toString()
+        : amount.toStringAsFixed(2);
+  }
+
+  String? _findCanonicalMonth(dynamic rawMonth) {
+    final cleaned = (rawMonth ?? '').toString().trim().toLowerCase();
+    if (cleaned.isEmpty) return null;
+    for (final m in _ledgerMonths) {
+      if (m.toLowerCase() == cleaned) return m;
+    }
+    if (cleaned.length >= 3) {
+      for (final m in _ledgerMonths) {
+        if (m.toLowerCase().startsWith(cleaned.substring(0, 3))) return m;
+      }
+    }
+    return null;
+  }
+
+  ({int dueMonths, double totalDue, double monthlyFee}) _computeLedgerDue(
+      Map<String, dynamic> data) {
+    final rawMap = (data['monthStatuses'] as Map?) ??
+        (data['monthlyStatus'] as Map?) ??
+        <String, dynamic>{};
+
+    final Map<String, String> normalized = {
+      for (final m in _ledgerMonths) m: 'NOT_ENROLLED',
+    };
+
+    rawMap.forEach((key, value) {
+      final canonical = _findCanonicalMonth(key);
+      if (canonical != null) {
+        final s = (value ?? '').toString().trim().toUpperCase();
+        if (s == 'PAID') {
+          normalized[canonical] = 'PAID';
+        } else if (s == 'DUE' || s == 'PENDING') {
+          normalized[canonical] = 'DUE';
+        } else {
+          normalized[canonical] = 'NOT_ENROLLED';
+        }
+      }
+    });
+
+    final int dueMonths = normalized.values.where((s) => s == 'DUE').length;
+    final double monthlyFee = (data['monthlyFee'] is num)
+        ? (data['monthlyFee'] as num).toDouble()
+        : double.tryParse(data['monthlyFee']?.toString() ?? '0') ?? 0.0;
+
+    return (
+      dueMonths: dueMonths,
+      totalDue: dueMonths * monthlyFee,
+      monthlyFee: monthlyFee,
+    );
+  }
+
   Future<void> _deleteOldStorageFileIfDifferent(
       String? oldUrl, String? newUrl) async {
     final String cleanOld = oldUrl?.trim() ?? '';
@@ -255,7 +331,6 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
     }
 
     try {
-      // 1. Verify whether currently logged-in user is a valid teacher
       bool isCurrentTeacher = false;
       if (currentAuthUid.isNotEmpty) {
         if (targetId != currentAuthUid) {
@@ -278,7 +353,6 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
         }
       }
 
-      // 2. Fetch target profile document from teachers collection
       final doc = await _firestore.collection('teachers').doc(targetId).get();
 
       if (!doc.exists) {
@@ -449,7 +523,6 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
           _isUploadingProfileImage = false;
         });
 
-        // If triggered outside edit form, sync immediately to Firestore
         if (!isEditing) {
           await _firestore.collection('teachers').doc(uid).update({
             'profileImageUrl': freshUrl,
@@ -721,7 +794,6 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                             .delete()
                             .catchError((_) {});
 
-                        // Delete both new WebP paths and legacy JPG paths
                         await _storage
                             .ref('profile_images/$uid/profile.webp')
                             .delete()
@@ -1400,7 +1472,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text(
-                        'Total Outstanding',
+                        'Total Outstanding Due',
                         style: TextStyle(
                             color: Colors.white70,
                             fontSize: 12,
@@ -1408,7 +1480,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        '₹${totalDue.toStringAsFixed(0)}',
+                        '₹${_formatCurrency(totalDue)}',
                         style: const TextStyle(
                             color: Colors.white,
                             fontSize: 24,
@@ -1473,9 +1545,14 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                       itemCount: dueStudents.length,
                       itemBuilder: (context, index) {
                         final student = dueStudents[index];
-                        final String name = student['studentName'] ?? 'Student';
-                        final String uid = student['studentId'] ?? '';
-                        final String subject = student['subject'] ?? '';
+                        final String name =
+                            (student['studentName'] ?? 'Student').toString();
+                        final String uid =
+                            (student['studentId'] ?? '').toString();
+                        final String subject =
+                            (student['subject'] ?? '').toString();
+                        final int dueMonths =
+                            (student['dueMonths'] as int?) ?? 0;
                         final double amount =
                             (student['due'] as double?) ?? 0.0;
 
@@ -1533,7 +1610,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                                 crossAxisAlignment: CrossAxisAlignment.end,
                                 children: [
                                   Text(
-                                    '₹${amount.toStringAsFixed(0)}',
+                                    '₹${_formatCurrency(amount)}',
                                     style: const TextStyle(
                                         fontWeight: FontWeight.bold,
                                         fontSize: 15,
@@ -1548,9 +1625,9 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                                       borderRadius: BorderRadius.circular(4),
                                     ),
                                     child: Text(
-                                      'DUE',
+                                      'Due ($dueMonths Mo)',
                                       style: TextStyle(
-                                          fontSize: 9,
+                                          fontSize: 9.5,
                                           fontWeight: FontWeight.w800,
                                           color: Colors.red.shade700),
                                     ),
@@ -3127,19 +3204,19 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
 
                 if (snapshot.hasData) {
                   for (var doc in snapshot.data!.docs) {
-                    final data = doc.data() as Map<String, dynamic>;
-                    final double due =
-                        (data['totalDue'] as num?)?.toDouble() ?? 0.0;
-                    if (due > 0) {
-                      totalPending += due;
+                    final data =
+                        (doc.data() as Map<String, dynamic>?) ?? {};
+                    final summary = _computeLedgerDue(data);
+                    if (summary.totalDue > 0) {
+                      totalPending += summary.totalDue;
                       dueStudents.add({
                         'id': doc.id,
                         'studentId': data['studentId'] ?? '',
                         'studentName': data['studentName'] ?? 'Student',
-                        'due': due,
+                        'due': summary.totalDue,
+                        'dueMonths': summary.dueMonths,
                         'subject': data['subject'] ?? '',
-                        'monthlyFee':
-                            (data['monthlyFee'] as num?)?.toDouble() ?? 0.0,
+                        'monthlyFee': summary.monthlyFee,
                       });
                     }
                   }
@@ -3150,7 +3227,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
 
                 return _buildDashboardCard(
                   "Pending Payments",
-                  "₹${totalPending.toStringAsFixed(0)}",
+                  "₹${_formatCurrency(totalPending)}",
                   Icons.account_balance_wallet_rounded,
                   const Color(0xFFDC2626),
                   onTap: () => _showPendingDuesSheet(totalPending, dueStudents),
