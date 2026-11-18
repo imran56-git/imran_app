@@ -63,24 +63,50 @@ class _LedgerSummary {
   });
 
   factory _LedgerSummary.fromData(Map<String, dynamic> data) {
-    final rawMap = (data['monthStatuses'] as Map?) ??
-        (data['monthlyStatus'] as Map?) ??
-        <String, dynamic>{};
-
     final Map<String, String> normalized = {
       for (final m in _kMonths) m: 'NOT_ENROLLED',
     };
 
-    rawMap.forEach((key, value) {
+    // 1. Ingest monthlyStatus map (standard key from functions and fee reminders)
+    final monthlyStatusMap = (data['monthlyStatus'] as Map?) ?? {};
+    monthlyStatusMap.forEach((key, value) {
       final canonical = _findCanonicalMonth(key);
       if (canonical != null) {
         normalized[canonical] = _normalizeStatus(value);
       }
     });
 
+    // 2. Ingest monthStatuses map if present
+    final monthStatusesMap = (data['monthStatuses'] as Map?) ?? {};
+    monthStatusesMap.forEach((key, value) {
+      final canonical = _findCanonicalMonth(key);
+      if (canonical != null) {
+        final s = _normalizeStatus(value);
+        if (normalized[canonical] == 'NOT_ENROLLED' || s != 'NOT_ENROLLED') {
+          normalized[canonical] = s;
+        }
+      }
+    });
+
+    // 3. Fallback to direct root month fields (e.g. data['November'])
+    for (final m in _kMonths) {
+      final directVal = data[m] ?? data[m.toLowerCase()];
+      if (directVal != null) {
+        final s = _normalizeStatus(directVal);
+        if (s != 'NOT_ENROLLED') {
+          normalized[m] = s;
+        }
+      }
+    }
+
     final double monthlyFee = (data['monthlyFee'] is num)
         ? (data['monthlyFee'] as num).toDouble()
-        : double.tryParse(data['monthlyFee']?.toString() ?? '0') ?? 0.0;
+        : (data['feeAmount'] is num)
+            ? (data['feeAmount'] as num).toDouble()
+            : double.tryParse(data['monthlyFee']?.toString() ??
+                    data['feeAmount']?.toString() ??
+                    '0') ??
+                0.0;
 
     final int paidCount =
         normalized.values.where((s) => s == 'PAID').length;
@@ -136,9 +162,80 @@ class _DiaryHistoryScreenState extends State<DiaryHistoryScreen> {
     super.dispose();
   }
 
-  Widget _buildStudentAvatar(String studentId, String studentName) {
+  Widget _buildStudentAvatar({
+    required String studentId,
+    required String studentName,
+    String? directPhotoUrl,
+    double size = 44,
+  }) {
+    final initials = studentName.trim().isNotEmpty
+        ? studentName
+            .trim()
+            .split(' ')
+            .where((p) => p.isNotEmpty)
+            .map((e) => e[0])
+            .take(2)
+            .join()
+            .toUpperCase()
+        : 'ST';
+
+    Widget fallback() => Container(
+          width: size,
+          height: size,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            gradient: LinearGradient(
+              colors: [Colors.blue.shade600, Colors.blue.shade800],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+          ),
+          child: Center(
+            child: Text(
+              initials,
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+                fontSize: size * 0.36,
+              ),
+            ),
+          ),
+        );
+
+    if (directPhotoUrl != null && directPhotoUrl.trim().isNotEmpty) {
+      return Container(
+        width: size,
+        height: size,
+        clipBehavior: Clip.antiAlias,
+        decoration: const BoxDecoration(shape: BoxShape.circle),
+        child: Image.network(
+          directPhotoUrl.trim(),
+          width: size,
+          height: size,
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => fallback(),
+          loadingBuilder: (context, child, progress) {
+            if (progress == null) return child;
+            return Center(
+              child: SizedBox(
+                width: size * 0.4,
+                height: size * 0.4,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  value: progress.expectedTotalBytes != null
+                      ? progress.cumulativeBytesLoaded /
+                          progress.expectedTotalBytes!
+                      : null,
+                ),
+              ),
+            );
+          },
+        ),
+      );
+    }
+
     if (studentId.isEmpty) {
-      return _buildFallbackAvatar(studentName);
+      return fallback();
     }
 
     return FutureBuilder<DocumentSnapshot>(
@@ -149,18 +246,22 @@ class _DiaryHistoryScreenState extends State<DiaryHistoryScreen> {
           final data = snapshot.data!.data() as Map<String, dynamic>?;
           imageUrl = data?['profileImageUrl'] ??
               data?['profilePic'] ??
-              data?['imageUrl'];
+              data?['imageUrl'] ??
+              data?['photoUrl'];
         }
 
-        if (imageUrl != null && imageUrl.isNotEmpty) {
-          return ClipRRect(
-            borderRadius: BorderRadius.circular(22),
+        if (imageUrl != null && imageUrl.trim().isNotEmpty) {
+          return Container(
+            width: size,
+            height: size,
+            clipBehavior: Clip.antiAlias,
+            decoration: const BoxDecoration(shape: BoxShape.circle),
             child: Image.network(
-              imageUrl,
-              width: 44,
-              height: 44,
+              imageUrl.trim(),
+              width: size,
+              height: size,
               fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => _buildFallbackAvatar(studentName),
+              errorBuilder: (_, __, ___) => fallback(),
             ),
           );
         }
@@ -171,49 +272,31 @@ class _DiaryHistoryScreenState extends State<DiaryHistoryScreen> {
             String? userImg;
             if (userSnap.hasData && userSnap.data!.exists) {
               final uData = userSnap.data!.data() as Map<String, dynamic>?;
-              userImg = uData?['profileImageUrl'] ?? uData?['photoUrl'];
+              userImg = uData?['profileImageUrl'] ??
+                  uData?['photoUrl'] ??
+                  uData?['avatarUrl'];
             }
 
-            if (userImg != null && userImg.isNotEmpty) {
-              return ClipRRect(
-                borderRadius: BorderRadius.circular(22),
+            if (userImg != null && userImg.trim().isNotEmpty) {
+              return Container(
+                width: size,
+                height: size,
+                clipBehavior: Clip.antiAlias,
+                decoration: const BoxDecoration(shape: BoxShape.circle),
                 child: Image.network(
-                  userImg,
-                  width: 44,
-                  height: 44,
+                  userImg.trim(),
+                  width: size,
+                  height: size,
                   fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) =>
-                      _buildFallbackAvatar(studentName),
+                  errorBuilder: (_, __, ___) => fallback(),
                 ),
               );
             }
 
-            return _buildFallbackAvatar(studentName);
+            return fallback();
           },
         );
       },
-    );
-  }
-
-  Widget _buildFallbackAvatar(String name) {
-    return Container(
-      width: 44,
-      height: 44,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        gradient: LinearGradient(
-          colors: [Colors.blue.shade600, Colors.blue.shade800],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-      ),
-      child: Center(
-        child: Text(
-          name.isNotEmpty ? name[0].toUpperCase() : 'S',
-          style: const TextStyle(
-              fontWeight: FontWeight.bold, color: Colors.white, fontSize: 16),
-        ),
-      ),
     );
   }
 
@@ -355,6 +438,9 @@ class _DiaryHistoryScreenState extends State<DiaryHistoryScreen> {
     final String docId = doc.id;
     final String studentId = (data['studentId'] ?? '').toString();
     final String studentName = (data['studentName'] ?? 'Student').toString();
+    final String? directPhoto = data['profileImageUrl']?.toString() ??
+        data['photoUrl']?.toString() ??
+        data['studentPhotoUrl']?.toString();
 
     showModalBottomSheet(
       context: context,
@@ -365,7 +451,11 @@ class _DiaryHistoryScreenState extends State<DiaryHistoryScreen> {
         data: data,
         currentUserId: widget.currentUserId,
         firestore: _firestore,
-        avatar: _buildStudentAvatar(studentId, studentName),
+        avatar: _buildStudentAvatar(
+          studentId: studentId,
+          studentName: studentName,
+          directPhotoUrl: directPhoto,
+        ),
         onRequestDelete: () => _confirmDeleteDiary(
           docId: docId,
           studentId: studentId,
@@ -681,6 +771,10 @@ class _DiaryHistoryScreenState extends State<DiaryHistoryScreen> {
                             (data['subject'] ?? 'Not Specified').toString();
                         final int year =
                             (data['year'] as num?)?.toInt() ?? DateTime.now().year;
+                        final String? directPhoto =
+                            data['profileImageUrl']?.toString() ??
+                                data['photoUrl']?.toString() ??
+                                data['studentPhotoUrl']?.toString();
 
                         final summary = _LedgerSummary.fromData(data);
 
@@ -704,7 +798,11 @@ class _DiaryHistoryScreenState extends State<DiaryHistoryScreen> {
                             children: [
                               Row(
                                 children: [
-                                  _buildStudentAvatar(studentId, studentName),
+                                  _buildStudentAvatar(
+                                    studentId: studentId,
+                                    studentName: studentName,
+                                    directPhotoUrl: directPhoto,
+                                  ),
                                   const SizedBox(width: 12),
                                   Expanded(
                                     child: Column(
@@ -975,23 +1073,44 @@ class _EditLedgerSheetState extends State<_EditLedgerSheet> {
     final double totalPaid = paidCount * monthlyFee;
     final double totalDue = dueCount * monthlyFee;
 
+    final Map<String, String> standardLowerStatus = {};
+    final Map<String, String> standardUpperStatus = {};
+
+    for (final m in _kMonths) {
+      final norm = _normalizeStatus(_tempMonthStatuses[m]);
+      standardUpperStatus[m] = norm;
+      standardLowerStatus[m] =
+          norm == 'PAID' ? 'paid' : (norm == 'DUE' ? 'due' : 'not_enrolled');
+    }
+
     try {
       final batch = widget.firestore.batch();
       final docRef =
           widget.firestore.collection('student_fees').doc(widget.docId);
 
-      batch.update(docRef, {
+      final Map<String, dynamic> updatePayload = {
         'subject': _subjectController.text.trim(),
         'monthlyFee': monthlyFee,
-        'monthStatuses': _tempMonthStatuses,
+        'feeAmount': monthlyFee,
+        'monthlyStatus': standardLowerStatus,
+        'monthStatuses': standardUpperStatus,
         'paidMonthsCount': paidCount,
+        'paidMonths': paidCount,
         'dueMonthsCount': dueCount,
+        'dueMonths': dueCount,
         'gridDueAmount': totalDue,
         'totalPaid': totalPaid,
         'totalCollected': totalPaid,
         'totalDue': totalDue,
         'lastUpdated': FieldValue.serverTimestamp(),
-      });
+      };
+
+      // Set direct root keys for flat reads
+      for (final m in _kMonths) {
+        updatePayload[m] = standardLowerStatus[m];
+      }
+
+      batch.update(docRef, updatePayload);
 
       if (_studentId.isNotEmpty) {
         final monthlyRef =
@@ -1004,6 +1123,7 @@ class _EditLedgerSheetState extends State<_EditLedgerSheet> {
             'subject': _subjectController.text.trim(),
             'teacherId': widget.currentUserId,
             'pendingAmount': totalDue,
+            'totalDue': totalDue,
             'totalPaid': totalPaid,
             'monthlyFee': monthlyFee,
             'lastUpdated': FieldValue.serverTimestamp(),
@@ -1012,26 +1132,36 @@ class _EditLedgerSheetState extends State<_EditLedgerSheet> {
         );
       }
 
+      // Sync fee_entries subcollection
       final entriesSnap = await docRef.collection('fee_entries').get();
-      for (final entryDoc in entriesSnap.docs) {
-        final entryData = entryDoc.data();
-        final canonicalMonth =
-            _findCanonicalMonth(entryData['month'] ?? entryData['monthName']);
-        if (canonicalMonth != null) {
-          final targetStatus = _tempMonthStatuses[canonicalMonth];
-          final existingStatus =
-              (entryData['status'] ?? '').toString().toLowerCase();
-          if (targetStatus == 'PAID' && existingStatus != 'paid') {
-            batch.update(entryDoc.reference, {
-              'status': 'paid',
-              'paidAt': FieldValue.serverTimestamp(),
-            });
-          } else if (targetStatus == 'DUE' && existingStatus == 'paid') {
-            batch.update(entryDoc.reference, {
-              'status': 'due',
-              'updatedAt': FieldValue.serverTimestamp(),
-            });
-          }
+      final existingEntriesByMonth = <String, DocumentSnapshot>{};
+      for (final d in entriesSnap.docs) {
+        final rawM = d.data()['month'] ?? d.data()['monthName'];
+        final canonical = _findCanonicalMonth(rawM);
+        if (canonical != null) {
+          existingEntriesByMonth[canonical] = d;
+        }
+      }
+
+      for (final m in _kMonths) {
+        final targetStatus = standardLowerStatus[m]!;
+        if (existingEntriesByMonth.containsKey(m)) {
+          final entryDoc = existingEntriesByMonth[m]!;
+          batch.update(entryDoc.reference, {
+            'status': targetStatus,
+            'amount': monthlyFee,
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+        } else if (targetStatus != 'not_enrolled') {
+          final newEntry = docRef.collection('fee_entries').doc();
+          batch.set(newEntry, {
+            'entryId': newEntry.id,
+            'month': m,
+            'amount': monthlyFee,
+            'status': targetStatus,
+            'source': 'ledger_editor',
+            'createdAt': FieldValue.serverTimestamp(),
+          });
         }
       }
 
