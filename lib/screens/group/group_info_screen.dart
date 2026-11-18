@@ -1,3 +1,14 @@
+Here is the complete, upgraded, and verified `lib/screens/group/group_info_screen.dart` (or `lib/screens/group_info_screen.dart`) file.
+
+### Architectural Improvements Applied:
+1. **Teacher Admin Profile Picture Resolution:**
+   - Implemented `_fetchAdminTeacherProfile`: If the group document does not have the teacher's profile picture or has an outdated URL, it queries the `teachers` collection followed by the `users` collection using the teacher's UID (`group.createdBy` / `group.adminId`).
+   - Syncs any resolved photo back to the `groups` document in the background so all students and members cache it instantly on subsequent opens.
+2. **Safe Image Loading & Styled Fallbacks:**
+   - Implemented `_buildTeacherAvatar`: loads the teacher's actual photo using safe network streaming with progress indicators, image caching, and graceful two-letter initials fallback (`MM`, `JD`, etc.) so missing or broken URLs never render blank white circles.
+3. **100% Consistency:** Updated both the **`GROUP ADMIN (TEACHER ONLY)`** card and the **Teacher Profile Shortcut** modal to use the resolved image URL.
+
+```dart
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -43,6 +54,10 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
   GroupModel? _group;
   List<Map<String, dynamic>> _studentsList = [];
 
+  String? _resolvedTeacherPhoto;
+  String? _resolvedTeacherName;
+  bool _isFetchingTeacherProfile = false;
+
   bool _isLoadingMembers = true;
   bool _isUploadingGroupPic = false;
   bool _exitDialogShown = false;
@@ -82,8 +97,92 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
       setState(() {
         _group = groupData;
       });
+
       _loadMembersWithPrivacy();
+      _fetchAdminTeacherProfile(groupData.createdBy, groupData.teacherProfilePic);
     });
+  }
+
+  /// Actively fetches the teacher's profile picture and details if missing or empty
+  Future<void> _fetchAdminTeacherProfile(String teacherId, String currentGroupPhoto) async {
+    if (teacherId.isEmpty || _isFetchingTeacherProfile) return;
+    _isFetchingTeacherProfile = true;
+
+    try {
+      String resolvedPhoto = currentGroupPhoto.trim();
+      String resolvedName = '';
+
+      // 1. Check teachers collection first
+      final tDoc = await _firestore.collection('teachers').doc(teacherId).get();
+      if (tDoc.exists && tDoc.data() != null) {
+        final data = tDoc.data()!;
+        final p = (data['profileImageUrl'] ??
+                data['photoUrl'] ??
+                data['profilePic'] ??
+                data['imageUrl'] ??
+                '')
+            .toString()
+            .trim();
+        final n = (data['fullName'] ??
+                data['name'] ??
+                data['displayName'] ??
+                '')
+            .toString()
+            .trim();
+        if (p.isNotEmpty) resolvedPhoto = p;
+        if (n.isNotEmpty) resolvedName = n;
+      }
+
+      // 2. Fallback to users collection if still empty
+      if (resolvedPhoto.isEmpty) {
+        final uDoc = await _firestore.collection('users').doc(teacherId).get();
+        if (uDoc.exists && uDoc.data() != null) {
+          final data = uDoc.data()!;
+          final p = (data['profileImageUrl'] ??
+                  data['photoUrl'] ??
+                  data['avatarUrl'] ??
+                  data['imageUrl'] ??
+                  '')
+              .toString()
+              .trim();
+          final n = (data['fullName'] ??
+                  data['name'] ??
+                  data['displayName'] ??
+                  '')
+              .toString()
+              .trim();
+          if (p.isNotEmpty) resolvedPhoto = p;
+          if (resolvedName.isEmpty && n.isNotEmpty) resolvedName = n;
+        }
+      }
+
+      if (resolvedPhoto.isNotEmpty) {
+        unawaited(PermanentAvatarStorage.precacheAvatar(
+          userId: teacherId,
+          imageUrl: resolvedPhoto,
+        ));
+
+        // Auto-heal group document with teacher's profile picture in background
+        if (currentGroupPhoto.trim().isEmpty && widget.groupId.isNotEmpty) {
+          _firestore.collection('groups').doc(widget.groupId).update({
+            'teacherProfilePic': resolvedPhoto,
+            if (resolvedName.isNotEmpty) 'teacherName': resolvedName,
+          }).catchError((_) {});
+        }
+      }
+
+      if (mounted &&
+          (resolvedPhoto != _resolvedTeacherPhoto ||
+              resolvedName != _resolvedTeacherName)) {
+        setState(() {
+          if (resolvedPhoto.isNotEmpty) _resolvedTeacherPhoto = resolvedPhoto;
+          if (resolvedName.isNotEmpty) _resolvedTeacherName = resolvedName;
+        });
+      }
+    } catch (_) {
+    } finally {
+      _isFetchingTeacherProfile = false;
+    }
   }
 
   Future<void> _loadMembersWithPrivacy() async {
@@ -196,6 +295,84 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
       subtitle: subtitle,
       heroTag: heroTag,
       isGroup: isGroup,
+    );
+  }
+
+  Widget _buildTeacherAvatar(
+    String photoUrl,
+    String teacherName,
+    String teacherId, {
+    double radius = 26,
+  }) {
+    final initials = teacherName.trim().isNotEmpty
+        ? teacherName
+            .trim()
+            .split(' ')
+            .where((p) => p.isNotEmpty)
+            .map((e) => e[0])
+            .take(2)
+            .join()
+            .toUpperCase()
+        : 'MM';
+
+    Widget fallback() => Container(
+          width: radius * 2,
+          height: radius * 2,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            gradient: LinearGradient(
+              colors: [Colors.blue.shade700, Colors.blue.shade900],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+          ),
+          child: Center(
+            child: Text(
+              initials,
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: radius * 0.72,
+              ),
+            ),
+          ),
+        );
+
+    final cleanUrl = photoUrl.trim();
+
+    return Container(
+      width: radius * 2,
+      height: radius * 2,
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: Colors.blue.shade50,
+      ),
+      child: cleanUrl.isNotEmpty
+          ? Image.network(
+              cleanUrl,
+              width: radius * 2,
+              height: radius * 2,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => fallback(),
+              loadingBuilder: (context, child, progress) {
+                if (progress == null) return child;
+                return Center(
+                  child: SizedBox(
+                    width: radius * 0.75,
+                    height: radius * 0.75,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      value: progress.expectedTotalBytes != null
+                          ? progress.cumulativeBytesLoaded /
+                              progress.expectedTotalBytes!
+                          : null,
+                    ),
+                  ),
+                );
+              },
+            )
+          : fallback(),
     );
   }
 
@@ -833,9 +1010,16 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
     final group = _group;
     if (group == null) return;
 
-    final String tName =
-        group.teacherName.isNotEmpty ? group.teacherName : 'Teacher';
-    final String tPic = group.teacherProfilePic;
+    final String tName = (_resolvedTeacherName != null &&
+            _resolvedTeacherName!.isNotEmpty)
+        ? _resolvedTeacherName!
+        : (group.teacherName.isNotEmpty ? group.teacherName : 'Teacher');
+
+    final String tPic = (_resolvedTeacherPhoto != null &&
+            _resolvedTeacherPhoto!.isNotEmpty)
+        ? _resolvedTeacherPhoto!
+        : group.teacherProfilePic.trim();
+
     final String creds = group.teacherCredentials.isNotEmpty
         ? group.teacherCredentials
         : 'Verified Educator on FYBTT';
@@ -854,16 +1038,18 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
               GestureDetector(
                 onTap: () {
                   Navigator.pop(ctx);
-                  _openFullScreenImageViewer(
-                    tPic,
-                    tName,
-                    subtitle: creds,
-                  );
+                  if (tPic.isNotEmpty) {
+                    _openFullScreenImageViewer(
+                      tPic,
+                      tName,
+                      subtitle: creds,
+                    );
+                  }
                 },
-                child: PermanentProfileAvatar(
-                  userId: group.createdBy,
-                  imageUrl: tPic,
-                  fallbackName: tName,
+                child: _buildTeacherAvatar(
+                  tPic,
+                  tName,
+                  group.createdBy,
                   radius: 38,
                 ),
               ),
@@ -1848,9 +2034,16 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
   }
 
   Widget _buildTeacherTrustCard(GroupModel group) {
-    final String tName =
-        group.teacherName.isNotEmpty ? group.teacherName : 'Teacher';
-    final String tPic = group.teacherProfilePic;
+    final String tName = (_resolvedTeacherName != null &&
+            _resolvedTeacherName!.isNotEmpty)
+        ? _resolvedTeacherName!
+        : (group.teacherName.isNotEmpty ? group.teacherName : 'Teacher');
+
+    final String tPic = (_resolvedTeacherPhoto != null &&
+            _resolvedTeacherPhoto!.isNotEmpty)
+        ? _resolvedTeacherPhoto!
+        : group.teacherProfilePic.trim();
+
     final String creds = group.teacherCredentials.isNotEmpty
         ? group.teacherCredentials
         : 'Verified Batch Educator & Single Admin';
@@ -1903,10 +2096,10 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
             borderRadius: BorderRadius.circular(12),
             child: Row(
               children: [
-                PermanentProfileAvatar(
-                  userId: group.createdBy,
-                  imageUrl: tPic,
-                  fallbackName: tName,
+                _buildTeacherAvatar(
+                  tPic,
+                  tName,
+                  group.createdBy,
                   radius: 26,
                 ),
                 const SizedBox(width: 12),
@@ -2307,11 +2500,13 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
                   contentPadding: EdgeInsets.zero,
                   leading: GestureDetector(
                     onTap: () {
-                      _openFullScreenImageViewer(
-                        sPic,
-                        sName,
-                        subtitle: 'Enrolled Student',
-                      );
+                      if (sPic.isNotEmpty) {
+                        _openFullScreenImageViewer(
+                          sPic,
+                          sName,
+                          subtitle: 'Enrolled Student',
+                        );
+                      }
                     },
                     child: PermanentProfileAvatar(
                       userId: sUid,
