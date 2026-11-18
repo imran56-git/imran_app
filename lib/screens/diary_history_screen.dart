@@ -1,22 +1,3 @@
-### Inspection & Fixes Applied to `diary_history_screen.dart`
-
-I inspected `DiaryHistoryScreen` and resolved the calculation mismatches and lifecycle bugs across Diary History and the Edit Ledger modal:
-
-1. **Single Source-of-Truth Monthly Ledger Helper (`_LedgerSummary.fromData`):**
-   - Added a unified helper that extracts `monthStatuses` (also reading `monthlyStatus` fallback and normalizing month keys/status values case-insensitively to `'PAID'`, `'DUE'`, `'NOT_ENROLLED'`).
-   - **Header Summary Card (`Total Outstanding Due`, `Total Collected`)**, **Pending Dues / Fully Paid Filters**, **Student Cards (`Due (X Mo)`)**, and the **Edit Ledger Modal** now all compute `totalPaid`, `totalDue`, `paidMonthsCount`, and `dueMonthsCount` dynamically from the exact same `monthStatuses` map so inside and outside numbers match 100%.
-2. **Edit Ledger Modal Lifecycle & Subcollection Sync (`_EditLedgerSheet`):**
-   - Extracted the Edit Ledger bottom sheet into a dedicated `_EditLedgerSheet` `StatefulWidget` so `subjectController` and `feeController` are safely disposed in `dispose()` with zero leaks or mid-animation crashes.
-   - Allowed decimal fees (`^\d+\.?\d{0,2}`) to match `DiaryScreen`.
-   - When saving edits, now updates `gridDueAmount`, `totalCollected`, and syncs any matching `fee_entries` subcollection docs (`'PAID'` ↔ `'paid'`, `'DUE'` ↔ `'due'`).
-3. **Clean Subcollection Deletion:** `_confirmDeleteDiary` now also deletes child docs in `fee_entries` inside the same Firestore batch so no orphaned entries remain.
-4. **Overflow Guard:** Added `Flexible` + `TextOverflow.ellipsis` on the Subject badge row so long subject names never overflow horizontally.
-
----
-
-### Complete Updated File #5: `diary_history_screen.dart`
-
-```dart
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
