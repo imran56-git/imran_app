@@ -452,7 +452,7 @@ class _GroupChatScreenState extends State<GroupChatScreen>
   String _formatReplyPreviewText(MessageModel message) {
     final t = message.type.toLowerCase();
     if (t == 'text') return message.content;
-    if (t == 'image') return '📷 Photo';
+    if (t == 'image' || t == 'album') return '📷 Photo';
     if (t == 'video') return '🎥 Video';
     if (t == 'audio' || t == 'voice') return '🎵 Voice message';
     if (t == 'document' || t == 'file') {
