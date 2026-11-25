@@ -1,3 +1,6 @@
+Here is the complete, full modified code for `lib/screens/teacher_profile_screen.dart` with all fixes applied and zero inline comments.
+
+```dart
 import 'dart:async';
 import 'dart:ui';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -6,6 +9,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../models/rating_model.dart';
 import '../models/teacher_location_model.dart';
@@ -256,14 +260,12 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
     return null;
   }
 
-  /// Dynamically computes due metrics strictly from all monthly status maps
   ({int dueMonths, double totalDue, double monthlyFee}) _computeLedgerDue(
       Map<String, dynamic> data) {
     final Map<String, String> normalized = {
       for (final m in _ledgerMonths) m: 'NOT_ENROLLED',
     };
 
-    // 1. Ingest monthlyStatus map
     final monthlyStatusMap = (data['monthlyStatus'] as Map?) ?? {};
     monthlyStatusMap.forEach((key, value) {
       final canonical = _findCanonicalMonth(key);
@@ -277,7 +279,6 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
       }
     });
 
-    // 2. Ingest monthStatuses map if present
     final monthStatusesMap = (data['monthStatuses'] as Map?) ?? {};
     monthStatusesMap.forEach((key, value) {
       final canonical = _findCanonicalMonth(key);
@@ -293,7 +294,6 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
       }
     });
 
-    // 3. Fallback to direct root month fields
     for (final m in _ledgerMonths) {
       final directVal = data[m] ?? data[m.toLowerCase()];
       if (directVal != null) {
@@ -391,6 +391,36 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
     );
   }
 
+  Widget _buildStudentAvatarWithFallback(
+    String? initialPhotoUrl,
+    String studentId,
+    String name, {
+    double size = 38,
+  }) {
+    if (initialPhotoUrl != null && initialPhotoUrl.trim().isNotEmpty) {
+      return _buildStudentMiniAvatar(initialPhotoUrl, name, size: size);
+    }
+
+    if (studentId.trim().isEmpty) {
+      return _buildStudentMiniAvatar(null, name, size: size);
+    }
+
+    return FutureBuilder<DocumentSnapshot>(
+      future: _firestore.collection('students').doc(studentId).get(),
+      builder: (context, snapshot) {
+        if (snapshot.hasData && snapshot.data != null && snapshot.data!.exists) {
+          final data = snapshot.data!.data() as Map<String, dynamic>?;
+          final photo =
+              (data?['photoUrl'] ?? data?['profileImageUrl'])?.toString();
+          if (photo != null && photo.trim().isNotEmpty) {
+            return _buildStudentMiniAvatar(photo, name, size: size);
+          }
+        }
+        return _buildStudentMiniAvatar(null, name, size: size);
+      },
+    );
+  }
+
   Future<void> _deleteOldStorageFileIfDifferent(
       String? oldUrl, String? newUrl) async {
     final String cleanOld = oldUrl?.trim() ?? '';
@@ -405,6 +435,36 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
     try {
       await _storage.refFromURL(cleanOld).delete();
     } catch (_) {}
+  }
+
+  Future<void> _launchDirections(TeacherLocationModel loc) async {
+    Uri uri;
+    if (loc.latitude != 0.0 && loc.longitude != 0.0) {
+      uri = Uri.parse(
+          'https://www.google.com/maps/dir/?api=1&destination=${loc.latitude},${loc.longitude}');
+    } else {
+      final query = Uri.encodeComponent(
+          loc.fullAddress.isNotEmpty ? loc.fullAddress : loc.address);
+      uri = Uri.parse(
+          'https://www.google.com/maps/dir/?api=1&destination=$query');
+    }
+
+    try {
+      final launched =
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!launched) {
+        await launchUrl(uri, mode: LaunchMode.platformDefault);
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not open map directions'),
+            backgroundColor: Color(0xFFDC2626),
+          ),
+        );
+      }
+    }
   }
 
   Future<void> fetchTeacherData() async {
@@ -957,33 +1017,6 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
         ),
       ),
     );
-  }
-
-  void _openMapPicker() async {
-    final List<dynamic>? results = await Navigator.push(
-      context,
-      MaterialPageRoute(builder: (context) => const LocationPickerScreen()),
-    );
-
-    if (results != null && results.isNotEmpty) {
-      setState(() {
-        teacherLocations.addAll(results);
-      });
-
-      if (!isEditing) {
-        final uid = _auth.currentUser?.uid;
-        if (uid != null) {
-          try {
-            await _firestore.collection('teachers').doc(uid).update({
-              'locations': teacherLocations,
-            });
-            if (mounted) {
-              SuccessToast.show(context, 'Teaching areas synchronized!');
-            }
-          } catch (_) {}
-        }
-      }
-    }
   }
 
   Future<void> updateTeacherProfile() async {
@@ -1662,7 +1695,9 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                           ),
                           child: Row(
                             children: [
-                              _buildStudentMiniAvatar(photoUrl, name, size: 38),
+                              _buildStudentAvatarWithFallback(
+                                  photoUrl, uid, name,
+                                  size: 38),
                               const SizedBox(width: 12),
                               Expanded(
                                 child: Column(
@@ -2895,20 +2930,14 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (_) =>
-                            LocationBatchScheduleScreen(location: loc),
+                        builder: (_) => LocationBatchScheduleScreen(
+                          location: loc,
+                          isReadOnly: !isOwnProfile,
+                        ),
                       ),
                     );
                   },
-                  onGetDirections: () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(
-                            'Opening directions for ${loc.locationName}...'),
-                        backgroundColor: _brandBlue,
-                      ),
-                    );
-                  },
+                  onGetDirections: () => _launchDirections(loc),
                   onEditLocation: () {
                     Navigator.push(
                       context,
@@ -2922,8 +2951,10 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (_) =>
-                            LocationBatchScheduleScreen(location: loc),
+                        builder: (_) => LocationBatchScheduleScreen(
+                          location: loc,
+                          isReadOnly: false,
+                        ),
                       ),
                     );
                   },
@@ -3053,13 +3084,15 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (_) => const LocationPickerScreen(),
+                            builder: (_) => ManageTeachingLocationsScreen(
+                              currentTeacherId: targetId,
+                            ),
                           ),
                         ).then((_) => fetchTeacherData());
                       },
                       icon: const Icon(Icons.add_location_alt_rounded, size: 18),
                       label: const Text(
-                        "Add Teaching Location",
+                        "Manage Teaching Centres",
                         style: TextStyle(
                             fontWeight: FontWeight.bold, fontSize: 13),
                       ),
@@ -3665,65 +3698,8 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
               ),
             ),
           ),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text(
-                "Add Teaching Areas",
-                style: TextStyle(
-                  fontWeight: FontWeight.w800,
-                  fontSize: 14.5,
-                  color: _primaryNavy,
-                ),
-              ),
-              TextButton.icon(
-                style: TextButton.styleFrom(
-                  foregroundColor: const Color(0xFF0F766E),
-                  backgroundColor: const Color(0xFFF0FDF4),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                ),
-                onPressed: _openMapPicker,
-                icon: const Icon(Icons.map_outlined, size: 17),
-                label: const Text(
-                  "Pick Locations",
-                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5),
-                ),
-              ),
-            ],
-          ),
-          if (teacherLocations.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: teacherLocations
-                  .map(
-                    (loc) => Chip(
-                      backgroundColor: const Color(0xFFF8FAFC),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                        side: const BorderSide(color: Color(0xFFE2E8F0)),
-                      ),
-                      label: Text(
-                        (loc is Map)
-                            ? (loc['address'] ?? "Unknown").toString()
-                            : loc.toString(),
-                        style: const TextStyle(
-                          fontSize: 12.5,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      onDeleted: () =>
-                          setState(() => teacherLocations.remove(loc)),
-                    ),
-                  )
-                  .toList(),
-            ),
-          ],
           const Padding(
-            padding: EdgeInsets.symmetric(vertical: 16),
+            padding: EdgeInsets.symmetric(vertical: 8),
             child: Divider(height: 1, color: Color(0xFFE2E8F0)),
           ),
           Row(
