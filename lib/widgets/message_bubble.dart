@@ -4,7 +4,10 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/message_model.dart';
+import '../screens/full_screen_media_viewer.dart';
 import '../services/chat_service.dart';
+import 'chat_album_grid.dart';
+import 'expandable_chat_text.dart';
 
 class MessageBubble extends StatefulWidget {
   final MessageModel message;
@@ -110,7 +113,7 @@ class _MessageBubbleState extends State<MessageBubble> {
             (data['content'] ?? data['message'] ?? '').toString();
 
         String resolved = rawContent;
-        if (type == 'image') resolved = '📷 Photo';
+        if (type == 'image' || type == 'album') resolved = '📷 Photo';
         if (type == 'video') resolved = '🎥 Video';
         if (type == 'audio' || type == 'voice') resolved = '🎵 Voice message';
         if (type == 'document' || type == 'file') {
@@ -294,53 +297,37 @@ class _MessageBubbleState extends State<MessageBubble> {
     }
   }
 
-  void _showInAppImagePreview(String imageUrl) {
-    showDialog(
-      context: context,
-      builder: (ctx) {
-        return Dialog(
-          backgroundColor: Colors.black,
-          insetPadding: const EdgeInsets.all(12),
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              InteractiveViewer(
-                minScale: 0.8,
-                maxScale: 4.0,
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(16),
-                  child: Image.network(
-                    imageUrl,
-                    fit: BoxFit.contain,
-                  ),
-                ),
-              ),
-              Positioned(
-                top: 10,
-                right: 10,
-                child: Row(
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.download_rounded,
-                          color: Colors.white),
-                      tooltip: 'Download / Open Externally',
-                      onPressed: () => _openUrl(imageUrl),
-                    ),
-                    IconButton(
-                      icon:
-                          const Icon(Icons.close_rounded, color: Colors.white),
-                      onPressed: () => Navigator.pop(ctx),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
+  List<String> _extractImageUrls() {
+    final meta = widget.message.mediaMetaData;
+    if (meta != null) {
+      if (meta['imageUrls'] is List) {
+        return (meta['imageUrls'] as List)
+            .map((e) => e.toString().trim())
+            .where((e) => e.isNotEmpty)
+            .toList();
+      }
+      if (meta['images'] is List) {
+        return (meta['images'] as List)
+            .map((e) => e.toString().trim())
+            .where((e) => e.isNotEmpty)
+            .toList();
+      }
+    }
+
+    final content = widget.message.content.trim();
+    if (content.contains(',')) {
+      final split = content
+          .split(',')
+          .map((e) => e.trim())
+          .where((e) => e.startsWith('http'))
+          .toList();
+      if (split.length > 1) return split;
+    }
+
+    if (content.isNotEmpty) {
+      return [content];
+    }
+    return [];
   }
 
   void _showReactionsSummarySheet() {
@@ -588,47 +575,55 @@ class _MessageBubbleState extends State<MessageBubble> {
   }
 
   Widget _buildImageBubble() {
-    return GestureDetector(
-      onTap: () => _showInAppImagePreview(widget.message.content),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: Image.network(
-          widget.message.content,
-          width: 220,
-          height: 200,
-          fit: BoxFit.cover,
-          loadingBuilder: (context, child, loadingProgress) {
-            if (loadingProgress == null) return child;
-            return Container(
-              width: 220,
-              height: 200,
-              color: Colors.grey.shade200,
-              child: const Center(
-                child: CircularProgressIndicator(
-                  color: _brandBlue,
-                  strokeWidth: 2.5,
+    final List<String> images = _extractImageUrls();
+    final String? caption = widget.message.mediaMetaData?['caption']?.toString();
+
+    if (images.isEmpty) {
+      return Container(
+        width: 200,
+        height: 120,
+        color: Colors.grey.shade200,
+        child: const Center(
+          child: Icon(Icons.broken_image_rounded, color: Colors.grey, size: 36),
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        ChatAlbumGrid(
+          imageUrls: images,
+          maxWidth: 240.0,
+          borderRadius: BorderRadius.circular(12),
+          onImageTap: (index) {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => FullScreenMediaViewer(
+                  imageUrls: images,
+                  initialIndex: index,
+                  caption: caption,
                 ),
               ),
             );
           },
-          errorBuilder: (context, error, stackTrace) => Container(
-            width: 220,
-            height: 200,
-            color: Colors.grey.shade200,
-            child: const Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.broken_image_outlined, color: Colors.grey, size: 36),
-                SizedBox(height: 4),
-                Text(
-                  "Failed to load image",
-                  style: TextStyle(fontSize: 11, color: Colors.grey),
-                ),
-              ],
+        ),
+        if (caption != null && caption.trim().isNotEmpty) ...[
+          const SizedBox(height: 6),
+          ExpandableChatText(
+            text: caption.trim(),
+            trimLines: 4,
+            actionColor: _accentBlue,
+            style: const TextStyle(
+              fontSize: 13.5,
+              color: Color(0xFF0F172A),
+              height: 1.3,
             ),
           ),
-        ),
-      ),
+        ],
+      ],
     );
   }
 
@@ -782,8 +777,10 @@ class _MessageBubbleState extends State<MessageBubble> {
     final String? detectedUrl = _extractFirstUrl(content);
 
     if (detectedUrl == null) {
-      return Text(
-        content,
+      return ExpandableChatText(
+        text: content,
+        trimLines: 5,
+        actionColor: _accentBlue,
         style: const TextStyle(
           fontSize: 14.5,
           color: Color(0xFF0F172A),
@@ -891,8 +888,10 @@ class _MessageBubbleState extends State<MessageBubble> {
           ),
         ),
         if (remainingText.isNotEmpty)
-          Text(
-            remainingText,
+          ExpandableChatText(
+            text: remainingText,
+            trimLines: 5,
+            actionColor: _accentBlue,
             style: const TextStyle(
               fontSize: 14.5,
               color: Color(0xFF0F172A),
@@ -1035,7 +1034,7 @@ class _MessageBubbleState extends State<MessageBubble> {
                 _buildOriginalReplyBox(),
                 if (msgType == 'audio' || msgType == 'voice')
                   _buildAudioBubble()
-                else if (msgType == 'image')
+                else if (msgType == 'image' || msgType == 'album')
                   _buildImageBubble()
                 else if (msgType == 'video')
                   _buildVideoBubble()
