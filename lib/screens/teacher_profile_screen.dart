@@ -1,6 +1,3 @@
-Here is the complete, full modified code for `lib/screens/teacher_profile_screen.dart` with all fixes applied and zero inline comments.
-
-```dart
 import 'dart:async';
 import 'dart:ui';
 import 'package:cloud_firestore/cloud_firestore.dart';
