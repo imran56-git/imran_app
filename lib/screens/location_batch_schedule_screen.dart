@@ -1,3 +1,4 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import '../models/teacher_location_model.dart';
 import '../models/teaching_batch_model.dart';
@@ -6,10 +7,12 @@ import '../services/teacher_location_service.dart';
 
 class LocationBatchScheduleScreen extends StatefulWidget {
   final TeacherLocationModel location;
+  final bool isReadOnly;
 
   const LocationBatchScheduleScreen({
     super.key,
     required this.location,
+    this.isReadOnly = false,
   });
 
   @override
@@ -18,7 +21,6 @@ class LocationBatchScheduleScreen extends StatefulWidget {
 
 class _LocationBatchScheduleScreenState extends State<LocationBatchScheduleScreen>
     with SingleTickerProviderStateMixin {
-  // Theme Color Palette FYBTT 2.0
   static const Color _navy = Color(0xFF0F172A);
   static const Color _brandBlue = Color(0xFF1E4C7A);
   static const Color _accentBlue = Color(0xFF2563EB);
@@ -42,6 +44,17 @@ class _LocationBatchScheduleScreenState extends State<LocationBatchScheduleScree
 
   late String _selectedDay;
 
+  bool get _isEffectiveReadOnly {
+    if (widget.isReadOnly) return true;
+    final currentUserId = FirebaseAuth.instance.currentUser?.uid;
+    if (currentUserId != null &&
+        widget.location.teacherId.isNotEmpty &&
+        currentUserId != widget.location.teacherId) {
+      return true;
+    }
+    return false;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -50,7 +63,6 @@ class _LocationBatchScheduleScreenState extends State<LocationBatchScheduleScree
       setState(() {});
     });
 
-    // Default to current weekday
     final currentWeekdayIndex = DateTime.now().weekday - 1;
     _selectedDay = _daysOfWeek[currentWeekdayIndex.clamp(0, 6)];
   }
@@ -61,7 +73,6 @@ class _LocationBatchScheduleScreenState extends State<LocationBatchScheduleScree
     super.dispose();
   }
 
-  // Safe Batch Property Getters (Resolves Model Divergences)
   static int _getBatchMaxCapacity(TeachingBatchModel batch) {
     try {
       final dynamic b = batch;
@@ -123,7 +134,6 @@ class _LocationBatchScheduleScreenState extends State<LocationBatchScheduleScree
     return '';
   }
 
-  // Helper to parse "HH:mm AM/PM" or "HH:mm" into minutes since midnight
   static int _timeToMinutes(String timeStr) {
     try {
       final sanitized = timeStr.trim().toUpperCase();
@@ -162,11 +172,11 @@ class _LocationBatchScheduleScreenState extends State<LocationBatchScheduleScree
   String _getSlotPeriod(String startTimeStr) {
     final minutes = _timeToMinutes(startTimeStr);
     if (minutes < 720) {
-      return 'Morning'; // Before 12 PM
+      return 'Morning';
     } else if (minutes < 1020) {
-      return 'Afternoon'; // 12 PM to 5 PM
+      return 'Afternoon';
     } else {
-      return 'Evening'; // After 5 PM
+      return 'Evening';
     }
   }
 
@@ -182,7 +192,7 @@ class _LocationBatchScheduleScreenState extends State<LocationBatchScheduleScree
           _buildBatchesCapacityTab(),
         ],
       ),
-      floatingActionButton: _buildContextualFAB(),
+      floatingActionButton: _isEffectiveReadOnly ? null : _buildContextualFAB(),
     );
   }
 
@@ -272,10 +282,6 @@ class _LocationBatchScheduleScreenState extends State<LocationBatchScheduleScree
       );
     }
   }
-
-  // ===========================================================================
-  // TAB 1: WEEKLY TIMETABLE
-  // ===========================================================================
 
   Widget _buildWeeklyTimetableTab() {
     return StreamBuilder<List<TeachingScheduleModel>>(
@@ -386,7 +392,7 @@ class _LocationBatchScheduleScreenState extends State<LocationBatchScheduleScree
             ),
           ],
         ),
-        if (daySchedules.isNotEmpty)
+        if (!_isEffectiveReadOnly && daySchedules.isNotEmpty)
           OutlinedButton.icon(
             onPressed: () => _showCopyScheduleDialog(daySchedules, allSchedules),
             icon: const Icon(Icons.copy_all, size: 16),
@@ -593,53 +599,55 @@ class _LocationBatchScheduleScreenState extends State<LocationBatchScheduleScree
               ),
             ),
           ],
-          const SizedBox(height: 8),
-          const Divider(height: 12, color: _cardBorder),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              InkWell(
-                onTap: () => _openScheduleSlotModal(
-                  existingSlot: slot,
-                  daySlots: daySlots,
-                ),
-                child: const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  child: Row(
-                    children: [
-                      Icon(Icons.edit_outlined, size: 15, color: _brandBlue),
-                      SizedBox(width: 4),
-                      Text(
-                        'Edit',
-                        style: TextStyle(fontSize: 12, color: _brandBlue, fontWeight: FontWeight.w600),
-                      ),
-                    ],
+          if (!_isEffectiveReadOnly) ...[
+            const SizedBox(height: 8),
+            const Divider(height: 12, color: _cardBorder),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                InkWell(
+                  onTap: () => _openScheduleSlotModal(
+                    existingSlot: slot,
+                    daySlots: daySlots,
                   ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              InkWell(
-                onTap: () => _confirmDeleteSlot(slot),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  child: Row(
-                    children: [
-                      Icon(Icons.delete_outline, size: 15, color: Colors.red.shade600),
-                      SizedBox(width: 4),
-                      Text(
-                        'Delete',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.red.shade600,
-                          fontWeight: FontWeight.w600,
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    child: Row(
+                      children: [
+                        Icon(Icons.edit_outlined, size: 15, color: _brandBlue),
+                        SizedBox(width: 4),
+                        Text(
+                          'Edit',
+                          style: TextStyle(fontSize: 12, color: _brandBlue, fontWeight: FontWeight.w600),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
-              ),
-            ],
-          ),
+                const SizedBox(width: 12),
+                InkWell(
+                  onTap: () => _confirmDeleteSlot(slot),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    child: Row(
+                      children: [
+                        Icon(Icons.delete_outline, size: 15, color: Colors.red.shade600),
+                        SizedBox(width: 4),
+                        Text(
+                          'Delete',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.red.shade600,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );
@@ -675,26 +683,24 @@ class _LocationBatchScheduleScreenState extends State<LocationBatchScheduleScree
             style: TextStyle(fontSize: 12.5, color: _mutedSlate),
             textAlign: TextAlign.center,
           ),
-          const SizedBox(height: 16),
-          ElevatedButton.icon(
-            onPressed: () => _openScheduleSlotModal(),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: _brandBlue,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          if (!_isEffectiveReadOnly) ...[
+            const SizedBox(height: 16),
+            ElevatedButton.icon(
+              onPressed: () => _openScheduleSlotModal(),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _brandBlue,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              ),
+              icon: const Icon(Icons.add, size: 18),
+              label: const Text('Add Slot Now', style: TextStyle(fontWeight: FontWeight.w600)),
             ),
-            icon: const Icon(Icons.add, size: 18),
-            label: const Text('Add Slot Now', style: TextStyle(fontWeight: FontWeight.w600)),
-          ),
+          ],
         ],
       ),
     );
   }
-
-  // ===========================================================================
-  // TAB 2: BATCHES & CAPACITY MANAGEMENT
-  // ===========================================================================
 
   Widget _buildBatchesCapacityTab() {
     return StreamBuilder<List<TeachingBatchModel>>(
@@ -731,22 +737,24 @@ class _LocationBatchScheduleScreenState extends State<LocationBatchScheduleScree
                   ),
                   const SizedBox(height: 6),
                   const Text(
-                    'Create classroom batches to allocate student limits, subjects, and recurring sessions.',
+                    'Classroom batches allocate student limits, subjects, and recurring sessions.',
                     textAlign: TextAlign.center,
                     style: TextStyle(fontSize: 13, color: _mutedSlate),
                   ),
-                  const SizedBox(height: 20),
-                  ElevatedButton.icon(
-                    onPressed: () => _openBatchModal(),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: _brandBlue,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                  if (!_isEffectiveReadOnly) ...[
+                    const SizedBox(height: 20),
+                    ElevatedButton.icon(
+                      onPressed: () => _openBatchModal(),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _brandBlue,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                      ),
+                      icon: const Icon(Icons.add, size: 18),
+                      label: const Text('Create First Batch', style: TextStyle(fontWeight: FontWeight.bold)),
                     ),
-                    icon: const Icon(Icons.add, size: 18),
-                    label: const Text('Create First Batch', style: TextStyle(fontWeight: FontWeight.bold)),
-                  ),
+                  ],
                 ],
               ),
             ),
@@ -760,7 +768,7 @@ class _LocationBatchScheduleScreenState extends State<LocationBatchScheduleScree
           separatorBuilder: (_, __) => const SizedBox(height: 12),
           itemBuilder: (context, index) {
             if (index == batches.length) {
-              return const SizedBox(height: 70); // Bottom padding for FAB
+              return SizedBox(height: _isEffectiveReadOnly ? 24 : 70);
             }
             return _buildBatchCard(batches[index]);
           },
@@ -874,7 +882,6 @@ class _LocationBatchScheduleScreenState extends State<LocationBatchScheduleScree
             ],
           ),
           const SizedBox(height: 12),
-          // Capacity Progress
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -926,41 +933,39 @@ class _LocationBatchScheduleScreenState extends State<LocationBatchScheduleScree
               ],
             ),
           ],
-          const SizedBox(height: 12),
-          const Divider(height: 1, color: _cardBorder),
-          const SizedBox(height: 8),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              TextButton.icon(
-                onPressed: () => _openBatchModal(existingBatch: batch),
-                icon: const Icon(Icons.edit_outlined, size: 15),
-                label: const Text('Edit Batch', style: TextStyle(fontSize: 12.5)),
-                style: TextButton.styleFrom(
-                  foregroundColor: _brandBlue,
-                  visualDensity: VisualDensity.compact,
+          if (!_isEffectiveReadOnly) ...[
+            const SizedBox(height: 12),
+            const Divider(height: 1, color: _cardBorder),
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                TextButton.icon(
+                  onPressed: () => _openBatchModal(existingBatch: batch),
+                  icon: const Icon(Icons.edit_outlined, size: 15),
+                  label: const Text('Edit Batch', style: TextStyle(fontSize: 12.5)),
+                  style: TextButton.styleFrom(
+                    foregroundColor: _brandBlue,
+                    visualDensity: VisualDensity.compact,
+                  ),
                 ),
-              ),
-              const SizedBox(width: 8),
-              TextButton.icon(
-                onPressed: () => _confirmDeleteBatch(batch),
-                icon: const Icon(Icons.delete_outline, size: 15),
-                label: const Text('Delete', style: TextStyle(fontSize: 12.5)),
-                style: TextButton.styleFrom(
-                  foregroundColor: Colors.red.shade600,
-                  visualDensity: VisualDensity.compact,
+                const SizedBox(width: 8),
+                TextButton.icon(
+                  onPressed: () => _confirmDeleteBatch(batch),
+                  icon: const Icon(Icons.delete_outline, size: 15),
+                  label: const Text('Delete', style: TextStyle(fontSize: 12.5)),
+                  style: TextButton.styleFrom(
+                    foregroundColor: Colors.red.shade600,
+                    visualDensity: VisualDensity.compact,
+                  ),
                 ),
-              ),
-            ],
-          ),
+              ],
+            ),
+          ],
         ],
       ),
     );
   }
-
-  // ===========================================================================
-  // MODALS & DIALOGS
-  // ===========================================================================
 
   void _openScheduleSlotModal({
     TeachingScheduleModel? existingSlot,
@@ -991,7 +996,6 @@ class _LocationBatchScheduleScreenState extends State<LocationBatchScheduleScree
         existingSlot: existingSlot,
         allDaySlots: daySlots ?? [],
         onSave: (newSlot) async {
-          // Check conflict
           final conflictingSlots = (daySlots ?? []).where((s) {
             if (existingSlot != null && s.id == existingSlot.id) return false;
             return _slotsOverlap(s, newSlot);
@@ -1258,10 +1262,6 @@ class _LocationBatchScheduleScreenState extends State<LocationBatchScheduleScree
   }
 }
 
-// =============================================================================
-// MODAL SHEET: ADD / EDIT SCHEDULE SLOT
-// =============================================================================
-
 class _ScheduleSlotModalSheet extends StatefulWidget {
   final TeacherLocationModel location;
   final String selectedDay;
@@ -1393,7 +1393,6 @@ class _ScheduleSlotModalSheetState extends State<_ScheduleSlotModalSheet> {
               ),
               const Divider(color: Color(0xFFE2E8F0)),
               const SizedBox(height: 12),
-              // Batch Selector
               const Text('Linked Batch *', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
               const SizedBox(height: 6),
               DropdownButtonFormField<TeachingBatchModel>(
@@ -1415,7 +1414,6 @@ class _ScheduleSlotModalSheetState extends State<_ScheduleSlotModalSheet> {
                 },
               ),
               const SizedBox(height: 14),
-              // Day of the week
               const Text('Day of Week', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
               const SizedBox(height: 6),
               DropdownButtonFormField<String>(
@@ -1431,7 +1429,6 @@ class _ScheduleSlotModalSheetState extends State<_ScheduleSlotModalSheet> {
                 },
               ),
               const SizedBox(height: 14),
-              // Time pickers
               Row(
                 children: [
                   Expanded(
@@ -1498,7 +1495,6 @@ class _ScheduleSlotModalSheetState extends State<_ScheduleSlotModalSheet> {
                 ],
               ),
               const SizedBox(height: 14),
-              // Status & Recurrence
               Row(
                 children: [
                   Expanded(
@@ -1555,7 +1551,6 @@ class _ScheduleSlotModalSheetState extends State<_ScheduleSlotModalSheet> {
                 ],
               ),
               const SizedBox(height: 14),
-              // Notes
               const Text('Optional Notes / Room Code', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
               const SizedBox(height: 6),
               TextFormField(
@@ -1613,10 +1608,6 @@ class _ScheduleSlotModalSheetState extends State<_ScheduleSlotModalSheet> {
     );
   }
 }
-
-// =============================================================================
-// MODAL SHEET: ADD / EDIT BATCH FORM
-// =============================================================================
 
 class _BatchFormModalSheet extends StatefulWidget {
   final TeacherLocationModel location;
@@ -1746,7 +1737,6 @@ class _BatchFormModalSheetState extends State<_BatchFormModalSheet> {
               ),
               const Divider(color: Color(0xFFE2E8F0)),
               const SizedBox(height: 12),
-              // Batch Name
               TextFormField(
                 controller: _nameController,
                 decoration: InputDecoration(
@@ -1759,7 +1749,6 @@ class _BatchFormModalSheetState extends State<_BatchFormModalSheet> {
                 validator: (val) => (val == null || val.trim().isEmpty) ? 'Batch name required' : null,
               ),
               const SizedBox(height: 14),
-              // Subject & Class Selectors
               Row(
                 children: [
                   Expanded(
@@ -1798,7 +1787,6 @@ class _BatchFormModalSheetState extends State<_BatchFormModalSheet> {
                 ],
               ),
               const SizedBox(height: 14),
-              // Teaching Days Multi-Select
               const Text('Operating Days', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
               const SizedBox(height: 8),
               Wrap(
@@ -1823,7 +1811,6 @@ class _BatchFormModalSheetState extends State<_BatchFormModalSheet> {
                 }).toList(),
               ),
               const SizedBox(height: 14),
-              // Timings & Capacity
               Row(
                 children: [
                   Expanded(
