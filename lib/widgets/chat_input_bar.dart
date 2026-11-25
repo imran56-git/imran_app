@@ -4,7 +4,9 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
+import '../screens/media_preview_editor_screen.dart';
 import '../services/chat_service.dart';
+import 'media_shortcut_tray.dart';
 
 class ChatInputBar extends StatefulWidget {
   final String chatRoomId;
@@ -49,6 +51,9 @@ class _ChatInputBarState extends State<ChatInputBar> {
   int _recordingSeconds = 0;
   Timer? _recordingTimer;
 
+  final List<TrayMediaItem> _trayItems = [];
+  final Set<String> _selectedTrayIds = {};
+
   String _attachmentCategory = 'general';
   String? _failedMessageText;
   String? _failedReplyId;
@@ -81,6 +86,9 @@ class _ChatInputBarState extends State<ChatInputBar> {
     }
     return '${widget.receiverId}_${widget.senderId}';
   }
+
+  bool get _canSend =>
+      _isTyping || _trayItems.isNotEmpty || _controller.text.trim().isNotEmpty;
 
   @override
   void initState() {
@@ -327,46 +335,68 @@ class _ChatInputBarState extends State<ChatInputBar> {
   }
 
   Future<void> _handleAttachmentPick(String type) async {
-    if (mounted) setState(() => _isUploading = true);
     try {
       if (type == 'gallery') {
-        final XFile? image = await _imagePicker.pickImage(
-            source: ImageSource.gallery, imageQuality: 80);
-        if (image != null && image.path.isNotEmpty) {
-          await _chatService.sendImageFile(
-            chatRoomId: _effectiveChatRoomId,
-            senderId: widget.senderId,
-            receiverId: widget.receiverId,
-            file: File(image.path),
-            messageCategory: _attachmentCategory,
+        final List<XFile> images =
+            await _imagePicker.pickMultiImage(imageQuality: 80);
+        if (images.isEmpty) return;
+
+        if (images.length == 1) {
+          final singleFile = File(images.first.path);
+          if (!mounted) return;
+          final MediaEditorResult? result =
+              await Navigator.push<MediaEditorResult>(
+            context,
+            MaterialPageRoute(
+              builder: (_) => MediaPreviewEditorScreen(file: singleFile),
+            ),
           );
+          if (result != null) {
+            await _sendSingleProcessedMedia(
+              file: result.file,
+              isImage: true,
+              caption: result.caption,
+            );
+          }
+        } else {
+          setState(() {
+            for (final img in images) {
+              _trayItems.add(
+                TrayMediaItem(
+                  id: '${DateTime.now().microsecondsSinceEpoch}_${img.name}',
+                  file: File(img.path),
+                  isImage: true,
+                  fileName: img.name,
+                ),
+              );
+            }
+          });
         }
       } else if (type == 'camera') {
         final XFile? image = await _imagePicker.pickImage(
-            source: ImageSource.camera, imageQuality: 80);
-        if (image != null && image.path.isNotEmpty) {
-          await _chatService.sendImageFile(
-            chatRoomId: _effectiveChatRoomId,
-            senderId: widget.senderId,
-            receiverId: widget.receiverId,
-            file: File(image.path),
-            messageCategory: _attachmentCategory,
-          );
-        }
-      } else if (type == 'video') {
-        final XFile? video =
-            await _imagePicker.pickVideo(source: ImageSource.gallery);
-        if (video != null && video.path.isNotEmpty) {
-          await _chatService.sendVideoFile(
-            chatRoomId: _effectiveChatRoomId,
-            senderId: widget.senderId,
-            receiverId: widget.receiverId,
-            file: File(video.path),
-            messageCategory: _attachmentCategory,
+          source: ImageSource.camera,
+          imageQuality: 80,
+        );
+        if (image == null || image.path.isEmpty) return;
+        final singleFile = File(image.path);
+        if (!mounted) return;
+        final MediaEditorResult? result =
+            await Navigator.push<MediaEditorResult>(
+          context,
+          MaterialPageRoute(
+            builder: (_) => MediaPreviewEditorScreen(file: singleFile),
+          ),
+        );
+        if (result != null) {
+          await _sendSingleProcessedMedia(
+            file: result.file,
+            isImage: true,
+            caption: result.caption,
           );
         }
       } else if (type == 'document') {
         final FilePickerResult? result = await FilePicker.platform.pickFiles(
+          allowMultiple: true,
           type: FileType.custom,
           allowedExtensions: [
             'pdf',
@@ -380,16 +410,55 @@ class _ChatInputBarState extends State<ChatInputBar> {
             'zip'
           ],
         );
-        if (result != null &&
-            result.files.isNotEmpty &&
-            result.files.single.path != null &&
-            result.files.single.path!.isNotEmpty) {
-          await _chatService.sendDocumentFile(
+        if (result == null || result.files.isEmpty) return;
+        final validFiles = result.files
+            .where((f) => f.path != null && f.path!.isNotEmpty)
+            .toList();
+        if (validFiles.isEmpty) return;
+
+        if (validFiles.length == 1) {
+          final single = validFiles.first;
+          final singleFile = File(single.path!);
+          if (!mounted) return;
+          final MediaEditorResult? editResult =
+              await Navigator.push<MediaEditorResult>(
+            context,
+            MaterialPageRoute(
+              builder: (_) => MediaPreviewEditorScreen(file: singleFile),
+            ),
+          );
+          if (editResult != null) {
+            await _sendSingleProcessedMedia(
+              file: editResult.file,
+              isImage: false,
+              fileName: single.name,
+              caption: editResult.caption,
+            );
+          }
+        } else {
+          setState(() {
+            for (final f in validFiles) {
+              _trayItems.add(
+                TrayMediaItem(
+                  id: '${DateTime.now().microsecondsSinceEpoch}_${f.name}',
+                  file: File(f.path!),
+                  isImage: false,
+                  fileName: f.name,
+                ),
+              );
+            }
+          });
+        }
+      } else if (type == 'video') {
+        final XFile? video =
+            await _imagePicker.pickVideo(source: ImageSource.gallery);
+        if (video != null && video.path.isNotEmpty) {
+          setState(() => _isUploading = true);
+          await _chatService.sendVideoFile(
             chatRoomId: _effectiveChatRoomId,
             senderId: widget.senderId,
             receiverId: widget.receiverId,
-            file: File(result.files.single.path!),
-            fileName: result.files.single.name,
+            file: File(video.path),
             messageCategory: _attachmentCategory,
           );
         }
@@ -400,6 +469,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
             result.files.isNotEmpty &&
             result.files.single.path != null &&
             result.files.single.path!.isNotEmpty) {
+          setState(() => _isUploading = true);
           await _chatService.sendAudioFile(
             chatRoomId: _effectiveChatRoomId,
             senderId: widget.senderId,
@@ -419,7 +489,164 @@ class _ChatInputBarState extends State<ChatInputBar> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to send attachment: $e')),
+          SnackBar(content: Text('Failed to process attachment: $e')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isUploading = false);
+      }
+    }
+  }
+
+  Future<void> _sendSingleProcessedMedia({
+    required File file,
+    required bool isImage,
+    String? fileName,
+    required String caption,
+  }) async {
+    if (mounted) setState(() => _isUploading = true);
+    try {
+      if (isImage) {
+        await _chatService.sendImageFile(
+          chatRoomId: _effectiveChatRoomId,
+          senderId: widget.senderId,
+          receiverId: widget.receiverId,
+          file: file,
+          messageCategory: _attachmentCategory,
+        );
+      } else {
+        await _chatService.sendDocumentFile(
+          chatRoomId: _effectiveChatRoomId,
+          senderId: widget.senderId,
+          receiverId: widget.receiverId,
+          file: file,
+          fileName: fileName ?? file.path.split(Platform.pathSeparator).last,
+          messageCategory: _attachmentCategory,
+        );
+      }
+      if (caption.trim().isNotEmpty) {
+        await _chatService.sendMessage(
+          chatId: _effectiveChatRoomId,
+          senderId: widget.senderId,
+          receiverId: widget.receiverId,
+          message: caption.trim(),
+          type: 'text',
+          messageCategory: _attachmentCategory,
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isUploading = false);
+    }
+  }
+
+  Future<void> _handleTrayItemTap(TrayMediaItem item, int index) async {
+    final MediaEditorResult? result = await Navigator.push<MediaEditorResult>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => MediaPreviewEditorScreen(
+          file: item.file,
+          initialCaption: item.caption,
+        ),
+      ),
+    );
+
+    if (result != null && mounted) {
+      setState(() {
+        item.file = result.file;
+        item.caption = result.caption;
+      });
+    }
+  }
+
+  void _handleTrayItemRemove(TrayMediaItem item, int index) {
+    HapticFeedback.lightImpact();
+    setState(() {
+      _trayItems.removeAt(index);
+      _selectedTrayIds.remove(item.id);
+    });
+  }
+
+  void _handleTrayItemToggleSelect(String id) {
+    HapticFeedback.mediumImpact();
+    setState(() {
+      if (_selectedTrayIds.contains(id)) {
+        _selectedTrayIds.remove(id);
+      } else {
+        _selectedTrayIds.add(id);
+      }
+    });
+  }
+
+  void _handleClearSelection() {
+    HapticFeedback.lightImpact();
+    setState(() {
+      _selectedTrayIds.clear();
+    });
+  }
+
+  void _handleClearAllTray() {
+    HapticFeedback.lightImpact();
+    setState(() {
+      _trayItems.clear();
+      _selectedTrayIds.clear();
+    });
+  }
+
+  Future<void> _sendTrayItems() async {
+    final bool hasSelection = _selectedTrayIds.isNotEmpty;
+    final List<TrayMediaItem> itemsToSend = hasSelection
+        ? _trayItems.where((i) => _selectedTrayIds.contains(i.id)).toList()
+        : List<TrayMediaItem>.from(_trayItems);
+
+    if (itemsToSend.isEmpty) return;
+
+    setState(() {
+      _isUploading = true;
+      if (hasSelection) {
+        _trayItems.removeWhere((i) => _selectedTrayIds.contains(i.id));
+        _selectedTrayIds.clear();
+      } else {
+        _trayItems.clear();
+        _selectedTrayIds.clear();
+      }
+    });
+
+    try {
+      for (final item in itemsToSend) {
+        if (item.isImage) {
+          await _chatService.sendImageFile(
+            chatRoomId: _effectiveChatRoomId,
+            senderId: widget.senderId,
+            receiverId: widget.receiverId,
+            file: item.file,
+            messageCategory: _attachmentCategory,
+          );
+        } else {
+          await _chatService.sendDocumentFile(
+            chatRoomId: _effectiveChatRoomId,
+            senderId: widget.senderId,
+            receiverId: widget.receiverId,
+            file: item.file,
+            fileName: item.fileName,
+            messageCategory: _attachmentCategory,
+          );
+        }
+        if (item.caption != null && item.caption!.trim().isNotEmpty) {
+          await _chatService.sendMessage(
+            chatId: _effectiveChatRoomId,
+            senderId: widget.senderId,
+            receiverId: widget.receiverId,
+            message: item.caption!.trim(),
+            type: 'text',
+            messageCategory: _attachmentCategory,
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed sending media items: $e')),
         );
       }
     } finally {
@@ -430,8 +657,14 @@ class _ChatInputBarState extends State<ChatInputBar> {
   }
 
   Future<void> _handleSend() async {
+    if (_isUploading || widget.isMutedByTeacher) return;
+
+    if (_trayItems.isNotEmpty) {
+      await _sendTrayItems();
+    }
+
     final text = _controller.text.trim();
-    if (text.isEmpty || _isUploading || widget.isMutedByTeacher) return;
+    if (text.isEmpty) return;
 
     HapticFeedback.lightImpact();
     final String? currentReplyId = widget.replyToMessageId;
@@ -752,11 +985,22 @@ class _ChatInputBarState extends State<ChatInputBar> {
                   ),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.close_rounded, size: 18, color: Colors.grey),
+                  icon: const Icon(Icons.close_rounded,
+                      size: 18, color: Colors.grey),
                   onPressed: widget.onCancelReply,
                 ),
               ],
             ),
+          ),
+        if (_trayItems.isNotEmpty)
+          MediaShortcutTray(
+            items: _trayItems,
+            selectedIds: _selectedTrayIds,
+            onItemTap: _handleTrayItemTap,
+            onItemRemove: _handleTrayItemRemove,
+            onItemToggleSelect: _handleTrayItemToggleSelect,
+            onClearSelection: _handleClearSelection,
+            onClearAll: _handleClearAllTray,
           ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 10.0, vertical: 6.0),
@@ -825,50 +1069,61 @@ class _ChatInputBarState extends State<ChatInputBar> {
                           ],
                         ),
                         child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.end,
                           children: [
-                            IconButton(
-                              icon: Icon(
-                                _showEmojiPanel
-                                    ? Icons.keyboard_alt_outlined
-                                    : Icons.emoji_emotions_outlined,
-                                color: _showEmojiPanel
-                                    ? _brandBlue
-                                    : Colors.grey.shade600,
-                                size: 22,
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 2),
+                              child: IconButton(
+                                icon: Icon(
+                                  _showEmojiPanel
+                                      ? Icons.keyboard_alt_outlined
+                                      : Icons.emoji_emotions_outlined,
+                                  color: _showEmojiPanel
+                                      ? _brandBlue
+                                      : Colors.grey.shade600,
+                                  size: 22,
+                                ),
+                                onPressed: _toggleEmojiPanel,
                               ),
-                              onPressed: _toggleEmojiPanel,
                             ),
                             Expanded(
-                              child: TextField(
-                                controller: _controller,
-                                focusNode: _focusNode,
-                                minLines: 1,
-                                maxLines: 5,
-                                enabled: !_isUploading,
-                                style: const TextStyle(
-                                  fontSize: 14.5,
-                                  color: Color(0xFF0F172A),
-                                ),
-                                decoration: InputDecoration(
-                                  hintText: 'Type a message...',
-                                  hintStyle: TextStyle(
-                                    color: Colors.grey.shade400,
-                                    fontSize: 14,
+                              child: Scrollbar(
+                                child: TextField(
+                                  controller: _controller,
+                                  focusNode: _focusNode,
+                                  keyboardType: TextInputType.multiline,
+                                  minLines: 1,
+                                  maxLines: 5,
+                                  scrollPhysics: const BouncingScrollPhysics(),
+                                  enabled: !_isUploading,
+                                  style: const TextStyle(
+                                    fontSize: 14.5,
+                                    color: Color(0xFF0F172A),
                                   ),
-                                  border: InputBorder.none,
-                                  contentPadding: const EdgeInsets.symmetric(
-                                    vertical: 10.0,
-                                    horizontal: 4,
+                                  decoration: InputDecoration(
+                                    hintText: 'Type a message...',
+                                    hintStyle: TextStyle(
+                                      color: Colors.grey.shade400,
+                                      fontSize: 14,
+                                    ),
+                                    border: InputBorder.none,
+                                    contentPadding: const EdgeInsets.symmetric(
+                                      vertical: 10.0,
+                                      horizontal: 4,
+                                    ),
                                   ),
                                 ),
                               ),
                             ),
-                            IconButton(
-                              icon: Icon(Icons.attach_file_rounded,
-                                  color: Colors.grey.shade600, size: 22),
-                              onPressed: _isUploading
-                                  ? null
-                                  : _showAttachmentBottomSheet,
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 2),
+                              child: IconButton(
+                                icon: Icon(Icons.attach_file_rounded,
+                                    color: Colors.grey.shade600, size: 22),
+                                onPressed: _isUploading
+                                    ? null
+                                    : _showAttachmentBottomSheet,
+                              ),
                             ),
                           ],
                         ),
@@ -876,18 +1131,18 @@ class _ChatInputBarState extends State<ChatInputBar> {
                     ),
                     const SizedBox(width: 8.0),
                     GestureDetector(
-                      onTap: _isTyping ? _handleSend : _startVoiceNoteSession,
+                      onTap: _canSend ? _handleSend : _startVoiceNoteSession,
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 220),
                         curve: Curves.easeOutCubic,
                         width: 44,
                         height: 44,
                         decoration: BoxDecoration(
-                          color: _isTyping ? _accentBlue : _brandBlue,
+                          color: _canSend ? _accentBlue : _brandBlue,
                           shape: BoxShape.circle,
                           boxShadow: [
                             BoxShadow(
-                              color: (_isTyping ? _accentBlue : _brandBlue)
+                              color: (_canSend ? _accentBlue : _brandBlue)
                                   .withOpacity(0.28),
                               blurRadius: 8,
                               offset: const Offset(0, 3),
@@ -907,7 +1162,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
                                 ),
                               );
                             },
-                            child: _isTyping
+                            child: _canSend
                                 ? const Icon(
                                     Icons.send_rounded,
                                     key: ValueKey('send_action_btn'),
