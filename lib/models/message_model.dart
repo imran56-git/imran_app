@@ -19,6 +19,8 @@ class MessageModel {
   final DateTime? editTimestamp;
   final Map<String, dynamic>? mediaMetaData;
   final String? mediaUrl;
+  final List<String>? mediaUrls;
+  final String? caption;
   final String senderRole;
   final String senderName;
   final String senderProfilePic;
@@ -61,6 +63,8 @@ class MessageModel {
     this.editTimestamp,
     this.mediaMetaData,
     this.mediaUrl,
+    this.mediaUrls,
+    this.caption,
     this.senderRole = 'student',
     this.senderName = '',
     this.senderProfilePic = '',
@@ -230,6 +234,8 @@ class MessageModel {
       editTimestamp: parseDateTime(map['editTimestamp']),
       mediaMetaData: parseDynamicMap(map['mediaMetaData']),
       mediaUrl: map['mediaUrl']?.toString(),
+      mediaUrls: map['mediaUrls'] != null ? parseStringList(map['mediaUrls']) : null,
+      caption: map['caption']?.toString(),
       senderRole: map['senderRole']?.toString() ?? 'student',
       senderName: map['senderName']?.toString() ?? '',
       senderProfilePic: map['senderProfilePic']?.toString() ?? '',
@@ -258,6 +264,9 @@ class MessageModel {
     );
   }
 
+  factory MessageModel.fromJson(Map<String, dynamic> json) =>
+      MessageModel.fromMap(json);
+
   Map<String, dynamic> toMap() {
     return {
       'messageId': messageId,
@@ -281,6 +290,8 @@ class MessageModel {
           editTimestamp != null ? Timestamp.fromDate(editTimestamp!) : null,
       'mediaMetaData': mediaMetaData,
       'mediaUrl': mediaUrl,
+      'mediaUrls': mediaUrls,
+      'caption': caption,
       'senderRole': senderRole,
       'senderName': senderName,
       'senderProfilePic': senderProfilePic,
@@ -308,6 +319,8 @@ class MessageModel {
     };
   }
 
+  Map<String, dynamic> toJson() => toMap();
+
   MessageModel copyWith({
     String? messageId,
     String? senderId,
@@ -326,6 +339,8 @@ class MessageModel {
     DateTime? editTimestamp,
     Map<String, dynamic>? mediaMetaData,
     String? mediaUrl,
+    List<String>? mediaUrls,
+    String? caption,
     String? senderRole,
     String? senderName,
     String? senderProfilePic,
@@ -368,6 +383,8 @@ class MessageModel {
       editTimestamp: editTimestamp ?? this.editTimestamp,
       mediaMetaData: mediaMetaData ?? this.mediaMetaData,
       mediaUrl: mediaUrl ?? this.mediaUrl,
+      mediaUrls: mediaUrls ?? this.mediaUrls,
+      caption: caption ?? this.caption,
       senderRole: senderRole ?? this.senderRole,
       senderName: senderName ?? this.senderName,
       senderProfilePic: senderProfilePic ?? this.senderProfilePic,
@@ -411,6 +428,7 @@ class MessageModel {
         other.isPinned == isPinned &&
         other.messageCategory == messageCategory &&
         other.mediaUrl == mediaUrl &&
+        other.caption == caption &&
         other.isSyncedWithServer == isSyncedWithServer &&
         other.isDeletedFromServer == isDeletedFromServer;
   }
@@ -428,6 +446,7 @@ class MessageModel {
         isPinned.hashCode ^
         messageCategory.hashCode ^
         mediaUrl.hashCode ^
+        caption.hashCode ^
         isSyncedWithServer.hashCode ^
         isDeletedFromServer.hashCode;
   }
