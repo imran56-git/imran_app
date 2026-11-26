@@ -125,16 +125,16 @@ class _AiAssistantScreenState extends State<AiAssistantScreen>
   bool _looksLikeServerFailureText(String text) {
     final lower = text.trim().toLowerCase();
     return lower.contains('unable to connect to servers') ||
-        lower.contains('connection error. please try again');
+        lower.contains('connection error. please try again') ||
+        lower.contains('temporary network or quota issue') ||
+        lower.contains('unable to connect to the educational database');
   }
 
-  /// গাণিতিক ও পদার্থবিজ্ঞানের ফর্মুলা এবং অপ্রয়োজনীয় ডলার সাইন ক্লিন করার মেথড
   String _cleanMathAndText(String raw) {
     if (raw.isEmpty) return raw;
 
     String text = raw;
 
-    // ১. ল্যাটেক্স ফ্র্যাকশন এবং স্কয়ার রুট রূপান্তর
     text = text.replaceAllMapped(
       RegExp(r'\\frac\{([^}]+)\}\{([^}]+)\}'),
       (m) => '(${m[1]} / ${m[2]})',
@@ -145,7 +145,6 @@ class _AiAssistantScreenState extends State<AiAssistantScreen>
     );
     text = text.replaceAll(r'\sqrt', '√');
 
-    // ২. সাধারণ ল্যাটেক্স চিহ্নের ইউনিকোড রূপান্তর
     final Map<String, String> mathReplacements = {
       r'\times': '×',
       r'\div': '÷',
@@ -176,13 +175,11 @@ class _AiAssistantScreenState extends State<AiAssistantScreen>
       text = text.replaceAll(key, val);
     });
 
-    // ৩. \text{...} ট্যাগ পরিষ্কার করা
     text = text.replaceAllMapped(
       RegExp(r'\\text\{([^}]+)\}'),
       (m) => m[1] ?? '',
     );
 
-    // ৪. ব্লক সমীকরণ ($$ ... $$) বোল্ড ফর্মে রূপান্তর
     text = text.replaceAllMapped(
       RegExp(r'\$\$(.*?)\$\$', dotAll: true),
       (m) {
@@ -191,7 +188,6 @@ class _AiAssistantScreenState extends State<AiAssistantScreen>
       },
     );
 
-    // ৫. ইনলাইন সমীকরণ ($ ... $) পরিষ্কার করা
     text = text.replaceAllMapped(
       RegExp(r'\$([^\$\n]+)\$'),
       (m) {
@@ -208,7 +204,6 @@ class _AiAssistantScreenState extends State<AiAssistantScreen>
     if (!mounted) return;
     setState(() {
       _isFallbackActive = true;
-      aiMessage.text = '';
     });
 
     try {
@@ -229,7 +224,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen>
       setState(() {
         _isFallbackActive = false;
         aiMessage.text =
-            '⚠️ Unable to connect to servers.\nPlease try again in a moment.';
+            'I encountered a temporary connection issue. Please tap the retry button below or check your internet connection.';
         _isLoading = false;
       });
       _scrollToBottom();
@@ -337,6 +332,9 @@ class _AiAssistantScreenState extends State<AiAssistantScreen>
     _streamSubscription = null;
     if (mounted) {
       setState(() {
+        if (_messages.isNotEmpty && !_messages.last.isUser && _messages.last.text.trim().isEmpty) {
+          _messages.last.text = 'Response stopped.';
+        }
         _isLoading = false;
         _isFallbackActive = false;
       });
@@ -941,6 +939,10 @@ class _AiAssistantScreenState extends State<AiAssistantScreen>
                       final isSelected = _selectedIndices.contains(index);
                       final isSpeaking = _currentlySpeakingIndex == index;
 
+                      if (!message.isUser && message.text.trim().isEmpty) {
+                        return const SizedBox.shrink();
+                      }
+
                       return GestureDetector(
                         onLongPress: () {
                           if (!_isSelectionMode) {
@@ -990,136 +992,130 @@ class _AiAssistantScreenState extends State<AiAssistantScreen>
                                       ? CrossAxisAlignment.end
                                       : CrossAxisAlignment.start,
                                   children: [
-                                    AnimatedOpacity(
-                                      opacity: message.text.isEmpty ? 0.0 : 1.0,
-                                      duration:
-                                          const Duration(milliseconds: 250),
-                                      curve: Curves.easeIn,
-                                      child: Container(
-                                        constraints: BoxConstraints(
-                                          maxWidth: MediaQuery.of(context)
-                                                  .size
-                                                  .width *
-                                              0.76,
+                                    Container(
+                                      constraints: BoxConstraints(
+                                        maxWidth: MediaQuery.of(context)
+                                                .size
+                                                .width *
+                                            0.76,
+                                      ),
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 16, vertical: 12),
+                                      decoration: BoxDecoration(
+                                        color: message.isUser
+                                            ? userBubbleColor
+                                            : Colors.white,
+                                        borderRadius: BorderRadius.only(
+                                          topLeft: const Radius.circular(18),
+                                          topRight: const Radius.circular(18),
+                                          bottomLeft: Radius.circular(
+                                              message.isUser ? 18 : 4),
+                                          bottomRight: Radius.circular(
+                                              message.isUser ? 4 : 18),
                                         ),
-                                        padding: const EdgeInsets.symmetric(
-                                            horizontal: 16, vertical: 12),
-                                        decoration: BoxDecoration(
-                                          color: message.isUser
-                                              ? userBubbleColor
-                                              : Colors.white,
-                                          borderRadius: BorderRadius.only(
-                                            topLeft: const Radius.circular(18),
-                                            topRight: const Radius.circular(18),
-                                            bottomLeft: Radius.circular(
-                                                message.isUser ? 18 : 4),
-                                            bottomRight: Radius.circular(
-                                                message.isUser ? 4 : 18),
-                                          ),
-                                          border: message.isUser
-                                              ? null
-                                              : Border.all(
-                                                  color:
-                                                      const Color(0xFFE2E8F0),
-                                                  width: 1,
+                                        border: message.isUser
+                                            ? null
+                                            : Border.all(
+                                                color:
+                                                    const Color(0xFFE2E8F0),
+                                                width: 1,
+                                              ),
+                                      ),
+                                      child: message.isUser
+                                          ? Text(
+                                              message.text,
+                                              style: const TextStyle(
+                                                color: Colors.white,
+                                                fontSize: 15,
+                                                height: 1.4,
+                                              ),
+                                            )
+                                          : MarkdownBody(
+                                              data: _cleanMathAndText(
+                                                  message.text),
+                                              selectable: false,
+                                              onTapLink:
+                                                  (text, href, title) =>
+                                                      _handleLinkTap(
+                                                          href, text),
+                                              styleSheet: MarkdownStyleSheet(
+                                                p: const TextStyle(
+                                                  color: Color(0xFF1E293B),
+                                                  fontSize: 14.5,
+                                                  height: 1.5,
                                                 ),
-                                        ),
-                                        child: message.isUser
-                                            ? Text(
-                                                message.text,
-                                                style: const TextStyle(
-                                                  color: Colors.white,
+                                                a: const TextStyle(
+                                                  color: Color(0xFF2563EB),
+                                                  decoration: TextDecoration
+                                                      .underline,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                                h1: const TextStyle(
+                                                  color: primaryNavy,
+                                                  fontWeight: FontWeight.bold,
+                                                  fontSize: 18,
+                                                ),
+                                                h2: const TextStyle(
+                                                  color: primaryNavy,
+                                                  fontWeight: FontWeight.bold,
+                                                  fontSize: 16,
+                                                ),
+                                                h3: const TextStyle(
+                                                  color: primaryNavy,
+                                                  fontWeight: FontWeight.w600,
                                                   fontSize: 15,
+                                                ),
+                                                blockquote: const TextStyle(
+                                                  color: Color(0xFF1E3A8A),
+                                                  fontWeight: FontWeight.w600,
+                                                  fontSize: 14.5,
                                                   height: 1.4,
                                                 ),
-                                              )
-                                            : MarkdownBody(
-                                                data: _cleanMathAndText(
-                                                    message.text),
-                                                selectable: false,
-                                                onTapLink:
-                                                    (text, href, title) =>
-                                                        _handleLinkTap(
-                                                            href, text),
-                                                styleSheet: MarkdownStyleSheet(
-                                                  p: const TextStyle(
-                                                    color: Color(0xFF1E293B),
-                                                    fontSize: 14.5,
-                                                    height: 1.5,
-                                                  ),
-                                                  a: const TextStyle(
-                                                    color: Color(0xFF2563EB),
-                                                    decoration: TextDecoration
-                                                        .underline,
-                                                    fontWeight: FontWeight.bold,
-                                                  ),
-                                                  h1: const TextStyle(
-                                                    color: primaryNavy,
-                                                    fontWeight: FontWeight.bold,
-                                                    fontSize: 18,
-                                                  ),
-                                                  h2: const TextStyle(
-                                                    color: primaryNavy,
-                                                    fontWeight: FontWeight.bold,
-                                                    fontSize: 16,
-                                                  ),
-                                                  h3: const TextStyle(
-                                                    color: primaryNavy,
-                                                    fontWeight: FontWeight.w600,
-                                                    fontSize: 15,
-                                                  ),
-                                                  blockquote: const TextStyle(
-                                                    color: Color(0xFF1E3A8A),
-                                                    fontWeight: FontWeight.w600,
-                                                    fontSize: 14.5,
-                                                    height: 1.4,
-                                                  ),
-                                                  blockquoteDecoration:
-                                                      BoxDecoration(
-                                                    color:
-                                                        const Color(0xFFEFF6FF),
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                            10),
-                                                    border: const Border(
-                                                      left: BorderSide(
-                                                        color:
-                                                            Color(0xFF3B82F6),
-                                                        width: 4,
-                                                      ),
+                                                blockquoteDecoration:
+                                                    BoxDecoration(
+                                                  color:
+                                                      const Color(0xFFEFF6FF),
+                                                  borderRadius:
+                                                      BorderRadius.circular(
+                                                          10),
+                                                  border: const Border(
+                                                    left: BorderSide(
+                                                      color:
+                                                          Color(0xFF3B82F6),
+                                                      width: 4,
                                                     ),
                                                   ),
-                                                  blockquotePadding:
-                                                      const EdgeInsets
-                                                          .symmetric(
-                                                          horizontal: 12,
-                                                          vertical: 8),
-                                                  code: const TextStyle(
-                                                    color: Color(0xFF0F172A),
-                                                    backgroundColor:
-                                                        Color(0xFFF1F5F9),
-                                                    fontFamily: 'monospace',
-                                                    fontSize: 13.5,
-                                                    fontWeight: FontWeight.bold,
-                                                  ),
-                                                  codeblockDecoration:
-                                                      BoxDecoration(
-                                                    color:
-                                                        const Color(0xFFF8FAFC),
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                            10),
-                                                    border: Border.all(
-                                                      color: const Color(
-                                                          0xFFE2E8F0),
-                                                    ),
+                                                ),
+                                                blockquotePadding:
+                                                    const EdgeInsets
+                                                        .symmetric(
+                                                        horizontal: 12,
+                                                        vertical: 8),
+                                                code: const TextStyle(
+                                                  color: Color(0xFF0F172A),
+                                                  backgroundColor:
+                                                      Color(0xFFF1F5F9),
+                                                  fontFamily: 'monospace',
+                                                  fontSize: 13.5,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                                codeblockDecoration:
+                                                    BoxDecoration(
+                                                  color:
+                                                      const Color(0xFFF8FAFC),
+                                                  borderRadius:
+                                                      BorderRadius.circular(
+                                                          10),
+                                                  border: Border.all(
+                                                    color: const Color(
+                                                        0xFFE2E8F0),
                                                   ),
                                                 ),
                                               ),
-                                      ),
+                                            ),
                                     ),
                                     if (!message.isUser &&
-                                        message.text.isNotEmpty) ...[
+                                        message.text.trim().isNotEmpty) ...[
                                       const SizedBox(height: 6),
                                       _buildInteractionBar(
                                           index, message, isSpeaking),
@@ -1141,7 +1137,7 @@ class _AiAssistantScreenState extends State<AiAssistantScreen>
           _buildPulsingFallbackIndicator(),
           if (_isLoading &&
               !_isFallbackActive &&
-              (_messages.isEmpty || _messages.last.text.isEmpty))
+              (_messages.isEmpty || _messages.last.text.trim().isEmpty))
             const _ModernThinkingIndicator(),
           _buildInputBar(),
         ],
