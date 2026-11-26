@@ -42,7 +42,7 @@ class GeminiService {
   int _activeModelIndex = 0;
   bool _isBusy = false;
 
-  final List> _conversationHistory = [];
+  final List<Map<String, String>> _conversationHistory = [];
 
   String _buildSystemInstruction([String? customSystemPrompt]) {
     if (customSystemPrompt != null && customSystemPrompt.trim().isNotEmpty) {
@@ -70,7 +70,7 @@ class GeminiService {
         '     Followed immediately by clean bullet points defining each variable.\n\n'
         '3. ACCURACY & LANGUAGE:\n'
         '   - Keep answers structured, engaging, and direct for students.\n'
-        '   - Support both English and Bengali naturally matching the language of the prompt.';
+        '   - Respond clearly in English.';
   }
 
   Future<void> _ensureApiKeysLoaded() async {
@@ -198,7 +198,7 @@ class GeminiService {
   }) async {
     await _ensureApiKeysLoaded();
 
-    final List> parts = [
+    final List<Map<String, dynamic>> parts = [
       {'text': prompt},
     ];
 
@@ -274,7 +274,7 @@ class GeminiService {
     }
 
     if (_resolvedGroqKey.isNotEmpty) {
-      final List> contentList = [
+      final List<Map<String, dynamic>> contentList = [
         {'type': 'text', 'text': prompt},
       ];
       for (final file in imageFiles) {
@@ -310,7 +310,7 @@ class GeminiService {
                   'max_tokens': 1024,
                 }),
               )
-              .timeout(const Duration(seconds: 18));
+              .timeout(const Duration(seconds: 20));
 
           if (response.statusCode == 200) {
             final Map<String, dynamic> data =
@@ -333,7 +333,7 @@ class GeminiService {
     throw Exception(lastError ?? 'Vision verification service unavailable.');
   }
 
-  Future> verifyGovernmentIdDocument({
+  Future<Map<String, dynamic>> verifyGovernmentIdDocument({
     required File documentFile,
     required String selectedDocType,
     String? expectedFullName,
@@ -437,7 +437,7 @@ Strict Rules:
     }
   }
 
-  Future> verifyQualificationCertificate({
+  Future<Map<String, dynamic>> verifyQualificationCertificate({
     required File certificateFile,
     String? expectedFullName,
   }) async {
@@ -538,7 +538,7 @@ Strict Rules:
     }
   }
 
-  Future> verifyFaceMatchWithIdCard({
+  Future<Map<String, dynamic>> verifyFaceMatchWithIdCard({
     required File idDocumentFile,
     required File liveFaceFile,
     double minimumSimilarityThreshold = 85.0,
@@ -620,7 +620,7 @@ Respond ONLY with a valid JSON object in English using this exact schema:
   }) async {
     final String sysInstruction = _buildSystemInstruction(systemPrompt);
 
-    final List> contents = [];
+    final List<Map<String, dynamic>> contents = [];
     for (final turn in _conversationHistory) {
       final String role = turn['role'] == 'user' ? 'user' : 'model';
       final String text = (turn['content'] ?? '').trim();
@@ -714,7 +714,7 @@ Respond ONLY with a valid JSON object in English using this exact schema:
     }
 
     final String sysInstruction = _buildSystemInstruction(systemPrompt);
-    final List> messages = [
+    final List<Map<String, dynamic>> messages = [
       {'role': 'system', 'content': sysInstruction},
       ..._conversationHistory.map((turn) => {
             'role': turn['role'] == 'user' ? 'user' : 'assistant',
@@ -770,15 +770,13 @@ Respond ONLY with a valid JSON object in English using this exact schema:
   Future<String> generateContent(String prompt, {String? systemPrompt}) async {
     final String cleanPrompt = prompt.trim().toLowerCase();
     final RegExp greetingRegExp = RegExp(
-      r'^(hi|hello|hey|hlw|hlo|helo|hi there|hello fybtt|hi fybtt|good morning|good afternoon|good evening|নমস্কার|হ্যালো|হাই|সালাম|কেমন আছো|কেমন আছেন)[!?. ]*$',
+      r'^(hi|hello|hey|hlw|hlo|helo|hi there|hello fybtt|hi fybtt|good morning|good afternoon|good evening)[!?. ]*$',
       caseSensitive: false,
     );
 
     if (greetingRegExp.hasMatch(cleanPrompt)) {
-      final bool isBengali = cleanPrompt.contains(RegExp(r'[\u0980-\u09FF]'));
-      final String quickReply = isBengali
-          ? 'হ্যালো! আজ আপনার পড়াশোনা বা কোনো বিষয়ের কনসেপ্ট বুঝতে কী সাহায্য করতে পারি?'
-          : 'Hello! How can I help you with your studies or concepts today?';
+      const String quickReply =
+          'Hello! How can I help you with your studies or concepts today?';
       _recordTurn(prompt, quickReply);
       return quickReply;
     }
