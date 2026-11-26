@@ -21,22 +21,17 @@ class GeminiService {
   bool _checkedFirestoreKeys = false;
 
   static const List<String> _geminiModels = [
+    'gemini-1.5-flash',
     'gemini-2.0-flash',
-    'gemini-2.5-flash',
-    'gemini-3.5-flash-lite',
-    'gemini-3.8-flash',
-    'gemini-3.1-pro',
-    'gemini-2.5-pro',
-    'gemini-4-argon',
+    'gemini-1.5-pro',
   ];
 
   static const List<String> _groqModels = [
-    'llama-3.1-8b-instant',
     'llama-3.3-70b-versatile',
+    'llama-3.1-8b-instant',
   ];
 
   static const List<String> _groqVisionModels = [
-    'meta-llama/llama-4-scout-17b-16e-instruct',
     'llama-3.2-90b-vision-preview',
     'llama-3.2-11b-vision-preview',
   ];
@@ -85,12 +80,12 @@ class GeminiService {
           .collection('app_config')
           .doc('ai_keys')
           .get()
-          .timeout(const Duration(seconds: 3));
+          .timeout(const Duration(seconds: 4));
 
       if (doc.exists && doc.data() != null) {
         final data = doc.data()!;
-        final String fbGemini = (data['geminiApiKey'] ?? '').toString().trim();
-        final String fbGroq = (data['groqApiKey'] ?? '').toString().trim();
+        final String fbGemini = (data['geminiApiKey'] ?? data['geminiKey'] ?? '').toString().trim();
+        final String fbGroq = (data['groqApiKey'] ?? data['groqKey'] ?? '').toString().trim();
         if (_resolvedGeminiKey.isEmpty && fbGemini.isNotEmpty) {
           _resolvedGeminiKey = fbGemini;
         }
@@ -102,6 +97,7 @@ class GeminiService {
   }
 
   void _recordTurn(String userPrompt, String aiResponse) {
+    if (aiResponse.trim().isEmpty) return;
     _conversationHistory.add({'role': 'user', 'content': userPrompt});
     _conversationHistory.add({'role': 'model', 'content': aiResponse});
     while (_conversationHistory.length > 20) {
@@ -661,7 +657,7 @@ Respond ONLY with a valid JSON object in English using this exact schema:
           headers: {'Content-Type': 'application/json'},
           body: jsonEncode(requestBody),
         )
-        .timeout(const Duration(seconds: 6));
+        .timeout(const Duration(seconds: 12));
 
     if (response.statusCode != 200) {
       throw Exception(
@@ -685,8 +681,13 @@ Respond ONLY with a valid JSON object in English using this exact schema:
 
     final StringBuffer replyBuffer = StringBuffer();
     for (final part in parts) {
-      if (part is Map && part['thought'] != true && part['text'] != null) {
-        replyBuffer.write(part['text'].toString());
+      if (part is Map && part['text'] != null) {
+        final String partText = part['text'].toString();
+        if (part['thought'] != true) {
+          replyBuffer.write(partText);
+        } else if (replyBuffer.isEmpty && parts.length == 1) {
+          replyBuffer.write(partText);
+        }
       }
     }
 
@@ -733,7 +734,7 @@ Respond ONLY with a valid JSON object in English using this exact schema:
                 'max_tokens': 1024,
               }),
             )
-            .timeout(const Duration(seconds: 6));
+            .timeout(const Duration(seconds: 12));
 
         if (response.statusCode == 200) {
           final Map<String, dynamic> data =
@@ -750,7 +751,7 @@ Respond ONLY with a valid JSON object in English using this exact schema:
             }
           }
         } else {
-          lastErr = 'Groq HTTP ${response.statusCode}';
+          lastErr = 'Groq HTTP ${response.statusCode}: ${response.body}';
         }
       } catch (e) {
         lastErr = e;
@@ -790,9 +791,11 @@ Respond ONLY with a valid JSON object in English using this exact schema:
             prompt: prompt,
             systemPrompt: systemPrompt,
           );
-          _activeModelIndex = idx;
-          _recordTurn(prompt, reply);
-          return reply;
+          if (reply.trim().isNotEmpty) {
+            _activeModelIndex = idx;
+            _recordTurn(prompt, reply.trim());
+            return reply.trim();
+          }
         } catch (e) {
           lastError = e;
           debugPrint('Gemini model $modelName fallback: $e');
@@ -802,14 +805,22 @@ Respond ONLY with a valid JSON object in English using this exact schema:
 
     if (_resolvedGroqKey.isNotEmpty) {
       try {
-        return await _callGroqDirectHttp(prompt, systemPrompt: systemPrompt);
+        final String groqReply =
+            await _callGroqDirectHttp(prompt, systemPrompt: systemPrompt);
+        if (groqReply.trim().isNotEmpty) {
+          return groqReply.trim();
+        }
       } catch (e) {
         lastError = e;
         debugPrint('Groq fallback failed: $e');
       }
     }
 
-    throw Exception(lastError ?? 'AI assistant is currently busy. Please try again.');
+    if (lastError != null) {
+      debugPrint('AI Assistant generation error: $lastError');
+    }
+
+    return 'I apologize, but I encountered a temporary network or quota issue while processing your request. Please try asking again in a moment.';
   }
 
   Stream<String> generateContentStream(
@@ -827,7 +838,11 @@ Respond ONLY with a valid JSON object in English using this exact schema:
         systemPrompt: systemPrompt,
       );
 
-      final List<String> words = fullResponse.split(' ');
+      final String sanitized = fullResponse.trim().isNotEmpty
+          ? fullResponse
+          : 'I am here to help! Please ask your question again.';
+
+      final List<String> words = sanitized.split(' ');
       final StringBuffer chunk = StringBuffer();
 
       for (int i = 0; i < words.length; i++) {
@@ -835,7 +850,7 @@ Respond ONLY with a valid JSON object in English using this exact schema:
         if (i % 3 == 2 || i == words.length - 1) {
           yield chunk.toString();
           chunk.clear();
-          await Future.delayed(const Duration(milliseconds: 12));
+          await Future.delayed(const Duration(milliseconds: 14));
         }
       }
     } finally {
@@ -845,10 +860,11 @@ Respond ONLY with a valid JSON object in English using this exact schema:
 
   Future<String?> sendChatMessage(String prompt) async {
     try {
-      return await generateContent(prompt);
+      final res = await generateContent(prompt);
+      return res.trim().isNotEmpty ? res : null;
     } catch (e) {
       debugPrint('sendChatMessage error: $e');
-      return null;
+      return 'I am sorry, but I am unable to connect to the educational database right now. Please verify your internet connection and try again.';
     }
   }
 
