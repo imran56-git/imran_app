@@ -24,7 +24,7 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
 
   LocationSearchMode _locationMode = LocationSearchMode.currentGps;
   String _selectedRadius = '25 KM';
-  bool _isSearchButtonEnabled = false;
+  bool _isSearchButtonEnabled = true;
   bool _isFetchingGps = false;
 
   double? _pickedLatitude;
@@ -54,6 +54,7 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
     _subjectController.addListener(_validateSearchForm);
     _locationController.addListener(_validateSearchForm);
     _experienceController.addListener(_validateSearchForm);
+    _validateSearchForm();
   }
 
   @override
@@ -104,7 +105,7 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
       _pickedLatitude = null;
       _pickedLongitude = null;
       _pickedAddress = null;
-      _isSearchButtonEnabled = false;
+      _isSearchButtonEnabled = true;
     });
   }
 
@@ -118,24 +119,39 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
           initialAddress: _locationController.text.trim().isNotEmpty
               ? _locationController.text.trim()
               : _pickedAddress,
+          isStudentSearchMode: true,
         ),
       ),
     );
 
-    if (result != null && result is List && result.isNotEmpty) {
-      final first = result.first as Map<String, dynamic>;
-      final lat = (first['latitude'] as num?)?.toDouble();
-      final lng = (first['longitude'] as num?)?.toDouble();
-      final addr = (first['fullAddress'] ?? first['address'] ?? '').toString();
+    if (result == null) return;
 
+    double? lat;
+    double? lng;
+    String addr = '';
+
+    if (result is Map<String, dynamic>) {
+      lat = (result['latitude'] as num?)?.toDouble();
+      lng = (result['longitude'] as num?)?.toDouble();
+      addr = (result['address'] ?? result['fullAddress'] ?? '').toString().trim();
+    } else if (result is List && result.isNotEmpty) {
+      final first = result.first as Map<String, dynamic>;
+      lat = (first['latitude'] as num?)?.toDouble();
+      lng = (first['longitude'] as num?)?.toDouble();
+      addr = (first['fullAddress'] ?? first['address'] ?? '').toString().trim();
+    }
+
+    if (lat != null && lng != null) {
       setState(() {
         _pickedLatitude = lat;
         _pickedLongitude = lng;
         _pickedAddress = addr;
         _locationController.text = addr;
         _locationMode = LocationSearchMode.specificLocation;
+        _isSearchButtonEnabled = true;
       });
       _validateSearchForm();
+      await _navigateToResults();
     }
   }
 
@@ -161,8 +177,7 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
       double? activeLat = _pickedLatitude;
       double? activeLng = _pickedLongitude;
 
-      if (_locationMode == LocationSearchMode.currentGps &&
-          (activeLat == null || activeLng == null)) {
+      if (_locationMode == LocationSearchMode.currentGps) {
         setState(() => _isFetchingGps = true);
         try {
           final pos = await LocationService.getCurrentLocation();
