@@ -1,3 +1,6 @@
+Here is the complete, modified code for `lib/screens/teacher_profile_screen.dart` passing `isViewOnly: true` to `LocationPickerScreen`:
+
+```dart
 import 'dart:async';
 import 'dart:ui';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -2919,6 +2922,7 @@ class _TeacherProfileScreenState extends State<TeacherProfileScreen>
                           initialLatitude: loc.latitude,
                           initialLongitude: loc.longitude,
                           initialAddress: loc.address,
+                          isViewOnly: true,
                         ),
                       ),
                     );
