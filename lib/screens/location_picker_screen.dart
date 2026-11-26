@@ -7,11 +7,12 @@ import 'package:flutter_animate/flutter_animate.dart';
 import '../services/location_service.dart';
 
 class LocationPickerScreen extends StatefulWidget {
-  final List<Map<String, dynamic>>? initialLocations;
+  final List>? initialLocations;
   final double? initialLatitude;
   final double? initialLongitude;
   final String? initialAddress;
   final bool isViewOnly;
+  final bool isStudentSearchMode;
 
   const LocationPickerScreen({
     super.key,
@@ -20,6 +21,7 @@ class LocationPickerScreen extends StatefulWidget {
     this.initialLongitude,
     this.initialAddress,
     this.isViewOnly = false,
+    this.isStudentSearchMode = false,
   });
 
   @override
@@ -34,7 +36,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
   static const Color kSlateSurface = Color(0xFFF8FAFC);
   static const Color kCardBorder = Color(0xFFE2E8F0);
 
-  final List<Map<String, dynamic>> selectedLocations = [];
+  final List> selectedLocations = [];
   final TextEditingController _searchController = TextEditingController();
   GoogleMapController? _mapController;
 
@@ -63,7 +65,9 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
       _draggedAddress = widget.initialAddress!;
     }
 
-    if (widget.initialLocations != null && widget.initialLocations!.isNotEmpty) {
+    if (!widget.isStudentSearchMode &&
+        widget.initialLocations != null &&
+        widget.initialLocations!.isNotEmpty) {
       for (final loc in widget.initialLocations!) {
         final entry = Map<String, dynamic>.from(loc);
         entry['fullAddress'] ??= entry['address'] ?? '';
@@ -224,6 +228,14 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
       _currentMapType = _currentMapType == MapType.normal
           ? MapType.hybrid
           : MapType.normal;
+    });
+  }
+
+  void _confirmStudentSearchLocation() {
+    Navigator.pop(context, {
+      'latitude': _currentCenterPosition.latitude,
+      'longitude': _currentCenterPosition.longitude,
+      'address': _draggedAddress,
     });
   }
 
@@ -542,21 +554,23 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
     final circles = <Circle>{};
 
     if (!widget.isViewOnly) {
-      circles.addAll(
-        selectedLocations.map((loc) {
-          final lat = (loc['latitude'] as num).toDouble();
-          final lng = (loc['longitude'] as num).toDouble();
-          final radKm = (loc['radiusKm'] as num?)?.toDouble() ?? 10.0;
-          return Circle(
-            circleId: CircleId('circle_${lat}_$lng'),
-            center: LatLng(lat, lng),
-            radius: radKm * 1000,
-            fillColor: kBrandBlue.withOpacity(0.12),
-            strokeColor: kBrandBlue,
-            strokeWidth: 2,
-          );
-        }),
-      );
+      if (!widget.isStudentSearchMode) {
+        circles.addAll(
+          selectedLocations.map((loc) {
+            final lat = (loc['latitude'] as num).toDouble();
+            final lng = (loc['longitude'] as num).toDouble();
+            final radKm = (loc['radiusKm'] as num?)?.toDouble() ?? 10.0;
+            return Circle(
+              circleId: CircleId('circle_${lat}_$lng'),
+              center: LatLng(lat, lng),
+              radius: radKm * 1000,
+              fillColor: kBrandBlue.withOpacity(0.12),
+              strokeColor: kBrandBlue,
+              strokeWidth: 2,
+            );
+          }),
+        );
+      }
 
       circles.add(
         Circle(
@@ -584,7 +598,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
           ),
         ),
       );
-    } else {
+    } else if (!widget.isStudentSearchMode) {
       markers.addAll(
         selectedLocations.asMap().entries.map((entry) {
           final idx = entry.key;
@@ -668,7 +682,11 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
                           ],
                         ),
                         child: Text(
-                          _isDragging ? "Moving pointer..." : "Selected Target",
+                          _isDragging
+                              ? "Moving pointer..."
+                              : (widget.isStudentSearchMode
+                                  ? "Search Center"
+                                  : "Selected Target"),
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: 11,
@@ -765,7 +783,9 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
                             onSubmitted: _searchLocation,
                             onChanged: (val) => setState(() {}),
                             decoration: InputDecoration(
-                              hintText: "Search tuition hubs, areas, landmarks...",
+                              hintText: widget.isStudentSearchMode
+                                  ? "Search area, landmark, or city..."
+                                  : "Search tuition hubs, areas, landmarks...",
                               hintStyle: TextStyle(
                                 color: Colors.grey.shade400,
                                 fontSize: 13,
@@ -811,7 +831,9 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
             right: 16,
             bottom: widget.isViewOnly
                 ? 120
-                : (selectedLocations.isNotEmpty ? 270 : 180),
+                : (widget.isStudentSearchMode
+                    ? 190
+                    : (selectedLocations.isNotEmpty ? 270 : 180)),
             child: Column(
               children: [
                 FloatingActionButton.small(
@@ -927,337 +949,433 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
                       ],
                     ),
                   ).animate().slideY(begin: 0.4, duration: 250.ms, curve: Curves.easeOut)
-                : Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                : widget.isStudentSearchMode
+                    ? Container(
+                        margin: EdgeInsets.only(
+                          left: 16,
+                          right: 16,
+                          bottom: MediaQuery.of(context).padding.bottom + 16,
+                        ),
+                        padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
                           color: Colors.white,
-                          borderRadius: BorderRadius.circular(18),
+                          borderRadius: BorderRadius.circular(20),
                           boxShadow: const [
                             BoxShadow(
-                              color: Color(0x18000000),
-                              blurRadius: 14,
-                              offset: Offset(0, 3),
+                              color: Color(0x1F000000),
+                              blurRadius: 18,
+                              offset: Offset(0, 4),
                             )
                           ],
                         ),
-                        child: Row(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
                           children: [
-                            Container(
-                              padding: const EdgeInsets.all(8),
-                              decoration: BoxDecoration(
-                                color: kAccentAmber.withOpacity(0.12),
-                                shape: BoxShape.circle,
-                              ),
-                              child: const Icon(
-                                Icons.radar_rounded,
-                                color: kAccentAmber,
-                                size: 20,
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Text(
-                                    "Target Pointer Position",
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      color: Color(0xFF64748B),
-                                      fontWeight: FontWeight.bold,
-                                      letterSpacing: 0.2,
-                                    ),
+                            Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(10),
+                                  decoration: BoxDecoration(
+                                    color: kAccentAmber.withOpacity(0.14),
+                                    shape: BoxShape.circle,
                                   ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    _isDragging ? "Updating location..." : _draggedAddress,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w700,
-                                      color: kDeepNavy,
-                                    ),
+                                  child: const Icon(
+                                    Icons.location_on_rounded,
+                                    color: kAccentAmber,
+                                    size: 22,
                                   ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            ElevatedButton(
-                              onPressed: _isDragging ? null : _openPinDetailsModal,
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: kDeepNavy,
-                                foregroundColor: Colors.white,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
                                 ),
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 16,
-                                  vertical: 10,
-                                ),
-                                elevation: 0,
-                              ),
-                              child: const Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(Icons.add_location_alt_rounded, size: 16),
-                                  SizedBox(width: 4),
-                                  Text(
-                                    "Pin Area",
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 13,
-                                    ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      const Text(
+                                        "Selected Search Area",
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: Color(0xFF64748B),
+                                          fontWeight: FontWeight.bold,
+                                          letterSpacing: 0.2,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        _isDragging
+                                            ? "Updating location..."
+                                            : _draggedAddress,
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w700,
+                                          color: kDeepNavy,
+                                        ),
+                                      ),
+                                    ],
                                   ),
-                                ],
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 14),
+                            SizedBox(
+                              width: double.infinity,
+                              height: 48,
+                              child: ElevatedButton.icon(
+                                onPressed:
+                                    _isDragging ? null : _confirmStudentSearchLocation,
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: kBrandBlue,
+                                  foregroundColor: Colors.white,
+                                  elevation: 0,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(14),
+                                  ),
+                                ),
+                                icon: const Icon(Icons.search_rounded, size: 20),
+                                label: const Text(
+                                  "Select This Location",
+                                  style: TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
                               ),
                             ),
                           ],
                         ),
-                      ).animate().slideY(begin: 0.6, duration: 250.ms, curve: Curves.easeOut),
+                      ).animate().slideY(begin: 0.4, duration: 250.ms, curve: Curves.easeOut)
+                    : Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(18),
+                              boxShadow: const [
+                                BoxShadow(
+                                  color: Color(0x18000000),
+                                  blurRadius: 14,
+                                  offset: Offset(0, 3),
+                                )
+                              ],
+                            ),
+                            child: Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    color: kAccentAmber.withOpacity(0.12),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: const Icon(
+                                    Icons.radar_rounded,
+                                    color: kAccentAmber,
+                                    size: 20,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      const Text(
+                                        "Target Pointer Position",
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: Color(0xFF64748B),
+                                          fontWeight: FontWeight.bold,
+                                          letterSpacing: 0.2,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        _isDragging ? "Updating location..." : _draggedAddress,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w700,
+                                          color: kDeepNavy,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                ElevatedButton(
+                                  onPressed: _isDragging ? null : _openPinDetailsModal,
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: kDeepNavy,
+                                    foregroundColor: Colors.white,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                      vertical: 10,
+                                    ),
+                                    elevation: 0,
+                                  ),
+                                  child: const Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.add_location_alt_rounded, size: 16),
+                                      SizedBox(width: 4),
+                                      Text(
+                                        "Pin Area",
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 13,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ).animate().slideY(begin: 0.6, duration: 250.ms, curve: Curves.easeOut),
 
-                      if (selectedLocations.isNotEmpty)
-                        Container(
-                          decoration: const BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Color(0x1A000000),
-                                blurRadius: 20,
-                                offset: Offset(0, -4),
-                              )
-                            ],
-                          ),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Padding(
-                                padding: const EdgeInsets.fromLTRB(20, 14, 16, 6),
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
+                          if (selectedLocations.isNotEmpty)
+                            Container(
+                              decoration: const BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Color(0x1A000000),
+                                    blurRadius: 20,
+                                    offset: Offset(0, -4),
+                                  )
+                                ],
+                              ),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Padding(
+                                    padding: const EdgeInsets.fromLTRB(20, 14, 16, 6),
+                                    child: Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                       children: [
-                                        Text(
-                                          '${selectedLocations.length} Teaching Hub${selectedLocations.length > 1 ? 's' : ''} Selected',
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.w800,
-                                            fontSize: 15,
-                                            color: kDeepNavy,
-                                          ),
+                                        Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              '${selectedLocations.length} Teaching Hub${selectedLocations.length > 1 ? 's' : ''} Selected',
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.w800,
+                                                fontSize: 15,
+                                                color: kDeepNavy,
+                                              ),
+                                            ),
+                                            const Text(
+                                              "10 KM radius student matching coverage",
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                color: Color(0xFF64748B),
+                                              ),
+                                            ),
+                                          ],
                                         ),
-                                        const Text(
-                                          "10 KM radius student matching coverage",
-                                          style: TextStyle(
-                                            fontSize: 11,
-                                            color: Color(0xFF64748B),
+                                        TextButton(
+                                          onPressed: () => setState(() => selectedLocations.clear()),
+                                          child: const Text(
+                                            "Clear All",
+                                            style: TextStyle(
+                                              color: Color(0xFFE11D48),
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 12,
+                                            ),
                                           ),
-                                        ),
+                                        )
                                       ],
                                     ),
-                                    TextButton(
-                                      onPressed: () => setState(() => selectedLocations.clear()),
-                                      child: const Text(
-                                        "Clear All",
-                                        style: TextStyle(
-                                          color: Color(0xFFE11D48),
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 12,
-                                        ),
-                                      ),
-                                    )
-                                  ],
-                                ),
-                              ),
-                              const Divider(height: 1, color: Color(0xFFF1F5F9)),
-                              SizedBox(
-                                height: 124,
-                                child: ListView.builder(
-                                  scrollDirection: Axis.horizontal,
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 16,
-                                    vertical: 10,
                                   ),
-                                  itemCount: selectedLocations.length,
-                                  itemBuilder: (context, index) {
-                                    final item = selectedLocations[index];
-                                    final locName = item['locationName'] ?? 'Teaching Hub';
-                                    final locType = item['locationType'] ?? 'Centre';
-                                    final teachMode =
-                                        (item['teachingMode'] ?? 'Offline').toString().toUpperCase();
-                                    final displayAddr =
-                                        (item['fullAddress'] ?? item['address'] ?? '').toString();
-
-                                    return Container(
-                                      width: 240,
-                                      margin: const EdgeInsets.only(right: 12),
-                                      padding: const EdgeInsets.all(12),
-                                      decoration: BoxDecoration(
-                                        color: kSlateSurface,
-                                        borderRadius: BorderRadius.circular(16),
-                                        border: Border.all(color: kCardBorder),
+                                  const Divider(height: 1, color: Color(0xFFF1F5F9)),
+                                  SizedBox(
+                                    height: 124,
+                                    child: ListView.builder(
+                                      scrollDirection: Axis.horizontal,
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 16,
+                                        vertical: 10,
                                       ),
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                        children: [
-                                          Row(
+                                      itemCount: selectedLocations.length,
+                                      itemBuilder: (context, index) {
+                                        final item = selectedLocations[index];
+                                        final locName = item['locationName'] ?? 'Teaching Hub';
+                                        final locType = item['locationType'] ?? 'Centre';
+                                        final teachMode =
+                                            (item['teachingMode'] ?? 'Offline').toString().toUpperCase();
+                                        final displayAddr =
+                                            (item['fullAddress'] ?? item['address'] ?? '').toString();
+
+                                        return Container(
+                                          width: 240,
+                                          margin: const EdgeInsets.only(right: 12),
+                                          padding: const EdgeInsets.all(12),
+                                          decoration: BoxDecoration(
+                                            color: kSlateSurface,
+                                            borderRadius: BorderRadius.circular(16),
+                                            border: Border.all(color: kCardBorder),
+                                          ),
+                                          child: Column(
                                             crossAxisAlignment: CrossAxisAlignment.start,
+                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                             children: [
-                                              Container(
-                                                padding: const EdgeInsets.all(4),
-                                                decoration: BoxDecoration(
-                                                  color: kBrandBlue.withOpacity(0.1),
-                                                  shape: BoxShape.circle,
-                                                ),
-                                                child: const Icon(
-                                                  Icons.location_on_rounded,
-                                                  color: kBrandBlue,
-                                                  size: 14,
-                                                ),
+                                              Row(
+                                                crossAxisAlignment: CrossAxisAlignment.start,
+                                                children: [
+                                                  Container(
+                                                    padding: const EdgeInsets.all(4),
+                                                    decoration: BoxDecoration(
+                                                      color: kBrandBlue.withOpacity(0.1),
+                                                      shape: BoxShape.circle,
+                                                    ),
+                                                    child: const Icon(
+                                                      Icons.location_on_rounded,
+                                                      color: kBrandBlue,
+                                                      size: 14,
+                                                    ),
+                                                  ),
+                                                  const SizedBox(width: 8),
+                                                  Expanded(
+                                                    child: Column(
+                                                      crossAxisAlignment:
+                                                          CrossAxisAlignment.start,
+                                                      children: [
+                                                        Text(
+                                                          locName.toString(),
+                                                          maxLines: 1,
+                                                          overflow: TextOverflow.ellipsis,
+                                                          style: const TextStyle(
+                                                            fontSize: 13,
+                                                            fontWeight: FontWeight.w700,
+                                                            color: kDeepNavy,
+                                                          ),
+                                                        ),
+                                                        Text(
+                                                          displayAddr,
+                                                          maxLines: 1,
+                                                          overflow: TextOverflow.ellipsis,
+                                                          style: const TextStyle(
+                                                            fontSize: 11,
+                                                            color: Color(0xFF64748B),
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ),
+                                                  InkWell(
+                                                    onTap: () => _removeLocation(index),
+                                                    child: Container(
+                                                      padding: const EdgeInsets.all(4),
+                                                      decoration: BoxDecoration(
+                                                        color: Colors.red.shade50,
+                                                        shape: BoxShape.circle,
+                                                      ),
+                                                      child: Icon(
+                                                        Icons.close_rounded,
+                                                        size: 14,
+                                                        color: Colors.red.shade600,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ],
                                               ),
-                                              const SizedBox(width: 8),
-                                              Expanded(
-                                                child: Column(
-                                                  crossAxisAlignment:
-                                                      CrossAxisAlignment.start,
-                                                  children: [
-                                                    Text(
-                                                      locName.toString(),
-                                                      maxLines: 1,
-                                                      overflow: TextOverflow.ellipsis,
+                                              Row(
+                                                children: [
+                                                  Container(
+                                                    padding: const EdgeInsets.symmetric(
+                                                      horizontal: 7,
+                                                      vertical: 2,
+                                                    ),
+                                                    decoration: BoxDecoration(
+                                                      color: Colors.white,
+                                                      borderRadius: BorderRadius.circular(6),
+                                                      border: Border.all(
+                                                        color: Colors.grey.shade300,
+                                                      ),
+                                                    ),
+                                                    child: Text(
+                                                      locType.toString(),
                                                       style: const TextStyle(
-                                                        fontSize: 13,
-                                                        fontWeight: FontWeight.w700,
+                                                        fontSize: 10,
+                                                        fontWeight: FontWeight.w600,
                                                         color: kDeepNavy,
                                                       ),
                                                     ),
-                                                    Text(
-                                                      displayAddr,
-                                                      maxLines: 1,
-                                                      overflow: TextOverflow.ellipsis,
-                                                      style: const TextStyle(
-                                                        fontSize: 11,
-                                                        color: Color(0xFF64748B),
+                                                  ),
+                                                  const SizedBox(width: 6),
+                                                  Container(
+                                                    padding: const EdgeInsets.symmetric(
+                                                      horizontal: 7,
+                                                      vertical: 2,
+                                                    ),
+                                                    decoration: BoxDecoration(
+                                                      color: kAccentAmber.withOpacity(0.15),
+                                                      borderRadius: BorderRadius.circular(6),
+                                                    ),
+                                                    child: Text(
+                                                      teachMode,
+                                                      style: TextStyle(
+                                                        fontSize: 9,
+                                                        fontWeight: FontWeight.w700,
+                                                        color: Colors.amber.shade900,
                                                       ),
                                                     ),
-                                                  ],
-                                                ),
-                                              ),
-                                              InkWell(
-                                                onTap: () => _removeLocation(index),
-                                                child: Container(
-                                                  padding: const EdgeInsets.all(4),
-                                                  decoration: BoxDecoration(
-                                                    color: Colors.red.shade50,
-                                                    shape: BoxShape.circle,
                                                   ),
-                                                  child: Icon(
-                                                    Icons.close_rounded,
-                                                    size: 14,
-                                                    color: Colors.red.shade600,
+                                                  const Spacer(),
+                                                  const Text(
+                                                    "10 KM",
+                                                    style: TextStyle(
+                                                      fontSize: 10,
+                                                      fontWeight: FontWeight.w600,
+                                                      color: Color(0xFF64748B),
+                                                    ),
                                                   ),
-                                                ),
-                                              ),
+                                                ],
+                                              )
                                             ],
                                           ),
-                                          Row(
-                                            children: [
-                                              Container(
-                                                padding: const EdgeInsets.symmetric(
-                                                  horizontal: 7,
-                                                  vertical: 2,
-                                                ),
-                                                decoration: BoxDecoration(
-                                                  color: Colors.white,
-                                                  borderRadius: BorderRadius.circular(6),
-                                                  border: Border.all(
-                                                    color: Colors.grey.shade300,
-                                                  ),
-                                                ),
-                                                child: Text(
-                                                  locType.toString(),
-                                                  style: const TextStyle(
-                                                    fontSize: 10,
-                                                    fontWeight: FontWeight.w600,
-                                                    color: kDeepNavy,
-                                                  ),
-                                                ),
-                                              ),
-                                              const SizedBox(width: 6),
-                                              Container(
-                                                padding: const EdgeInsets.symmetric(
-                                                  horizontal: 7,
-                                                  vertical: 2,
-                                                ),
-                                                decoration: BoxDecoration(
-                                                  color: kAccentAmber.withOpacity(0.15),
-                                                  borderRadius: BorderRadius.circular(6),
-                                                ),
-                                                child: Text(
-                                                  teachMode,
-                                                  style: TextStyle(
-                                                    fontSize: 9,
-                                                    fontWeight: FontWeight.w700,
-                                                    color: Colors.amber.shade900,
-                                                  ),
-                                                ),
-                                              ),
-                                              const Spacer(),
-                                              const Text(
-                                                "10 KM",
-                                                style: TextStyle(
-                                                  fontSize: 10,
-                                                  fontWeight: FontWeight.w600,
-                                                  color: Color(0xFF64748B),
-                                                ),
-                                              ),
-                                            ],
-                                          )
-                                        ],
-                                      ),
-                                    );
-                                  },
-                                ),
-                              ),
-                              Padding(
-                                padding: const EdgeInsets.fromLTRB(16, 4, 16, 14),
-                                child: SizedBox(
-                                  width: double.infinity,
-                                  height: 48,
-                                  child: ElevatedButton(
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: kAccentAmber,
-                                      foregroundColor: kDeepNavy,
-                                      elevation: 0,
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(14),
-                                      ),
+                                        );
+                                      },
                                     ),
-                                    onPressed: () {
-                                      Navigator.pop(context, selectedLocations);
-                                    },
-                                    child: const Text(
-                                      "Save Active Teaching Areas",
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.w800,
-                                        fontSize: 15,
+                                  ),
+                                  Padding(
+                                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 14),
+                                    child: SizedBox(
+                                      width: double.infinity,
+                                      height: 48,
+                                      child: ElevatedButton(
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: kAccentAmber,
+                                          foregroundColor: kDeepNavy,
+                                          elevation: 0,
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(14),
+                                          ),
+                                        ),
+                                        onPressed: () {
+                                          Navigator.pop(context, selectedLocations);
+                                        },
+                                        child: const Text(
+                                          "Save Active Teaching Areas",
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.w800,
+                                            fontSize: 15,
+                                          ),
+                                        ),
                                       ),
                                     ),
                                   ),
-                                ),
+                                ],
                               ),
-                            ],
-                          ),
-                        ).animate().slideY(begin: 0.4, duration: 250.ms),
-                    ],
-                  ),
+                            ).animate().slideY(begin: 0.4, duration: 250.ms),
+                        ],
+                      ),
           )
         ],
       ),
