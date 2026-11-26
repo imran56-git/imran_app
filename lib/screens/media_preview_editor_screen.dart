@@ -34,11 +34,15 @@ class OverlayItem {
 class MediaPreviewEditorScreen extends StatefulWidget {
   final File file;
   final String? initialCaption;
+  final bool isAlbum;
+  final bool isVideo;
 
   const MediaPreviewEditorScreen({
     super.key,
     required this.file,
     this.initialCaption,
+    this.isAlbum = false,
+    this.isVideo = false,
   });
 
   @override
@@ -74,12 +78,24 @@ class _MediaPreviewEditorScreenState extends State<MediaPreviewEditorScreen> {
   }
 
   bool get _isImage {
+    if (widget.isVideo) return false;
     final ext = _currentFile.path.toLowerCase();
     return ext.endsWith('.jpg') ||
         ext.endsWith('.jpeg') ||
         ext.endsWith('.png') ||
         ext.endsWith('.webp') ||
         ext.endsWith('.heic');
+  }
+
+  bool get _isVideo {
+    if (widget.isVideo) return true;
+    final ext = _currentFile.path.toLowerCase();
+    return ext.endsWith('.mp4') ||
+        ext.endsWith('.mov') ||
+        ext.endsWith('.avi') ||
+        ext.endsWith('.mkv') ||
+        ext.endsWith('.webm') ||
+        ext.endsWith('.3gp');
   }
 
   String get _fileName {
@@ -136,7 +152,7 @@ class _MediaPreviewEditorScreenState extends State<MediaPreviewEditorScreen> {
                 style: TextStyle(color: Colors.white),
               ),
               content: Column(
-                mainAxisSize: MainAxisSize.min,
+                mainAxisSize: dynamic,
                 children: [
                   TextField(
                     controller: textController,
@@ -438,6 +454,63 @@ class _MediaPreviewEditorScreenState extends State<MediaPreviewEditorScreen> {
     );
   }
 
+  Widget _buildVideoPreview() {
+    return Center(
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 32),
+        padding: const EdgeInsets.all(28),
+        decoration: BoxDecoration(
+          color: const Color(0xFF1E2428),
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.4),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.redAccent.withOpacity(0.15),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.videocam_rounded,
+                color: Colors.redAccent,
+                size: 64,
+              ),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              _fileName,
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              _fileSizeString,
+              style: const TextStyle(
+                color: Colors.white54,
+                fontSize: 13,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildDocumentPreview() {
     return Center(
       child: Container(
@@ -518,9 +591,14 @@ class _MediaPreviewEditorScreenState extends State<MediaPreviewEditorScreen> {
                 maxLines: 4,
                 minLines: 1,
                 style: const TextStyle(color: Colors.white, fontSize: 15),
-                decoration: const InputDecoration(
-                  hintText: 'Add a caption...',
-                  hintStyle: TextStyle(color: Colors.white54, fontSize: 15),
+                decoration: InputDecoration(
+                  hintText: _isVideo
+                      ? 'Add a caption for this video...'
+                      : (widget.isAlbum
+                          ? 'Add a caption for this album...'
+                          : 'Add a caption...'),
+                  hintStyle:
+                      const TextStyle(color: Colors.white54, fontSize: 15),
                   border: InputBorder.none,
                 ),
               ),
@@ -567,7 +645,9 @@ class _MediaPreviewEditorScreenState extends State<MediaPreviewEditorScreen> {
       body: Stack(
         children: [
           Positioned.fill(
-            child: _isImage ? _buildImagePreview() : _buildDocumentPreview(),
+            child: _isImage
+                ? _buildImagePreview()
+                : (_isVideo ? _buildVideoPreview() : _buildDocumentPreview()),
           ),
           Positioned(
             top: 0,
