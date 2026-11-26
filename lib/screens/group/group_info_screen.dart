@@ -1,6 +1,3 @@
-Here is the complete, modified code for `lib/screens/group_info_screen.dart` with the redundant camera edit overlay removed from the main view group avatar, and the verified badge cleanly positioned in the bottom-right corner. The photo edit option remains fully intact inside the separate Edit Group modal:
-
-```dart
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
