@@ -626,12 +626,36 @@ class _TeachingLocationCardWidgetState extends State<TeachingLocationCardWidget>
               child: const Text('Edit', style: TextStyle(color: _navy)),
             ),
           ),
-          const SizedBox(width: 4),
-          IconButton(
-            onPressed: widget.onViewOnMap,
-            icon: const Icon(Icons.map_outlined, size: 18, color: _mutedSlate),
-            tooltip: 'View on Map',
-            splashRadius: 18,
+          const SizedBox(width: 8),
+          Material(
+            color: const Color(0xFFEFF6FF),
+            borderRadius: BorderRadius.circular(8),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(8),
+              onTap: widget.onViewOnMap,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0xFFBFDBFE), width: 1.2),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.map_rounded, size: 16, color: _accentBlue),
+                    SizedBox(width: 4),
+                    Text(
+                      'Map',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: _accentBlue,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ),
         ],
       );
@@ -671,12 +695,36 @@ class _TeachingLocationCardWidgetState extends State<TeachingLocationCardWidget>
             ),
           ),
         ),
-        const SizedBox(width: 4),
-        IconButton(
-          onPressed: widget.onViewOnMap,
-          icon: const Icon(Icons.explore_outlined, size: 18, color: _brandBlue),
-          tooltip: 'Map Location',
-          splashRadius: 18,
+        const SizedBox(width: 8),
+        Material(
+          color: const Color(0xFFEFF6FF),
+          borderRadius: BorderRadius.circular(8),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(8),
+            onTap: widget.onViewOnMap,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0xFFBFDBFE), width: 1.2),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.map_rounded, size: 16, color: _accentBlue),
+                  SizedBox(width: 4),
+                  Text(
+                    'View on Map',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: _accentBlue,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ),
       ],
     );
