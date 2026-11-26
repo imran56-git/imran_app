@@ -359,18 +359,30 @@ class _ChatInputBarState extends State<ChatInputBar> {
             );
           }
         } else {
-          setState(() {
-            for (final img in images) {
-              _trayItems.add(
-                TrayMediaItem(
-                  id: '${DateTime.now().microsecondsSinceEpoch}_${img.name}',
-                  file: File(img.path),
-                  isImage: true,
-                  fileName: img.name,
-                ),
-              );
-            }
-          });
+          final List<File> files = images.map((x) => File(x.path)).toList();
+          if (!mounted) return;
+          final MediaEditorResult? result =
+              await Navigator.push<MediaEditorResult>(
+            context,
+            MaterialPageRoute(
+              builder: (_) => MediaPreviewEditorScreen(
+                file: files.first,
+                isAlbum: true,
+                albumCount: files.length,
+              ),
+            ),
+          );
+          if (result != null) {
+            if (mounted) setState(() => _isUploading = true);
+            await _chatService.sendMediaAlbum(
+              chatRoomId: _effectiveChatRoomId,
+              senderId: widget.senderId,
+              receiverId: widget.receiverId,
+              files: files,
+              caption: result.caption,
+              messageCategory: _attachmentCategory,
+            );
+          }
         }
       } else if (type == 'camera') {
         final XFile? image = await _imagePicker.pickImage(
@@ -453,14 +465,29 @@ class _ChatInputBarState extends State<ChatInputBar> {
         final XFile? video =
             await _imagePicker.pickVideo(source: ImageSource.gallery);
         if (video != null && video.path.isNotEmpty) {
-          setState(() => _isUploading = true);
-          await _chatService.sendVideoFile(
-            chatRoomId: _effectiveChatRoomId,
-            senderId: widget.senderId,
-            receiverId: widget.receiverId,
-            file: File(video.path),
-            messageCategory: _attachmentCategory,
+          final singleFile = File(video.path);
+          if (!mounted) return;
+          final MediaEditorResult? result =
+              await Navigator.push<MediaEditorResult>(
+            context,
+            MaterialPageRoute(
+              builder: (_) => MediaPreviewEditorScreen(
+                file: singleFile,
+                isVideo: true,
+              ),
+            ),
           );
+          if (result != null) {
+            setState(() => _isUploading = true);
+            await _chatService.sendVideoFile(
+              chatRoomId: _effectiveChatRoomId,
+              senderId: widget.senderId,
+              receiverId: widget.receiverId,
+              file: result.file,
+              caption: result.caption,
+              messageCategory: _attachmentCategory,
+            );
+          }
         }
       } else if (type == 'audio') {
         final FilePickerResult? result =
@@ -513,6 +540,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
           senderId: widget.senderId,
           receiverId: widget.receiverId,
           file: file,
+          caption: caption.trim().isNotEmpty ? caption.trim() : null,
           messageCategory: _attachmentCategory,
         );
       } else {
@@ -524,16 +552,16 @@ class _ChatInputBarState extends State<ChatInputBar> {
           fileName: fileName ?? file.path.split(Platform.pathSeparator).last,
           messageCategory: _attachmentCategory,
         );
-      }
-      if (caption.trim().isNotEmpty) {
-        await _chatService.sendMessage(
-          chatId: _effectiveChatRoomId,
-          senderId: widget.senderId,
-          receiverId: widget.receiverId,
-          message: caption.trim(),
-          type: 'text',
-          messageCategory: _attachmentCategory,
-        );
+        if (caption.trim().isNotEmpty) {
+          await _chatService.sendMessage(
+            chatId: _effectiveChatRoomId,
+            senderId: widget.senderId,
+            receiverId: widget.receiverId,
+            message: caption.trim(),
+            type: 'text',
+            messageCategory: _attachmentCategory,
+          );
+        }
       }
     } finally {
       if (mounted) setState(() => _isUploading = false);
@@ -613,25 +641,48 @@ class _ChatInputBarState extends State<ChatInputBar> {
     });
 
     try {
-      for (final item in itemsToSend) {
-        if (item.isImage) {
-          await _chatService.sendImageFile(
-            chatRoomId: _effectiveChatRoomId,
-            senderId: widget.senderId,
-            receiverId: widget.receiverId,
-            file: item.file,
-            messageCategory: _attachmentCategory,
-          );
-        } else {
-          await _chatService.sendDocumentFile(
-            chatRoomId: _effectiveChatRoomId,
-            senderId: widget.senderId,
-            receiverId: widget.receiverId,
-            file: item.file,
-            fileName: item.fileName,
-            messageCategory: _attachmentCategory,
-          );
-        }
+      final List<TrayMediaItem> imageItems =
+          itemsToSend.where((i) => i.isImage).toList();
+      final List<TrayMediaItem> nonImageItems =
+          itemsToSend.where((i) => !i.isImage).toList();
+
+      if (imageItems.length > 1) {
+        final List<File> files = imageItems.map((i) => i.file).toList();
+        final String? firstCaption = imageItems
+            .firstWhere(
+              (i) => i.caption != null && i.caption!.trim().isNotEmpty,
+              orElse: () => imageItems.first,
+            )
+            .caption;
+        await _chatService.sendMediaAlbum(
+          chatRoomId: _effectiveChatRoomId,
+          senderId: widget.senderId,
+          receiverId: widget.receiverId,
+          files: files,
+          caption: firstCaption,
+          messageCategory: _attachmentCategory,
+        );
+      } else if (imageItems.length == 1) {
+        final single = imageItems.first;
+        await _chatService.sendImageFile(
+          chatRoomId: _effectiveChatRoomId,
+          senderId: widget.senderId,
+          receiverId: widget.receiverId,
+          file: single.file,
+          caption: single.caption,
+          messageCategory: _attachmentCategory,
+        );
+      }
+
+      for (final item in nonImageItems) {
+        await _chatService.sendDocumentFile(
+          chatRoomId: _effectiveChatRoomId,
+          senderId: widget.senderId,
+          receiverId: widget.receiverId,
+          file: item.file,
+          fileName: item.fileName,
+          messageCategory: _attachmentCategory,
+        );
         if (item.caption != null && item.caption!.trim().isNotEmpty) {
           await _chatService.sendMessage(
             chatId: _effectiveChatRoomId,
