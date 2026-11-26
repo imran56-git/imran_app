@@ -20,12 +20,12 @@ class GeminiService {
   String _resolvedGroqKey = _envGroqKey.trim();
   bool _checkedFirestoreKeys = false;
 
-    static const List<String> _geminiModels = [
-    'gemini-3.5-flash-lite',
+  static const List<String> _geminiModels = [
     'gemini-4-hydrogen',
+    'gemini-4-neon',
+    'gemini-3.5-flash-lite',
     'gemini-3.8-flash',
     'gemini-3.6-flash',
-    'gemini-3.1-flash-lite',
   ];
 
   static const List<String> _groqModels = [
@@ -34,6 +34,7 @@ class GeminiService {
   ];
 
   static const List<String> _groqVisionModels = [
+    'meta-llama/llama-4-scout-17b-16e-instruct',
     'llama-3.2-90b-vision-preview',
     'llama-3.2-11b-vision-preview',
   ];
@@ -41,7 +42,7 @@ class GeminiService {
   int _activeModelIndex = 0;
   bool _isBusy = false;
 
-  final List<Map<String, String>> _conversationHistory = [];
+  final List> _conversationHistory = [];
 
   String _buildSystemInstruction([String? customSystemPrompt]) {
     if (customSystemPrompt != null && customSystemPrompt.trim().isNotEmpty) {
@@ -73,27 +74,28 @@ class GeminiService {
   }
 
   Future<void> _ensureApiKeysLoaded() async {
-    if (_resolvedGeminiKey.isNotEmpty && _resolvedGroqKey.isNotEmpty) return;
     if (_checkedFirestoreKeys) return;
-    _checkedFirestoreKeys = true;
 
     try {
       final doc = await FirebaseFirestore.instance
           .collection('app_config')
           .doc('ai_keys')
           .get()
-          .timeout(const Duration(seconds: 4));
+          .timeout(const Duration(seconds: 5));
 
       if (doc.exists && doc.data() != null) {
         final data = doc.data()!;
-        final String fbGemini = (data['geminiApiKey'] ?? data['geminiKey'] ?? '').toString().trim();
-        final String fbGroq = (data['groqApiKey'] ?? data['groqKey'] ?? '').toString().trim();
-        if (_resolvedGeminiKey.isEmpty && fbGemini.isNotEmpty) {
+        final String fbGemini =
+            (data['geminiApiKey'] ?? data['geminiKey'] ?? '').toString().trim();
+        final String fbGroq =
+            (data['groqApiKey'] ?? data['groqKey'] ?? '').toString().trim();
+        if (fbGemini.isNotEmpty) {
           _resolvedGeminiKey = fbGemini;
         }
-        if (_resolvedGroqKey.isEmpty && fbGroq.isNotEmpty) {
+        if (fbGroq.isNotEmpty) {
           _resolvedGroqKey = fbGroq;
         }
+        _checkedFirestoreKeys = true;
       }
     } catch (_) {}
   }
@@ -179,7 +181,8 @@ class GeminiService {
 
     int matchedTokens = 0;
     for (final tA in tokensA) {
-      if (tokensB.any((tB) => tB == tA || tB.startsWith(tA) || tA.startsWith(tB))) {
+      if (tokensB.any(
+          (tB) => tB == tA || tB.startsWith(tA) || tA.startsWith(tB))) {
         matchedTokens++;
       }
     }
@@ -195,7 +198,7 @@ class GeminiService {
   }) async {
     await _ensureApiKeysLoaded();
 
-    final List<Map<String, dynamic>> parts = [
+    final List> parts = [
       {'text': prompt},
     ];
 
@@ -239,7 +242,7 @@ class GeminiService {
                 headers: {'Content-Type': 'application/json'},
                 body: jsonEncode(requestBody),
               )
-              .timeout(const Duration(seconds: 18));
+              .timeout(const Duration(seconds: 20));
 
           if (response.statusCode == 200) {
             final Map<String, dynamic> decoded =
@@ -271,7 +274,7 @@ class GeminiService {
     }
 
     if (_resolvedGroqKey.isNotEmpty) {
-      final List<Map<String, dynamic>> contentList = [
+      final List> contentList = [
         {'type': 'text', 'text': prompt},
       ];
       for (final file in imageFiles) {
@@ -307,7 +310,7 @@ class GeminiService {
                   'max_tokens': 1024,
                 }),
               )
-              .timeout(const Duration(seconds: 16));
+              .timeout(const Duration(seconds: 18));
 
           if (response.statusCode == 200) {
             final Map<String, dynamic> data =
@@ -330,7 +333,7 @@ class GeminiService {
     throw Exception(lastError ?? 'Vision verification service unavailable.');
   }
 
-  Future<Map<String, dynamic>> verifyGovernmentIdDocument({
+  Future> verifyGovernmentIdDocument({
     required File documentFile,
     required String selectedDocType,
     String? expectedFullName,
@@ -370,7 +373,8 @@ Strict Rules:
           (parsed['detectedDocumentType'] ?? 'Invalid').toString().trim();
       final bool matchesType = parsed['matchesSelectedType'] == true &&
           detectedType.toLowerCase() == selectedDocType.toLowerCase();
-      final bool hasFace = parsed['hasFacePhoto'] == true || parsed['hasClearFacePhoto'] == true;
+      final bool hasFace = parsed['hasFacePhoto'] == true ||
+          parsed['hasClearFacePhoto'] == true;
       final String extractedName =
           (parsed['extractedFullName'] ?? '').toString().trim();
 
@@ -433,7 +437,7 @@ Strict Rules:
     }
   }
 
-  Future<Map<String, dynamic>> verifyQualificationCertificate({
+  Future> verifyQualificationCertificate({
     required File certificateFile,
     String? expectedFullName,
   }) async {
@@ -534,7 +538,7 @@ Strict Rules:
     }
   }
 
-  Future<Map<String, dynamic>> verifyFaceMatchWithIdCard({
+  Future> verifyFaceMatchWithIdCard({
     required File idDocumentFile,
     required File liveFaceFile,
     double minimumSimilarityThreshold = 85.0,
@@ -616,7 +620,7 @@ Respond ONLY with a valid JSON object in English using this exact schema:
   }) async {
     final String sysInstruction = _buildSystemInstruction(systemPrompt);
 
-    final List<Map<String, dynamic>> contents = [];
+    final List> contents = [];
     for (final turn in _conversationHistory) {
       final String role = turn['role'] == 'user' ? 'user' : 'model';
       final String text = (turn['content'] ?? '').trim();
@@ -659,7 +663,7 @@ Respond ONLY with a valid JSON object in English using this exact schema:
           headers: {'Content-Type': 'application/json'},
           body: jsonEncode(requestBody),
         )
-        .timeout(const Duration(seconds: 12));
+        .timeout(const Duration(seconds: 15));
 
     if (response.statusCode != 200) {
       throw Exception(
@@ -710,7 +714,7 @@ Respond ONLY with a valid JSON object in English using this exact schema:
     }
 
     final String sysInstruction = _buildSystemInstruction(systemPrompt);
-    final List<Map<String, String>> messages = [
+    final List> messages = [
       {'role': 'system', 'content': sysInstruction},
       ..._conversationHistory.map((turn) => {
             'role': turn['role'] == 'user' ? 'user' : 'assistant',
@@ -736,7 +740,7 @@ Respond ONLY with a valid JSON object in English using this exact schema:
                 'max_tokens': 1024,
               }),
             )
-            .timeout(const Duration(seconds: 12));
+            .timeout(const Duration(seconds: 15));
 
         if (response.statusCode == 200) {
           final Map<String, dynamic> data =
