@@ -11,6 +11,7 @@ class LocationPickerScreen extends StatefulWidget {
   final double? initialLatitude;
   final double? initialLongitude;
   final String? initialAddress;
+  final bool isViewOnly;
 
   const LocationPickerScreen({
     super.key,
@@ -18,6 +19,7 @@ class LocationPickerScreen extends StatefulWidget {
     this.initialLatitude,
     this.initialLongitude,
     this.initialAddress,
+    this.isViewOnly = false,
   });
 
   @override
@@ -26,7 +28,6 @@ class LocationPickerScreen extends StatefulWidget {
 
 class _LocationPickerScreenState extends State<LocationPickerScreen>
     with TickerProviderStateMixin {
-  // Brand Palette FYBTT 2.0
   static const Color kDeepNavy = Color(0xFF0F172A);
   static const Color kBrandBlue = Color(0xFF1E4C7A);
   static const Color kAccentAmber = Color(0xFFF59E0B);
@@ -41,7 +42,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
   bool _isLoadingLocation = false;
   MapType _currentMapType = MapType.normal;
 
-  LatLng _currentCenterPosition = const LatLng(22.5726, 88.3639); // Kolkata fallback
+  LatLng _currentCenterPosition = const LatLng(22.5726, 88.3639);
   String _draggedAddress = "Locating area...";
   bool _isDragging = false;
 
@@ -85,7 +86,9 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
       _updateAddressFromPosition(_currentCenterPosition);
     }
 
-    _getUserCurrentLocation(moveToPosition: !hasInitialCoordinates);
+    if (!widget.isViewOnly) {
+      _getUserCurrentLocation(moveToPosition: !hasInitialCoordinates);
+    }
   }
 
   @override
@@ -95,11 +98,8 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
     super.dispose();
   }
 
-  // ---------------------------------------------------------------------------
-  // METHOD C: GPS LOCATION ACQUISITION
-  // ---------------------------------------------------------------------------
   Future<void> _getUserCurrentLocation({bool moveToPosition = false}) async {
-    if (!mounted) return;
+    if (!mounted || widget.isViewOnly) return;
     setState(() => _isLoadingLocation = true);
 
     try {
@@ -135,9 +135,6 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
     }
   }
 
-  // ---------------------------------------------------------------------------
-  // METHOD A: SEARCH & SELECT VIA GEOCODING
-  // ---------------------------------------------------------------------------
   Future<void> _searchLocation(String query) async {
     final cleaned = query.trim();
     if (cleaned.isEmpty) return;
@@ -171,9 +168,6 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
     }
   }
 
-  // ---------------------------------------------------------------------------
-  // METHOD B & D: REVERSE GEOCODING & MAP LONG-PRESS
-  // ---------------------------------------------------------------------------
   Future<void> _updateAddressFromPosition(LatLng position) async {
     try {
       final List<Placemark> placemarks = await placemarkFromCoordinates(
@@ -212,6 +206,8 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
   }
 
   void _onMapLongPress(LatLng tappedPosition) async {
+    if (widget.isViewOnly) return;
+
     setState(() {
       _currentCenterPosition = tappedPosition;
     });
@@ -231,11 +227,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
     });
   }
 
-  // ---------------------------------------------------------------------------
-  // ENHANCED MODAL BOTTOM SHEET ON PINNING
-  // ---------------------------------------------------------------------------
   void _openPinDetailsModal() {
-    // Duplicate check
     final isDuplicate = selectedLocations.any((loc) =>
         (loc['latitude'] as num).toDouble().toStringAsFixed(4) ==
             _currentCenterPosition.latitude.toStringAsFixed(4) &&
@@ -547,56 +539,77 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
 
   @override
   Widget build(BuildContext context) {
-    final circles = selectedLocations.map((loc) {
-      final lat = (loc['latitude'] as num).toDouble();
-      final lng = (loc['longitude'] as num).toDouble();
-      final radKm = (loc['radiusKm'] as num?)?.toDouble() ?? 10.0;
-      return Circle(
-        circleId: CircleId('circle_${lat}_$lng'),
-        center: LatLng(lat, lng),
-        radius: radKm * 1000,
-        fillColor: kBrandBlue.withOpacity(0.12),
-        strokeColor: kBrandBlue,
-        strokeWidth: 2,
+    final circles = <Circle>{};
+
+    if (!widget.isViewOnly) {
+      circles.addAll(
+        selectedLocations.map((loc) {
+          final lat = (loc['latitude'] as num).toDouble();
+          final lng = (loc['longitude'] as num).toDouble();
+          final radKm = (loc['radiusKm'] as num?)?.toDouble() ?? 10.0;
+          return Circle(
+            circleId: CircleId('circle_${lat}_$lng'),
+            center: LatLng(lat, lng),
+            radius: radKm * 1000,
+            fillColor: kBrandBlue.withOpacity(0.12),
+            strokeColor: kBrandBlue,
+            strokeWidth: 2,
+          );
+        }),
       );
-    }).toSet();
 
-    circles.add(
-      Circle(
-        circleId: const CircleId('current_center_active_radius'),
-        center: _currentCenterPosition,
-        radius: 10000,
-        fillColor: kAccentAmber.withOpacity(0.08),
-        strokeColor: kAccentAmber.withOpacity(0.5),
-        strokeWidth: 1,
-      ),
-    );
-
-    final markers = selectedLocations.asMap().entries.map((entry) {
-      final idx = entry.key;
-      final data = entry.value;
-      final lat = (data['latitude'] as num).toDouble();
-      final lng = (data['longitude'] as num).toDouble();
-      final name = data['locationName'] ?? data['address'];
-
-      return Marker(
-        markerId: MarkerId('teaching_idx_$idx'),
-        position: LatLng(lat, lng),
-        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
-        infoWindow: InfoWindow(
-          title: name.toString(),
-          snippet: (data['fullAddress'] ?? data['address']).toString(),
+      circles.add(
+        Circle(
+          circleId: const CircleId('current_center_active_radius'),
+          center: _currentCenterPosition,
+          radius: 10000,
+          fillColor: kAccentAmber.withOpacity(0.08),
+          strokeColor: kAccentAmber.withOpacity(0.5),
+          strokeWidth: 1,
         ),
       );
-    }).toSet();
+    }
+
+    final markers = <Marker>{};
+
+    if (widget.isViewOnly) {
+      markers.add(
+        Marker(
+          markerId: const MarkerId('view_only_target_marker'),
+          position: _currentCenterPosition,
+          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+          infoWindow: InfoWindow(
+            title: widget.initialAddress ?? 'Teaching Location',
+            snippet: _draggedAddress,
+          ),
+        ),
+      );
+    } else {
+      markers.addAll(
+        selectedLocations.asMap().entries.map((entry) {
+          final idx = entry.key;
+          final data = entry.value;
+          final lat = (data['latitude'] as num).toDouble();
+          final lng = (data['longitude'] as num).toDouble();
+          final name = data['locationName'] ?? data['address'];
+
+          return Marker(
+            markerId: MarkerId('teaching_idx_$idx'),
+            position: LatLng(lat, lng),
+            icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+            infoWindow: InfoWindow(
+              title: name.toString(),
+              snippet: (data['fullAddress'] ?? data['address']).toString(),
+            ),
+          );
+        }),
+      );
+    }
 
     return Scaffold(
       backgroundColor: kSlateSurface,
       body: Stack(
         children: [
-          // -------------------------------------------------------------------
-          // GOOGLE MAP
-          // -------------------------------------------------------------------
           GoogleMap(
             initialCameraPosition: CameraPosition(
               target: _currentCenterPosition,
@@ -612,165 +625,193 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
               );
             },
             onCameraMoveStarted: () {
-              setState(() => _isDragging = true);
+              if (!widget.isViewOnly) {
+                setState(() => _isDragging = true);
+              }
             },
             onCameraMove: (CameraPosition position) {
-              _currentCenterPosition = position.target;
+              if (!widget.isViewOnly) {
+                _currentCenterPosition = position.target;
+              }
             },
             onCameraIdle: () async {
-              setState(() => _isDragging = false);
-              await _updateAddressFromPosition(_currentCenterPosition);
+              if (!widget.isViewOnly) {
+                setState(() => _isDragging = false);
+                await _updateAddressFromPosition(_currentCenterPosition);
+              }
             },
             onLongPress: _onMapLongPress,
             markers: markers,
             circles: circles,
-            myLocationEnabled: true,
+            myLocationEnabled: !widget.isViewOnly,
             myLocationButtonEnabled: false,
             zoomControlsEnabled: false,
             compassEnabled: false,
             mapToolbarEnabled: false,
           ),
 
-          // -------------------------------------------------------------------
-          // CENTER POINTER PIN WITH SPRING SCALE ANIMATION
-          // -------------------------------------------------------------------
-          Center(
-            child: IgnorePointer(
-              child: Padding(
-                padding: const EdgeInsets.only(bottom: 40.0),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: kDeepNavy.withOpacity(0.85),
-                        borderRadius: BorderRadius.circular(12),
-                        boxShadow: const [
-                          BoxShadow(color: Color(0x33000000), blurRadius: 6),
-                        ],
-                      ),
-                      child: Text(
-                        _isDragging ? "Moving pointer..." : "Selected Target",
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
+          if (!widget.isViewOnly)
+            Center(
+              child: IgnorePointer(
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: 40.0),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: kDeepNavy.withOpacity(0.85),
+                          borderRadius: BorderRadius.circular(12),
+                          boxShadow: const [
+                            BoxShadow(color: Color(0x33000000), blurRadius: 6),
+                          ],
+                        ),
+                        child: Text(
+                          _isDragging ? "Moving pointer..." : "Selected Target",
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 4),
-                    Icon(
-                      Icons.location_pin,
-                      size: 48,
-                      color: _isDragging ? kAccentAmber : const Color(0xFFEF4444),
+                      const SizedBox(height: 4),
+                      Icon(
+                        Icons.location_pin,
+                        size: 48,
+                        color: _isDragging ? kAccentAmber : const Color(0xFFEF4444),
+                      )
+                          .animate(target: _isDragging ? 1.0 : 0.0)
+                          .scaleXY(
+                            end: 1.25,
+                            duration: 180.ms,
+                            curve: Curves.elasticOut,
+                          ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+
+          if (widget.isViewOnly)
+            Positioned(
+              top: MediaQuery.of(context).padding.top + 10,
+              left: 16,
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x1F000000),
+                      blurRadius: 10,
+                      offset: Offset(0, 3),
                     )
-                        .animate(target: _isDragging ? 1.0 : 0.0)
-                        .scaleXY(
-                          end: 1.25,
-                          duration: 180.ms,
-                          curve: Curves.elasticOut,
-                        ),
                   ],
                 ),
+                child: IconButton(
+                  icon: const Icon(
+                    Icons.arrow_back_ios_new_rounded,
+                    size: 18,
+                    color: kDeepNavy,
+                  ),
+                  onPressed: () => Navigator.pop(context),
+                ),
               ),
             ),
-          ),
 
-          // -------------------------------------------------------------------
-          // FLOATING SEARCH BAR (EXECUTIVE BLUR-LIKE CONTAINER)
-          // -------------------------------------------------------------------
-          Positioned(
-            top: MediaQuery.of(context).padding.top + 10,
-            left: 16,
-            right: 16,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(24),
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.95),
-                    borderRadius: BorderRadius.circular(24),
-                    border: Border.all(color: Colors.white.withOpacity(0.4)),
-                    boxShadow: const [
-                      BoxShadow(
-                        color: Color(0x18000000),
-                        blurRadius: 20,
-                        offset: Offset(0, 4),
-                      )
-                    ],
-                  ),
-                  child: Row(
-                    children: [
-                      IconButton(
-                        icon: const Icon(
-                          Icons.arrow_back_ios_new_rounded,
-                          size: 18,
-                          color: kDeepNavy,
-                        ),
-                        onPressed: () => Navigator.pop(context),
-                      ),
-                      Expanded(
-                        child: TextField(
-                          controller: _searchController,
-                          textInputAction: TextInputAction.search,
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
+          if (!widget.isViewOnly)
+            Positioned(
+              top: MediaQuery.of(context).padding.top + 10,
+              left: 16,
+              right: 16,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(24),
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.95),
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(color: Colors.white.withOpacity(0.4)),
+                      boxShadow: const [
+                        BoxShadow(
+                          color: Color(0x18000000),
+                          blurRadius: 20,
+                          offset: Offset(0, 4),
+                        )
+                      ],
+                    ),
+                    child: Row(
+                      children: [
+                        IconButton(
+                          icon: const Icon(
+                            Icons.arrow_back_ios_new_rounded,
+                            size: 18,
                             color: kDeepNavy,
                           ),
-                          onSubmitted: _searchLocation,
-                          onChanged: (val) => setState(() {}),
-                          decoration: InputDecoration(
-                            hintText: "Search tuition hubs, areas, landmarks...",
-                            hintStyle: TextStyle(
-                              color: Colors.grey.shade400,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w500,
+                          onPressed: () => Navigator.pop(context),
+                        ),
+                        Expanded(
+                          child: TextField(
+                            controller: _searchController,
+                            textInputAction: TextInputAction.search,
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: kDeepNavy,
                             ),
-                            border: InputBorder.none,
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+                            onSubmitted: _searchLocation,
+                            onChanged: (val) => setState(() {}),
+                            decoration: InputDecoration(
+                              hintText: "Search tuition hubs, areas, landmarks...",
+                              hintStyle: TextStyle(
+                                color: Colors.grey.shade400,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w500,
+                              ),
+                              border: InputBorder.none,
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+                            ),
                           ),
                         ),
-                      ),
-                      if (_searchController.text.isNotEmpty)
-                        IconButton(
-                          icon: const Icon(Icons.close_rounded, size: 18, color: Colors.grey),
-                          onPressed: () {
-                            _searchController.clear();
-                            setState(() {});
-                          },
-                        ),
-                      _isSearching
-                          ? const Padding(
-                              padding: EdgeInsets.symmetric(horizontal: 14),
-                              child: SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: kBrandBlue,
+                        if (_searchController.text.isNotEmpty)
+                          IconButton(
+                            icon: const Icon(Icons.close_rounded, size: 18, color: Colors.grey),
+                            onPressed: () {
+                              _searchController.clear();
+                              setState(() {});
+                            },
+                          ),
+                        _isSearching
+                            ? const Padding(
+                                padding: EdgeInsets.symmetric(horizontal: 14),
+                                child: SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: kBrandBlue,
+                                  ),
                                 ),
+                              )
+                            : IconButton(
+                                icon: const Icon(Icons.search_rounded, color: kBrandBlue),
+                                onPressed: () => _searchLocation(_searchController.text),
                               ),
-                            )
-                          : IconButton(
-                              icon: const Icon(Icons.search_rounded, color: kBrandBlue),
-                              onPressed: () => _searchLocation(_searchController.text),
-                            ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
 
-          // -------------------------------------------------------------------
-          // MAP UTILITY CONTROLS (Map Type & GPS Position)
-          // -------------------------------------------------------------------
           Positioned(
             right: 16,
-            bottom: selectedLocations.isNotEmpty ? 270 : 180,
+            bottom: widget.isViewOnly
+                ? 120
+                : (selectedLocations.isNotEmpty ? 270 : 180),
             child: Column(
               children: [
                 FloatingActionButton.small(
@@ -790,371 +831,433 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
                     size: 20,
                   ),
                 ),
-                const SizedBox(height: 10),
-                FloatingActionButton.small(
-                  heroTag: "my_gps_location_btn",
-                  backgroundColor: Colors.white,
-                  foregroundColor: kBrandBlue,
-                  elevation: 4,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+                if (!widget.isViewOnly) ...[
+                  const SizedBox(height: 10),
+                  FloatingActionButton.small(
+                    heroTag: "my_gps_location_btn",
+                    backgroundColor: Colors.white,
+                    foregroundColor: kBrandBlue,
+                    elevation: 4,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    onPressed: () => _getUserCurrentLocation(moveToPosition: true),
+                    child: _isLoadingLocation
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: kBrandBlue,
+                            ),
+                          )
+                        : const Icon(Icons.my_location_rounded, size: 20),
                   ),
-                  onPressed: () => _getUserCurrentLocation(moveToPosition: true),
-                  child: _isLoadingLocation
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: kBrandBlue,
-                          ),
-                        )
-                      : const Icon(Icons.my_location_rounded, size: 20),
-                ),
+                ],
               ],
             ),
           ),
 
-          // -------------------------------------------------------------------
-          // BOTTOM FLOATING ACTION DOCK & CAROUSEL
-          // -------------------------------------------------------------------
           Positioned(
             bottom: 0,
             left: 0,
             right: 0,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Quick pin strip
-                Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(18),
-                    boxShadow: const [
-                      BoxShadow(
-                        color: Color(0x18000000),
-                        blurRadius: 14,
-                        offset: Offset(0, 3),
-                      )
-                    ],
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: kAccentAmber.withOpacity(0.12),
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(
-                          Icons.radar_rounded,
-                          color: kAccentAmber,
-                          size: 20,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              "Target Pointer Position",
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: Color(0xFF64748B),
-                                fontWeight: FontWeight.bold,
-                                letterSpacing: 0.2,
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              _isDragging ? "Updating location..." : _draggedAddress,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w700,
-                                color: kDeepNavy,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      ElevatedButton(
-                        onPressed: _isDragging ? null : _openPinDetailsModal,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: kDeepNavy,
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 10,
-                          ),
-                          elevation: 0,
-                        ),
-                        child: const Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.add_location_alt_rounded, size: 16),
-                            SizedBox(width: 4),
-                            Text(
-                              "Pin Area",
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 13,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ).animate().slideY(begin: 0.6, duration: 250.ms, curve: Curves.easeOut),
-
-                // Horizontal Carousel of Added Areas
-                if (selectedLocations.isNotEmpty)
-                  Container(
-                    decoration: const BoxDecoration(
+            child: widget.isViewOnly
+                ? Container(
+                    margin: EdgeInsets.only(
+                      left: 16,
+                      right: 16,
+                      bottom: MediaQuery.of(context).padding.bottom + 16,
+                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    decoration: BoxDecoration(
                       color: Colors.white,
-                      borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
-                      boxShadow: [
+                      borderRadius: BorderRadius.circular(18),
+                      boxShadow: const [
                         BoxShadow(
-                          color: Color(0x1A000000),
-                          blurRadius: 20,
-                          offset: Offset(0, -4),
+                          color: Color(0x18000000),
+                          blurRadius: 16,
+                          offset: Offset(0, 4),
                         )
                       ],
                     ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
+                    child: Row(
                       children: [
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(20, 14, 16, 6),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFEF4444).withOpacity(0.12),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.location_on_rounded,
+                            color: Color(0xFFEF4444),
+                            size: 22,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
                             children: [
-                              Column(
+                              const Text(
+                                "Teaching Location",
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: Color(0xFF64748B),
+                                  fontWeight: FontWeight.bold,
+                                  letterSpacing: 0.2,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                _draggedAddress,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                  color: kDeepNavy,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ).animate().slideY(begin: 0.4, duration: 250.ms, curve: Curves.easeOut)
+                : Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(18),
+                          boxShadow: const [
+                            BoxShadow(
+                              color: Color(0x18000000),
+                              blurRadius: 14,
+                              offset: Offset(0, 3),
+                            )
+                          ],
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: kAccentAmber.withOpacity(0.12),
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(
+                                Icons.radar_rounded,
+                                color: kAccentAmber,
+                                size: 20,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text(
-                                    '${selectedLocations.length} Teaching Hub${selectedLocations.length > 1 ? 's' : ''} Selected',
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w800,
-                                      fontSize: 15,
-                                      color: kDeepNavy,
-                                    ),
-                                  ),
                                   const Text(
-                                    "10 KM radius student matching coverage",
+                                    "Target Pointer Position",
                                     style: TextStyle(
                                       fontSize: 11,
                                       color: Color(0xFF64748B),
+                                      fontWeight: FontWeight.bold,
+                                      letterSpacing: 0.2,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    _isDragging ? "Updating location..." : _draggedAddress,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w700,
+                                      color: kDeepNavy,
                                     ),
                                   ),
                                 ],
                               ),
-                              TextButton(
-                                onPressed: () => setState(() => selectedLocations.clear()),
-                                child: const Text(
-                                  "Clear All",
-                                  style: TextStyle(
-                                    color: Color(0xFFE11D48),
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 12,
-                                  ),
+                            ),
+                            const SizedBox(width: 8),
+                            ElevatedButton(
+                              onPressed: _isDragging ? null : _openPinDetailsModal,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: kDeepNavy,
+                                foregroundColor: Colors.white,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
                                 ),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 10,
+                                ),
+                                elevation: 0,
+                              ),
+                              child: const Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.add_location_alt_rounded, size: 16),
+                                  SizedBox(width: 4),
+                                  Text(
+                                    "Pin Area",
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ).animate().slideY(begin: 0.6, duration: 250.ms, curve: Curves.easeOut),
+
+                      if (selectedLocations.isNotEmpty)
+                        Container(
+                          decoration: const BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Color(0x1A000000),
+                                blurRadius: 20,
+                                offset: Offset(0, -4),
                               )
                             ],
                           ),
-                        ),
-                        const Divider(height: 1, color: Color(0xFFF1F5F9)),
-                        SizedBox(
-                          height: 124,
-                          child: ListView.builder(
-                            scrollDirection: Axis.horizontal,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 10,
-                            ),
-                            itemCount: selectedLocations.length,
-                            itemBuilder: (context, index) {
-                              final item = selectedLocations[index];
-                              final locName = item['locationName'] ?? 'Teaching Hub';
-                              final locType = item['locationType'] ?? 'Centre';
-                              final teachMode =
-                                  (item['teachingMode'] ?? 'Offline').toString().toUpperCase();
-                              final displayAddr =
-                                  (item['fullAddress'] ?? item['address'] ?? '').toString();
-
-                              return Container(
-                                width: 240,
-                                margin: const EdgeInsets.only(right: 12),
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(
-                                  color: kSlateSurface,
-                                  borderRadius: BorderRadius.circular(16),
-                                  border: Border.all(color: kCardBorder),
-                                ),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Padding(
+                                padding: const EdgeInsets.fromLTRB(20, 14, 16, 6),
+                                child: Row(
                                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                   children: [
-                                    Row(
+                                    Column(
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
-                                        Container(
-                                          padding: const EdgeInsets.all(4),
-                                          decoration: BoxDecoration(
-                                            color: kBrandBlue.withOpacity(0.1),
-                                            shape: BoxShape.circle,
-                                          ),
-                                          child: const Icon(
-                                            Icons.location_on_rounded,
-                                            color: kBrandBlue,
-                                            size: 14,
+                                        Text(
+                                          '${selectedLocations.length} Teaching Hub${selectedLocations.length > 1 ? 's' : ''} Selected',
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w800,
+                                            fontSize: 15,
+                                            color: kDeepNavy,
                                           ),
                                         ),
-                                        const SizedBox(width: 8),
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              Text(
-                                                locName.toString(),
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
-                                                style: const TextStyle(
-                                                  fontSize: 13,
-                                                  fontWeight: FontWeight.w700,
-                                                  color: kDeepNavy,
-                                                ),
-                                              ),
-                                              Text(
-                                                displayAddr,
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
-                                                style: const TextStyle(
-                                                  fontSize: 11,
-                                                  color: Color(0xFF64748B),
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                        InkWell(
-                                          onTap: () => _removeLocation(index),
-                                          child: Container(
-                                            padding: const EdgeInsets.all(4),
-                                            decoration: BoxDecoration(
-                                              color: Colors.red.shade50,
-                                              shape: BoxShape.circle,
-                                            ),
-                                            child: Icon(
-                                              Icons.close_rounded,
-                                              size: 14,
-                                              color: Colors.red.shade600,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    Row(
-                                      children: [
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 7,
-                                            vertical: 2,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: Colors.white,
-                                            borderRadius: BorderRadius.circular(6),
-                                            border: Border.all(
-                                              color: Colors.grey.shade300,
-                                            ),
-                                          ),
-                                          child: Text(
-                                            locType.toString(),
-                                            style: const TextStyle(
-                                              fontSize: 10,
-                                              fontWeight: FontWeight.w600,
-                                              color: kDeepNavy,
-                                            ),
-                                          ),
-                                        ),
-                                        const SizedBox(width: 6),
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 7,
-                                            vertical: 2,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: kAccentAmber.withOpacity(0.15),
-                                            borderRadius: BorderRadius.circular(6),
-                                          ),
-                                          child: Text(
-                                            teachMode,
-                                            style: TextStyle(
-                                              fontSize: 9,
-                                              fontWeight: FontWeight.w700,
-                                              color: Colors.amber.shade900,
-                                            ),
-                                          ),
-                                        ),
-                                        const Spacer(),
                                         const Text(
-                                          "10 KM",
+                                          "10 KM radius student matching coverage",
                                           style: TextStyle(
-                                            fontSize: 10,
-                                            fontWeight: FontWeight.w600,
+                                            fontSize: 11,
                                             color: Color(0xFF64748B),
                                           ),
                                         ),
                                       ],
+                                    ),
+                                    TextButton(
+                                      onPressed: () => setState(() => selectedLocations.clear()),
+                                      child: const Text(
+                                        "Clear All",
+                                        style: TextStyle(
+                                          color: Color(0xFFE11D48),
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 12,
+                                        ),
+                                      ),
                                     )
                                   ],
                                 ),
-                              );
-                            },
-                          ),
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(16, 4, 16, 14),
-                          child: SizedBox(
-                            width: double.infinity,
-                            height: 48,
-                            child: ElevatedButton(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: kAccentAmber,
-                                foregroundColor: kDeepNavy,
-                                elevation: 0,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(14),
+                              ),
+                              const Divider(height: 1, color: Color(0xFFF1F5F9)),
+                              SizedBox(
+                                height: 124,
+                                child: ListView.builder(
+                                  scrollDirection: Axis.horizontal,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                    vertical: 10,
+                                  ),
+                                  itemCount: selectedLocations.length,
+                                  itemBuilder: (context, index) {
+                                    final item = selectedLocations[index];
+                                    final locName = item['locationName'] ?? 'Teaching Hub';
+                                    final locType = item['locationType'] ?? 'Centre';
+                                    final teachMode =
+                                        (item['teachingMode'] ?? 'Offline').toString().toUpperCase();
+                                    final displayAddr =
+                                        (item['fullAddress'] ?? item['address'] ?? '').toString();
+
+                                    return Container(
+                                      width: 240,
+                                      margin: const EdgeInsets.only(right: 12),
+                                      padding: const EdgeInsets.all(12),
+                                      decoration: BoxDecoration(
+                                        color: kSlateSurface,
+                                        borderRadius: BorderRadius.circular(16),
+                                        border: Border.all(color: kCardBorder),
+                                      ),
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          Row(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Container(
+                                                padding: const EdgeInsets.all(4),
+                                                decoration: BoxDecoration(
+                                                  color: kBrandBlue.withOpacity(0.1),
+                                                  shape: BoxShape.circle,
+                                                ),
+                                                child: const Icon(
+                                                  Icons.location_on_rounded,
+                                                  color: kBrandBlue,
+                                                  size: 14,
+                                                ),
+                                              ),
+                                              const SizedBox(width: 8),
+                                              Expanded(
+                                                child: Column(
+                                                  crossAxisAlignment:
+                                                      CrossAxisAlignment.start,
+                                                  children: [
+                                                    Text(
+                                                      locName.toString(),
+                                                      maxLines: 1,
+                                                      overflow: TextOverflow.ellipsis,
+                                                      style: const TextStyle(
+                                                        fontSize: 13,
+                                                        fontWeight: FontWeight.w700,
+                                                        color: kDeepNavy,
+                                                      ),
+                                                    ),
+                                                    Text(
+                                                      displayAddr,
+                                                      maxLines: 1,
+                                                      overflow: TextOverflow.ellipsis,
+                                                      style: const TextStyle(
+                                                        fontSize: 11,
+                                                        color: Color(0xFF64748B),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                              InkWell(
+                                                onTap: () => _removeLocation(index),
+                                                child: Container(
+                                                  padding: const EdgeInsets.all(4),
+                                                  decoration: BoxDecoration(
+                                                    color: Colors.red.shade50,
+                                                    shape: BoxShape.circle,
+                                                  ),
+                                                  child: Icon(
+                                                    Icons.close_rounded,
+                                                    size: 14,
+                                                    color: Colors.red.shade600,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          Row(
+                                            children: [
+                                              Container(
+                                                padding: const EdgeInsets.symmetric(
+                                                  horizontal: 7,
+                                                  vertical: 2,
+                                                ),
+                                                decoration: BoxDecoration(
+                                                  color: Colors.white,
+                                                  borderRadius: BorderRadius.circular(6),
+                                                  border: Border.all(
+                                                    color: Colors.grey.shade300,
+                                                  ),
+                                                ),
+                                                child: Text(
+                                                  locType.toString(),
+                                                  style: const TextStyle(
+                                                    fontSize: 10,
+                                                    fontWeight: FontWeight.w600,
+                                                    color: kDeepNavy,
+                                                  ),
+                                                ),
+                                              ),
+                                              const SizedBox(width: 6),
+                                              Container(
+                                                padding: const EdgeInsets.symmetric(
+                                                  horizontal: 7,
+                                                  vertical: 2,
+                                                ),
+                                                decoration: BoxDecoration(
+                                                  color: kAccentAmber.withOpacity(0.15),
+                                                  borderRadius: BorderRadius.circular(6),
+                                                ),
+                                                child: Text(
+                                                  teachMode,
+                                                  style: TextStyle(
+                                                    fontSize: 9,
+                                                    fontWeight: FontWeight.w700,
+                                                    color: Colors.amber.shade900,
+                                                  ),
+                                                ),
+                                              ),
+                                              const Spacer(),
+                                              const Text(
+                                                "10 KM",
+                                                style: TextStyle(
+                                                  fontSize: 10,
+                                                  fontWeight: FontWeight.w600,
+                                                  color: Color(0xFF64748B),
+                                                ),
+                                              ),
+                                            ],
+                                          )
+                                        ],
+                                      ),
+                                    );
+                                  },
                                 ),
                               ),
-                              onPressed: () {
-                                Navigator.pop(context, selectedLocations);
-                              },
-                              child: const Text(
-                                "Save Active Teaching Areas",
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w800,
-                                  fontSize: 15,
+                              Padding(
+                                padding: const EdgeInsets.fromLTRB(16, 4, 16, 14),
+                                child: SizedBox(
+                                  width: double.infinity,
+                                  height: 48,
+                                  child: ElevatedButton(
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: kAccentAmber,
+                                      foregroundColor: kDeepNavy,
+                                      elevation: 0,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(14),
+                                      ),
+                                    ),
+                                    onPressed: () {
+                                      Navigator.pop(context, selectedLocations);
+                                    },
+                                    child: const Text(
+                                      "Save Active Teaching Areas",
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w800,
+                                        fontSize: 15,
+                                      ),
+                                    ),
+                                  ),
                                 ),
                               ),
-                            ),
+                            ],
                           ),
-                        ),
-                      ],
-                    ),
-                  ).animate().slideY(begin: 0.4, duration: 250.ms),
-              ],
-            ),
+                        ).animate().slideY(begin: 0.4, duration: 250.ms),
+                    ],
+                  ),
           )
         ],
       ),
