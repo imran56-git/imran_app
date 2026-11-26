@@ -689,10 +689,10 @@ class NotificationService {
     final String senderId = (data['senderId'] ?? '').toString();
     final String senderName = (data['senderName'] ?? 'User').toString();
     final bool isGroup = data['isGroup'] == true;
+    final int candidateNotifId =
+        (data['notificationId'] as num?)?.toInt() ?? notifId;
     final int targetNotifId =
-        (data['notificationId'] as num?)?.toInt() ?? notifId != 0
-            ? notifId
-            : chatRoomId.hashCode;
+        candidateNotifId != 0 ? candidateNotifId : chatRoomId.hashCode;
 
     if (actionId == _kRateTeacherNowActionId) {
       await _localNotifications.cancel(targetNotifId);
