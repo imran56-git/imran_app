@@ -298,6 +298,10 @@ class _MessageBubbleState extends State<MessageBubble> {
   }
 
   List<String> _extractImageUrls() {
+    if (widget.message.mediaUrls != null && widget.message.mediaUrls!.isNotEmpty) {
+      return widget.message.mediaUrls!;
+    }
+
     final meta = widget.message.mediaMetaData;
     if (meta != null) {
       if (meta['imageUrls'] is List) {
@@ -324,7 +328,7 @@ class _MessageBubbleState extends State<MessageBubble> {
       if (split.length > 1) return split;
     }
 
-    if (content.isNotEmpty) {
+    if (content.isNotEmpty && content.startsWith('http')) {
       return [content];
     }
     return [];
@@ -576,7 +580,10 @@ class _MessageBubbleState extends State<MessageBubble> {
 
   Widget _buildImageBubble() {
     final List<String> images = _extractImageUrls();
-    final String? caption = widget.message.mediaMetaData?['caption']?.toString();
+    final String? caption = (widget.message.caption != null &&
+            widget.message.caption!.trim().isNotEmpty)
+        ? widget.message.caption!.trim()
+        : widget.message.mediaMetaData?['caption']?.toString();
 
     if (images.isEmpty) {
       return Container(
@@ -628,49 +635,73 @@ class _MessageBubbleState extends State<MessageBubble> {
   }
 
   Widget _buildVideoBubble() {
-    return InkWell(
-      onTap: () => _openUrl(widget.message.content),
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        width: 220,
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: _primaryNavy,
+    final String? caption = (widget.message.caption != null &&
+            widget.message.caption!.trim().isNotEmpty)
+        ? widget.message.caption!.trim()
+        : widget.message.mediaMetaData?['caption']?.toString();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        InkWell(
+          onTap: () => _openUrl(widget.message.content),
           borderRadius: BorderRadius.circular(12),
-        ),
-        child: const Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            CircleAvatar(
-              radius: 20,
-              backgroundColor: _accentBlue,
-              child: Icon(Icons.play_arrow_rounded,
-                  color: Colors.white, size: 24),
+          child: Container(
+            width: 220,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: _primaryNavy,
+              borderRadius: BorderRadius.circular(12),
             ),
-            SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    "Video Attachment",
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 13,
-                    ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircleAvatar(
+                  radius: 20,
+                  backgroundColor: _accentBlue,
+                  child: Icon(Icons.play_arrow_rounded,
+                      color: Colors.white, size: 24),
+                ),
+                SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        "Video Attachment",
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                        ),
+                      ),
+                      SizedBox(height: 2),
+                      Text(
+                        "Tap to play video",
+                        style: TextStyle(color: Colors.white70, fontSize: 11),
+                      ),
+                    ],
                   ),
-                  SizedBox(height: 2),
-                  Text(
-                    "Tap to play video",
-                    style: TextStyle(color: Colors.white70, fontSize: 11),
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
-      ),
+        if (caption != null && caption.trim().isNotEmpty) ...[
+          const SizedBox(height: 6),
+          ExpandableChatText(
+            text: caption.trim(),
+            trimLines: 4,
+            actionColor: _accentBlue,
+            style: const TextStyle(
+              fontSize: 13.5,
+              color: Color(0xFF0F172A),
+              height: 1.3,
+            ),
+          ),
+        ],
+      ],
     );
   }
 
