@@ -516,15 +516,30 @@ class ChatService {
     return false;
   }
 
-  String _buildMessagePreviewText(String message, String type,
-      {String category = 'general'}) {
+  String _buildMessagePreviewText(
+    String message,
+    String type, {
+    String category = 'general',
+    String? caption,
+    List<String>? mediaUrls,
+  }) {
+    final String cleanCaption = caption?.trim() ?? '';
     if (category == 'poll' || type == 'poll') return '📊 Poll: $message';
     if (category == 'quiz' || type == 'quiz') return '📝 Quiz: $message';
     if (category == 'homework') return '📚 Homework: $message';
     if (category == 'announcement') return '📢 Announcement: $message';
     if (category == 'study_material') return '📖 Study Material: $message';
-    if (type == 'image') return '📷 Photo';
-    if (type == 'video') return '🎥 Video';
+
+    if (type == 'album') {
+      final count = mediaUrls != null && mediaUrls.isNotEmpty ? mediaUrls.length : 2;
+      return cleanCaption.isNotEmpty ? '🖼️ $count Photos: $cleanCaption' : '🖼️ $count Photos';
+    }
+    if (type == 'image') {
+      return cleanCaption.isNotEmpty ? '📷 Photo: $cleanCaption' : '📷 Photo';
+    }
+    if (type == 'video') {
+      return cleanCaption.isNotEmpty ? '🎥 Video: $cleanCaption' : '🎥 Video';
+    }
     if (type == 'audio' || type == 'voice') return '🎵 Voice message';
     if (type == 'document') return '📄 Document';
     if (type == 'location') return '📍 Location';
@@ -569,6 +584,8 @@ class ChatService {
     bool isScheduled = false,
     DateTime? scheduledAt,
     String? clientMessageId,
+    String? caption,
+    List<String>? mediaUrls,
   }) async {
     if (isOfficialChatIdOrReceiver(chatId, receiverId)) {
       throw Exception('FYBTT official channel is read-only.');
@@ -591,6 +608,8 @@ class ChatService {
         isScheduled: isScheduled,
         scheduledAt: scheduledAt,
         clientMessageId: clientMessageId,
+        caption: caption,
+        mediaUrls: mediaUrls,
       );
       return;
     }
@@ -656,6 +675,12 @@ class ChatService {
         'clientMessageId': clientMessageId,
       };
 
+      if (caption != null && caption.trim().isNotEmpty) {
+        messageData['caption'] = caption.trim();
+      }
+      if (mediaUrls != null && mediaUrls.isNotEmpty) {
+        messageData['mediaUrls'] = mediaUrls;
+      }
       if (replyToMessageId != null) {
         messageData['replyToMessageId'] = replyToMessageId;
       }
@@ -688,9 +713,12 @@ class ChatService {
         mediaUrl: (type == 'image' ||
                 type == 'video' ||
                 type == 'audio' ||
-                type == 'document')
+                type == 'document' ||
+                type == 'album')
             ? message
             : null,
+        mediaUrls: mediaUrls,
+        caption: caption?.trim(),
         messageCategory: messageCategory,
         isPinned: false,
         pollData: pollData,
@@ -702,8 +730,13 @@ class ChatService {
       final batch = _firestore.batch();
       batch.set(messageRef, messageData);
 
-      final String previewText =
-          _buildMessagePreviewText(message, type, category: messageCategory);
+      final String previewText = _buildMessagePreviewText(
+        message,
+        type,
+        category: messageCategory,
+        caption: caption,
+        mediaUrls: mediaUrls,
+      );
 
       int currentUnread = 0;
       if (chatDoc.exists && chatDoc.data() != null) {
@@ -912,7 +945,13 @@ class ChatService {
         'chatId': correctChatId,
         'title': 'New Message',
         'body': previewText,
-        'type': 'chat',
+        'type': type,
+        'mediaUrl': (mediaUrls != null && mediaUrls.isNotEmpty)
+            ? mediaUrls.first
+            : (type == 'image' || type == 'video')
+                ? message
+                : null,
+        'caption': caption?.trim(),
         'createdAt': FieldValue.serverTimestamp(),
         'status': 'pending',
       });
@@ -940,6 +979,8 @@ class ChatService {
     bool isScheduled = false,
     DateTime? scheduledAt,
     String? clientMessageId,
+    String? caption,
+    List<String>? mediaUrls,
   }) async {
     try {
       final String dedupeKey =
@@ -1055,6 +1096,13 @@ class ChatService {
         'reportedBy': [],
       };
 
+      if (caption != null && caption.trim().isNotEmpty) {
+        messageData['caption'] = caption.trim();
+      }
+      if (mediaUrls != null && mediaUrls.isNotEmpty) {
+        messageData['mediaUrls'] = mediaUrls;
+      }
+
       final localGroupMsg = MessageModel(
         messageId: messageRef.id,
         senderId: senderId,
@@ -1073,9 +1121,12 @@ class ChatService {
         mediaUrl: (type == 'image' ||
                 type == 'video' ||
                 type == 'audio' ||
-                type == 'document')
+                type == 'document' ||
+                type == 'album')
             ? message
             : null,
+        mediaUrls: mediaUrls,
+        caption: caption?.trim(),
         senderRole: isTeacherSender ? 'teacher' : 'student',
         senderName: senderName,
         senderProfilePic: senderProfilePic,
@@ -1101,8 +1152,13 @@ class ChatService {
             SetOptions(merge: true));
       }
 
-      final String previewText =
-          _buildMessagePreviewText(message, type, category: messageCategory);
+      final String previewText = _buildMessagePreviewText(
+        message,
+        type,
+        category: messageCategory,
+        caption: caption,
+        mediaUrls: mediaUrls,
+      );
 
       final Map<String, int> updatedUnreadCounts =
           Map<String, int>.from(group.unreadCounts);
@@ -1137,7 +1193,13 @@ class ChatService {
           'groupId': groupId,
           'title': group.name,
           'body': '$publicSenderLabel: $previewText',
-          'type': 'group_message',
+          'type': type,
+          'mediaUrl': (mediaUrls != null && mediaUrls.isNotEmpty)
+              ? mediaUrls.first
+              : (type == 'image' || type == 'video')
+                  ? message
+                  : null,
+          'caption': caption?.trim(),
           'messageCategory': messageCategory,
           'createdAt': FieldValue.serverTimestamp(),
           'status': 'pending',
@@ -1149,6 +1211,46 @@ class ChatService {
       _handleError('sendGroupMessage', e);
       throw Exception('Failed to send group message: $e');
     }
+  }
+
+  Future<void> sendMediaAlbum({
+    required String chatRoomId,
+    required String senderId,
+    required String receiverId,
+    required List<File> files,
+    String? caption,
+    String messageCategory = 'general',
+  }) async {
+    if (files.isEmpty) return;
+
+    if (files.length == 1) {
+      await sendImageFile(
+        chatRoomId: chatRoomId,
+        senderId: senderId,
+        receiverId: receiverId,
+        file: files.first,
+        caption: caption,
+        messageCategory: messageCategory,
+      );
+      return;
+    }
+
+    final List<String> uploadedUrls = [];
+    for (final file in files) {
+      final url = await _uploadFileToStorage(file, 'images');
+      uploadedUrls.add(url);
+    }
+
+    await sendMessage(
+      chatId: chatRoomId,
+      senderId: senderId,
+      receiverId: receiverId,
+      message: uploadedUrls.first,
+      type: 'album',
+      mediaUrls: uploadedUrls,
+      caption: caption,
+      messageCategory: messageCategory,
+    );
   }
 
   Future<void> markAsSeen(String chatId, String currentUserId) async {
@@ -1273,6 +1375,7 @@ class ChatService {
     required String senderId,
     required String receiverId,
     required File file,
+    String? caption,
     String messageCategory = 'general',
   }) async {
     final url = await _uploadFileToStorage(file, 'images');
@@ -1282,6 +1385,7 @@ class ChatService {
       receiverId: receiverId,
       message: url,
       type: 'image',
+      caption: caption,
       messageCategory: messageCategory,
     );
   }
@@ -1291,6 +1395,7 @@ class ChatService {
     required String senderId,
     required String receiverId,
     required File file,
+    String? caption,
     String messageCategory = 'general',
   }) async {
     final url = await _uploadFileToStorage(file, 'videos');
@@ -1300,6 +1405,7 @@ class ChatService {
       receiverId: receiverId,
       message: url,
       type: 'video',
+      caption: caption,
       messageCategory: messageCategory,
     );
   }
@@ -1388,7 +1494,8 @@ class ChatService {
                 if (msg.type == 'image' ||
                     msg.type == 'video' ||
                     msg.type == 'audio' ||
-                    msg.type == 'document') {
+                    msg.type == 'document' ||
+                    msg.type == 'album') {
                   _downloadAndCacheMediaLocally(msg.content, msg.messageId)
                       .then((localPath) {
                     if (localPath != null) {
@@ -1478,7 +1585,8 @@ class ChatService {
                   (msg.type == 'image' ||
                       msg.type == 'video' ||
                       msg.type == 'audio' ||
-                      msg.type == 'document')) {
+                      msg.type == 'document' ||
+                      msg.type == 'album')) {
                 _downloadAndCacheMediaLocally(msg.content, msg.messageId)
                     .then((localPath) {
                   if (localPath != null) {
@@ -1853,23 +1961,29 @@ class ChatService {
   }
 
   Future<void> sendImage(
-      String chatId, String senderId, String receiverId, String url) async {
+      String chatId, String senderId, String receiverId, String url,
+      {String? caption}) async {
     await sendMessage(
-        chatId: chatId,
-        senderId: senderId,
-        receiverId: receiverId,
-        message: url,
-        type: 'image');
+      chatId: chatId,
+      senderId: senderId,
+      receiverId: receiverId,
+      message: url,
+      type: 'image',
+      caption: caption,
+    );
   }
 
   Future<void> sendVideo(
-      String chatId, String senderId, String receiverId, String url) async {
+      String chatId, String senderId, String receiverId, String url,
+      {String? caption}) async {
     await sendMessage(
-        chatId: chatId,
-        senderId: senderId,
-        receiverId: receiverId,
-        message: url,
-        type: 'video');
+      chatId: chatId,
+      senderId: senderId,
+      receiverId: receiverId,
+      message: url,
+      type: 'video',
+      caption: caption,
+    );
   }
 
   Future<void> sendDocument(String chatId, String senderId, String receiverId,
@@ -1887,21 +2001,23 @@ class ChatService {
   Future<void> sendAudio(
       String chatId, String senderId, String receiverId, String url) async {
     await sendMessage(
-        chatId: chatId,
-        senderId: senderId,
-        receiverId: receiverId,
-        message: url,
-        type: 'audio');
+      chatId: chatId,
+      senderId: senderId,
+      receiverId: receiverId,
+      message: url,
+      type: 'audio',
+    );
   }
 
   Future<void> sendVoice(
       String chatId, String senderId, String receiverId, String url) async {
     await sendMessage(
-        chatId: chatId,
-        senderId: senderId,
-        receiverId: receiverId,
-        message: url,
-        type: 'voice');
+      chatId: chatId,
+      senderId: senderId,
+      receiverId: receiverId,
+      message: url,
+      type: 'voice',
+    );
   }
 
   Future<void> sendLocation(String chatId, String senderId, String receiverId,
