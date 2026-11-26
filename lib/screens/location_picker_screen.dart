@@ -578,7 +578,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
           radius: 5000,
           fillColor: kBrandBlue.withOpacity(0.1),
           strokeColor: kBrandBlue.withOpacity(0.5),
-          strokeWidth: 1.5,
+          strokeWidth: 2,
         ),
       );
     }
