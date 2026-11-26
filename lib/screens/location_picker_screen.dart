@@ -7,7 +7,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import '../services/location_service.dart';
 
 class LocationPickerScreen extends StatefulWidget {
-  final List>? initialLocations;
+  final List<Map<String, dynamic>>? initialLocations;
   final double? initialLatitude;
   final double? initialLongitude;
   final String? initialAddress;
@@ -36,7 +36,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
   static const Color kSlateSurface = Color(0xFFF8FAFC);
   static const Color kCardBorder = Color(0xFFE2E8F0);
 
-  final List> selectedLocations = [];
+  final List<Map<String, dynamic>> selectedLocations = [];
   final TextEditingController _searchController = TextEditingController();
   GoogleMapController? _mapController;
 
@@ -65,9 +65,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
       _draggedAddress = widget.initialAddress!;
     }
 
-    if (!widget.isStudentSearchMode &&
-        widget.initialLocations != null &&
-        widget.initialLocations!.isNotEmpty) {
+    if (widget.initialLocations != null && widget.initialLocations!.isNotEmpty) {
       for (final loc in widget.initialLocations!) {
         final entry = Map<String, dynamic>.from(loc);
         entry['fullAddress'] ??= entry['address'] ?? '';
@@ -228,14 +226,6 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
       _currentMapType = _currentMapType == MapType.normal
           ? MapType.hybrid
           : MapType.normal;
-    });
-  }
-
-  void _confirmStudentSearchLocation() {
-    Navigator.pop(context, {
-      'latitude': _currentCenterPosition.latitude,
-      'longitude': _currentCenterPosition.longitude,
-      'address': _draggedAddress,
     });
   }
 
@@ -553,24 +543,22 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
   Widget build(BuildContext context) {
     final circles = <Circle>{};
 
-    if (!widget.isViewOnly) {
-      if (!widget.isStudentSearchMode) {
-        circles.addAll(
-          selectedLocations.map((loc) {
-            final lat = (loc['latitude'] as num).toDouble();
-            final lng = (loc['longitude'] as num).toDouble();
-            final radKm = (loc['radiusKm'] as num?)?.toDouble() ?? 10.0;
-            return Circle(
-              circleId: CircleId('circle_${lat}_$lng'),
-              center: LatLng(lat, lng),
-              radius: radKm * 1000,
-              fillColor: kBrandBlue.withOpacity(0.12),
-              strokeColor: kBrandBlue,
-              strokeWidth: 2,
-            );
-          }),
-        );
-      }
+    if (!widget.isViewOnly && !widget.isStudentSearchMode) {
+      circles.addAll(
+        selectedLocations.map((loc) {
+          final lat = (loc['latitude'] as num).toDouble();
+          final lng = (loc['longitude'] as num).toDouble();
+          final radKm = (loc['radiusKm'] as num?)?.toDouble() ?? 10.0;
+          return Circle(
+            circleId: CircleId('circle_${lat}_$lng'),
+            center: LatLng(lat, lng),
+            radius: radKm * 1000,
+            fillColor: kBrandBlue.withOpacity(0.12),
+            strokeColor: kBrandBlue,
+            strokeWidth: 2,
+          );
+        }),
+      );
 
       circles.add(
         Circle(
@@ -580,6 +568,17 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
           fillColor: kAccentAmber.withOpacity(0.08),
           strokeColor: kAccentAmber.withOpacity(0.5),
           strokeWidth: 1,
+        ),
+      );
+    } else if (widget.isStudentSearchMode) {
+      circles.add(
+        Circle(
+          circleId: const CircleId('student_search_radius'),
+          center: _currentCenterPosition,
+          radius: 5000,
+          fillColor: kBrandBlue.withOpacity(0.1),
+          strokeColor: kBrandBlue.withOpacity(0.5),
+          strokeWidth: 1.5,
         ),
       );
     }
@@ -682,11 +681,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
                           ],
                         ),
                         child: Text(
-                          _isDragging
-                              ? "Moving pointer..."
-                              : (widget.isStudentSearchMode
-                                  ? "Search Center"
-                                  : "Selected Target"),
+                          _isDragging ? "Moving pointer..." : "Selected Target",
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: 11,
@@ -717,10 +712,10 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
               top: MediaQuery.of(context).padding.top + 10,
               left: 16,
               child: Container(
-                decoration: BoxDecoration(
+                decoration: const BoxDecoration(
                   color: Colors.white,
                   shape: BoxShape.circle,
-                  boxShadow: const [
+                  boxShadow: [
                     BoxShadow(
                       color: Color(0x1F000000),
                       blurRadius: 10,
@@ -784,7 +779,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
                             onChanged: (val) => setState(() {}),
                             decoration: InputDecoration(
                               hintText: widget.isStudentSearchMode
-                                  ? "Search area, landmark, or city..."
+                                  ? "Search area, landmark, or hub..."
                                   : "Search tuition hubs, areas, landmarks...",
                               hintStyle: TextStyle(
                                 color: Colors.grey.shade400,
@@ -832,7 +827,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
             bottom: widget.isViewOnly
                 ? 120
                 : (widget.isStudentSearchMode
-                    ? 190
+                    ? 180
                     : (selectedLocations.isNotEmpty ? 270 : 180)),
             child: Column(
               children: [
@@ -962,7 +957,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
                           borderRadius: BorderRadius.circular(20),
                           boxShadow: const [
                             BoxShadow(
-                              color: Color(0x1F000000),
+                              color: Color(0x18000000),
                               blurRadius: 18,
                               offset: Offset(0, 4),
                             )
@@ -970,18 +965,19 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
                         ),
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
                             Row(
                               children: [
                                 Container(
                                   padding: const EdgeInsets.all(10),
                                   decoration: BoxDecoration(
-                                    color: kAccentAmber.withOpacity(0.14),
+                                    color: kBrandBlue.withOpacity(0.1),
                                     shape: BoxShape.circle,
                                   ),
                                   child: const Icon(
-                                    Icons.location_on_rounded,
-                                    color: kAccentAmber,
+                                    Icons.place_rounded,
+                                    color: kBrandBlue,
                                     size: 22,
                                   ),
                                 ),
@@ -989,6 +985,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
                                 Expanded(
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
+                                    mainAxisSize: MainAxisSize.min,
                                     children: [
                                       const Text(
                                         "Selected Search Area",
@@ -1001,9 +998,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
                                       ),
                                       const SizedBox(height: 2),
                                       Text(
-                                        _isDragging
-                                            ? "Updating location..."
-                                            : _draggedAddress,
+                                        _isDragging ? "Updating location..." : _draggedAddress,
                                         maxLines: 2,
                                         overflow: TextOverflow.ellipsis,
                                         style: const TextStyle(
@@ -1018,27 +1013,30 @@ class _LocationPickerScreenState extends State<LocationPickerScreen>
                               ],
                             ),
                             const SizedBox(height: 14),
-                            SizedBox(
-                              width: double.infinity,
-                              height: 48,
-                              child: ElevatedButton.icon(
-                                onPressed:
-                                    _isDragging ? null : _confirmStudentSearchLocation,
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: kBrandBlue,
-                                  foregroundColor: Colors.white,
-                                  elevation: 0,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(14),
-                                  ),
+                            ElevatedButton(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: kDeepNavy,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(vertical: 14),
+                                elevation: 0,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(14),
                                 ),
-                                icon: const Icon(Icons.search_rounded, size: 20),
-                                label: const Text(
-                                  "Select This Location",
-                                  style: TextStyle(
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.w700,
-                                  ),
+                              ),
+                              onPressed: _isDragging
+                                  ? null
+                                  : () {
+                                      Navigator.pop(context, {
+                                        'latitude': _currentCenterPosition.latitude,
+                                        'longitude': _currentCenterPosition.longitude,
+                                        'address': _draggedAddress,
+                                      });
+                                    },
+                              child: const Text(
+                                "Select This Location",
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w700,
                                 ),
                               ),
                             ),
