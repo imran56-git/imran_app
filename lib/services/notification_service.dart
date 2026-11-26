@@ -334,7 +334,7 @@ class NotificationService {
                     'New message')
                 .toString();
             final String lastMessageType =
-                (data['lastMessageType'] ?? 'text').toString();
+                (data['lastMessageType'] ?? data['type'] ?? 'text').toString();
 
             if (lastMessageType == AlgorithmConfig.seasonRatingMessageType) {
               showActivityAlertNotification(
@@ -468,10 +468,27 @@ class NotificationService {
       return;
     }
 
-    final String title = message.notification?.title ??
+    String title = message.notification?.title ??
         (data['title'] ?? data['senderName'] ?? 'FYBTT').toString();
-    final String body = message.notification?.body ??
+    String body = message.notification?.body ??
         (data['body'] ?? data['message'] ?? 'New notification').toString();
+
+    final String? caption = data['caption']?.toString();
+    final String? mediaType = data['type']?.toString();
+
+    if (mediaType == 'album') {
+      body = caption != null && caption.trim().isNotEmpty
+          ? '🖼️ Album: $caption'
+          : '🖼️ Sent an Album';
+    } else if (mediaType == 'image') {
+      body = caption != null && caption.trim().isNotEmpty
+          ? '📷 Photo: $caption'
+          : '📷 Photo';
+    } else if (mediaType == 'video') {
+      body = caption != null && caption.trim().isNotEmpty
+          ? '🎥 Video: $caption'
+          : '🎥 Video';
+    }
 
     if (notifType == AlgorithmConfig.seasonRatingMessageType) {
       await showActivityAlertNotification(
@@ -488,6 +505,9 @@ class NotificationService {
 
     if (notifType == 'chat' ||
         notifType == 'group_chat' ||
+        notifType == 'image' ||
+        notifType == 'album' ||
+        notifType == 'video' ||
         data.containsKey('chatRoomId')) {
       final String senderId = (data['senderId'] ?? '').toString();
       final bool isGroup =
@@ -523,12 +543,15 @@ class NotificationService {
       return;
     }
 
+    final int notifId = chatRoomId.hashCode;
+
     final Map<String, dynamic> payloadMap = {
       'category': 'chat_interactive',
       'chatRoomId': chatRoomId,
       'senderId': senderId,
       'senderName': senderName,
       'isGroup': isGroup,
+      'notificationId': notifId,
     };
 
     final AndroidNotificationDetails androidDetails =
@@ -550,6 +573,7 @@ class NotificationService {
           'Reply',
           allowGeneratedReplies: true,
           showsUserInterface: false,
+          cancelNotification: true,
           inputs: <AndroidNotificationActionInput>[
             AndroidNotificationActionInput(
               label: 'Write your reply...',
@@ -579,7 +603,7 @@ class NotificationService {
     );
 
     await _localNotifications.show(
-      chatRoomId.hashCode,
+      notifId,
       senderName,
       messageText,
       NotificationDetails(android: androidDetails, iOS: iosDetails),
@@ -641,12 +665,22 @@ class NotificationService {
     NotificationResponse response, {
     required bool isFromBackground,
   }) async {
-    if (response.payload == null || response.payload!.trim().isEmpty) return;
+    final int notifId = response.id ?? 0;
+
+    if (response.payload == null || response.payload!.trim().isEmpty) {
+      if (notifId != 0) {
+        await _localNotifications.cancel(notifId);
+      }
+      return;
+    }
 
     Map<String, dynamic> data = {};
     try {
       data = jsonDecode(response.payload!) as Map<String, dynamic>;
     } catch (_) {
+      if (notifId != 0) {
+        await _localNotifications.cancel(notifId);
+      }
       return;
     }
 
@@ -655,9 +689,13 @@ class NotificationService {
     final String senderId = (data['senderId'] ?? '').toString();
     final String senderName = (data['senderName'] ?? 'User').toString();
     final bool isGroup = data['isGroup'] == true;
-    final String? currentUserId = FirebaseAuth.instance.currentUser?.uid;
+    final int targetNotifId =
+        (data['notificationId'] as num?)?.toInt() ?? notifId != 0
+            ? notifId
+            : chatRoomId.hashCode;
 
     if (actionId == _kRateTeacherNowActionId) {
+      await _localNotifications.cancel(targetNotifId);
       _processTappedPayload({
         ...data,
         'notificationType': AlgorithmConfig.seasonRatingMessageType,
@@ -667,18 +705,24 @@ class NotificationService {
 
     if (actionId == _kReplyActionId) {
       final String replyText = (response.input ?? '').trim();
-      if (replyText.isNotEmpty &&
-          currentUserId != null &&
-          chatRoomId.isNotEmpty) {
-        final chatService = ChatService();
-        await chatService.sendMessage(
-          chatId: chatRoomId,
-          senderId: currentUserId,
-          receiverId: isGroup ? 'group' : senderId,
-          message: replyText,
-          type: 'text',
-        );
-        await _localNotifications.cancel(chatRoomId.hashCode);
+      final String? currentUserId = FirebaseAuth.instance.currentUser?.uid;
+
+      try {
+        if (replyText.isNotEmpty &&
+            currentUserId != null &&
+            chatRoomId.isNotEmpty) {
+          final chatService = ChatService();
+          await chatService.sendMessage(
+            chatId: chatRoomId,
+            senderId: currentUserId,
+            receiverId: isGroup ? 'group' : senderId,
+            message: replyText,
+            type: 'text',
+          );
+        }
+      } catch (_) {
+      } finally {
+        await _localNotifications.cancel(targetNotifId);
       }
       return;
     }
@@ -1232,11 +1276,11 @@ class NotificationService {
                       maxLines: 2,
                       decoration: InputDecoration(
                         labelText: isVideo
-                            ? 'Optional: Why are you sending this video?'
-                            : 'Optional: Add a note or reason for this photo...',
+                            ? 'Optional: Add caption for this video...'
+                            : 'Optional: Add caption for this photo...',
                         hintText: isVideo
-                            ? 'e.g. Solution video for Question 4...'
-                            : 'e.g. Homework page 2 attached...',
+                            ? 'e.g. Solution video for Chapter 3...'
+                            : 'e.g. Homework notes...',
                         prefixIcon: const Icon(Icons.notes_rounded,
                             color: Color(0xFF1E4C7A)),
                         filled: true,
@@ -1272,6 +1316,9 @@ class NotificationService {
                                       senderId: currentUserId,
                                       receiverId: receiverId,
                                       file: selectedFile!,
+                                      caption: captionNote.isNotEmpty
+                                          ? captionNote
+                                          : null,
                                     );
                                   } else {
                                     await chatService.sendImageFile(
@@ -1279,18 +1326,9 @@ class NotificationService {
                                       senderId: currentUserId,
                                       receiverId: receiverId,
                                       file: selectedFile!,
-                                    );
-                                  }
-
-                                  if (captionNote.isNotEmpty) {
-                                    await chatService.sendMessage(
-                                      chatId: chatRoomId,
-                                      senderId: currentUserId,
-                                      receiverId: receiverId,
-                                      message: isVideo
-                                          ? '🎥 Video Note: $captionNote'
-                                          : '📷 Photo Note: $captionNote',
-                                      type: 'text',
+                                      caption: captionNote.isNotEmpty
+                                          ? captionNote
+                                          : null,
                                     );
                                   }
 
@@ -1317,9 +1355,7 @@ class NotificationService {
                         label: Text(
                           isSending
                               ? 'Sending...'
-                              : (isVideo
-                                  ? 'Send Video & Note'
-                                  : 'Send Photo & Note'),
+                              : (isVideo ? 'Send Video' : 'Send Photo'),
                           style: const TextStyle(
                             color: Colors.white,
                             fontWeight: FontWeight.bold,
