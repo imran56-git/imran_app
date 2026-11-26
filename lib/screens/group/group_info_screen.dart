@@ -1,3 +1,6 @@
+Here is the complete, modified code for `lib/screens/group_info_screen.dart` with the redundant camera edit overlay removed from the main view group avatar, and the verified badge cleanly positioned in the bottom-right corner. The photo edit option remains fully intact inside the separate Edit Group modal:
+
+```dart
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -92,7 +95,6 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
     });
   }
 
-  /// Actively fetches the teacher's profile picture and details if missing or empty
   Future<void> _fetchAdminTeacherProfile(String teacherId, String currentGroupPhoto) async {
     if (teacherId.isEmpty || _isFetchingTeacherProfile) return;
     _isFetchingTeacherProfile = true;
@@ -101,7 +103,6 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
       String resolvedPhoto = currentGroupPhoto.trim();
       String resolvedName = '';
 
-      // 1. Check teachers collection first
       final tDoc = await _firestore.collection('teachers').doc(teacherId).get();
       if (tDoc.exists && tDoc.data() != null) {
         final data = tDoc.data()!;
@@ -122,7 +123,6 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
         if (n.isNotEmpty) resolvedName = n;
       }
 
-      // 2. Fallback to users collection if still empty
       if (resolvedPhoto.isEmpty) {
         final uDoc = await _firestore.collection('users').doc(teacherId).get();
         if (uDoc.exists && uDoc.data() != null) {
@@ -151,7 +151,6 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
           imageUrl: resolvedPhoto,
         ));
 
-        // Auto-heal group document with teacher's profile picture in background
         if (currentGroupPhoto.trim().isEmpty && widget.groupId.isNotEmpty) {
           _firestore.collection('groups').doc(widget.groupId).update({
             'teacherProfilePic': resolvedPhoto,
@@ -1864,41 +1863,12 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
               ),
               if (group.isTeacherVerified)
                 Positioned(
-                  left: _isViewerTeacher ? -2 : null,
-                  right: _isViewerTeacher ? null : -2,
+                  right: -2,
                   bottom: -2,
                   child: AvatarCornerBadge(
                     badgeType: BadgeType.verifiedBatch,
                     holderName: group.name,
-                    size: 22,
-                  ),
-                ),
-              if (_isViewerTeacher)
-                Positioned(
-                  right: 0,
-                  bottom: 0,
-                  child: Material(
-                    color: Colors.transparent,
-                    shape: const CircleBorder(),
-                    child: InkWell(
-                      customBorder: const CircleBorder(),
-                      onTap: _isUploadingGroupPic
-                          ? null
-                          : () {
-                              HapticFeedback.selectionClick();
-                              _pickAndUploadGroupPicture();
-                            },
-                      child: Container(
-                        padding: const EdgeInsets.all(7),
-                        decoration: BoxDecoration(
-                          color: Colors.blueAccent,
-                          shape: BoxShape.circle,
-                          border: Border.all(color: Colors.white, width: 2),
-                        ),
-                        child: const Icon(Icons.camera_alt_rounded,
-                            color: Colors.white, size: 15),
-                      ),
-                    ),
+                    size: 24,
                   ),
                 ),
             ],
