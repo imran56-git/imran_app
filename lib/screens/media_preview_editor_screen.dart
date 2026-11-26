@@ -36,6 +36,7 @@ class MediaPreviewEditorScreen extends StatefulWidget {
   final String? initialCaption;
   final bool isAlbum;
   final bool isVideo;
+  final int? albumCount;
 
   const MediaPreviewEditorScreen({
     super.key,
@@ -43,6 +44,7 @@ class MediaPreviewEditorScreen extends StatefulWidget {
     this.initialCaption,
     this.isAlbum = false,
     this.isVideo = false,
+    this.albumCount,
   });
 
   @override
@@ -152,7 +154,7 @@ class _MediaPreviewEditorScreenState extends State<MediaPreviewEditorScreen> {
                 style: TextStyle(color: Colors.white),
               ),
               content: Column(
-                mainAxisSize: dynamic,
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   TextField(
                     controller: textController,
@@ -194,7 +196,9 @@ class _MediaPreviewEditorScreenState extends State<MediaPreviewEditorScreen> {
                             color: color,
                             shape: BoxShape.circle,
                             border: Border.all(
-                              color: isSelected ? Colors.white : Colors.transparent,
+                              color: isSelected
+                                  ? Colors.white
+                                  : Colors.transparent,
                               width: 2.5,
                             ),
                           ),
@@ -222,7 +226,9 @@ class _MediaPreviewEditorScreenState extends State<MediaPreviewEditorScreen> {
                       setState(() {
                         _overlays.add(
                           OverlayItem(
-                            id: DateTime.now().millisecondsSinceEpoch.toString(),
+                            id: DateTime.now()
+                                .millisecondsSinceEpoch
+                                .toString(),
                             text: text,
                             isEmoji: false,
                             color: selectedColor,
@@ -284,7 +290,9 @@ class _MediaPreviewEditorScreenState extends State<MediaPreviewEditorScreen> {
                         setState(() {
                           _overlays.add(
                             OverlayItem(
-                              id: DateTime.now().millisecondsSinceEpoch.toString(),
+                              id: DateTime.now()
+                                  .millisecondsSinceEpoch
+                                  .toString(),
                               text: emoji,
                               isEmoji: true,
                               color: Colors.white,
@@ -569,6 +577,14 @@ class _MediaPreviewEditorScreenState extends State<MediaPreviewEditorScreen> {
   }
 
   Widget _buildBottomBar() {
+    final String hintText = _isVideo
+        ? 'Add a caption for this video...'
+        : (widget.isAlbum
+            ? (widget.albumCount != null && widget.albumCount! > 1
+                ? 'Add a caption for ${widget.albumCount} photos...'
+                : 'Add a caption for this album...')
+            : 'Add a caption...');
+
     return Container(
       padding: EdgeInsets.only(
         left: 14,
@@ -592,11 +608,7 @@ class _MediaPreviewEditorScreenState extends State<MediaPreviewEditorScreen> {
                 minLines: 1,
                 style: const TextStyle(color: Colors.white, fontSize: 15),
                 decoration: InputDecoration(
-                  hintText: _isVideo
-                      ? 'Add a caption for this video...'
-                      : (widget.isAlbum
-                          ? 'Add a caption for this album...'
-                          : 'Add a caption...'),
+                  hintText: hintText,
                   hintStyle:
                       const TextStyle(color: Colors.white54, fontSize: 15),
                   border: InputBorder.none,
