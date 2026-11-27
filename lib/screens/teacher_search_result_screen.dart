@@ -7,9 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../services/google_maps_route_service.dart';
 import '../services/location_service.dart';
-import '../widgets/badge_details_sheet.dart';
 import '../widgets/teacher_card_widget.dart';
 import 'chat_screen.dart';
 import 'teacher_profile_screen.dart';
@@ -24,10 +22,9 @@ class TeacherSearchResultScreen extends StatefulWidget {
       _TeacherSearchResultScreenState();
 }
 
-class _TeacherSearchResultScreenState extends State<TeacherSearchResultScreen>
-    with SingleTickerProviderStateMixin {
-  double _studentLat = 22.5726;
-  double _studentLng = 88.3639;
+class _TeacherSearchResultScreenState extends State<TeacherSearchResultScreen> {
+  double _searchLat = 22.5726;
+  double _searchLng = 88.3639;
   bool _isLoadingLocation = true;
 
   late final Stream<QuerySnapshot> _teachersStream;
@@ -38,22 +35,36 @@ class _TeacherSearchResultScreenState extends State<TeacherSearchResultScreen>
   bool _hasShownGlitchDialog = false;
 
   static const Color _primaryNavy = Color(0xFF0F172A);
-  static const Color _brandBlue = Color(0xFF1E4C7A);
+  static const Color _brandBlue = Color(0xFF133E68);
+  static const Color _secondaryBlue = Color(0xFF1E4C7A);
   static const Color _accentBlue = Color(0xFF2563EB);
-  static const Color _accentAmber = Color(0xFFF59E0B);
-  static const Color _scaffoldBg = Color(0xFFF8FAFC);
-  static const Color _cardBorder = Color(0xFFE2E8F0);
+  static const Color _accentAmber = Color(0xFFFFB300);
+  static const Color _scaffoldBg = Color(0xFFF1F5F9);
 
   @override
   void initState() {
     super.initState();
     _teachersStream =
         FirebaseFirestore.instance.collection('teachers').snapshots();
-    _initStudentLocation();
+    _setupSearchCoordinates();
     _validateSearchTargetId();
   }
 
-  Future<void> _initStudentLocation() async {
+  Future<void> _setupSearchCoordinates() async {
+    final passedLat = (widget.filters['latitude'] as num?)?.toDouble();
+    final passedLng = (widget.filters['longitude'] as num?)?.toDouble();
+
+    if (passedLat != null && passedLng != null) {
+      if (mounted) {
+        setState(() {
+          _searchLat = passedLat;
+          _searchLng = passedLng;
+          _isLoadingLocation = false;
+        });
+      }
+      return;
+    }
+
     try {
       dynamic pos;
       try {
@@ -64,8 +75,8 @@ class _TeacherSearchResultScreenState extends State<TeacherSearchResultScreen>
       }
       if (pos != null && mounted) {
         setState(() {
-          _studentLat = (pos.latitude as num).toDouble();
-          _studentLng = (pos.longitude as num).toDouble();
+          _searchLat = (pos.latitude as num).toDouble();
+          _searchLng = (pos.longitude as num).toDouble();
           _isLoadingLocation = false;
         });
         return;
@@ -83,7 +94,6 @@ class _TeacherSearchResultScreenState extends State<TeacherSearchResultScreen>
     if (targetId.isEmpty) return;
 
     try {
-      // 1. Check teachers collection FIRST (doc, uid, teacherId)
       Map<String, dynamic>? teacherData;
 
       final teacherDoc = await FirebaseFirestore.instance
@@ -113,7 +123,6 @@ class _TeacherSearchResultScreenState extends State<TeacherSearchResultScreen>
         }
       }
 
-      // If a document exists in teachers with a non-empty name, immediately confirm as valid teacher
       if (teacherData != null) {
         final teacherName = (teacherData['name'] ??
                 teacherData['fullName'] ??
@@ -131,7 +140,6 @@ class _TeacherSearchResultScreenState extends State<TeacherSearchResultScreen>
         }
       }
 
-      // 2. ONLY if no valid teacher document exists in teachers, check students and users
       bool isStudentAccount = false;
 
       final studentDoc = await FirebaseFirestore.instance
@@ -315,8 +323,6 @@ class _TeacherSearchResultScreenState extends State<TeacherSearchResultScreen>
         'https://www.google.com/maps/search/?api=1&query=$lat,$lng');
     if (await canLaunchUrl(googleMapsUrl)) {
       await launchUrl(googleMapsUrl, mode: LaunchMode.externalApplication);
-    } else {
-      debugPrint('Could not launch Google Maps');
     }
   }
 
@@ -338,24 +344,121 @@ class _TeacherSearchResultScreenState extends State<TeacherSearchResultScreen>
     return 0;
   }
 
-  String _extractLocationDisplay(Map<String, dynamic> data) {
-    final direct =
+  int _getBadgeTierWeight(String? badgeType, bool isVerified) {
+    final clean = (badgeType ?? '').trim().toLowerCase();
+    if (clean.contains('diamond')) return 5;
+    if (clean.contains('platinum')) return 4;
+    if (clean.contains('gold')) return 3;
+    if (clean.contains('silver')) return 2;
+    if (clean.contains('bronze')) return 1;
+    if (isVerified) return 1;
+    return 0;
+  }
+
+  Map<String, dynamic> _extractNearestTeachingHub(Map<String, dynamic> data) {
+    final List<Map<String, dynamic>> hubs = [];
+
+    double? topLat = double.tryParse(data['latitude']?.toString() ?? '');
+    double? topLng = double.tryParse(data['longitude']?.toString() ?? '');
+    String topAddr =
         (data['teachingLocation'] ?? data['location'] ?? data['address'] ?? '')
             .toString()
             .trim();
-    if (direct.isNotEmpty) return direct;
+    if (topLat != null && topLng != null) {
+      hubs.add({
+        'lat': topLat,
+        'lng': topLng,
+        'address': topAddr.isNotEmpty ? topAddr : 'Main Hub',
+      });
+    }
 
-    if (data['locations'] is List && (data['locations'] as List).isNotEmpty) {
-      final firstLoc = (data['locations'] as List).first;
-      if (firstLoc is Map) {
-        final addr = (firstLoc['address'] ?? '').toString().trim();
-        if (addr.isNotEmpty) return addr;
-      } else if (firstLoc != null) {
-        final addr = firstLoc.toString().trim();
-        if (addr.isNotEmpty) return addr;
+    void parseLocationCollection(dynamic rawList) {
+      if (rawList is! List) return;
+      for (final item in rawList) {
+        if (item is Map) {
+          final lat = double.tryParse(
+              (item['latitude'] ?? item['lat'])?.toString() ?? '');
+          final lng = double.tryParse(
+              (item['longitude'] ?? item['lng'])?.toString() ?? '');
+          final addr = (item['address'] ??
+                  item['fullAddress'] ??
+                  item['location'] ??
+                  item['name'] ??
+                  '')
+              .toString()
+              .trim();
+          if (lat != null && lng != null) {
+            hubs.add({
+              'lat': lat,
+              'lng': lng,
+              'address': addr.isNotEmpty ? addr : 'Teaching Hub',
+            });
+          }
+        } else if (item is String) {
+          final parts = item.split(',');
+          if (parts.length == 2) {
+            final lat = double.tryParse(parts[0].trim());
+            final lng = double.tryParse(parts[1].trim());
+            if (lat != null && lng != null) {
+              hubs.add({
+                'lat': lat,
+                'lng': lng,
+                'address': item.trim(),
+              });
+            }
+          }
+        }
       }
     }
-    return 'Location N/A';
+
+    parseLocationCollection(data['teachingLocations']);
+    parseLocationCollection(data['locations']);
+    parseLocationCollection(data['teachingAreas']);
+
+    if (topAddr.contains(',')) {
+      final parts = topAddr.split(',');
+      if (parts.length == 2) {
+        final lat = double.tryParse(parts[0].trim());
+        final lng = double.tryParse(parts[1].trim());
+        if (lat != null && lng != null) {
+          hubs.add({
+            'lat': lat,
+            'lng': lng,
+            'address': topAddr,
+          });
+        }
+      }
+    }
+
+    if (hubs.isEmpty) {
+      return {
+        'lat': 0.0,
+        'lng': 0.0,
+        'address': topAddr.isNotEmpty ? topAddr : 'Location N/A',
+        'distanceKm': -1.0,
+      };
+    }
+
+    Map<String, dynamic> nearestHub = hubs.first;
+    double minDistance = double.infinity;
+
+    for (final hub in hubs) {
+      final double lat = hub['lat'] as double;
+      final double lng = hub['lng'] as double;
+      final double dist =
+          _calculateHaversineDistance(_searchLat, _searchLng, lat, lng);
+      if (dist < minDistance) {
+        minDistance = dist;
+        nearestHub = {
+          'lat': lat,
+          'lng': lng,
+          'address': hub['address'],
+          'distanceKm': dist,
+        };
+      }
+    }
+
+    return nearestHub;
   }
 
   String _extractAllLocationsSearchable(Map<String, dynamic> data) {
@@ -363,51 +466,25 @@ class _TeacherSearchResultScreenState extends State<TeacherSearchResultScreen>
     buffer.write('${data['teachingLocation'] ?? ''} ');
     buffer.write('${data['location'] ?? ''} ');
     buffer.write('${data['address'] ?? ''} ');
-    if (data['locations'] is List) {
-      for (final item in (data['locations'] as List)) {
-        if (item is Map) {
-          buffer.write('${item['address'] ?? ''} ');
-        } else if (item != null) {
-          buffer.write('$item ');
+
+    void appendList(dynamic list) {
+      if (list is List) {
+        for (final item in list) {
+          if (item is Map) {
+            buffer.write(
+                '${item['address'] ?? item['fullAddress'] ?? item['name'] ?? ''} ');
+          } else if (item != null) {
+            buffer.write('$item ');
+          }
         }
       }
     }
+
+    appendList(data['locations']);
+    appendList(data['teachingLocations']);
+    appendList(data['teachingAreas']);
+
     return buffer.toString().toLowerCase();
-  }
-
-  Map<String, double> _extractCoordinates(Map<String, dynamic> data) {
-    double? lat = double.tryParse(data['latitude']?.toString() ?? '');
-    double? lng = double.tryParse(data['longitude']?.toString() ?? '');
-
-    if ((lat == null || lng == null) &&
-        data['locations'] is List &&
-        (data['locations'] as List).isNotEmpty) {
-      final firstLoc = (data['locations'] as List).first;
-      if (firstLoc is Map) {
-        lat ??= double.tryParse(
-            (firstLoc['lat'] ?? firstLoc['latitude'])?.toString() ?? '');
-        lng ??= double.tryParse(
-            (firstLoc['lng'] ?? firstLoc['longitude'])?.toString() ?? '');
-      }
-    }
-
-    if ((lat == null || lng == null) && data['teachingLocation'] != null) {
-      final parts = data['teachingLocation'].toString().split(',');
-      if (parts.length == 2) {
-        lat = double.tryParse(parts[0].trim());
-        lng = double.tryParse(parts[1].trim());
-      }
-    }
-
-    if ((lat == null || lng == null) && data['location'] != null) {
-      final parts = data['location'].toString().split(',');
-      if (parts.length == 2) {
-        lat = double.tryParse(parts[0].trim());
-        lng = double.tryParse(parts[1].trim());
-      }
-    }
-
-    return {'lat': lat ?? 0.0, 'lng': lng ?? 0.0};
   }
 
   int _calculateSmartMatchScore({
@@ -415,14 +492,14 @@ class _TeacherSearchResultScreenState extends State<TeacherSearchResultScreen>
     required double distanceKm,
     required String targetSubject,
     required String targetClass,
-    required double maxRadius,
+    required double? maxRadius,
   }) {
-    double score = 40.0; // Base baseline score
+    double score = 40.0;
 
-    // 1. Subject Relevance (up to 30 pts)
     final List<String> subjects = [];
     if (data['subjects'] is List) {
-      subjects.addAll((data['subjects'] as List).map((s) => s.toString().toLowerCase()));
+      subjects.addAll((data['subjects'] as List)
+          .map((s) => s.toString().toLowerCase()));
     } else if (data['subjects'] is String) {
       subjects.add(data['subjects'].toString().toLowerCase());
     }
@@ -437,7 +514,6 @@ class _TeacherSearchResultScreenState extends State<TeacherSearchResultScreen>
       score += 20;
     }
 
-    // 2. Class / Standard Matching (up to 15 pts)
     final String teacherClass =
         (data['class'] ?? data['teachingClass'] ?? '').toString().toLowerCase();
     if (targetClass.isNotEmpty) {
@@ -448,20 +524,20 @@ class _TeacherSearchResultScreenState extends State<TeacherSearchResultScreen>
       score += 10;
     }
 
-    // 3. Distance Proximity (up to 15 pts)
-    if (distanceKm > 0) {
+    if (distanceKm >= 0) {
       if (distanceKm <= 5.0) {
         score += 15;
       } else if (distanceKm <= 15.0) {
         score += 10;
-      } else if (distanceKm <= maxRadius) {
+      } else if (maxRadius != null && distanceKm <= maxRadius) {
         score += 5;
+      } else {
+        score += 3;
       }
     } else {
       score += 8;
     }
 
-    // 4. Rating & Verification (up to 10 pts)
     final double rating = double.tryParse(
             (data['averageRating'] ?? data['rating'] ?? '0.0').toString()) ??
         0.0;
@@ -480,6 +556,12 @@ class _TeacherSearchResultScreenState extends State<TeacherSearchResultScreen>
     return score.clamp(0, 100).toInt();
   }
 
+  String _formatTeacherCount(int count) {
+    final str = count.toString();
+    final regExp = RegExp(r'\B(?=(\d{3})+(?!\d))');
+    return str.replaceAll(regExp, ',');
+  }
+
   List<Map<String, String>> _buildActiveFilterChipsData() {
     final List<Map<String, String>> list = [];
     final f = widget.filters;
@@ -494,17 +576,16 @@ class _TeacherSearchResultScreenState extends State<TeacherSearchResultScreen>
     final subject = (f['subject'] ?? '').toString().trim();
     final location = (f['location'] ?? '').toString().trim();
     final exp = (f['experience'] ?? '').toString().trim();
-    final minR = f['minRadius'];
     final maxR = f['maxRadius'];
 
     if (name.isNotEmpty) list.add({'label': 'Name: $name'});
     if (subject.isNotEmpty) list.add({'label': subject});
     if (location.isNotEmpty) list.add({'label': location});
     if (exp.isNotEmpty) list.add({'label': '$exp+ Yrs Exp'});
-    if (minR != null && maxR != null) {
-      list.add({
-        'label': '${(minR as num).toInt()}–${(maxR as num).toInt()} KM Radius'
-      });
+    if (maxR != null) {
+      list.add({'label': 'Within ${(maxR as num).toInt()} KM'});
+    } else {
+      list.add({'label': 'Any Distance'});
     }
     return list;
   }
@@ -513,68 +594,126 @@ class _TeacherSearchResultScreenState extends State<TeacherSearchResultScreen>
     final activeChips = _buildActiveFilterChipsData();
     final List<Map<String, dynamic>> sortOptions = [
       {'key': 'best', 'label': 'Best Match', 'icon': Icons.auto_awesome_rounded},
-      {'key': 'rating', 'label': 'Top Rated', 'icon': Icons.star_rounded},
+      {'key': 'distance', 'label': 'Nearest', 'icon': Icons.near_me_rounded},
       {
         'key': 'experience',
         'label': 'Most Experienced',
         'icon': Icons.workspace_premium_rounded
       },
-      {'key': 'distance', 'label': 'Nearest', 'icon': Icons.near_me_rounded},
+      {'key': 'rating', 'label': 'Top Rated', 'icon': Icons.star_rounded},
     ];
 
+    final formattedCount = _formatTeacherCount(totalMatched);
+
     return Container(
-      color: Colors.white,
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Color(0x0C0F172A),
+            blurRadius: 10,
+            offset: Offset(0, 3),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFEFF6FF),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: const Color(0xFFBFDBFE)),
-                    ),
-                    child: Text(
-                      '$totalMatched Educator${totalMatched == 1 ? '' : 's'} Found',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w800,
-                        color: _accentBlue,
-                      ),
-                    ),
-                  ),
-                ],
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [_primaryNavy, _secondaryBlue],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
               ),
-              InkWell(
-                borderRadius: BorderRadius.circular(10),
-                onTap: () => Navigator.pop(context),
-                child: const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.tune_rounded, size: 15, color: _brandBlue),
-                      SizedBox(width: 4),
-                      Text(
-                        'Modify Filters',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w800,
-                          color: _brandBlue,
-                        ),
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: _primaryNavy.withOpacity(0.18),
+                  blurRadius: 8,
+                  offset: const Offset(0, 3),
+                ),
+              ],
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(7),
+                      decoration: BoxDecoration(
+                        color: _accentAmber.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(10),
                       ),
-                    ],
+                      child: const Icon(
+                        Icons.school_rounded,
+                        color: _accentAmber,
+                        size: 20,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '$formattedCount Teacher${totalMatched == 1 ? '' : 's'} Available',
+                          style: const TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w800,
+                            color: Colors.white,
+                            letterSpacing: 0.2,
+                          ),
+                        ),
+                        Text(
+                          totalMatched == 0
+                              ? 'No matches in this search'
+                              : 'Complete unfiltered coverage for your area',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w500,
+                            color: Colors.white.withOpacity(0.75),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+                InkWell(
+                  borderRadius: BorderRadius.circular(10),
+                  onTap: () => Navigator.pop(context),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: Colors.white.withOpacity(0.2),
+                      ),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.tune_rounded,
+                            size: 14, color: _accentAmber),
+                        SizedBox(width: 4),
+                        Text(
+                          'Filter',
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w800,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
           if (activeChips.isNotEmpty) ...[
             const SizedBox(height: 10),
@@ -585,8 +724,8 @@ class _TeacherSearchResultScreenState extends State<TeacherSearchResultScreen>
                 children: activeChips.map((chip) {
                   return Container(
                     margin: const EdgeInsets.only(right: 8),
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 5),
                     decoration: BoxDecoration(
                       color: const Color(0xFFF8FAFC),
                       borderRadius: BorderRadius.circular(10),
@@ -595,8 +734,11 @@ class _TeacherSearchResultScreenState extends State<TeacherSearchResultScreen>
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.check_circle_rounded,
-                            size: 13, color: Color(0xFF0D9488)),
+                        const Icon(
+                          Icons.check_circle_rounded,
+                          size: 13,
+                          color: Color(0xFF0D9488),
+                        ),
                         const SizedBox(width: 5),
                         Text(
                           chip['label']!,
@@ -631,7 +773,7 @@ class _TeacherSearchResultScreenState extends State<TeacherSearchResultScreen>
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 180),
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 6),
+                          horizontal: 13, vertical: 7),
                       decoration: BoxDecoration(
                         gradient: isSelected
                             ? const LinearGradient(
@@ -656,11 +798,11 @@ class _TeacherSearchResultScreenState extends State<TeacherSearchResultScreen>
                                 ? const Color(0xFFFBBF24)
                                 : const Color(0xFF64748B),
                           ),
-                          const SizedBox(width: 5),
+                          const SizedBox(width: 6),
                           Text(
                             opt['label'] as String,
                             style: TextStyle(
-                              fontSize: 11.8,
+                              fontSize: 12,
                               fontWeight: FontWeight.w800,
                               color: isSelected
                                   ? Colors.white
@@ -698,10 +840,7 @@ class _TeacherSearchResultScreenState extends State<TeacherSearchResultScreen>
 
     final int minExperience =
         int.tryParse(filters['experience']?.toString() ?? '0') ?? 0;
-    final double minRadius =
-        double.tryParse(filters['minRadius']?.toString() ?? '0.0') ?? 0.0;
-    final double maxRadius =
-        double.tryParse(filters['maxRadius']?.toString() ?? '500.0') ?? 500.0;
+    final double? maxRadius = (filters['maxRadius'] as num?)?.toDouble();
 
     return Scaffold(
       backgroundColor: _scaffoldBg,
@@ -709,16 +848,16 @@ class _TeacherSearchResultScreenState extends State<TeacherSearchResultScreen>
         title: const Column(
           children: [
             Text(
-              'Matching Teachers',
+              'Available Teachers',
               style: TextStyle(
-                fontWeight: FontWeight.w900,
-                fontSize: 17.5,
+                fontWeight: FontWeight.w800,
+                fontSize: 18,
                 color: Colors.white,
                 letterSpacing: 0.2,
               ),
             ),
             Text(
-              'Verified Educators & Subject Specialists',
+              'Verified Educators Across All Local Hubs',
               style: TextStyle(
                 fontSize: 11,
                 color: Colors.white70,
@@ -733,8 +872,8 @@ class _TeacherSearchResultScreenState extends State<TeacherSearchResultScreen>
             gradient: LinearGradient(
               colors: [
                 _primaryNavy,
-                Color(0xFF1E3A8A),
-                _brandBlue,
+                Color(0xFF133E68),
+                _secondaryBlue,
               ],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
@@ -778,14 +917,16 @@ class _TeacherSearchResultScreenState extends State<TeacherSearchResultScreen>
             return _buildNoResultsView();
           }
 
-          final matchedDocs = activeData.docs.where((doc) {
+          final List<Map<String, dynamic>> processedTeachers = [];
+
+          for (final doc in activeData.docs) {
             final data = doc.data() as Map<String, dynamic>? ?? {};
-            if (_isStudentIdGlitch) return false;
+            if (_isStudentIdGlitch) continue;
 
             final String rawName =
                 (data['name'] ?? data['fullName'] ?? data['displayName'] ?? '')
                     .toString();
-            if (rawName.trim().isEmpty) return false;
+            if (rawName.trim().isEmpty) continue;
 
             final docId = doc.id.toLowerCase();
             final fieldUid = (data['uid'] ?? data['teacherId'] ?? '')
@@ -818,125 +959,126 @@ class _TeacherSearchResultScreenState extends State<TeacherSearchResultScreen>
                 subjects.any((s) => s.contains(targetSubject));
             bool matchesExperience = exp >= minExperience;
 
-            bool matchesRadius = true;
-            final coords = _extractCoordinates(data);
-            double tLat = coords['lat']!;
-            double tLng = coords['lng']!;
+            final hubInfo = _extractNearestTeachingHub(data);
+            final double hubDistance = hubInfo['distanceKm'] as double;
 
-            if (targetId.isEmpty && tLat != 0.0 && tLng != 0.0) {
-              double distance = _calculateHaversineDistance(
-                  _studentLat, _studentLng, tLat, tLng);
-              matchesRadius = distance >= minRadius && distance <= maxRadius;
+            bool matchesRadius = true;
+            if (targetId.isEmpty && maxRadius != null) {
+              if (hubDistance >= 0) {
+                matchesRadius = hubDistance <= maxRadius;
+              }
             }
 
-            return matchesId &&
+            if (matchesId &&
                 matchesName &&
                 matchesLocation &&
                 matchesSubject &&
                 matchesExperience &&
-                matchesRadius;
-          }).toList();
+                matchesRadius) {
+              final int smartScore = _calculateSmartMatchScore(
+                data: data,
+                distanceKm: hubDistance,
+                targetSubject: targetSubject,
+                targetClass: targetClass,
+                maxRadius: maxRadius,
+              );
 
-          matchedDocs.sort((a, b) {
-            final aData = a.data() as Map<String, dynamic>? ?? {};
-            final bData = b.data() as Map<String, dynamic>? ?? {};
+              final bool isVerified = data['isVerified'] == true ||
+                  data['status'] == 'approved';
+              final String? badgeType = data['highestBadgeType']?.toString();
+              final int badgeWeight = _getBadgeTierWeight(badgeType, isVerified);
 
-            final cA = _extractCoordinates(aData);
-            final cB = _extractCoordinates(bData);
-            final double dA = (cA['lat'] != 0.0 && cA['lng'] != 0.0)
-                ? _calculateHaversineDistance(
-                    _studentLat, _studentLng, cA['lat']!, cA['lng']!)
-                : 999999.0;
-            final double dB = (cB['lat'] != 0.0 && cB['lng'] != 0.0)
-                ? _calculateHaversineDistance(
-                    _studentLat, _studentLng, cB['lat']!, cB['lng']!)
-                : 999999.0;
-
-            if (_selectedSort == 'rating') {
-              final double rA = double.tryParse(
-                      (aData['averageRating'] ?? aData['rating'] ?? '0')
+              final double rating = double.tryParse(
+                      (data['averageRating'] ?? data['rating'] ?? '0.0')
                           .toString()) ??
                   0.0;
-              final double rB = double.tryParse(
-                      (bData['averageRating'] ?? bData['rating'] ?? '0')
-                          .toString()) ??
-                  0.0;
-              return rB.compareTo(rA);
+
+              processedTeachers.add({
+                'doc': doc,
+                'data': data,
+                'hubLat': hubInfo['lat'] as double,
+                'hubLng': hubInfo['lng'] as double,
+                'hubAddress': hubInfo['address'] as String,
+                'distanceKm': hubDistance,
+                'smartScore': smartScore,
+                'badgeWeight': badgeWeight,
+                'rating': rating,
+                'experience': exp,
+              });
+            }
+          }
+
+          processedTeachers.sort((a, b) {
+            if (_selectedSort == 'distance') {
+              final double dA = (a['distanceKm'] as double) >= 0
+                  ? (a['distanceKm'] as double)
+                  : 999999.0;
+              final double dB = (b['distanceKm'] as double) >= 0
+                  ? (b['distanceKm'] as double)
+                  : 999999.0;
+              final comp = dA.compareTo(dB);
+              if (comp != 0) return comp;
+              return (b['smartScore'] as int).compareTo(a['smartScore'] as int);
             }
 
             if (_selectedSort == 'experience') {
-              return _parseExperienceYears(bData)
-                  .compareTo(_parseExperienceYears(aData));
+              final comp = (b['experience'] as int)
+                  .compareTo(a['experience'] as int);
+              if (comp != 0) return comp;
+              return (b['rating'] as double).compareTo(a['rating'] as double);
             }
 
-            if (_selectedSort == 'distance') {
-              return dA.compareTo(dB);
+            if (_selectedSort == 'rating') {
+              final comp =
+                  (b['rating'] as double).compareTo(a['rating'] as double);
+              if (comp != 0) return comp;
+              return (b['smartScore'] as int).compareTo(a['smartScore'] as int);
             }
 
-            // Default 'best' sort: Dynamic Smart Match Score
-            final scoreA = _calculateSmartMatchScore(
-              data: aData,
-              distanceKm: dA,
-              targetSubject: targetSubject,
-              targetClass: targetClass,
-              maxRadius: maxRadius,
-            );
-            final scoreB = _calculateSmartMatchScore(
-              data: bData,
-              distanceKm: dB,
-              targetSubject: targetSubject,
-              targetClass: targetClass,
-              maxRadius: maxRadius,
-            );
+            final int badgeComp =
+                (b['badgeWeight'] as int).compareTo(a['badgeWeight'] as int);
+            if (badgeComp != 0) return badgeComp;
 
-            if (scoreA != scoreB) {
-              return scoreB.compareTo(scoreA);
-            }
+            final int scoreComp =
+                (b['smartScore'] as int).compareTo(a['smartScore'] as int);
+            if (scoreComp != 0) return scoreComp;
 
-            final bool vA = aData['isVerified'] == true;
-            final bool vB = bData['isVerified'] == true;
-            if (vA != vB) return vB ? 1 : -1;
+            final int ratingComp =
+                (b['rating'] as double).compareTo(a['rating'] as double);
+            if (ratingComp != 0) return ratingComp;
 
-            final double rA = double.tryParse(
-                    (aData['averageRating'] ?? aData['rating'] ?? '0')
-                        .toString()) ??
-                0.0;
-            final double rB = double.tryParse(
-                    (bData['averageRating'] ?? bData['rating'] ?? '0')
-                        .toString()) ??
-                0.0;
-            return rB.compareTo(rA);
+            final double dA = (a['distanceKm'] as double) >= 0
+                ? (a['distanceKm'] as double)
+                : 999999.0;
+            final double dB = (b['distanceKm'] as double) >= 0
+                ? (b['distanceKm'] as double)
+                : 999999.0;
+            return dA.compareTo(dB);
           });
 
           return Column(
             children: [
-              _buildTopSummaryAndSortBar(matchedDocs.length),
+              _buildTopSummaryAndSortBar(processedTeachers.length),
               const Divider(height: 1, color: Color(0xFFE2E8F0)),
               Expanded(
-                child: matchedDocs.isEmpty
+                child: processedTeachers.isEmpty
                     ? _buildNoResultsView()
                     : ListView.builder(
                         key: const PageStorageKey<String>(
                             'teacher_search_results_list'),
-                        padding: const EdgeInsets.fromLTRB(10, 12, 10, 28),
+                        padding: const EdgeInsets.fromLTRB(12, 14, 12, 32),
                         physics: const BouncingScrollPhysics(),
-                        itemCount: matchedDocs.length,
+                        itemCount: processedTeachers.length,
                         itemBuilder: (context, index) {
-                          final doc = matchedDocs[index];
-                          final data =
-                              doc.data() as Map<String, dynamic>? ?? {};
+                          final item = processedTeachers[index];
+                          final doc = item['doc'] as QueryDocumentSnapshot;
+                          final data = item['data'] as Map<String, dynamic>;
 
-                          final coords = _extractCoordinates(data);
-                          double tLat = coords['lat']!;
-                          double tLng = coords['lng']!;
-
-                          double distanceKm = -1.0;
-                          String distanceText = "N/A";
-                          if (tLat != 0.0 && tLng != 0.0) {
-                            distanceKm = _calculateHaversineDistance(
-                                _studentLat, _studentLng, tLat, tLng);
-                            distanceText = "${distanceKm.toStringAsFixed(1)} KM";
-                          }
+                          final double tLat = item['hubLat'] as double;
+                          final double tLng = item['hubLng'] as double;
+                          final double dist = item['distanceKm'] as double;
+                          final String distanceText =
+                              dist >= 0 ? '${dist.toStringAsFixed(1)} KM' : 'N/A';
 
                           List<String> subjectsList = [];
                           if (data['subjects'] is List) {
@@ -968,64 +1110,117 @@ class _TeacherSearchResultScreenState extends State<TeacherSearchResultScreen>
                               data['highestBadgeType']?.toString();
 
                           final String locationDisplay =
-                              _extractLocationDisplay(data);
-
-                          final double ratingVal = double.tryParse(
-                                  (data['averageRating'] ??
-                                          data['rating'] ??
-                                          '0.0')
-                                      .toString()) ??
-                              0.0;
-
-                          final int matchScore = _calculateSmartMatchScore(
-                            data: data,
-                            distanceKm: distanceKm,
-                            targetSubject: targetSubject,
-                            targetClass: targetClass,
-                            maxRadius: maxRadius,
-                          );
+                              item['hubAddress'] as String;
+                          final double ratingVal = item['rating'] as double;
+                          final int matchScore = item['smartScore'] as int;
 
                           return Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Padding(
-                                padding: const EdgeInsets.only(left: 12, bottom: 4),
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 10, vertical: 4),
-                                  decoration: BoxDecoration(
-                                    gradient: const LinearGradient(
-                                      colors: [_primaryNavy, _brandBlue],
+                                padding: const EdgeInsets.only(
+                                    left: 4, right: 4, bottom: 6),
+                                child: Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 8, vertical: 3.5),
+                                          decoration: BoxDecoration(
+                                            color: _primaryNavy,
+                                            borderRadius:
+                                                BorderRadius.circular(8),
+                                          ),
+                                          child: Text(
+                                            '#${index + 1}',
+                                            style: const TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.w800,
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 9, vertical: 3.5),
+                                          decoration: BoxDecoration(
+                                            gradient: const LinearGradient(
+                                              colors: [
+                                                _primaryNavy,
+                                                _secondaryBlue
+                                              ],
+                                            ),
+                                            borderRadius:
+                                                BorderRadius.circular(8),
+                                            boxShadow: [
+                                              BoxShadow(
+                                                color: _primaryNavy
+                                                    .withOpacity(0.12),
+                                                blurRadius: 5,
+                                                offset: const Offset(0, 2),
+                                              ),
+                                            ],
+                                          ),
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              const Icon(
+                                                Icons.auto_awesome,
+                                                color: Color(0xFFFBBF24),
+                                                size: 12,
+                                              ),
+                                              const SizedBox(width: 4),
+                                              Text(
+                                                '$matchScore% Match',
+                                                style: const TextStyle(
+                                                  fontSize: 11,
+                                                  fontWeight: FontWeight.w800,
+                                                  color: Colors.white,
+                                                  letterSpacing: 0.2,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
                                     ),
-                                    borderRadius: BorderRadius.circular(10),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: _primaryNavy.withOpacity(0.12),
-                                        blurRadius: 6,
-                                        offset: const Offset(0, 2),
-                                      ),
-                                    ],
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      const Icon(
-                                        Icons.auto_awesome,
-                                        color: Color(0xFFFBBF24),
-                                        size: 13,
-                                      ),
-                                      const SizedBox(width: 5),
-                                      Text(
-                                        '$matchScore% Smart Match',
-                                        style: const TextStyle(
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.w800,
-                                          color: Colors.white,
-                                          letterSpacing: 0.2,
+                                    if (dist >= 0)
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 8, vertical: 3.5),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFFEFF6FF),
+                                          borderRadius:
+                                              BorderRadius.circular(8),
+                                          border: Border.all(
+                                            color: const Color(0xFFBFDBFE),
+                                          ),
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            const Icon(
+                                              Icons.near_me_rounded,
+                                              size: 11,
+                                              color: _accentBlue,
+                                            ),
+                                            const SizedBox(width: 4),
+                                            Text(
+                                              distanceText,
+                                              style: const TextStyle(
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.w800,
+                                                color: _accentBlue,
+                                              ),
+                                            ),
+                                          ],
                                         ),
                                       ),
-                                    ],
-                                  ),
+                                  ],
                                 ),
                               ),
                               TeacherCardWidget(
@@ -1042,7 +1237,7 @@ class _TeacherSearchResultScreenState extends State<TeacherSearchResultScreen>
                                                 ?.toString() ??
                                             '0') ??
                                         0,
-                                experienceYears: _parseExperienceYears(data),
+                                experienceYears: item['experience'] as int,
                                 followersCount: data['followersCount'] is int
                                     ? data['followersCount']
                                     : int.tryParse(data['followersCount']
@@ -1091,7 +1286,8 @@ class _TeacherSearchResultScreenState extends State<TeacherSearchResultScreen>
                                               (cDoc.data()['participants']
                                                       as List?) ??
                                                   [];
-                                          if (participants.contains(teacherId)) {
+                                          if (participants
+                                              .contains(teacherId)) {
                                             targetChatRoomId = cDoc.id;
                                             break;
                                           }
@@ -1132,7 +1328,7 @@ class _TeacherSearchResultScreenState extends State<TeacherSearchResultScreen>
                                         tLat, tLng, teacherName)
                                     : null,
                               ),
-                              const SizedBox(height: 12),
+                              const SizedBox(height: 14),
                             ],
                           );
                         },
@@ -1153,13 +1349,13 @@ class _TeacherSearchResultScreenState extends State<TeacherSearchResultScreen>
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Container(
-              width: 84,
-              height: 84,
+              width: 86,
+              height: 86,
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   colors: [
                     _brandBlue.withOpacity(0.12),
-                    _accentBlue.withOpacity(0.05),
+                    _accentBlue.withOpacity(0.06),
                   ],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
@@ -1174,19 +1370,19 @@ class _TeacherSearchResultScreenState extends State<TeacherSearchResultScreen>
             ),
             const SizedBox(height: 18),
             const Text(
-              "No Matching Educators Found",
+              'No Matching Educators Found',
               style: TextStyle(
                 fontSize: 18,
-                fontWeight: FontWeight.w900,
+                fontWeight: FontWeight.w800,
                 color: _primaryNavy,
               ),
             ),
             const SizedBox(height: 8),
             const Text(
-              "We couldn't find any teacher matching your exact filters and radius settings. Try broadening your search criteria or increasing the distance range.",
+              'We could not find any teachers matching your criteria. Try widening your radius, removing specific filters, or selecting Any Distance.',
               textAlign: TextAlign.center,
               style: TextStyle(
-                fontSize: 13.2,
+                fontSize: 13.5,
                 color: Color(0xFF64748B),
                 height: 1.45,
                 fontWeight: FontWeight.w500,
@@ -1199,7 +1395,7 @@ class _TeacherSearchResultScreenState extends State<TeacherSearchResultScreen>
                 foregroundColor: Colors.white,
                 elevation: 0,
                 padding:
-                    const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                    const EdgeInsets.symmetric(horizontal: 22, vertical: 13),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(14),
                 ),
@@ -1207,7 +1403,7 @@ class _TeacherSearchResultScreenState extends State<TeacherSearchResultScreen>
               onPressed: () => Navigator.pop(context),
               icon: const Icon(Icons.tune_rounded, size: 18),
               label: const Text(
-                "Adjust Search Filters",
+                'Adjust Search Filters',
                 style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5),
               ),
             ),
