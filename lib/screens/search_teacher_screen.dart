@@ -233,24 +233,29 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC),
+      backgroundColor: const Color(0xFFF1F5F9),
       appBar: AppBar(
         title: const Text(
           'Find Your Teacher',
           style: TextStyle(
-            fontWeight: FontWeight.bold,
-            fontSize: 18,
+            fontWeight: FontWeight.w700,
+            fontSize: 19,
             color: Colors.white,
+            letterSpacing: 0.2,
           ),
         ),
-        backgroundColor: const Color(0xFF1E4C7A),
+        backgroundColor: const Color(0xFF133E68),
         elevation: 0,
         centerTitle: true,
         actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh_rounded, color: Colors.white, size: 22),
-            tooltip: 'Clear Filters',
-            onPressed: _clearFilters,
+          Container(
+            margin: const EdgeInsets.only(right: 12),
+            child: IconButton(
+              icon: const Icon(Icons.refresh_rounded, color: Colors.white, size: 22),
+              tooltip: 'Clear Filters',
+              splashRadius: 22,
+              onPressed: _clearFilters,
+            ),
           ),
         ],
       ),
@@ -258,97 +263,164 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
         physics: const BouncingScrollPhysics(),
         child: Column(
           children: [
-            _buildAdvancedSearchPanel(),
+            _buildSearchContainer(),
+            const SizedBox(height: 24),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildAdvancedSearchPanel() {
+  Widget _buildSearchContainer() {
     return Container(
-      padding: const EdgeInsets.all(20),
       decoration: const BoxDecoration(
-        color: Color(0xFF1E4C7A),
-        borderRadius: BorderRadius.vertical(bottom: Radius.circular(28)),
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Color(0xFF133E68),
+            Color(0xFF1E4C7A),
+          ],
+        ),
+        borderRadius: BorderRadius.vertical(bottom: Radius.circular(32)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black12,
-            blurRadius: 10,
-            offset: Offset(0, 5),
-          )
+            color: Color(0x2A0F172A),
+            blurRadius: 18,
+            offset: Offset(0, 8),
+          ),
         ],
       ),
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Text(
-            "Search Directly by Teacher ID",
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 13,
-              fontWeight: FontWeight.bold,
-              letterSpacing: 0.5,
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.08),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: Colors.white.withOpacity(0.12),
+                width: 1,
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFB300).withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(
+                        Icons.fingerprint_rounded,
+                        color: Color(0xFFFFB300),
+                        size: 18,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    const Text(
+                      'Direct Educator ID Search',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.3,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                _customSearchField(
+                  'Enter Teacher Unique ID (e.g. TEA-12345)',
+                  _uidController,
+                  Icons.tag_rounded,
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 10),
-          _customSearchField(
-            "Enter Teacher Unique ID",
-            _uidController,
-            Icons.tag_rounded,
-          ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 22),
           Row(
             children: [
               Expanded(
-                child: Divider(
-                  color: Colors.white.withOpacity(0.2),
-                  thickness: 1,
+                child: Container(
+                  height: 1,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        Colors.white.withOpacity(0.0),
+                        Colors.white.withOpacity(0.25),
+                      ],
+                    ),
+                  ),
                 ),
               ),
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
+                padding: const EdgeInsets.symmetric(horizontal: 14),
                 child: Text(
-                  "OR SEARCH BY FILTERS",
+                  'OR FILTER BY CRITERIA',
                   style: TextStyle(
-                    color: Colors.white.withOpacity(0.6),
+                    color: Colors.white.withOpacity(0.65),
                     fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 1.0,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1.2,
                   ),
                 ),
               ),
               Expanded(
-                child: Divider(
-                  color: Colors.white.withOpacity(0.2),
-                  thickness: 1,
+                child: Container(
+                  height: 1,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        Colors.white.withOpacity(0.25),
+                        Colors.white.withOpacity(0.0),
+                      ],
+                    ),
+                  ),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 18),
           _customSearchField(
-            "Teacher's Name",
+            'Teacher Name',
             _nameController,
             Icons.person_outline_rounded,
           ),
           const SizedBox(height: 12),
           _customSearchField(
-            "Subject (e.g. Physics, Chemistry, Math)",
+            'Subject (e.g. Mathematics, Physics, Biology)',
             _subjectController,
-            Icons.book_outlined,
+            Icons.menu_book_rounded,
           ),
-          const SizedBox(height: 16),
-          const Text(
-            "Location Matching Mode",
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 12.5,
-              fontWeight: FontWeight.bold,
-              letterSpacing: 0.3,
+          const SizedBox(height: 18),
+          Padding(
+            padding: const EdgeInsets.only(left: 4, bottom: 8),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.near_me_rounded,
+                  color: Color(0xFFFFB300),
+                  size: 16,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  'Location Matching Mode',
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.9),
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.3,
+                  ),
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 8),
           Container(
             padding: const EdgeInsets.all(4),
             decoration: BoxDecoration(
@@ -367,13 +439,23 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
                       });
                       _validateSearchForm();
                     },
-                    child: Container(
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
                       padding: const EdgeInsets.symmetric(vertical: 10),
                       decoration: BoxDecoration(
                         color: _locationMode == LocationSearchMode.currentGps
                             ? const Color(0xFFFFB300)
                             : Colors.transparent,
                         borderRadius: BorderRadius.circular(12),
+                        boxShadow: _locationMode == LocationSearchMode.currentGps
+                            ? [
+                                BoxShadow(
+                                  color: const Color(0xFFFFB300).withOpacity(0.35),
+                                  blurRadius: 8,
+                                  offset: const Offset(0, 2),
+                                )
+                              ]
+                            : null,
                       ),
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -387,14 +469,13 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
                           ),
                           const SizedBox(width: 6),
                           Text(
-                            "Current GPS",
+                            'Current GPS',
                             style: TextStyle(
                               fontSize: 12.5,
-                              fontWeight: FontWeight.bold,
-                              color:
-                                  _locationMode == LocationSearchMode.currentGps
-                                      ? const Color(0xFF0F172A)
-                                      : Colors.white70,
+                              fontWeight: FontWeight.w700,
+                              color: _locationMode == LocationSearchMode.currentGps
+                                  ? const Color(0xFF0F172A)
+                                  : Colors.white70,
                             ),
                           ),
                         ],
@@ -411,14 +492,23 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
                       });
                       _validateSearchForm();
                     },
-                    child: Container(
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
                       padding: const EdgeInsets.symmetric(vertical: 10),
                       decoration: BoxDecoration(
-                        color:
-                            _locationMode == LocationSearchMode.specificLocation
-                                ? const Color(0xFFFFB300)
-                                : Colors.transparent,
+                        color: _locationMode == LocationSearchMode.specificLocation
+                            ? const Color(0xFFFFB300)
+                            : Colors.transparent,
                         borderRadius: BorderRadius.circular(12),
+                        boxShadow: _locationMode == LocationSearchMode.specificLocation
+                            ? [
+                                BoxShadow(
+                                  color: const Color(0xFFFFB300).withOpacity(0.35),
+                                  blurRadius: 8,
+                                  offset: const Offset(0, 2),
+                                )
+                              ]
+                            : null,
                       ),
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -426,19 +516,17 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
                           Icon(
                             Icons.place_rounded,
                             size: 16,
-                            color: _locationMode ==
-                                    LocationSearchMode.specificLocation
+                            color: _locationMode == LocationSearchMode.specificLocation
                                 ? const Color(0xFF0F172A)
                                 : Colors.white70,
                           ),
                           const SizedBox(width: 6),
                           Text(
-                            "Specific Location",
+                            'Specific Location',
                             style: TextStyle(
                               fontSize: 12.5,
-                              fontWeight: FontWeight.bold,
-                              color: _locationMode ==
-                                      LocationSearchMode.specificLocation
+                              fontWeight: FontWeight.w700,
+                              color: _locationMode == LocationSearchMode.specificLocation
                                   ? const Color(0xFF0F172A)
                                   : Colors.white70,
                             ),
@@ -452,17 +540,17 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
             ),
           ),
           const SizedBox(height: 12),
-          if (_locationMode == LocationSearchMode.specificLocation)
+          if (_locationMode == LocationSearchMode.specificLocation) ...[
             Row(
               children: [
                 Expanded(
                   child: _customSearchField(
-                    "Area name, landmark, or hub",
+                    'Area name, landmark, or hub',
                     _locationController,
                     Icons.location_on_outlined,
                   ),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 10),
                 Material(
                   color: Colors.white.withOpacity(0.12),
                   borderRadius: BorderRadius.circular(14),
@@ -471,13 +559,14 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
                     onTap: _openMapPicker,
                     child: Container(
                       padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
+                        horizontal: 16,
                         vertical: 14,
                       ),
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(14),
                         border: Border.all(
-                          color: const Color(0xFFFFB300).withOpacity(0.5),
+                          color: const Color(0xFFFFB300).withOpacity(0.6),
+                          width: 1.2,
                         ),
                       ),
                       child: const Column(
@@ -490,10 +579,10 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
                           ),
                           SizedBox(height: 2),
                           Text(
-                            "Map",
+                            'Map',
                             style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
                               color: Color(0xFFFFB300),
                             ),
                           ),
@@ -504,70 +593,84 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
                 ),
               ],
             ),
-          if (_locationMode == LocationSearchMode.specificLocation &&
-              _pickedLatitude != null) ...[
-            const SizedBox(height: 6),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4),
-              child: Row(
-                children: [
-                  const Icon(
-                    Icons.check_circle_rounded,
-                    color: Color(0xFF10B981),
-                    size: 14,
+            if (_pickedLatitude != null && _pickedLongitude != null) ...[
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF059669).withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: const Color(0xFF10B981).withOpacity(0.4),
                   ),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      "Pinned on map: ${_pickedLatitude!.toStringAsFixed(4)}, ${_pickedLongitude!.toStringAsFixed(4)}",
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 11,
-                        color: Color(0xFF86EFAC),
-                        fontWeight: FontWeight.w600,
+                ),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.check_circle_rounded,
+                      color: Color(0xFF34D399),
+                      size: 15,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Map Point: ${_pickedLatitude!.toStringAsFixed(4)}, ${_pickedLongitude!.toStringAsFixed(4)}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 11.5,
+                          color: Color(0xFFA7F3D0),
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
+            ],
           ],
           const SizedBox(height: 12),
           _customSearchField(
-            "Minimum Experience (Years)",
+            'Minimum Experience (Years)',
             _experienceController,
-            Icons.history_toggle_off_rounded,
+            Icons.workspace_premium_outlined,
             isNumber: true,
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 14),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.06),
-              borderRadius: BorderRadius.circular(14),
+              color: Colors.white.withOpacity(0.08),
+              borderRadius: BorderRadius.circular(16),
               border: Border.all(
-                color: Colors.white.withOpacity(0.1),
+                color: Colors.white.withOpacity(0.12),
                 width: 1,
               ),
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Row(
+                Row(
                   children: [
-                    Icon(
-                      Icons.radar_rounded,
-                      color: Color(0xFFFFB300),
-                      size: 18,
+                    Container(
+                      padding: const EdgeInsets.all(5),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFB300).withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(
+                        Icons.radar_rounded,
+                        color: Color(0xFFFFB300),
+                        size: 18,
+                      ),
                     ),
-                    SizedBox(width: 8),
-                    Text(
-                      "Search Radius",
+                    const SizedBox(width: 10),
+                    const Text(
+                      'Search Radius',
                       style: TextStyle(
                         color: Colors.white,
                         fontSize: 13,
-                        fontWeight: FontWeight.bold,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
                   ],
@@ -587,22 +690,23 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
               ],
             ),
           ),
-          const SizedBox(height: 26),
+          const SizedBox(height: 24),
           AnimatedContainer(
             duration: const Duration(milliseconds: 250),
             curve: Curves.easeInOut,
-            height: 50,
+            height: 52,
             child: ElevatedButton(
               style: ElevatedButton.styleFrom(
                 backgroundColor: _isSearchButtonEnabled
                     ? const Color(0xFFFFB300)
-                    : Colors.grey.shade400,
+                    : Colors.white.withOpacity(0.12),
                 foregroundColor: _isSearchButtonEnabled
                     ? const Color(0xFF0F172A)
-                    : Colors.white24,
-                disabledBackgroundColor: Colors.grey.shade400,
-                disabledForegroundColor: Colors.white60,
-                elevation: _isSearchButtonEnabled ? 4 : 0,
+                    : Colors.white38,
+                disabledBackgroundColor: Colors.white.withOpacity(0.12),
+                disabledForegroundColor: Colors.white38,
+                elevation: _isSearchButtonEnabled ? 6 : 0,
+                shadowColor: const Color(0xFFFFB300).withOpacity(0.4),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(16),
                 ),
@@ -612,10 +716,10 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
                   : null,
               child: _isFetchingGps
                   ? const SizedBox(
-                      width: 20,
-                      height: 20,
+                      width: 22,
+                      height: 22,
                       child: CircularProgressIndicator(
-                        strokeWidth: 2.2,
+                        strokeWidth: 2.4,
                         color: Color(0xFF0F172A),
                       ),
                     )
@@ -626,21 +730,21 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
                           _isSearchButtonEnabled
                               ? Icons.search_rounded
                               : Icons.search_off_rounded,
-                          size: 20,
+                          size: 21,
                           color: _isSearchButtonEnabled
                               ? const Color(0xFF0F172A)
-                              : Colors.white60,
+                              : Colors.white38,
                         ),
                         const SizedBox(width: 8),
                         Text(
-                          "Search Teachers",
+                          'Search Teachers',
                           style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 15.5,
                             color: _isSearchButtonEnabled
                                 ? const Color(0xFF0F172A)
-                                : Colors.white60,
-                            letterSpacing: 0.3,
+                                : Colors.white38,
+                            letterSpacing: 0.4,
                           ),
                         ),
                       ],
@@ -661,10 +765,10 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
       child: DropdownButton<String>(
         value: value,
         isExpanded: true,
-        dropdownColor: const Color(0xFF1E4C7A),
+        dropdownColor: const Color(0xFF133E68),
         style: const TextStyle(
           color: Colors.white,
-          fontWeight: FontWeight.bold,
+          fontWeight: FontWeight.w700,
           fontSize: 13,
         ),
         icon: const Icon(
@@ -694,26 +798,43 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
       keyboardType: isNumber ? TextInputType.number : TextInputType.text,
       style: const TextStyle(
         color: Colors.white,
-        fontSize: 13,
-        fontWeight: FontWeight.w500,
+        fontSize: 13.5,
+        fontWeight: FontWeight.w600,
       ),
       decoration: InputDecoration(
         hintText: hint,
-        hintStyle: const TextStyle(color: Colors.white54, fontSize: 12),
-        prefixIcon: Icon(icon, color: const Color(0xFFFFB300), size: 18),
+        hintStyle: const TextStyle(
+          color: Colors.white54,
+          fontSize: 12.5,
+          fontWeight: FontWeight.w400,
+        ),
+        prefixIcon: Icon(icon, color: const Color(0xFFFFB300), size: 19),
         filled: true,
-        fillColor: Colors.white.withOpacity(0.06),
+        fillColor: Colors.white.withOpacity(0.08),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide: BorderSide.none,
+          borderSide: BorderSide(
+            color: Colors.white.withOpacity(0.1),
+            width: 1,
+          ),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide(
+            color: Colors.white.withOpacity(0.1),
+            width: 1,
+          ),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: Color(0xFFFFB300), width: 1.5),
+          borderSide: const BorderSide(
+            color: Color(0xFFFFB300),
+            width: 1.5,
+          ),
         ),
         contentPadding: const EdgeInsets.symmetric(
           vertical: 14,
-          horizontal: 12,
+          horizontal: 14,
         ),
       ),
     );
