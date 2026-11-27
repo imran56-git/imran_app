@@ -42,7 +42,7 @@ class GeminiService {
   int _activeModelIndex = 0;
   bool _isBusy = false;
 
-  final List<Map<String, String>> _conversationHistory = [];
+  final List> _conversationHistory = [];
 
   String _buildSystemInstruction([String? customSystemPrompt]) {
     if (customSystemPrompt != null && customSystemPrompt.trim().isNotEmpty) {
@@ -198,7 +198,7 @@ class GeminiService {
   }) async {
     await _ensureApiKeysLoaded();
 
-    final List<Map<String, dynamic>> parts = [
+    final List> parts = [
       {'text': prompt},
     ];
 
@@ -220,7 +220,7 @@ class GeminiService {
       for (final modelName in _geminiModels) {
         try {
           final Uri uri = Uri.parse(
-            'https://generativelanguage.googleapis.com/v1beta/models/$modelName:generateContent?key=$_resolvedGeminiKey',
+            'https://generativelanguage.googleapis.com/v1beta/models/$modelName:generateContent',
           );
 
           final Map<String, dynamic> requestBody = {
@@ -239,7 +239,10 @@ class GeminiService {
           final response = await http
               .post(
                 uri,
-                headers: {'Content-Type': 'application/json'},
+                headers: {
+                  'Content-Type': 'application/json',
+                  'x-goog-api-key': _resolvedGeminiKey,
+                },
                 body: jsonEncode(requestBody),
               )
               .timeout(const Duration(seconds: 20));
@@ -274,7 +277,7 @@ class GeminiService {
     }
 
     if (_resolvedGroqKey.isNotEmpty) {
-      final List<Map<String, dynamic>> contentList = [
+      final List> contentList = [
         {'type': 'text', 'text': prompt},
       ];
       for (final file in imageFiles) {
@@ -333,7 +336,7 @@ class GeminiService {
     throw Exception(lastError ?? 'Vision verification service unavailable.');
   }
 
-  Future<Map<String, dynamic>> verifyGovernmentIdDocument({
+  Future> verifyGovernmentIdDocument({
     required File documentFile,
     required String selectedDocType,
     String? expectedFullName,
@@ -437,7 +440,7 @@ Strict Rules:
     }
   }
 
-  Future<Map<String, dynamic>> verifyQualificationCertificate({
+  Future> verifyQualificationCertificate({
     required File certificateFile,
     String? expectedFullName,
   }) async {
@@ -538,7 +541,7 @@ Strict Rules:
     }
   }
 
-  Future<Map<String, dynamic>> verifyFaceMatchWithIdCard({
+  Future> verifyFaceMatchWithIdCard({
     required File idDocumentFile,
     required File liveFaceFile,
     double minimumSimilarityThreshold = 85.0,
@@ -620,7 +623,7 @@ Respond ONLY with a valid JSON object in English using this exact schema:
   }) async {
     final String sysInstruction = _buildSystemInstruction(systemPrompt);
 
-    final List<Map<String, dynamic>> contents = [];
+    final List> contents = [];
     for (final turn in _conversationHistory) {
       final String role = turn['role'] == 'user' ? 'user' : 'model';
       final String text = (turn['content'] ?? '').trim();
@@ -641,7 +644,7 @@ Respond ONLY with a valid JSON object in English using this exact schema:
     });
 
     final Uri uri = Uri.parse(
-      'https://generativelanguage.googleapis.com/v1beta/models/$modelName:generateContent?key=$_resolvedGeminiKey',
+      'https://generativelanguage.googleapis.com/v1beta/models/$modelName:generateContent',
     );
 
     final Map<String, dynamic> requestBody = {
@@ -660,7 +663,10 @@ Respond ONLY with a valid JSON object in English using this exact schema:
     final response = await http
         .post(
           uri,
-          headers: {'Content-Type': 'application/json'},
+          headers: {
+            'Content-Type': 'application/json',
+            'x-goog-api-key': _resolvedGeminiKey,
+          },
           body: jsonEncode(requestBody),
         )
         .timeout(const Duration(seconds: 15));
@@ -714,7 +720,7 @@ Respond ONLY with a valid JSON object in English using this exact schema:
     }
 
     final String sysInstruction = _buildSystemInstruction(systemPrompt);
-    final List<Map<String, dynamic>> messages = [
+    final List> messages = [
       {'role': 'system', 'content': sysInstruction},
       ..._conversationHistory.map((turn) => {
             'role': turn['role'] == 'user' ? 'user' : 'assistant',
