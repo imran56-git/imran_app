@@ -1,9 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
-import 'package:http/http.dart' as http;
+import 'package:firebase_ai/firebase_ai.dart';
 import '../constants/ai_knowledge.dart';
 
 class GeminiService {
@@ -11,38 +10,8 @@ class GeminiService {
   factory GeminiService() => _instance;
   GeminiService._internal();
 
-  static const String _envGeminiKey =
-      String.fromEnvironment('GEMINI_API_KEY', defaultValue: '');
-  static const String _envGroqKey =
-      String.fromEnvironment('GROQ_API_KEY', defaultValue: '');
-
-  String _resolvedGeminiKey = _envGeminiKey.trim();
-  String _resolvedGroqKey = _envGroqKey.trim();
-  bool _checkedFirestoreKeys = false;
-
-  static const List<String> _geminiModels = [
-    'gemini-3.5-flash-lite',
-    'gemini-3.8-flash',
-    'gemini-3.6-flash',
-    'gemini-4-hydrogen',
-    'gemini-4-neon',
-  ];
-
-  static const List<String> _groqModels = [
-    'llama-3.3-70b-versatile',
-    'llama-3.1-8b-instant',
-  ];
-
-  static const List<String> _groqVisionModels = [
-    'meta-llama/llama-4-scout-17b-16e-instruct',
-    'llama-3.2-90b-vision-preview',
-    'llama-3.2-11b-vision-preview',
-  ];
-
-  int _activeModelIndex = 0;
   bool _isBusy = false;
-
-  final List<Map<String, String>> _conversationHistory = [];
+  final List<Content> _conversationHistory = [];
 
   String _buildSystemInstruction([String? customSystemPrompt]) {
     if (customSystemPrompt != null && customSystemPrompt.trim().isNotEmpty) {
@@ -73,38 +42,11 @@ class GeminiService {
         '   - Respond clearly in English.';
   }
 
-  Future<void> _ensureApiKeysLoaded() async {
-    if (_checkedFirestoreKeys) return;
-
-    try {
-      final doc = await FirebaseFirestore.instance
-          .collection('app_config')
-          .doc('ai_keys')
-          .get()
-          .timeout(const Duration(seconds: 4));
-
-      if (doc.exists && doc.data() != null) {
-        final data = doc.data()!;
-        final String fbGemini =
-            (data['geminiApiKey'] ?? data['geminiKey'] ?? '').toString().trim();
-        final String fbGroq =
-            (data['groqApiKey'] ?? data['groqKey'] ?? '').toString().trim();
-        if (fbGemini.isNotEmpty) {
-          _resolvedGeminiKey = fbGemini;
-        }
-        if (fbGroq.isNotEmpty) {
-          _resolvedGroqKey = fbGroq;
-        }
-        _checkedFirestoreKeys = true;
-      }
-    } catch (_) {}
-  }
-
   void _recordTurn(String userPrompt, String aiResponse) {
     if (aiResponse.trim().isEmpty) return;
-    _conversationHistory.add({'role': 'user', 'content': userPrompt});
-    _conversationHistory.add({'role': 'model', 'content': aiResponse});
-    while (_conversationHistory.length > 20) {
+    _conversationHistory.add(Content.text(userPrompt));
+    _conversationHistory.add(Content.model([TextPart(aiResponse)]));
+    while (_conversationHistory.length > 8) {
       _conversationHistory.removeAt(0);
     }
   }
@@ -192,148 +134,35 @@ class GeminiService {
     return matchedTokens >= minLen;
   }
 
-  Future<String> _callGeminiVisionHttp({
+  Future<String> _callGeminiVision({
     required String prompt,
     required List<File> imageFiles,
   }) async {
-    await _ensureApiKeysLoaded();
-
-    final List<Map<String, dynamic>> parts = [
-      {'text': prompt},
-    ];
+    final List<Part> parts = [TextPart(prompt)];
 
     for (final file in imageFiles) {
       final bytes = await file.readAsBytes();
-      final base64Data = base64Encode(bytes);
       final mimeType = _detectMimeType(file.path);
-      parts.add({
-        'inline_data': {
-          'mime_type': mimeType,
-          'data': base64Data,
-        }
-      });
+      parts.add(InlineDataPart(mimeType, bytes));
     }
 
-    Object? lastError;
+    final model = FirebaseAI.googleAI().generativeModel(
+      model: 'gemini-2.5-flash',
+      generationConfig: GenerationConfig(
+        temperature: 0.1,
+        maxOutputTokens: 1024,
+      ),
+    );
 
-    if (_resolvedGeminiKey.isNotEmpty) {
-      for (final modelName in _geminiModels) {
-        try {
-          final Uri uri = Uri.parse(
-            'https://generativelanguage.googleapis.com/v1beta/models/$modelName:generateContent',
-          );
+    final response = await model.generateContent([
+      Content.multi(parts),
+    ]);
 
-          final Map<String, dynamic> requestBody = {
-            'contents': [
-              {
-                'role': 'user',
-                'parts': parts,
-              }
-            ],
-            'generationConfig': {
-              'temperature': 0.1,
-              'maxOutputTokens': 1024,
-            },
-          };
-
-          final response = await http
-              .post(
-                uri,
-                headers: {
-                  'Content-Type': 'application/json',
-                  'x-goog-api-key': _resolvedGeminiKey,
-                },
-                body: jsonEncode(requestBody),
-              )
-              .timeout(const Duration(seconds: 14));
-
-          if (response.statusCode == 200) {
-            final Map<String, dynamic> decoded =
-                jsonDecode(utf8.decode(response.bodyBytes))
-                    as Map<String, dynamic>;
-            final List<dynamic> candidates =
-                (decoded['candidates'] as List<dynamic>?) ?? const [];
-            if (candidates.isNotEmpty) {
-              final content =
-                  candidates.first['content'] as Map<String, dynamic>?;
-              final resParts =
-                  (content?['parts'] as List<dynamic>?) ?? const [];
-              final StringBuffer buffer = StringBuffer();
-              for (final p in resParts) {
-                if (p is Map && p['thought'] != true && p['text'] != null) {
-                  buffer.write(p['text'].toString());
-                }
-              }
-              final out = buffer.toString().trim();
-              if (out.isNotEmpty) return out;
-            }
-          } else {
-            lastError = 'HTTP ${response.statusCode}';
-          }
-        } catch (e) {
-          lastError = e;
-        }
-      }
+    final String output = response.text?.trim() ?? '';
+    if (output.isEmpty) {
+      throw Exception('Empty response from vision model.');
     }
-
-    if (_resolvedGroqKey.isNotEmpty) {
-      final List<Map<String, dynamic>> contentList = [
-        {'type': 'text', 'text': prompt},
-      ];
-      for (final file in imageFiles) {
-        final bytes = await file.readAsBytes();
-        final base64Data = base64Encode(bytes);
-        final mimeType = _detectMimeType(file.path);
-        contentList.add({
-          'type': 'image_url',
-          'image_url': {
-            'url': 'data:$mimeType;base64,$base64Data',
-          },
-        });
-      }
-
-      for (final groqModel in _groqVisionModels) {
-        try {
-          final response = await http
-              .post(
-                Uri.parse('https://api.groq.com/openai/v1/chat/completions'),
-                headers: {
-                  'Content-Type': 'application/json',
-                  'Authorization': 'Bearer $_resolvedGroqKey',
-                },
-                body: jsonEncode({
-                  'model': groqModel,
-                  'messages': [
-                    {
-                      'role': 'user',
-                      'content': contentList,
-                    }
-                  ],
-                  'temperature': 0.1,
-                  'max_tokens': 1024,
-                }),
-              )
-              .timeout(const Duration(seconds: 14));
-
-          if (response.statusCode == 200) {
-            final Map<String, dynamic> data =
-                jsonDecode(utf8.decode(response.bodyBytes))
-                    as Map<String, dynamic>;
-            final List<dynamic> choices =
-                (data['choices'] as List<dynamic>?) ?? const [];
-            if (choices.isNotEmpty) {
-              final msg = choices.first['message'] as Map<String, dynamic>?;
-              final String text = (msg?['content'] ?? '').toString().trim();
-              if (text.isNotEmpty) return text;
-            }
-          }
-        } catch (e) {
-          lastError = e;
-        }
-      }
-    }
-
-    throw Exception(lastError ?? 'Vision verification service unavailable.');
+    return output;
   }
 
   Future<Map<String, dynamic>> verifyGovernmentIdDocument({
@@ -364,7 +193,7 @@ Strict Rules:
 3. Do NOT output or echo any sensitive national identification numbers in the JSON. Only extract the holder's English name, DOB, and validity flags.
 ''';
 
-      final String rawResponse = await _callGeminiVisionHttp(
+      final String rawResponse = await _callGeminiVision(
         prompt: prompt,
         imageFiles: [documentFile],
       );
@@ -468,7 +297,7 @@ Strict Rules:
 2. Translate any regional script text into clean English in the JSON values.
 ''';
 
-      final String rawResponse = await _callGeminiVisionHttp(
+      final String rawResponse = await _callGeminiVision(
         prompt: prompt,
         imageFiles: [certificateFile],
       );
@@ -570,7 +399,7 @@ Respond ONLY with a valid JSON object in English using this exact schema:
 }
 ''';
 
-      final String rawResponse = await _callGeminiVisionHttp(
+      final String rawResponse = await _callGeminiVision(
         prompt: prompt,
         imageFiles: [idDocumentFile, liveFaceFile],
       );
@@ -616,348 +445,6 @@ Respond ONLY with a valid JSON object in English using this exact schema:
     }
   }
 
-  Future<String> _callGeminiDirectHttp({
-    required String modelName,
-    required String prompt,
-    String? systemPrompt,
-  }) async {
-    final String sysInstruction = _buildSystemInstruction(systemPrompt);
-
-    final List<Map<String, dynamic>> contents = [];
-    for (final turn in _conversationHistory) {
-      final String role = turn['role'] == 'user' ? 'user' : 'model';
-      final String text = (turn['content'] ?? '').trim();
-      if (text.isEmpty) continue;
-      contents.add({
-        'role': role,
-        'parts': [
-          {'text': text}
-        ],
-      });
-    }
-
-    contents.add({
-      'role': 'user',
-      'parts': [
-        {'text': prompt}
-      ],
-    });
-
-    final Uri uri = Uri.parse(
-      'https://generativelanguage.googleapis.com/v1beta/models/$modelName:generateContent',
-    );
-
-    final Map<String, dynamic> requestBody = {
-      'systemInstruction': {
-        'parts': [
-          {'text': sysInstruction}
-        ]
-      },
-      'contents': contents,
-      'generationConfig': {
-        'temperature': 0.4,
-        'maxOutputTokens': 1024,
-      },
-    };
-
-    final response = await http
-        .post(
-          uri,
-          headers: {
-            'Content-Type': 'application/json',
-            'x-goog-api-key': _resolvedGeminiKey,
-          },
-          body: jsonEncode(requestBody),
-        )
-        .timeout(const Duration(seconds: 10));
-
-    if (response.statusCode != 200) {
-      throw Exception(
-        'Gemini ($modelName) HTTP ${response.statusCode}: ${response.body}',
-      );
-    }
-
-    final Map<String, dynamic> decoded =
-        jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
-    final List<dynamic> candidates =
-        (decoded['candidates'] as List<dynamic>?) ?? const [];
-
-    if (candidates.isEmpty) {
-      throw Exception('Empty candidates from $modelName');
-    }
-
-    final Map<String, dynamic>? content =
-        candidates.first['content'] as Map<String, dynamic>?;
-    final List<dynamic> parts =
-        (content?['parts'] as List<dynamic>?) ?? const [];
-
-    final StringBuffer replyBuffer = StringBuffer();
-    for (final part in parts) {
-      if (part is Map && part['text'] != null) {
-        final String partText = part['text'].toString();
-        if (part['thought'] != true) {
-          replyBuffer.write(partText);
-        } else if (replyBuffer.isEmpty && parts.length == 1) {
-          replyBuffer.write(partText);
-        }
-      }
-    }
-
-    final String finalText = replyBuffer.toString().trim();
-    if (finalText.isEmpty) {
-      throw Exception('Empty text output from $modelName');
-    }
-
-    return finalText;
-  }
-
-  Stream<String> _streamGeminiDirectHttp({
-    required String modelName,
-    required String prompt,
-    String? systemPrompt,
-  }) async* {
-    final String sysInstruction = _buildSystemInstruction(systemPrompt);
-
-    final List<Map<String, dynamic>> contents = [];
-    for (final turn in _conversationHistory) {
-      final String role = turn['role'] == 'user' ? 'user' : 'model';
-      final String text = (turn['content'] ?? '').trim();
-      if (text.isEmpty) continue;
-      contents.add({
-        'role': role,
-        'parts': [
-          {'text': text}
-        ],
-      });
-    }
-
-    contents.add({
-      'role': 'user',
-      'parts': [
-        {'text': prompt}
-      ],
-    });
-
-    final Uri uri = Uri.parse(
-      'https://generativelanguage.googleapis.com/v1beta/models/$modelName:streamGenerateContent?alt=sse',
-    );
-
-    final Map<String, dynamic> requestBody = {
-      'systemInstruction': {
-        'parts': [
-          {'text': sysInstruction}
-        ]
-      },
-      'contents': contents,
-      'generationConfig': {
-        'temperature': 0.4,
-        'maxOutputTokens': 1024,
-      },
-    };
-
-    final client = http.Client();
-    try {
-      final request = http.Request('POST', uri)
-        ..headers.addAll({
-          'Content-Type': 'application/json',
-          'x-goog-api-key': _resolvedGeminiKey,
-        })
-        ..body = jsonEncode(requestBody);
-
-      final streamedResponse =
-          await client.send(request).timeout(const Duration(seconds: 10));
-
-      if (streamedResponse.statusCode != 200) {
-        throw Exception('Gemini stream HTTP ${streamedResponse.statusCode}');
-      }
-
-      final stream = streamedResponse.stream
-          .transform(utf8.decoder)
-          .transform(const LineSplitter());
-
-      await for (final line in stream) {
-        final trimmed = line.trim();
-        if (trimmed.startsWith('data:')) {
-          final jsonStr = trimmed.substring(5).trim();
-          if (jsonStr.isEmpty || jsonStr == '[DONE]') continue;
-
-          try {
-            final decoded = jsonDecode(jsonStr);
-            if (decoded is Map<String, dynamic>) {
-              final candidates = decoded['candidates'] as List<dynamic>?;
-              if (candidates != null && candidates.isNotEmpty) {
-                final content = candidates.first['content'] as Map<String, dynamic>?;
-                final parts = content?['parts'] as List<dynamic>?;
-                if (parts != null) {
-                  for (final part in parts) {
-                    if (part is Map &&
-                        part['thought'] != true &&
-                        part['text'] != null) {
-                      final chunkText = part['text'].toString();
-                      if (chunkText.isNotEmpty) {
-                        yield chunkText;
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          } catch (_) {}
-        }
-      }
-    } finally {
-      client.close();
-    }
-  }
-
-  Stream<String> _streamGroqDirectHttp({
-    required String prompt,
-    String? systemPrompt,
-  }) async* {
-    if (_resolvedGroqKey.isEmpty) {
-      throw Exception('GROQ_API_KEY is not configured');
-    }
-
-    final String sysInstruction = _buildSystemInstruction(systemPrompt);
-    final List<Map<String, dynamic>> messages = [
-      {'role': 'system', 'content': sysInstruction},
-      ..._conversationHistory.map((turn) => {
-            'role': turn['role'] == 'user' ? 'user' : 'assistant',
-            'content': turn['content'] ?? '',
-          }),
-      {'role': 'user', 'content': prompt},
-    ];
-
-    Object? lastErr;
-    for (final groqModel in _groqModels) {
-      final client = http.Client();
-      bool receivedAny = false;
-      try {
-        final request = http.Request(
-          'POST',
-          Uri.parse('https://api.groq.com/openai/v1/chat/completions'),
-        )
-          ..headers.addAll({
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer $_resolvedGroqKey',
-          })
-          ..body = jsonEncode({
-            'model': groqModel,
-            'messages': messages,
-            'temperature': 0.4,
-            'max_tokens': 1024,
-            'stream': true,
-          });
-
-        final streamedResponse =
-            await client.send(request).timeout(const Duration(seconds: 10));
-
-        if (streamedResponse.statusCode != 200) {
-          throw Exception('Groq stream HTTP ${streamedResponse.statusCode}');
-        }
-
-        final stream = streamedResponse.stream
-            .transform(utf8.decoder)
-            .transform(const LineSplitter());
-
-        await for (final line in stream) {
-          final trimmed = line.trim();
-          if (trimmed.startsWith('data:')) {
-            final jsonStr = trimmed.substring(5).trim();
-            if (jsonStr.isEmpty || jsonStr == '[DONE]') continue;
-
-            try {
-              final decoded = jsonDecode(jsonStr);
-              if (decoded is Map<String, dynamic>) {
-                final choices = decoded['choices'] as List<dynamic>?;
-                if (choices != null && choices.isNotEmpty) {
-                  final delta = choices.first['delta'] as Map<String, dynamic>?;
-                  final content = delta?['content']?.toString();
-                  if (content != null && content.isNotEmpty) {
-                    receivedAny = true;
-                    yield content;
-                  }
-                }
-              }
-            } catch (_) {}
-          }
-        }
-
-        if (receivedAny) {
-          return;
-        }
-      } catch (e) {
-        lastErr = e;
-      } finally {
-        client.close();
-      }
-    }
-
-    throw Exception('Groq streaming fallback failed: $lastErr');
-  }
-
-  Future<String> _callGroqDirectHttp(
-    String prompt, {
-    String? systemPrompt,
-  }) async {
-    if (_resolvedGroqKey.isEmpty) {
-      throw Exception('GROQ_API_KEY is not configured');
-    }
-
-    final String sysInstruction = _buildSystemInstruction(systemPrompt);
-    final List<Map<String, dynamic>> messages = [
-      {'role': 'system', 'content': sysInstruction},
-      ..._conversationHistory.map((turn) => {
-            'role': turn['role'] == 'user' ? 'user' : 'assistant',
-            'content': turn['content'] ?? '',
-          }),
-      {'role': 'user', 'content': prompt},
-    ];
-
-    Object? lastErr;
-    for (final groqModel in _groqModels) {
-      try {
-        final response = await http
-            .post(
-              Uri.parse('https://api.groq.com/openai/v1/chat/completions'),
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': 'Bearer $_resolvedGroqKey',
-              },
-              body: jsonEncode({
-                'model': groqModel,
-                'messages': messages,
-                'temperature': 0.4,
-                'max_tokens': 1024,
-              }),
-            )
-            .timeout(const Duration(seconds: 12));
-
-        if (response.statusCode == 200) {
-          final Map<String, dynamic> data =
-              jsonDecode(utf8.decode(response.bodyBytes))
-                  as Map<String, dynamic>;
-          final List<dynamic> choices =
-              (data['choices'] as List<dynamic>?) ?? const [];
-          if (choices.isNotEmpty) {
-            final msg = choices.first['message'] as Map<String, dynamic>?;
-            final String text = (msg?['content'] ?? '').toString().trim();
-            if (text.isNotEmpty) {
-              _recordTurn(prompt, text);
-              return text;
-            }
-          }
-        } else {
-          lastErr = 'Groq HTTP ${response.statusCode}: ${response.body}';
-        }
-      } catch (e) {
-        lastErr = e;
-      }
-    }
-
-    throw Exception('Groq fallback error: $lastErr');
-  }
-
   Future<String> generateContent(String prompt, {String? systemPrompt}) async {
     final String cleanPrompt = prompt.trim().toLowerCase();
     final RegExp greetingRegExp = RegExp(
@@ -972,47 +459,30 @@ Respond ONLY with a valid JSON object in English using this exact schema:
       return quickReply;
     }
 
-    await _ensureApiKeysLoaded();
+    try {
+      final model = FirebaseAI.googleAI().generativeModel(
+        model: 'gemini-2.5-flash-lite',
+        generationConfig: GenerationConfig(
+          temperature: 0.4,
+          maxOutputTokens: 800,
+        ),
+        systemInstruction:
+            Content.system(_buildSystemInstruction(systemPrompt)),
+      );
 
-    Object? lastError;
+      final List<Content> contents = [
+        ..._conversationHistory,
+        Content.text(prompt),
+      ];
 
-    if (_resolvedGeminiKey.isNotEmpty) {
-      for (int i = 0; i < _geminiModels.length; i++) {
-        final int idx = (_activeModelIndex + i) % _geminiModels.length;
-        final String modelName = _geminiModels[idx];
-        try {
-          final String reply = await _callGeminiDirectHttp(
-            modelName: modelName,
-            prompt: prompt,
-            systemPrompt: systemPrompt,
-          );
-          if (reply.trim().isNotEmpty) {
-            _activeModelIndex = idx;
-            _recordTurn(prompt, reply.trim());
-            return reply.trim();
-          }
-        } catch (e) {
-          lastError = e;
-          debugPrint('Gemini model $modelName fallback: $e');
-        }
+      final response = await model.generateContent(contents);
+      final String reply = response.text?.trim() ?? '';
+      if (reply.isNotEmpty) {
+        _recordTurn(prompt, reply);
+        return reply;
       }
-    }
-
-    if (_resolvedGroqKey.isNotEmpty) {
-      try {
-        final String groqReply =
-            await _callGroqDirectHttp(prompt, systemPrompt: systemPrompt);
-        if (groqReply.trim().isNotEmpty) {
-          return groqReply.trim();
-        }
-      } catch (e) {
-        lastError = e;
-        debugPrint('Groq fallback failed: $e');
-      }
-    }
-
-    if (lastError != null) {
-      debugPrint('AI Assistant generation error: $lastError');
+    } catch (e) {
+      debugPrint('Gemini generateContent error: $e');
     }
 
     return 'I apologize, but I encountered a temporary network or quota issue while processing your request. Please try asking again in a moment.';
@@ -1042,70 +512,40 @@ Respond ONLY with a valid JSON object in English using this exact schema:
         return;
       }
 
-      await _ensureApiKeysLoaded();
+      final model = FirebaseAI.googleAI().generativeModel(
+        model: 'gemini-2.5-flash-lite',
+        generationConfig: GenerationConfig(
+          temperature: 0.4,
+          maxOutputTokens: 800,
+        ),
+        systemInstruction:
+            Content.system(_buildSystemInstruction(systemPrompt)),
+      );
+
+      final List<Content> contents = [
+        ..._conversationHistory,
+        Content.text(prompt),
+      ];
 
       final StringBuffer totalResponse = StringBuffer();
-      bool streamSuccess = false;
+      final Stream<GenerateContentResponse> responseStream =
+          model.generateContentStream(contents);
 
-      if (_resolvedGeminiKey.isNotEmpty) {
-        for (int i = 0; i < _geminiModels.length; i++) {
-          final int idx = (_activeModelIndex + i) % _geminiModels.length;
-          final String modelName = _geminiModels[idx];
-          try {
-            await for (final chunk in _streamGeminiDirectHttp(
-              modelName: modelName,
-              prompt: prompt,
-              systemPrompt: systemPrompt,
-            )) {
-              streamSuccess = true;
-              totalResponse.write(chunk);
-              yield chunk;
-            }
-
-            if (streamSuccess && totalResponse.isNotEmpty) {
-              _activeModelIndex = idx;
-              _recordTurn(prompt, totalResponse.toString().trim());
-              return;
-            }
-          } catch (e) {
-            debugPrint('Gemini stream model $modelName fallback: $e');
-            if (streamSuccess) {
-              return;
-            }
-          }
+      await for (final chunk in responseStream) {
+        final String? chunkText = chunk.text;
+        if (chunkText != null && chunkText.isNotEmpty) {
+          totalResponse.write(chunkText);
+          yield chunkText;
         }
       }
 
-      if (!streamSuccess && _resolvedGroqKey.isNotEmpty) {
-        try {
-          await for (final chunk in _streamGroqDirectHttp(
-            prompt: prompt,
-            systemPrompt: systemPrompt,
-          )) {
-            streamSuccess = true;
-            totalResponse.write(chunk);
-            yield chunk;
-          }
-
-          if (streamSuccess && totalResponse.isNotEmpty) {
-            _recordTurn(prompt, totalResponse.toString().trim());
-            return;
-          }
-        } catch (e) {
-          debugPrint('Groq stream fallback failed: $e');
-          if (streamSuccess) {
-            return;
-          }
-        }
+      final String completeText = totalResponse.toString().trim();
+      if (completeText.isNotEmpty) {
+        _recordTurn(prompt, completeText);
       }
-
-      if (!streamSuccess) {
-        final String fallback = await generateContent(
-          prompt,
-          systemPrompt: systemPrompt,
-        );
-        yield fallback;
-      }
+    } catch (e) {
+      debugPrint('Gemini generateContentStream error: $e');
+      yield 'I apologize, but I encountered a temporary network or quota issue while processing your request. Please try asking again in a moment.';
     } finally {
       _isBusy = false;
     }
