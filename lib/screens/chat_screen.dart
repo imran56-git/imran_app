@@ -1,3 +1,4 @@
+```dart
 import 'dart:async';
 import 'dart:developer';
 import 'dart:io';
@@ -70,11 +71,11 @@ class _ChatScreenState extends State<ChatScreen>
   Stream<Map<String, dynamic>>? _userStatusStream;
   Stream<DocumentSnapshot>? _typingDocStream;
   Stream<BlockStatus>? _blockStatusStream;
-  List<MessageModel> _latestMessages = [];
-  final List<MessageModel> _pendingMessages = [];
+  List<MessageModel> _latestMessages = <MessageModel>[];
+  final List<MessageModel> _pendingMessages = <MessageModel>[];
 
-  final List<TrayMediaItem> _stagedTrayItems = [];
-  final Set<String> _selectedTrayIds = {};
+  final List<TrayMediaItem> _stagedTrayItems = <TrayMediaItem>[];
+  final Set<String> _selectedTrayIds = <String>{};
 
   Map<String, dynamic>? _lastUserStatus;
   DocumentSnapshot? _lastTypingDoc;
@@ -97,7 +98,7 @@ class _ChatScreenState extends State<ChatScreen>
   String? _hoveredTopAction;
   MessageModel? _draggedMessage;
 
-  final Set<String> _selectedMessageIds = {};
+  final Set<String> _selectedMessageIds = <String>{};
 
   bool get _isSelectionMode => _selectedMessageIds.isNotEmpty;
   bool get _showTopActionBar => _isDraggingMessage || _isSelectionMode;
@@ -370,7 +371,7 @@ class _ChatScreenState extends State<ChatScreen>
     }
 
     try {
-      final cachedMsgs = await _localStorage.getMessages(_activeChatRoomId);
+      final cachedMsgs = await _localStorage.getLocalMessages(chatRoomId: _activeChatRoomId);
       if (cachedMsgs.isNotEmpty && mounted) {
         setState(() {
           _latestMessages = cachedMsgs;
@@ -593,7 +594,7 @@ class _ChatScreenState extends State<ChatScreen>
       final List<XFile> picked = await _imagePicker.pickMultiImage();
       if (picked.isEmpty) return;
 
-      final List<TrayMediaItem> newItems = [];
+      final List<TrayMediaItem> newItems = <TrayMediaItem>[];
       for (final xFile in picked) {
         final file = File(xFile.path);
         final fileName = xFile.name.isNotEmpty
@@ -695,7 +696,7 @@ class _ChatScreenState extends State<ChatScreen>
     return file;
   }
 
-  void _executeSendTrayMedia({List<TrayMediaItem>? specificItems}) {
+  void _executeSendTrayMedia({List<TrayMediaItem>? specificItems}) async {
     if (_stagedTrayItems.isEmpty && (specificItems == null || specificItems.isEmpty)) {
       return;
     }
@@ -728,27 +729,35 @@ class _ChatScreenState extends State<ChatScreen>
     final String captionText = _captionInputController.text.trim();
     _captionInputController.clear();
 
+    final List<String> permanentPaths = <String>[];
+    for (final item in itemsToSend) {
+      final permPath = await _localStorage.copyFileToPermanentStorage(item.file, subFolder: 'sent_media');
+      permanentPaths.add(permPath);
+      item.file = File(permPath);
+    }
+
     final String localPendingId =
         'optimistic_${DateTime.now().millisecondsSinceEpoch}_${widget.currentUserId}';
-    final List<String> localFilePaths =
-        itemsToSend.map((item) => item.file.path).toList();
 
     final MessageModel pendingMsg = MessageModel(
       messageId: localPendingId,
       senderId: widget.currentUserId,
       receiverId: widget.receiverId,
       content: captionText,
-      type: localFilePaths.length > 1 ? 'album' : 'image',
+      type: permanentPaths.length > 1 ? 'album' : 'image',
       mediaMetaData: {
-        'imageUrls': localFilePaths,
-        'urls': localFilePaths,
-        'count': localFilePaths.length,
+        'imageUrls': permanentPaths,
+        'urls': permanentPaths,
+        'localFilePath': permanentPaths.isNotEmpty ? permanentPaths.first : null,
+        'localFilePaths': permanentPaths,
+        'count': permanentPaths.length,
         'isOptimistic': true,
         'isUploading': true,
       },
       timestamp: DateTime.now(),
+      status: 'sending',
       isDeletedForEveryone: false,
-      deletedForUsers: const [],
+      deletedForUsers: const <String>[],
       readBy: [widget.currentUserId],
       replyToMessageId: _replyToMessageId,
       replyText: _replyToText,
@@ -761,12 +770,13 @@ class _ChatScreenState extends State<ChatScreen>
     });
 
     _scrollToBottom();
-    _performAsyncMediaUpload(pendingMsg, itemsToSend, captionText);
+    _performAsyncMediaUpload(pendingMsg, itemsToSend, permanentPaths, captionText);
   }
 
   Future<void> _performAsyncMediaUpload(
     MessageModel pendingMsg,
     List<TrayMediaItem> items,
+    List<String> permanentLocalPaths,
     String caption,
   ) async {
     try {
@@ -804,7 +814,32 @@ class _ChatScreenState extends State<ChatScreen>
         'readBy': [widget.currentUserId],
         'replyToMessageId': pendingMsg.replyToMessageId,
         'replyText': pendingMsg.replyText,
+        'expiresAt': Timestamp.fromDate(DateTime.now().add(const Duration(days: 7))),
       };
+
+      final savedLocalMsg = MessageModel(
+        messageId: docRef.id,
+        senderId: widget.currentUserId,
+        receiverId: widget.receiverId,
+        content: caption,
+        type: remoteUrls.length > 1 ? 'album' : 'image',
+        timestamp: DateTime.now(),
+        status: 'sent',
+        isDeletedForEveryone: false,
+        deletedForUsers: const <String>[],
+        starredBy: const <String>[],
+        reactions: const <String, dynamic>{},
+        replyToMessageId: pendingMsg.replyToMessageId,
+        replyText: pendingMsg.replyText,
+        mediaMetaData: {
+          'imageUrls': permanentLocalPaths,
+          'urls': permanentLocalPaths,
+          'localFilePath': permanentLocalPaths.isNotEmpty ? permanentLocalPaths.first : null,
+          'localFilePaths': permanentLocalPaths,
+          'count': permanentLocalPaths.length,
+        },
+      );
+      await _localStorage.saveMessage(savedLocalMsg, _activeChatRoomId);
 
       await docRef.set(firestorePayload);
 
@@ -894,7 +929,7 @@ class _ChatScreenState extends State<ChatScreen>
     if (_draggedMessage != null) {
       return [_draggedMessage!];
     }
-    return [];
+    return <MessageModel>[];
   }
 
   void _toggleMessageSelection(MessageModel message) {
