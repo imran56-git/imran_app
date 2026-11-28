@@ -1,14 +1,19 @@
+```dart
 import 'dart:async';
 import 'dart:developer';
 import 'dart:io';
 import 'dart:ui';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:find_your_best_teacher_today/models/message_model.dart';
+import 'package:find_your_best_teacher_today/screens/media_preview_editor_screen.dart';
 import 'package:find_your_best_teacher_today/services/chat_menu_service.dart';
 import 'package:find_your_best_teacher_today/services/chat_service.dart';
 import 'package:find_your_best_teacher_today/services/local_chat_storage_service.dart';
@@ -20,6 +25,7 @@ import 'package:find_your_best_teacher_today/widgets/chat_popup_menu.dart';
 import 'package:find_your_best_teacher_today/widgets/clear_chat_dialog.dart';
 import 'package:find_your_best_teacher_today/widgets/delete_chat_dialog.dart';
 import 'package:find_your_best_teacher_today/widgets/image_viewer.dart';
+import 'package:find_your_best_teacher_today/widgets/media_shortcut_tray.dart';
 import 'package:find_your_best_teacher_today/widgets/message_bubble.dart';
 import 'package:find_your_best_teacher_today/widgets/permanent_avatar.dart';
 import 'package:find_your_best_teacher_today/widgets/report_dialog.dart';
@@ -54,6 +60,8 @@ class _ChatScreenState extends State<ChatScreen>
   final ChatMenuService _chatMenuService = ChatMenuService();
   final LocalChatStorageService _localStorage = LocalChatStorageService();
   final ScrollController _scrollController = ScrollController();
+  final ImagePicker _imagePicker = ImagePicker();
+  final TextEditingController _captionInputController = TextEditingController();
 
   final ValueNotifier<bool> _showScrollToBottomBtnNotifier =
       ValueNotifier<bool>(false);
@@ -64,6 +72,10 @@ class _ChatScreenState extends State<ChatScreen>
   Stream<DocumentSnapshot>? _typingDocStream;
   Stream<BlockStatus>? _blockStatusStream;
   List<MessageModel> _latestMessages = [];
+  final List<MessageModel> _pendingMessages = [];
+
+  final List<TrayMediaItem> _stagedTrayItems = [];
+  final Set<String> _selectedTrayIds = {};
 
   Map<String, dynamic>? _lastUserStatus;
   DocumentSnapshot? _lastTypingDoc;
@@ -98,6 +110,7 @@ class _ChatScreenState extends State<ChatScreen>
   static const Color _brandBlue = Color(0xFF1E4C7A);
   static const Color _accentBlue = Color(0xFF2563EB);
   static const Color _scaffoldBg = Color(0xFFF8FAFC);
+  static const Color _whatsappGreen = Color(0xFF00A884);
 
   bool get _isOfficialChannel =>
       widget.receiverId == 'OFFICIAL_FYBTT_DESK' ||
@@ -267,6 +280,7 @@ class _ChatScreenState extends State<ChatScreen>
     WidgetsBinding.instance.removeObserver(this);
     _connectivityTimer?.cancel();
     _bounceController.dispose();
+    _captionInputController.dispose();
     if (!_isOfficialChannel) {
       _chatService.updateTypingStatus(
           _activeChatRoomId, widget.currentUserId, false);
@@ -552,8 +566,8 @@ class _ChatScreenState extends State<ChatScreen>
   }
 
   Future<void> _changeChatThemeFromGallery() async {
-    final picker = ImagePicker();
-    final pickedFile = await picker.pickImage(source: ImageSource.gallery);
+    final pickedFile =
+        await _imagePicker.pickImage(source: ImageSource.gallery);
 
     if (pickedFile != null) {
       final prefs = await SharedPreferences.getInstance();
@@ -571,6 +585,267 @@ class _ChatScreenState extends State<ChatScreen>
                 RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           ),
         );
+      }
+    }
+  }
+
+  Future<void> _pickMultiPhotosForTray() async {
+    try {
+      final List<XFile> picked = await _imagePicker.pickMultiImage();
+      if (picked.isEmpty) return;
+
+      final List<TrayMediaItem> newItems = [];
+      for (final xFile in picked) {
+        final file = File(xFile.path);
+        final fileName = xFile.name.isNotEmpty
+            ? xFile.name
+            : file.path.split(Platform.pathSeparator).last;
+        newItems.add(
+          TrayMediaItem(
+            id: '${DateTime.now().microsecondsSinceEpoch}_${file.path.hashCode}',
+            file: file,
+            isImage: true,
+            fileName: fileName,
+          ),
+        );
+      }
+
+      setState(() {
+        _stagedTrayItems.addAll(newItems);
+      });
+    } catch (e) {
+      log("Error picking images: $e");
+    }
+  }
+
+  Future<void> _handleTrayItemTap(TrayMediaItem item, int index) async {
+    final result = await Navigator.push<MediaEditorResult>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => MediaPreviewEditorScreen(
+          file: item.file,
+          initialCaption: item.caption ?? _captionInputController.text,
+          isAlbum: _stagedTrayItems.length > 1,
+          albumCount: _stagedTrayItems.length,
+        ),
+      ),
+    );
+
+    if (result != null && mounted) {
+      setState(() {
+        item.file = result.file;
+        if (result.caption.isNotEmpty) {
+          item.caption = result.caption;
+          _captionInputController.text = result.caption;
+        }
+      });
+
+      if (result.sendImmediately) {
+        _executeSendTrayMedia(specificItems: [item]);
+      }
+    }
+  }
+
+  void _handleTrayItemRemove(TrayMediaItem item, int index) {
+    setState(() {
+      _stagedTrayItems.removeAt(index);
+      _selectedTrayIds.remove(item.id);
+    });
+  }
+
+  void _handleTrayItemToggleSelect(String id) {
+    setState(() {
+      if (_selectedTrayIds.contains(id)) {
+        _selectedTrayIds.remove(id);
+      } else {
+        _selectedTrayIds.add(id);
+      }
+    });
+  }
+
+  void _handleTrayClearSelection() {
+    setState(() {
+      _selectedTrayIds.clear();
+    });
+  }
+
+  void _handleTrayClearAll() {
+    setState(() {
+      _stagedTrayItems.clear();
+      _selectedTrayIds.clear();
+      _captionInputController.clear();
+    });
+  }
+
+  Future<File> _compressSingleImageFile(File file) async {
+    try {
+      final tempDir = await getTemporaryDirectory();
+      final targetPath =
+          '${tempDir.path}/cmp_${DateTime.now().microsecondsSinceEpoch}.jpg';
+      final compressedXFile = await FlutterImageCompress.compressAndGetFile(
+        file.absolute.path,
+        targetPath,
+        quality: 72,
+        minWidth: 1080,
+        minHeight: 1080,
+      );
+      if (compressedXFile != null) {
+        return File(compressedXFile.path);
+      }
+    } catch (_) {}
+    return file;
+  }
+
+  void _executeSendTrayMedia({List<TrayMediaItem>? specificItems}) {
+    if (_stagedTrayItems.isEmpty && (specificItems == null || specificItems.isEmpty)) {
+      return;
+    }
+
+    final List<TrayMediaItem> itemsToSend;
+    if (specificItems != null && specificItems.isNotEmpty) {
+      itemsToSend = List<TrayMediaItem>.from(specificItems);
+      setState(() {
+        _stagedTrayItems.removeWhere((item) => specificItems.any((s) => s.id == item.id));
+        for (final s in specificItems) {
+          _selectedTrayIds.remove(s.id);
+        }
+      });
+    } else if (_selectedTrayIds.isNotEmpty) {
+      itemsToSend = _stagedTrayItems.where((item) => _selectedTrayIds.contains(item.id)).toList();
+      setState(() {
+        _stagedTrayItems.removeWhere((item) => _selectedTrayIds.contains(item.id));
+        _selectedTrayIds.clear();
+      });
+    } else {
+      itemsToSend = List<TrayMediaItem>.from(_stagedTrayItems);
+      setState(() {
+        _stagedTrayItems.clear();
+        _selectedTrayIds.clear();
+      });
+    }
+
+    if (itemsToSend.isEmpty) return;
+
+    final String captionText = _captionInputController.text.trim();
+    _captionInputController.clear();
+
+    final String localPendingId =
+        'optimistic_${DateTime.now().millisecondsSinceEpoch}_${widget.currentUserId}';
+    final List<String> localFilePaths =
+        itemsToSend.map((item) => item.file.path).toList();
+
+    final MessageModel pendingMsg = MessageModel(
+      messageId: localPendingId,
+      senderId: widget.currentUserId,
+      receiverId: widget.receiverId,
+      content: captionText,
+      type: localFilePaths.length > 1 ? 'album' : 'image',
+      mediaMetaData: {
+        'imageUrls': localFilePaths,
+        'urls': localFilePaths,
+        'count': localFilePaths.length,
+        'isOptimistic': true,
+        'isUploading': true,
+      },
+      timestamp: DateTime.now(),
+      isDeletedForEveryone: false,
+      deletedForUsers: const [],
+      readBy: [widget.currentUserId],
+      replyToMessageId: _replyToMessageId,
+      replyText: _replyToText,
+    );
+
+    setState(() {
+      _pendingMessages.insert(0, pendingMsg);
+      _replyToMessageId = null;
+      _replyToText = null;
+    });
+
+    _scrollToBottom();
+    _performAsyncMediaUpload(pendingMsg, itemsToSend, captionText);
+  }
+
+  Future<void> _performAsyncMediaUpload(
+    MessageModel pendingMsg,
+    List<TrayMediaItem> items,
+    String caption,
+  ) async {
+    try {
+      final uploadFutures = items.map((item) async {
+        final File compressed = await _compressSingleImageFile(item.file);
+        final String storagePath =
+            'chats/$_activeChatRoomId/images/${DateTime.now().microsecondsSinceEpoch}_${item.fileName}';
+        final storageRef = FirebaseStorage.instance.ref().child(storagePath);
+        final uploadTask = await storageRef.putFile(compressed);
+        return await uploadTask.ref.getDownloadURL();
+      });
+
+      final List<String> remoteUrls = await Future.wait(uploadFutures);
+
+      final docRef = FirebaseFirestore.instance
+          .collection('chats')
+          .doc(_activeChatRoomId)
+          .collection('messages')
+          .doc();
+
+      final Map<String, dynamic> firestorePayload = {
+        'messageId': docRef.id,
+        'senderId': widget.currentUserId,
+        'receiverId': widget.receiverId,
+        'content': caption,
+        'type': remoteUrls.length > 1 ? 'album' : 'image',
+        'mediaMetaData': {
+          'imageUrls': remoteUrls,
+          'urls': remoteUrls,
+          'count': remoteUrls.length,
+        },
+        'timestamp': FieldValue.serverTimestamp(),
+        'isDeletedForEveryone': false,
+        'deletedForUsers': <String>[],
+        'readBy': [widget.currentUserId],
+        'replyToMessageId': pendingMsg.replyToMessageId,
+        'replyText': pendingMsg.replyText,
+      };
+
+      await docRef.set(firestorePayload);
+
+      final String summaryText = caption.isNotEmpty
+          ? caption
+          : (remoteUrls.length > 1
+              ? '📷 ${remoteUrls.length} photos'
+              : '📷 Photo');
+
+      await FirebaseFirestore.instance
+          .collection('chats')
+          .doc(_activeChatRoomId)
+          .set({
+        'lastMessage': summaryText,
+        'lastMessageContent': summaryText,
+        'lastMessageTime': FieldValue.serverTimestamp(),
+        'lastMessageSenderId': widget.currentUserId,
+        'unreadCount_${widget.receiverId}': FieldValue.increment(1),
+      }, SetOptions(merge: true));
+
+      if (mounted) {
+        setState(() {
+          _pendingMessages.removeWhere((m) => m.messageId == pendingMsg.messageId);
+        });
+      }
+    } catch (e) {
+      log("Error uploading media payload: $e");
+      if (mounted) {
+        setState(() {
+          final idx = _pendingMessages
+              .indexWhere((m) => m.messageId == pendingMsg.messageId);
+          if (idx != -1) {
+            final oldMeta = Map<String, dynamic>.from(
+                _pendingMessages[idx].mediaMetaData ?? {});
+            oldMeta['isUploading'] = false;
+            oldMeta['hasError'] = true;
+            _pendingMessages[idx] =
+                _pendingMessages[idx].copyWith(mediaMetaData: oldMeta);
+          }
+        });
       }
     }
   }
@@ -1208,13 +1483,13 @@ class _ChatScreenState extends State<ChatScreen>
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
                     color: isHovered
-                        ? color.withOpacity(0.28)
-                        : Colors.white.withOpacity(0.08),
+                        ? color.withValues(alpha: 0.28)
+                        : Colors.white.withValues(alpha: 0.08),
                     shape: BoxShape.circle,
                     border: Border.all(
                       color: isHovered
                           ? color
-                          : Colors.white.withOpacity(0.22),
+                          : Colors.white.withValues(alpha: 0.22),
                       width: isHovered ? 1.8 : 1.0,
                     ),
                   ),
@@ -1257,15 +1532,15 @@ class _ChatScreenState extends State<ChatScreen>
               height: 58,
               padding: const EdgeInsets.symmetric(horizontal: 14),
               decoration: BoxDecoration(
-                color: _primaryNavy.withOpacity(0.82),
+                color: _primaryNavy.withValues(alpha: 0.82),
                 borderRadius: BorderRadius.circular(32),
                 border: Border.all(
-                  color: Colors.white.withOpacity(0.35),
+                  color: Colors.white.withValues(alpha: 0.35),
                   width: 1.2,
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.2),
+                    color: Colors.black.withValues(alpha: 0.2),
                     blurRadius: 14,
                     offset: const Offset(0, 4),
                   ),
@@ -1281,7 +1556,7 @@ class _ChatScreenState extends State<ChatScreen>
                         padding: const EdgeInsets.symmetric(
                             horizontal: 10, vertical: 6),
                         decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.15),
+                          color: Colors.white.withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(20),
                         ),
                         child: Row(
@@ -1364,7 +1639,7 @@ class _ChatScreenState extends State<ChatScreen>
         border: Border.all(color: const Color(0xFFBBF7D0), width: 1.25),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF065F46).withOpacity(0.06),
+            color: const Color(0xFF065F46).withValues(alpha: 0.06),
             blurRadius: 12,
             offset: const Offset(0, 4),
           ),
@@ -1454,7 +1729,7 @@ class _ChatScreenState extends State<ChatScreen>
                 style: TextStyle(
                   fontSize: 10.5,
                   fontWeight: FontWeight.w600,
-                  color: Colors.teal.shade700.withOpacity(0.75),
+                  color: Colors.teal.shade700.withValues(alpha: 0.75),
                 ),
               ),
               if (timeStr.isNotEmpty)
@@ -1489,7 +1764,7 @@ class _ChatScreenState extends State<ChatScreen>
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             border: Border.all(
-              color: const Color(0xFF34D399).withOpacity(0.6),
+              color: const Color(0xFF34D399).withValues(alpha: 0.6),
               width: 1.5,
             ),
           ),
@@ -1651,7 +1926,7 @@ class _ChatScreenState extends State<ChatScreen>
                         border: Border.all(
                           color: isOnline
                               ? const Color(0xFF4ADE80)
-                              : Colors.white.withOpacity(0.35),
+                              : Colors.white.withValues(alpha: 0.35),
                           width: 1.5,
                         ),
                       ),
@@ -1810,6 +2085,131 @@ class _ChatScreenState extends State<ChatScreen>
     );
   }
 
+  Widget _buildOptimisticPendingTile(MessageModel message) {
+    return TweenAnimationBuilder<double>(
+      duration: const Duration(milliseconds: 260),
+      curve: Curves.easeOutCubic,
+      tween: Tween<double>(begin: 0.0, end: 1.0),
+      builder: (context, value, child) {
+        return Transform.translate(
+          offset: Offset(0, (1 - value) * 20),
+          child: Opacity(
+            opacity: value,
+            child: child,
+          ),
+        );
+      },
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 2.0),
+        child: MessageBubble(
+          message: message,
+          isMe: true,
+          chatRoomId: _activeChatRoomId,
+          currentUserId: widget.currentUserId,
+          onReplyPressed: (_) {},
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMediaStagingTraySection() {
+    if (_stagedTrayItems.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor,
+        border: Border(
+          top: BorderSide(
+            color: Theme.of(context).dividerColor.withValues(alpha: 0.15),
+          ),
+        ),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          MediaShortcutTray(
+            items: _stagedTrayItems,
+            selectedIds: _selectedTrayIds,
+            onItemTap: _handleTrayItemTap,
+            onItemRemove: _handleTrayItemRemove,
+            onItemToggleSelect: _handleTrayItemToggleSelect,
+            onClearSelection: _handleTrayClearSelection,
+            onClearAll: _handleTrayClearAll,
+          ),
+          Padding(
+            padding: EdgeInsets.only(
+              left: 12,
+              right: 12,
+              top: 6,
+              bottom: MediaQuery.of(context).padding.bottom + 8,
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(
+                        color: Theme.of(context).dividerColor.withValues(alpha: 0.2),
+                      ),
+                    ),
+                    child: TextField(
+                      controller: _captionInputController,
+                      maxLines: 4,
+                      minLines: 1,
+                      style: const TextStyle(fontSize: 14.5),
+                      decoration: InputDecoration(
+                        hintText: _selectedTrayIds.isNotEmpty
+                            ? 'Add a caption for ${_selectedTrayIds.length} selected...'
+                            : 'Add a caption...',
+                        hintStyle: TextStyle(
+                          color: Theme.of(context).hintColor,
+                          fontSize: 14.5,
+                        ),
+                        border: InputBorder.none,
+                        isDense: true,
+                        contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                GestureDetector(
+                  onTap: () {
+                    HapticFeedback.lightImpact();
+                    _executeSendTrayMedia();
+                  },
+                  child: Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: _whatsappGreen,
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: _whatsappGreen.withValues(alpha: 0.35),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: const Icon(
+                      Icons.send_rounded,
+                      color: Colors.white,
+                      size: 20,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final bool hasValidCustomBg = _customBgImagePath != null &&
@@ -1821,6 +2221,10 @@ class _ChatScreenState extends State<ChatScreen>
         if (didPop) return;
         if (_isSelectionMode) {
           _clearMessageSelection();
+          return;
+        }
+        if (_stagedTrayItems.isNotEmpty) {
+          _handleTrayClearAll();
           return;
         }
         if (!_isOfficialChannel) {
@@ -1857,6 +2261,16 @@ class _ChatScreenState extends State<ChatScreen>
               ? _buildOfficialAppBarTitle()
               : _buildStandardAppBarTitle(),
           actions: [
+            if (!_isOfficialChannel)
+              IconButton(
+                icon: const Icon(
+                  Icons.add_photo_alternate_rounded,
+                  color: Colors.white,
+                  size: 22,
+                ),
+                tooltip: 'Attach Photos',
+                onPressed: _pickMultiPhotosForTray,
+              ),
             IconButton(
               icon: const Icon(Icons.wallpaper_rounded,
                   color: Colors.white, size: 21),
@@ -1974,7 +2388,10 @@ class _ChatScreenState extends State<ChatScreen>
                                       .contains(widget.currentUserId))
                                   .toList();
 
-                              if (_latestMessages.isEmpty) {
+                              final totalRenderCount =
+                                  _pendingMessages.length + _latestMessages.length;
+
+                              if (totalRenderCount == 0) {
                                 return Center(
                                   child: Container(
                                     padding: const EdgeInsets.symmetric(
@@ -1986,7 +2403,7 @@ class _ChatScreenState extends State<ChatScreen>
                                           color: const Color(0xFFE2E8F0)),
                                       boxShadow: [
                                         BoxShadow(
-                                          color: _primaryNavy.withOpacity(0.04),
+                                          color: _primaryNavy.withValues(alpha: 0.04),
                                           blurRadius: 12,
                                           offset: const Offset(0, 4),
                                         ),
@@ -2041,9 +2458,16 @@ class _ChatScreenState extends State<ChatScreen>
                                   top: _showTopActionBar ? 74 : 12,
                                   bottom: 12,
                                 ),
-                                itemCount: _latestMessages.length,
+                                itemCount: totalRenderCount,
                                 itemBuilder: (context, index) {
-                                  final rawMsg = _latestMessages[index];
+                                  if (index < _pendingMessages.length) {
+                                    return _buildOptimisticPendingTile(
+                                        _pendingMessages[index]);
+                                  }
+
+                                  final msgIndex =
+                                      index - _pendingMessages.length;
+                                  final rawMsg = _latestMessages[msgIndex];
                                   final message =
                                       _resolveMessageWithReplyText(rawMsg);
                                   final bool isMe =
@@ -2058,11 +2482,11 @@ class _ChatScreenState extends State<ChatScreen>
                                   final bool isSelected = _selectedMessageIds
                                       .contains(message.messageId);
 
-                                  final bool showDateHeader = index ==
+                                  final bool showDateHeader = msgIndex ==
                                           _latestMessages.length - 1 ||
                                       !_isSameCalendarDay(
                                         message.timestamp,
-                                        _latestMessages[index + 1].timestamp,
+                                        _latestMessages[msgIndex + 1].timestamp,
                                       );
 
                                   return Column(
@@ -2080,7 +2504,7 @@ class _ChatScreenState extends State<ChatScreen>
                                                 horizontal: 12, vertical: 4),
                                             decoration: BoxDecoration(
                                               color: _primaryNavy
-                                                  .withOpacity(0.08),
+                                                  .withValues(alpha: 0.08),
                                               borderRadius:
                                                   BorderRadius.circular(12),
                                             ),
@@ -2112,7 +2536,7 @@ class _ChatScreenState extends State<ChatScreen>
                                               vertical: 2),
                                           decoration: BoxDecoration(
                                             color: isSelected
-                                                ? _accentBlue.withOpacity(0.14)
+                                                ? _accentBlue.withValues(alpha: 0.14)
                                                 : Colors.transparent,
                                             borderRadius:
                                                 BorderRadius.circular(14),
@@ -2236,8 +2660,8 @@ class _ChatScreenState extends State<ChatScreen>
                                                                 boxShadow: [
                                                                   BoxShadow(
                                                                     color: _primaryNavy
-                                                                        .withOpacity(
-                                                                            0.26),
+                                                                        .withValues(
+                                                                            alpha: 0.26),
                                                                     blurRadius:
                                                                         20,
                                                                     spreadRadius:
@@ -2314,7 +2738,9 @@ class _ChatScreenState extends State<ChatScreen>
                           ),
                   ),
                   _buildOfflineBanner(),
-                  if (_isOfficialChannel)
+                  if (_stagedTrayItems.isNotEmpty)
+                    _buildMediaStagingTraySection()
+                  else if (_isOfficialChannel)
                     Container(
                       width: double.infinity,
                       padding: EdgeInsets.only(
@@ -2330,7 +2756,7 @@ class _ChatScreenState extends State<ChatScreen>
                         ),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withOpacity(0.04),
+                            color: Colors.black.withValues(alpha: 0.04),
                             blurRadius: 8,
                             offset: const Offset(0, -2),
                           ),
@@ -2382,7 +2808,7 @@ class _ChatScreenState extends State<ChatScreen>
                               ),
                               boxShadow: [
                                 BoxShadow(
-                                  color: Colors.black.withOpacity(0.04),
+                                  color: Colors.black.withValues(alpha: 0.04),
                                   blurRadius: 8,
                                   offset: const Offset(0, -2),
                                 ),
@@ -2533,9 +2959,9 @@ class _ChatScreenState extends State<ChatScreen>
                                         boxShadow: [
                                           BoxShadow(
                                             color: _isDragHoveringInput
-                                                ? _accentBlue.withOpacity(0.28)
+                                                ? _accentBlue.withValues(alpha: 0.28)
                                                 : Colors.black
-                                                    .withOpacity(0.04),
+                                                    .withValues(alpha: 0.04),
                                             blurRadius:
                                                 _isDragHoveringInput ? 18 : 10,
                                             offset: const Offset(0, -3),
