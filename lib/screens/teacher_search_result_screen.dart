@@ -1,10 +1,10 @@
 import 'dart:async';
-import 'dart:math' as math;
 import 'dart:ui';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../services/location_service.dart';
@@ -296,27 +296,6 @@ class _TeacherSearchResultScreenState extends State<TeacherSearchResultScreen> {
     );
   }
 
-  double _calculateHaversineDistance(
-      double lat1, double lon1, double lat2, double lon2) {
-    const double earthRadius = 6371.0;
-
-    double dLat = _toRadians(lat2 - lat1);
-    double dLon = _toRadians(lon2 - lon1);
-
-    double a = math.sin(dLat / 2) * math.sin(dLat / 2) +
-        math.cos(_toRadians(lat1)) *
-            math.cos(_toRadians(lat2)) *
-            math.sin(dLon / 2) *
-            math.sin(dLon / 2);
-
-    double c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a));
-    return earthRadius * c;
-  }
-
-  double _toRadians(double degree) {
-    return degree * (math.pi / 180.0);
-  }
-
   Future<void> _openGoogleMap(
       double lat, double lng, String teacherName) async {
     final Uri googleMapsUrl = Uri.parse(
@@ -446,7 +425,7 @@ class _TeacherSearchResultScreenState extends State<TeacherSearchResultScreen> {
       final double lat = hub['lat'] as double;
       final double lng = hub['lng'] as double;
       final double dist =
-          _calculateHaversineDistance(_searchLat, _searchLng, lat, lng);
+          Geolocator.distanceBetween(_searchLat, _searchLng, lat, lng) / 1000.0;
       if (dist < minDistance) {
         minDistance = dist;
         nearestHub = {
@@ -580,13 +559,23 @@ class _TeacherSearchResultScreenState extends State<TeacherSearchResultScreen> {
 
     if (name.isNotEmpty) list.add({'label': 'Name: $name'});
     if (subject.isNotEmpty) list.add({'label': subject});
-    if (location.isNotEmpty) list.add({'label': location});
     if (exp.isNotEmpty) list.add({'label': '$exp+ Yrs Exp'});
+
     if (maxR != null) {
-      list.add({'label': 'Within ${(maxR as num).toInt()} KM'});
+      final int rKm = (maxR as num).toInt();
+      if (location.isNotEmpty) {
+        list.add({'label': 'Within $rKm KM • $location'});
+      } else {
+        list.add({'label': 'Within $rKm KM'});
+      }
     } else {
-      list.add({'label': 'Any Distance'});
+      if (location.isNotEmpty) {
+        list.add({'label': location});
+      } else {
+        list.add({'label': 'Any Distance'});
+      }
     }
+
     return list;
   }
 
@@ -670,7 +659,7 @@ class _TeacherSearchResultScreenState extends State<TeacherSearchResultScreen> {
                         Text(
                           totalMatched == 0
                               ? 'No matches in this search'
-                              : 'Complete unfiltered coverage for your area',
+                              : 'Complete coverage for your target area',
                           style: TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.w500,
@@ -934,6 +923,40 @@ class _TeacherSearchResultScreenState extends State<TeacherSearchResultScreen> {
                 .trim()
                 .toLowerCase();
 
+            final bool matchesId = targetId.isEmpty ||
+                docId.contains(targetId) ||
+                (fieldUid.isNotEmpty && fieldUid.contains(targetId));
+
+            if (targetId.isNotEmpty) {
+              if (matchesId) {
+                final hubInfo = _extractNearestTeachingHub(data);
+                final double hubDistance = hubInfo['distanceKm'] as double;
+                final int exp = _parseExperienceYears(data);
+                final bool isVerified = data['isVerified'] == true ||
+                    data['status'] == 'approved';
+                final String? badgeType = data['highestBadgeType']?.toString();
+                final int badgeWeight = _getBadgeTierWeight(badgeType, isVerified);
+                final double rating = double.tryParse(
+                        (data['averageRating'] ?? data['rating'] ?? '0.0')
+                            .toString()) ??
+                    0.0;
+
+                processedTeachers.add({
+                  'doc': doc,
+                  'data': data,
+                  'hubLat': hubInfo['lat'] as double,
+                  'hubLng': hubInfo['lng'] as double,
+                  'hubAddress': hubInfo['address'] as String,
+                  'distanceKm': hubDistance,
+                  'smartScore': 100,
+                  'badgeWeight': badgeWeight,
+                  'rating': rating,
+                  'experience': exp,
+                });
+              }
+              continue;
+            }
+
             final String name = rawName.toLowerCase();
             final String locationSearchable =
                 _extractAllLocationsSearchable(data);
@@ -949,28 +972,30 @@ class _TeacherSearchResultScreenState extends State<TeacherSearchResultScreen> {
 
             final int exp = _parseExperienceYears(data);
 
-            bool matchesId = targetId.isEmpty ||
-                docId.contains(targetId) ||
-                (fieldUid.isNotEmpty && fieldUid.contains(targetId));
-            bool matchesName = targetName.isEmpty || name.contains(targetName);
-            bool matchesLocation = targetLocation.isEmpty ||
-                locationSearchable.contains(targetLocation);
-            bool matchesSubject = targetSubject.isEmpty ||
+            final bool matchesName =
+                targetName.isEmpty || name.contains(targetName);
+            final bool matchesSubject = targetSubject.isEmpty ||
                 subjects.any((s) => s.contains(targetSubject));
-            bool matchesExperience = exp >= minExperience;
+            final bool matchesExperience = exp >= minExperience;
 
             final hubInfo = _extractNearestTeachingHub(data);
             final double hubDistance = hubInfo['distanceKm'] as double;
 
             bool matchesRadius = true;
-            if (targetId.isEmpty && maxRadius != null) {
-              if (hubDistance >= 0) {
-                matchesRadius = hubDistance <= maxRadius;
-              }
+            if (maxRadius != null) {
+              matchesRadius = hubDistance >= 0 && hubDistance <= maxRadius;
             }
 
-            if (matchesId &&
-                matchesName &&
+            bool matchesLocation = true;
+            final bool hasCoordinates = (widget.filters['latitude'] != null &&
+                    widget.filters['longitude'] != null) ||
+                !_isLoadingLocation;
+
+            if (!hasCoordinates && targetLocation.isNotEmpty) {
+              matchesLocation = locationSearchable.contains(targetLocation);
+            }
+
+            if (matchesName &&
                 matchesLocation &&
                 matchesSubject &&
                 matchesExperience &&
