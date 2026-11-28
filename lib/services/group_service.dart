@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import '../models/group_model.dart';
 import '../models/invitation_model.dart';
 import '../models/message_model.dart';
@@ -7,6 +8,7 @@ import 'local_chat_storage_service.dart';
 
 class GroupService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseStorage _storage = FirebaseStorage.instance;
   final LocalChatStorageService _localStorage = LocalChatStorageService();
 
   Future<bool> _verifySingleAdmin(String groupId, String userId) async {
@@ -18,6 +20,52 @@ class GroupService {
         (data['createdBy'] ?? data['teacherId'] ?? data['adminId'] ?? '')
             .toString();
     return creatorId.isNotEmpty && creatorId == userId;
+  }
+
+  List<String> _extractMediaUrlsFromData(Map<String, dynamic> data) {
+    final List<String> urls = <String>[];
+    final mediaUrl = data['mediaUrl']?.toString();
+    if (mediaUrl != null && mediaUrl.startsWith('http')) urls.add(mediaUrl);
+
+    if (data['mediaUrls'] is List) {
+      for (final item in data['mediaUrls']) {
+        final s = item.toString();
+        if (s.startsWith('http') && !urls.contains(s)) urls.add(s);
+      }
+    }
+
+    if (data['mediaMetaData'] is Map) {
+      final meta = data['mediaMetaData'] as Map<String, dynamic>;
+      for (final key in const ['imageUrls', 'urls', 'mediaUrls']) {
+        if (meta[key] is List) {
+          for (final item in meta[key]) {
+            final s = item.toString();
+            if (s.startsWith('http') && !urls.contains(s)) urls.add(s);
+          }
+        }
+      }
+      for (final key in const ['imageUrl', 'audioUrl', 'videoUrl', 'fileUrl', 'url']) {
+        final val = meta[key]?.toString();
+        if (val != null && val.startsWith('http') && !urls.contains(val)) urls.add(val);
+      }
+    }
+
+    final content = (data['content'] ?? '').toString();
+    if (content.startsWith('http') && data['type'] != 'text' && !urls.contains(content)) {
+      urls.add(content);
+    }
+
+    return urls;
+  }
+
+  Future<void> _deleteFirebaseStorageFilesSafe(List<String> urls) async {
+    for (final url in urls) {
+      if (url.isEmpty || !url.startsWith('http')) continue;
+      try {
+        final ref = _storage.refFromURL(url);
+        await ref.delete();
+      } catch (_) {}
+    }
   }
 
   Future<Map<String, dynamic>> _fetchVerifiedTeacherMetadata(
@@ -136,6 +184,10 @@ class GroupService {
     batch.set(docRef, group.toMap());
 
     final welcomeMsgRef = docRef.collection('messages').doc();
+    final List<String> initialPendingFor = invitedStudentIds
+        .where((uid) => uid.trim().isNotEmpty && uid != createdBy)
+        .toList();
+
     final Map<String, dynamic> welcomeData = {
       'messageId': welcomeMsgRef.id,
       'senderId': createdBy,
@@ -152,9 +204,11 @@ class GroupService {
       'messageCategory': 'announcement',
       'isPinned': true,
       'isDeletedForEveryone': false,
-      'deletedForUsers': [],
-      'starredBy': [],
-      'reactions': {},
+      'deletedForUsers': <String>[],
+      'starredBy': <String>[],
+      'reactions': <String, dynamic>{},
+      'pendingFor': initialPendingFor,
+      'expiresAt': Timestamp.fromDate(DateTime.now().add(const Duration(days: 7))),
     };
 
     batch.set(welcomeMsgRef, welcomeData);
@@ -168,9 +222,9 @@ class GroupService {
       timestamp: DateTime.now(),
       status: 'sent',
       isDeletedForEveryone: false,
-      deletedForUsers: const [],
-      starredBy: const [],
-      reactions: const {},
+      deletedForUsers: const <String>[],
+      starredBy: const <String>[],
+      reactions: const <String, dynamic>{},
       senderRole: 'teacher',
       senderName: teacherMeta['teacherName'],
       senderProfilePic: teacherMeta['teacherProfilePic'],
@@ -179,7 +233,7 @@ class GroupService {
       messageCategory: 'announcement',
       isPinned: true,
     );
-    await _localStorage.saveMessage(localWelcomeMsg, docRef.id);
+    await _localStorage.saveOutgoingMessageWithPermanentFiles(localWelcomeMsg, docRef.id);
 
     for (final studentId in invitedStudentIds) {
       if (studentId.trim().isEmpty || studentId == createdBy) continue;
@@ -226,6 +280,50 @@ class GroupService {
 
     await batch.commit();
     return docRef.id;
+  }
+
+  Future<void> acknowledgeGroupMessageDelivery({
+    required String groupId,
+    required String messageId,
+    required String userId,
+  }) async {
+    if (groupId.trim().isEmpty || messageId.trim().isEmpty || userId.trim().isEmpty) return;
+
+    final msgRef = _firestore
+        .collection('groups')
+        .doc(groupId)
+        .collection('messages')
+        .doc(messageId);
+
+    try {
+      List<String> filesToDelete = <String>[];
+      bool shouldDeleteDoc = false;
+
+      await _firestore.runTransaction((transaction) async {
+        final snap = await transaction.get(msgRef);
+        if (!snap.exists || snap.data() == null) return;
+
+        final data = snap.data()!;
+        final List<dynamic> rawPending = (data['pendingFor'] as List<dynamic>?) ?? <dynamic>[];
+        final List<String> pending = rawPending.map((e) => e.toString()).toList();
+
+        if (!pending.contains(userId)) return;
+
+        pending.remove(userId);
+
+        if (pending.isEmpty) {
+          shouldDeleteDoc = true;
+          filesToDelete = _extractMediaUrlsFromData(data);
+          transaction.delete(msgRef);
+        } else {
+          transaction.update(msgRef, {'pendingFor': pending});
+        }
+      });
+
+      if (shouldDeleteDoc && filesToDelete.isNotEmpty) {
+        await _deleteFirebaseStorageFilesSafe(filesToDelete);
+      }
+    } catch (_) {}
   }
 
   Future<void> sendInvitation({
@@ -648,11 +746,15 @@ class GroupService {
 
       if (messagesSnap.docs.isEmpty) break;
 
+      final List<String> mediaUrlsToDelete = <String>[];
       final WriteBatch deleteBatch = _firestore.batch();
       for (final doc in messagesSnap.docs) {
+        final data = doc.data();
+        mediaUrlsToDelete.addAll(_extractMediaUrlsFromData(data));
         deleteBatch.delete(doc.reference);
       }
       await deleteBatch.commit();
+      await _deleteFirebaseStorageFilesSafe(mediaUrlsToDelete);
 
       if (messagesSnap.docs.length < batchSize) break;
     }
