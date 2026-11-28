@@ -2,25 +2,29 @@ import 'dart:io';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:image_cropper/image_cropper.dart';
 import 'package:path_provider/path_provider.dart';
 
 class MediaEditorResult {
   final File file;
   final String caption;
+  final bool sendImmediately;
 
   MediaEditorResult({
     required this.file,
     required this.caption,
+    this.sendImmediately = false,
   });
 }
 
 class OverlayItem {
   final String id;
-  final String text;
+  String text;
   final bool isEmoji;
-  final Color color;
+  Color color;
   Offset position;
+  double scale;
 
   OverlayItem({
     required this.id,
@@ -28,6 +32,7 @@ class OverlayItem {
     required this.isEmoji,
     required this.color,
     required this.position,
+    this.scale = 1.0,
   });
 }
 
@@ -62,7 +67,8 @@ class _MediaPreviewEditorScreenState extends State<MediaPreviewEditorScreen> {
   final List<String> _commonEmojis = [
     '😀', '😂', '😍', '🔥', '👍', '🎉',
     '❤️', '🙏', '💯', '✨', '👏', '🚀',
-    '🤩', '😎', '🥳', '🤔', '💪', '💡'
+    '🤩', '😎', '🥳', '🤔', '💪', '💡',
+    '⭐', '🎯', '📚', '🎓', '✏️', '📖'
   ];
 
   @override
@@ -105,10 +111,14 @@ class _MediaPreviewEditorScreenState extends State<MediaPreviewEditorScreen> {
   }
 
   String get _fileSizeString {
-    final bytes = _currentFile.lengthSync();
-    if (bytes < 1024) return '$bytes B';
-    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
-    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    try {
+      final bytes = _currentFile.lengthSync();
+      if (bytes < 1024) return '$bytes B';
+      if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    } catch (_) {
+      return '';
+    }
   }
 
   Future<void> _cropImage() async {
@@ -116,7 +126,7 @@ class _MediaPreviewEditorScreenState extends State<MediaPreviewEditorScreen> {
       sourcePath: _currentFile.path,
       uiSettings: [
         AndroidUiSettings(
-          toolbarTitle: 'Crop Image',
+          toolbarTitle: 'Crop & Rotate',
           toolbarColor: Colors.black,
           toolbarWidgetColor: Colors.white,
           initAspectRatio: CropAspectRatioPreset.original,
@@ -124,7 +134,7 @@ class _MediaPreviewEditorScreenState extends State<MediaPreviewEditorScreen> {
           activeControlsWidgetColor: const Color(0xFF00A884),
         ),
         IOSUiSettings(
-          title: 'Crop Image',
+          title: 'Crop & Rotate',
           aspectRatioLockEnabled: false,
         ),
       ],
@@ -149,9 +159,16 @@ class _MediaPreviewEditorScreenState extends State<MediaPreviewEditorScreen> {
           builder: (context, setDialogState) {
             return AlertDialog(
               backgroundColor: const Color(0xFF1E2428),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
               title: const Text(
                 'Add Text',
-                style: TextStyle(color: Colors.white),
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 18,
+                ),
               ),
               content: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -159,19 +176,23 @@ class _MediaPreviewEditorScreenState extends State<MediaPreviewEditorScreen> {
                   TextField(
                     controller: textController,
                     autofocus: true,
-                    style: TextStyle(color: selectedColor, fontSize: 20),
+                    style: TextStyle(
+                      color: selectedColor,
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
                     decoration: const InputDecoration(
                       hintText: 'Type text here...',
-                      hintStyle: TextStyle(color: Colors.white54),
+                      hintStyle: TextStyle(color: Colors.white38),
                       enabledBorder: UnderlineInputBorder(
-                        borderSide: BorderSide(color: Colors.white30),
+                        borderSide: BorderSide(color: Colors.white24),
                       ),
                       focusedBorder: UnderlineInputBorder(
-                        borderSide: BorderSide(color: Color(0xFF00A884)),
+                        borderSide: BorderSide(color: Color(0xFF00A884), width: 2),
                       ),
                     ),
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 20),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                     children: [
@@ -181,6 +202,7 @@ class _MediaPreviewEditorScreenState extends State<MediaPreviewEditorScreen> {
                       Colors.greenAccent,
                       Colors.cyanAccent,
                       Colors.orangeAccent,
+                      Colors.purpleAccent,
                     ].map((color) {
                       final isSelected = selectedColor == color;
                       return GestureDetector(
@@ -189,18 +211,26 @@ class _MediaPreviewEditorScreenState extends State<MediaPreviewEditorScreen> {
                             selectedColor = color;
                           });
                         },
-                        child: Container(
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 150),
                           width: 28,
                           height: 28,
                           decoration: BoxDecoration(
                             color: color,
                             shape: BoxShape.circle,
                             border: Border.all(
-                              color: isSelected
-                                  ? Colors.white
-                                  : Colors.transparent,
-                              width: 2.5,
+                              color: isSelected ? Colors.white : Colors.white24,
+                              width: isSelected ? 3.0 : 1.0,
                             ),
+                            boxShadow: isSelected
+                                ? [
+                                    BoxShadow(
+                                      color: color.withValues(alpha: 0.6),
+                                      blurRadius: 8,
+                                      spreadRadius: 1,
+                                    ),
+                                  ]
+                                : null,
                           ),
                         ),
                       );
@@ -213,12 +243,16 @@ class _MediaPreviewEditorScreenState extends State<MediaPreviewEditorScreen> {
                   onPressed: () => Navigator.pop(context),
                   child: const Text(
                     'Cancel',
-                    style: TextStyle(color: Colors.white70),
+                    style: TextStyle(color: Colors.white60),
                   ),
                 ),
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF00A884),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
                   ),
                   onPressed: () {
                     final text = textController.text.trim();
@@ -226,13 +260,11 @@ class _MediaPreviewEditorScreenState extends State<MediaPreviewEditorScreen> {
                       setState(() {
                         _overlays.add(
                           OverlayItem(
-                            id: DateTime.now()
-                                .millisecondsSinceEpoch
-                                .toString(),
+                            id: DateTime.now().millisecondsSinceEpoch.toString(),
                             text: text,
                             isEmoji: false,
                             color: selectedColor,
-                            position: const Offset(100, 150),
+                            position: const Offset(100, 160),
                           ),
                         );
                       });
@@ -240,8 +272,11 @@ class _MediaPreviewEditorScreenState extends State<MediaPreviewEditorScreen> {
                     Navigator.pop(context);
                   },
                   child: const Text(
-                    'Add',
-                    style: TextStyle(color: Colors.white),
+                    'Done',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ),
               ],
@@ -261,8 +296,8 @@ class _MediaPreviewEditorScreenState extends State<MediaPreviewEditorScreen> {
       ),
       builder: (context) {
         return Container(
-          padding: const EdgeInsets.all(16),
-          height: 220,
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+          height: 240,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -274,35 +309,34 @@ class _MediaPreviewEditorScreenState extends State<MediaPreviewEditorScreen> {
                   fontWeight: FontWeight.bold,
                 ),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 14),
               Expanded(
                 child: GridView.builder(
                   gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                     crossAxisCount: 6,
-                    mainAxisSpacing: 10,
-                    crossAxisSpacing: 10,
+                    mainAxisSpacing: 12,
+                    crossAxisSpacing: 12,
                   ),
                   itemCount: _commonEmojis.length,
                   itemBuilder: (context, index) {
                     final emoji = _commonEmojis[index];
                     return InkWell(
                       onTap: () {
+                        HapticFeedback.lightImpact();
                         setState(() {
                           _overlays.add(
                             OverlayItem(
-                              id: DateTime.now()
-                                  .millisecondsSinceEpoch
-                                  .toString(),
+                              id: DateTime.now().millisecondsSinceEpoch.toString(),
                               text: emoji,
                               isEmoji: true,
                               color: Colors.white,
-                              position: const Offset(120, 150),
+                              position: const Offset(120, 160),
                             ),
                           );
                         });
                         Navigator.pop(context);
                       },
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: BorderRadius.circular(10),
                       child: Center(
                         child: Text(
                           emoji,
@@ -325,7 +359,7 @@ class _MediaPreviewEditorScreenState extends State<MediaPreviewEditorScreen> {
         _repaintKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
     if (boundary == null) return _currentFile;
 
-    final image = await boundary.toImage(pixelRatio: 2.0);
+    final image = await boundary.toImage(pixelRatio: 2.5);
     final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
     if (byteData == null) return _currentFile;
 
@@ -334,11 +368,11 @@ class _MediaPreviewEditorScreenState extends State<MediaPreviewEditorScreen> {
     final tempFile = File(
       '${tempDir.path}/edited_${DateTime.now().millisecondsSinceEpoch}.png',
     );
-    await tempFile.writeAsBytes(pngBytes);
+    await tempFile.writeAsBytes(pngBytes, flush: true);
     return tempFile;
   }
 
-  Future<void> _handleConfirm() async {
+  Future<void> _handleConfirm({bool sendDirectly = false}) async {
     if (_isProcessing) return;
     setState(() => _isProcessing = true);
 
@@ -354,6 +388,7 @@ class _MediaPreviewEditorScreenState extends State<MediaPreviewEditorScreen> {
         MediaEditorResult(
           file: finalFile,
           caption: _captionController.text.trim(),
+          sendImmediately: sendDirectly,
         ),
       );
     } catch (_) {
@@ -366,40 +401,41 @@ class _MediaPreviewEditorScreenState extends State<MediaPreviewEditorScreen> {
   Widget _buildTopBar() {
     return Container(
       padding: EdgeInsets.only(
-        top: MediaQuery.of(context).padding.top + 8,
+        top: MediaQuery.of(context).padding.top + 6,
         left: 8,
         right: 8,
         bottom: 8,
       ),
-      color: Colors.black45,
+      color: Colors.black.withValues(alpha: 0.55),
       child: Row(
         children: [
           IconButton(
-            icon: const Icon(Icons.close, color: Colors.white, size: 26),
+            icon: const Icon(Icons.close_rounded, color: Colors.white, size: 26),
             onPressed: () => Navigator.pop(context),
           ),
           const Spacer(),
           if (_isImage) ...[
             IconButton(
-              icon: const Icon(Icons.crop, color: Colors.white, size: 24),
+              icon: const Icon(Icons.crop_rotate_rounded, color: Colors.white, size: 24),
               onPressed: _cropImage,
               tooltip: 'Crop',
             ),
             IconButton(
-              icon: const Icon(Icons.sentiment_satisfied_alt,
+              icon: const Icon(Icons.sentiment_satisfied_alt_rounded,
                   color: Colors.white, size: 24),
               onPressed: _showAddEmojiSheet,
               tooltip: 'Emoji',
             ),
             IconButton(
-              icon: const Icon(Icons.title, color: Colors.white, size: 24),
+              icon: const Icon(Icons.title_rounded, color: Colors.white, size: 24),
               onPressed: _showAddTextDialog,
               tooltip: 'Text',
             ),
             if (_overlays.isNotEmpty)
               IconButton(
-                icon: const Icon(Icons.undo, color: Colors.white, size: 24),
+                icon: const Icon(Icons.undo_rounded, color: Colors.white, size: 24),
                 onPressed: () {
+                  HapticFeedback.selectionClick();
                   setState(() {
                     _overlays.removeLast();
                   });
@@ -434,28 +470,39 @@ class _MediaPreviewEditorScreenState extends State<MediaPreviewEditorScreen> {
                     });
                   },
                   child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
+                    padding: EdgeInsets.symmetric(
+                      horizontal: item.isEmoji ? 4 : 10,
+                      vertical: item.isEmoji ? 2 : 5,
                     ),
                     decoration: item.isEmoji
                         ? null
                         : BoxDecoration(
-                            color: Colors.black45,
-                            borderRadius: BorderRadius.circular(6),
+                            color: Colors.black.withValues(alpha: 0.55),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.25),
+                              width: 1,
+                            ),
                           ),
                     child: Text(
                       item.text,
                       style: TextStyle(
-                        fontSize: item.isEmoji ? 42 : 24,
+                        fontSize: item.isEmoji ? 44 : 22,
                         color: item.color,
                         fontWeight: FontWeight.bold,
+                        shadows: const [
+                          Shadow(
+                            blurRadius: 4,
+                            color: Colors.black87,
+                            offset: Offset(0, 1),
+                          ),
+                        ],
                       ),
                     ),
                   ),
                 ),
               );
-            }).toList(),
+            }),
           ],
         ),
       ),
@@ -469,11 +516,11 @@ class _MediaPreviewEditorScreenState extends State<MediaPreviewEditorScreen> {
         padding: const EdgeInsets.all(28),
         decoration: BoxDecoration(
           color: const Color(0xFF1E2428),
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(18),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.4),
-              blurRadius: 10,
+              color: Colors.black.withValues(alpha: 0.45),
+              blurRadius: 12,
               offset: const Offset(0, 4),
             ),
           ],
@@ -482,9 +529,9 @@ class _MediaPreviewEditorScreenState extends State<MediaPreviewEditorScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              padding: const EdgeInsets.all(20),
+              padding: const EdgeInsets.all(22),
               decoration: BoxDecoration(
-                color: Colors.redAccent.withOpacity(0.15),
+                color: Colors.redAccent.withValues(alpha: 0.16),
                 shape: BoxShape.circle,
               ),
               child: const Icon(
@@ -505,14 +552,16 @@ class _MediaPreviewEditorScreenState extends State<MediaPreviewEditorScreen> {
                 fontWeight: FontWeight.w600,
               ),
             ),
-            const SizedBox(height: 8),
-            Text(
-              _fileSizeString,
-              style: const TextStyle(
-                color: Colors.white54,
-                fontSize: 13,
+            if (_fileSizeString.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(
+                _fileSizeString,
+                style: const TextStyle(
+                  color: Colors.white54,
+                  fontSize: 13,
+                ),
               ),
-            ),
+            ],
           ],
         ),
       ),
@@ -526,11 +575,11 @@ class _MediaPreviewEditorScreenState extends State<MediaPreviewEditorScreen> {
         padding: const EdgeInsets.all(28),
         decoration: BoxDecoration(
           color: const Color(0xFF1E2428),
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(18),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.4),
-              blurRadius: 10,
+              color: Colors.black.withValues(alpha: 0.45),
+              blurRadius: 12,
               offset: const Offset(0, 4),
             ),
           ],
@@ -539,9 +588,9 @@ class _MediaPreviewEditorScreenState extends State<MediaPreviewEditorScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              padding: const EdgeInsets.all(20),
+              padding: const EdgeInsets.all(22),
               decoration: BoxDecoration(
-                color: const Color(0xFF00A884).withOpacity(0.15),
+                color: const Color(0xFF00A884).withValues(alpha: 0.16),
                 shape: BoxShape.circle,
               ),
               child: const Icon(
@@ -562,14 +611,16 @@ class _MediaPreviewEditorScreenState extends State<MediaPreviewEditorScreen> {
                 fontWeight: FontWeight.w600,
               ),
             ),
-            const SizedBox(height: 8),
-            Text(
-              _fileSizeString,
-              style: const TextStyle(
-                color: Colors.white54,
-                fontSize: 13,
+            if (_fileSizeString.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(
+                _fileSizeString,
+                style: const TextStyle(
+                  color: Colors.white54,
+                  fontSize: 13,
+                ),
               ),
-            ),
+            ],
           ],
         ),
       ),
@@ -587,20 +638,24 @@ class _MediaPreviewEditorScreenState extends State<MediaPreviewEditorScreen> {
 
     return Container(
       padding: EdgeInsets.only(
-        left: 14,
-        right: 14,
+        left: 12,
+        right: 12,
         top: 10,
         bottom: MediaQuery.of(context).padding.bottom + 10,
       ),
-      color: Colors.black87,
+      color: Colors.black.withValues(alpha: 0.85),
       child: Row(
         children: [
           Expanded(
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
               decoration: BoxDecoration(
                 color: const Color(0xFF1E2428),
                 borderRadius: BorderRadius.circular(24),
+                border: Border.all(
+                  color: Colors.white.withValues(alpha: 0.1),
+                  width: 1,
+                ),
               ),
               child: TextField(
                 controller: _captionController,
@@ -609,22 +664,30 @@ class _MediaPreviewEditorScreenState extends State<MediaPreviewEditorScreen> {
                 style: const TextStyle(color: Colors.white, fontSize: 15),
                 decoration: InputDecoration(
                   hintText: hintText,
-                  hintStyle:
-                      const TextStyle(color: Colors.white54, fontSize: 15),
+                  hintStyle: const TextStyle(color: Colors.white54, fontSize: 15),
                   border: InputBorder.none,
+                  isDense: true,
+                  contentPadding: const EdgeInsets.symmetric(vertical: 10),
                 ),
               ),
             ),
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: 8),
           GestureDetector(
-            onTap: _isProcessing ? null : _handleConfirm,
+            onTap: _isProcessing ? null : () => _handleConfirm(sendDirectly: false),
             child: Container(
-              width: 48,
-              height: 48,
-              decoration: const BoxDecoration(
-                color: Color(0xFF00A884),
+              width: 46,
+              height: 46,
+              decoration: BoxDecoration(
+                color: const Color(0xFF00A884),
                 shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFF00A884).withValues(alpha: 0.4),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
               ),
               child: _isProcessing
                   ? const Center(
@@ -639,9 +702,9 @@ class _MediaPreviewEditorScreenState extends State<MediaPreviewEditorScreen> {
                       ),
                     )
                   : const Icon(
-                      Icons.send_rounded,
+                      Icons.check_rounded,
                       color: Colors.white,
-                      size: 24,
+                      size: 26,
                     ),
             ),
           ),
