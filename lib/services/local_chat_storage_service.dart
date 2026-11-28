@@ -1,6 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
+import 'package:dio/dio.dart';
 import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
 import '../models/message_model.dart';
 
@@ -11,6 +14,7 @@ class LocalChatStorageService {
   LocalChatStorageService._internal();
 
   Database? _database;
+  final Dio _dio = Dio();
   final StreamController<String> _roomUpdateStreamController =
       StreamController<String>.broadcast();
 
@@ -28,7 +32,7 @@ class LocalChatStorageService {
 
     return await openDatabase(
       path,
-      version: 2,
+      version: 3,
       onCreate: (db, version) async {
         await _createTables(db);
       },
@@ -37,6 +41,12 @@ class LocalChatStorageService {
           try {
             await db.execute(
                 'ALTER TABLE local_messages ADD COLUMN localFilePath TEXT');
+          } catch (_) {}
+        }
+        if (oldVersion < 3) {
+          try {
+            await db.execute(
+                'ALTER TABLE local_messages ADD COLUMN localFilePaths TEXT');
           } catch (_) {}
         }
       },
@@ -58,6 +68,7 @@ class LocalChatStorageService {
         status TEXT,
         mediaUrl TEXT,
         localFilePath TEXT,
+        localFilePaths TEXT,
         isDeletedForEveryone INTEGER DEFAULT 0,
         deletedForUsers TEXT,
         replyToMessageId TEXT,
@@ -80,9 +91,23 @@ class LocalChatStorageService {
   Map<String, dynamic> _messageToDbMap(
       MessageModel message, String chatRoomId, {bool isSynced = true}) {
     String? localPath;
-    if (message.mediaMetaData != null &&
-        message.mediaMetaData!['localFilePath'] != null) {
-      localPath = message.mediaMetaData!['localFilePath'].toString();
+    String? localPathsJson;
+
+    if (message.mediaMetaData != null) {
+      if (message.mediaMetaData!['localFilePath'] != null) {
+        localPath = message.mediaMetaData!['localFilePath'].toString();
+      }
+
+      if (message.mediaMetaData!['localFilePaths'] != null) {
+        final rawPaths = message.mediaMetaData!['localFilePaths'];
+        if (rawPaths is List) {
+          final stringList = rawPaths.map((e) => e.toString()).toList();
+          localPathsJson = jsonEncode(stringList);
+          if (localPath == null && stringList.isNotEmpty) {
+            localPath = stringList.first;
+          }
+        }
+      }
     }
 
     return {
@@ -99,6 +124,7 @@ class LocalChatStorageService {
       'status': message.status,
       'mediaUrl': message.mediaUrl,
       'localFilePath': localPath,
+      'localFilePaths': localPathsJson,
       'isDeletedForEveryone': message.isDeletedForEveryone ? 1 : 0,
       'deletedForUsers': jsonEncode(message.deletedForUsers),
       'replyToMessageId': message.replyToMessageId,
@@ -117,7 +143,7 @@ class LocalChatStorageService {
   }
 
   MessageModel _dbMapToMessage(Map<String, dynamic> map) {
-    List<String> deletedUsers = [];
+    List<String> deletedUsers = <String>[];
     if (map['deletedForUsers'] != null &&
         map['deletedForUsers'].toString().isNotEmpty) {
       try {
@@ -151,10 +177,29 @@ class LocalChatStorageService {
       } catch (_) {}
     }
 
-    if (map['localFilePath'] != null &&
-        map['localFilePath'].toString().isNotEmpty) {
-      mediaMeta ??= {};
-      mediaMeta['localFilePath'] = map['localFilePath'].toString();
+    String? singleLocalPath = map['localFilePath']?.toString();
+    List<String> multiLocalPaths = <String>[];
+
+    if (map['localFilePaths'] != null &&
+        map['localFilePaths'].toString().isNotEmpty) {
+      try {
+        final decoded = jsonDecode(map['localFilePaths'].toString());
+        if (decoded is List) {
+          multiLocalPaths = decoded.map((e) => e.toString()).toList();
+        }
+      } catch (_) {}
+    }
+
+    if (singleLocalPath != null && singleLocalPath.isNotEmpty) {
+      mediaMeta ??= <String, dynamic>{};
+      mediaMeta['localFilePath'] = singleLocalPath;
+    }
+
+    if (multiLocalPaths.isNotEmpty) {
+      mediaMeta ??= <String, dynamic>{};
+      mediaMeta['localFilePaths'] = multiLocalPaths;
+      mediaMeta['imageUrls'] = multiLocalPaths;
+      mediaMeta['urls'] = multiLocalPaths;
     }
 
     DateTime? time;
@@ -176,8 +221,8 @@ class LocalChatStorageService {
       mediaUrl: map['mediaUrl'],
       isDeletedForEveryone: map['isDeletedForEveryone'] == 1,
       deletedForUsers: deletedUsers,
-      starredBy: const [],
-      reactions: const {},
+      starredBy: const <String>[],
+      reactions: const <String, dynamic>{},
       replyToMessageId: map['replyToMessageId'],
       replyText: map['replyText'],
       messageCategory: map['messageCategory'] ?? 'general',
@@ -187,6 +232,180 @@ class LocalChatStorageService {
       mediaMetaData: mediaMeta,
       isSyncedWithServer: map['isSyncedWithServer'] == 1,
     );
+  }
+
+  Future<Directory> getPermanentMediaDirectory(String subFolder) async {
+    final docsDir = await getApplicationDocumentsDirectory();
+    final targetDir = Directory(p.join(docsDir.path, 'fybtt_chat_media', subFolder));
+    if (!await targetDir.exists()) {
+      await targetDir.create(recursive: true);
+    }
+    return targetDir;
+  }
+
+  Future<String> copyFileToPermanentStorage(File sourceFile, {String subFolder = 'media'}) async {
+    if (!await sourceFile.exists()) {
+      return sourceFile.path;
+    }
+
+    final targetDir = await getPermanentMediaDirectory(subFolder);
+    final ext = p.extension(sourceFile.path);
+    final fileName = 'fybtt_${DateTime.now().microsecondsSinceEpoch}_${p.basenameWithoutExtension(sourceFile.path)}$ext';
+    final permanentFile = File(p.join(targetDir.path, fileName));
+
+    if (sourceFile.path == permanentFile.path) {
+      return permanentFile.path;
+    }
+
+    await sourceFile.copy(permanentFile.path);
+    return permanentFile.path;
+  }
+
+  Future<String?> downloadMediaFile(String url, {String subFolder = 'media'}) async {
+    if (url.isEmpty || !url.startsWith('http')) return null;
+
+    try {
+      final targetDir = await getPermanentMediaDirectory(subFolder);
+      final uri = Uri.parse(url);
+      final rawName = uri.pathSegments.isNotEmpty ? uri.pathSegments.last : 'media_file';
+      final cleanName = rawName.contains('?') ? rawName.split('?').first : rawName;
+      final ext = p.extension(cleanName).isNotEmpty ? p.extension(cleanName) : '.dat';
+      final fileName = 'dl_${DateTime.now().microsecondsSinceEpoch}_${cleanName.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_')}$ext';
+      final savePath = p.join(targetDir.path, fileName);
+
+      final response = await _dio.download(
+        url,
+        savePath,
+        options: Options(
+          receiveTimeout: const Duration(seconds: 45),
+          sendTimeout: const Duration(seconds: 45),
+        ),
+      );
+
+      if (response.statusCode == 200 && await File(savePath).exists()) {
+        return savePath;
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  Future<List<String>> downloadAlbumFiles(List<String> urls, {String subFolder = 'albums'}) async {
+    if (urls.isEmpty) return <String>[];
+
+    final downloadFutures = urls.map((url) async {
+      final localPath = await downloadMediaFile(url, subFolder: subFolder);
+      return localPath ?? url;
+    });
+
+    final results = await Future.wait(downloadFutures);
+    return results;
+  }
+
+  Future<MessageModel> saveOutgoingMessageWithPermanentFiles(
+      MessageModel message, String chatRoomId) async {
+    Map<String, dynamic> updatedMeta = Map<String, dynamic>.from(message.mediaMetaData ?? {});
+
+    if (updatedMeta['localFilePath'] != null) {
+      final rawPath = updatedMeta['localFilePath'].toString();
+      final srcFile = File(rawPath);
+      if (await srcFile.exists()) {
+        final permPath = await copyFileToPermanentStorage(srcFile, subFolder: 'sent_media');
+        updatedMeta['localFilePath'] = permPath;
+      }
+    }
+
+    if (updatedMeta['localFilePaths'] != null && updatedMeta['localFilePaths'] is List) {
+      final rawList = updatedMeta['localFilePaths'] as List;
+      final List<String> permPaths = <String>[];
+      for (final item in rawList) {
+        final srcFile = File(item.toString());
+        if (await srcFile.exists()) {
+          final permPath = await copyFileToPermanentStorage(srcFile, subFolder: 'sent_albums');
+          permPaths.add(permPath);
+        } else {
+          permPaths.add(item.toString());
+        }
+      }
+      updatedMeta['localFilePaths'] = permPaths;
+      updatedMeta['imageUrls'] = permPaths;
+      updatedMeta['urls'] = permPaths;
+      if (permPaths.isNotEmpty && updatedMeta['localFilePath'] == null) {
+        updatedMeta['localFilePath'] = permPaths.first;
+      }
+    }
+
+    final updatedMessage = message.copyWith(mediaMetaData: updatedMeta);
+    await saveMessage(updatedMessage, chatRoomId, isSynced: true);
+    return updatedMessage;
+  }
+
+  Future<MessageModel> processAndSaveIncomingMessage(
+      MessageModel message, String chatRoomId) async {
+    Map<String, dynamic> updatedMeta = Map<String, dynamic>.from(message.mediaMetaData ?? {});
+    final msgType = message.type.toLowerCase();
+
+    if (msgType == 'album') {
+      List<String> remoteUrls = <String>[];
+      if (updatedMeta['imageUrls'] is List) {
+        remoteUrls = (updatedMeta['imageUrls'] as List).map((e) => e.toString()).toList();
+      } else if (updatedMeta['urls'] is List) {
+        remoteUrls = (updatedMeta['urls'] as List).map((e) => e.toString()).toList();
+      }
+
+      if (remoteUrls.isNotEmpty) {
+        final localAlbumPaths = await downloadAlbumFiles(remoteUrls, subFolder: 'received_albums');
+        updatedMeta['localFilePaths'] = localAlbumPaths;
+        updatedMeta['imageUrls'] = localAlbumPaths;
+        updatedMeta['urls'] = localAlbumPaths;
+        if (localAlbumPaths.isNotEmpty) {
+          updatedMeta['localFilePath'] = localAlbumPaths.first;
+        }
+      }
+    } else if (msgType == 'image' || msgType == 'video' || msgType == 'audio' || msgType == 'voice' || msgType == 'document' || msgType == 'file') {
+      String? remoteUrl = message.mediaUrl;
+      if (remoteUrl == null || remoteUrl.isEmpty) {
+        remoteUrl = updatedMeta['imageUrl']?.toString() ??
+            updatedMeta['audioUrl']?.toString() ??
+            updatedMeta['videoUrl']?.toString() ??
+            updatedMeta['fileUrl']?.toString() ??
+            updatedMeta['url']?.toString();
+      }
+
+      if (remoteUrl != null && remoteUrl.startsWith('http')) {
+        final downloadedPath = await downloadMediaFile(remoteUrl, subFolder: 'received_media');
+        if (downloadedPath != null) {
+          updatedMeta['localFilePath'] = downloadedPath;
+        }
+      }
+    }
+
+    final updatedMessage = message.copyWith(mediaMetaData: updatedMeta);
+    await saveMessage(updatedMessage, chatRoomId, isSynced: true);
+    return updatedMessage;
+  }
+
+  Future<bool> hasMessage(String messageId) async {
+    final db = await database;
+    final List<Map<String, dynamic>> res = await db.query(
+      'local_messages',
+      columns: ['messageId'],
+      where: 'messageId = ?',
+      whereArgs: [messageId],
+      limit: 1,
+    );
+    return res.isNotEmpty;
+  }
+
+  Future<MessageModel?> getMessageById(String messageId) async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps = await db.query(
+      'local_messages',
+      where: 'messageId = ?',
+      whereArgs: [messageId],
+      limit: 1,
+    );
+    if (maps.isEmpty) return null;
+    return _dbMapToMessage(maps.first);
   }
 
   Future<void> saveMessage(MessageModel message, String chatRoomId,
@@ -291,6 +510,37 @@ class LocalChatStorageService {
     _roomUpdateStreamController.add(chatRoomId);
   }
 
+  Future<void> updateLocalMediaPaths({
+    required String messageId,
+    required String chatRoomId,
+    String? localFilePath,
+    List<String>? localFilePaths,
+  }) async {
+    final db = await database;
+    final Map<String, dynamic> updateValues = {};
+
+    if (localFilePath != null) {
+      updateValues['localFilePath'] = localFilePath;
+    }
+
+    if (localFilePaths != null) {
+      updateValues['localFilePaths'] = jsonEncode(localFilePaths);
+      if (localFilePath == null && localFilePaths.isNotEmpty) {
+        updateValues['localFilePath'] = localFilePaths.first;
+      }
+    }
+
+    if (updateValues.isNotEmpty) {
+      await db.update(
+        'local_messages',
+        updateValues,
+        where: 'messageId = ?',
+        whereArgs: [messageId],
+      );
+      _roomUpdateStreamController.add(chatRoomId);
+    }
+  }
+
   Future<void> markMessageReadLocally(String messageId, String chatRoomId) async {
     final db = await database;
     await db.update(
@@ -325,7 +575,7 @@ class LocalChatStorageService {
     );
 
     if (maps.isNotEmpty) {
-      List<String> deleted = [];
+      List<String> deleted = <String>[];
       try {
         final decoded = jsonDecode(maps.first['deletedForUsers']?.toString() ?? '[]');
         if (decoded is List) {
@@ -356,6 +606,7 @@ class LocalChatStorageService {
         'content': 'This message was deleted',
         'mediaUrl': null,
         'localFilePath': null,
+        'localFilePaths': null,
       },
       where: 'messageId = ?',
       whereArgs: [messageId],
@@ -414,7 +665,7 @@ class LocalChatStorageService {
             Map<String, dynamic>.from(jsonDecode(maps.first['pollData'].toString()));
         final Map<String, dynamic> votes = poll['votes'] is Map
             ? Map<String, dynamic>.from(poll['votes'])
-            : {};
+            : <String, dynamic>{};
         votes[userId] = optionIndex;
         poll['votes'] = votes;
 
@@ -450,7 +701,7 @@ class LocalChatStorageService {
             Map<String, dynamic>.from(jsonDecode(maps.first['quizData'].toString()));
         final Map<String, dynamic> submissions = quiz['submissions'] is Map
             ? Map<String, dynamic>.from(quiz['submissions'])
-            : {};
+            : <String, dynamic>{};
         submissions[userId] = optionIndex;
         quiz['submissions'] = submissions;
 
@@ -469,7 +720,7 @@ class LocalChatStorageService {
     required String chatRoomId,
     required String query,
   }) async {
-    if (query.trim().isEmpty) return [];
+    if (query.trim().isEmpty) return <MessageModel>[];
     final db = await database;
     final List<Map<String, dynamic>> maps = await db.query(
       'local_messages',
