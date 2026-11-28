@@ -1,3 +1,4 @@
+```dart
 import 'dart:async';
 import 'dart:developer';
 import 'dart:io';
@@ -757,6 +758,8 @@ class _ChatScreenState extends State<ChatScreen>
       status: 'sending',
       isDeletedForEveryone: false,
       deletedForUsers: const <String>[],
+      starredBy: const <String>[],
+      reactions: const <String, String>{},
       readBy: [widget.currentUserId],
       replyToMessageId: _replyToMessageId,
       replyText: _replyToText,
@@ -827,7 +830,7 @@ class _ChatScreenState extends State<ChatScreen>
         isDeletedForEveryone: false,
         deletedForUsers: const <String>[],
         starredBy: const <String>[],
-        reactions: const <String, dynamic>{},
+        reactions: const <String, String>{},
         replyToMessageId: pendingMsg.replyToMessageId,
         replyText: pendingMsg.replyText,
         mediaMetaData: {
