@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:geocoding/geocoding.dart';
 import '../services/location_service.dart';
 import 'location_picker_screen.dart';
 import 'teacher_search_result_screen.dart';
@@ -52,7 +53,7 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
     _uidController.addListener(_validateSearchForm);
     _nameController.addListener(_validateSearchForm);
     _subjectController.addListener(_validateSearchForm);
-    _locationController.addListener(_validateSearchForm);
+    _locationController.addListener(_handleLocationInputChanged);
     _experienceController.addListener(_validateSearchForm);
   }
 
@@ -61,9 +62,20 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
     _uidController.dispose();
     _nameController.dispose();
     _subjectController.dispose();
+    _locationController.removeListener(_handleLocationInputChanged);
     _locationController.dispose();
     _experienceController.dispose();
     super.dispose();
+  }
+
+  void _handleLocationInputChanged() {
+    if (_pickedAddress != null &&
+        _locationController.text.trim() != _pickedAddress) {
+      _pickedLatitude = null;
+      _pickedLongitude = null;
+      _pickedAddress = null;
+    }
+    _validateSearchForm();
   }
 
   void _validateSearchForm() {
@@ -179,8 +191,7 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
       double? activeLat = _pickedLatitude;
       double? activeLng = _pickedLongitude;
 
-      if (_locationMode == LocationSearchMode.currentGps &&
-          (activeLat == null || activeLng == null)) {
+      if (_locationMode == LocationSearchMode.currentGps) {
         setState(() => _isFetchingGps = true);
         try {
           final pos = await LocationService.getCurrentLocation();
@@ -201,6 +212,48 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
           return;
         } finally {
           if (mounted) setState(() => _isFetchingGps = false);
+        }
+      } else if (_locationMode == LocationSearchMode.specificLocation) {
+        final String locText = _locationController.text.trim();
+
+        if (activeLat == null || activeLng == null) {
+          if (locText.isNotEmpty) {
+            setState(() => _isFetchingGps = true);
+            try {
+              final locations = await locationFromAddress(locText);
+              if (locations.isNotEmpty) {
+                activeLat = locations.first.latitude;
+                activeLng = locations.first.longitude;
+              } else {
+                throw Exception();
+              }
+            } catch (_) {
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text(
+                      'Could not locate the specified area. Please pick a location from the map or check the spelling.',
+                    ),
+                    backgroundColor: Color(0xFFDC2626),
+                  ),
+                );
+              }
+              setState(() => _isFetchingGps = false);
+              return;
+            } finally {
+              if (mounted) setState(() => _isFetchingGps = false);
+            }
+          } else if (_selectedRadius != 'Any Distance') {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text(
+                  'Please enter an area name or pick a location from the map for radius search.',
+                ),
+                backgroundColor: Color(0xFFDC2626),
+              ),
+            );
+            return;
+          }
         }
       }
 
@@ -545,7 +598,7 @@ class _TeacherSearchScreenState extends State<TeacherSearchScreen> {
               children: [
                 Expanded(
                   child: _customSearchField(
-                    'Area name, landmark, or hub',
+                    'Area name, landmark, or city',
                     _locationController,
                     Icons.location_on_outlined,
                   ),
