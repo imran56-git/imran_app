@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import '../services/chat_service.dart';
+import '../services/group_service.dart';
 
 class AcademicComposerSheet extends StatefulWidget {
   final String groupId;
@@ -46,6 +47,7 @@ class AcademicComposerSheet extends StatefulWidget {
 class _AcademicComposerSheetState extends State<AcademicComposerSheet>
     with SingleTickerProviderStateMixin {
   final ChatService _chatService = ChatService();
+  final GroupService _groupService = GroupService();
   final ImagePicker _imagePicker = ImagePicker();
 
   late TabController _tabController;
