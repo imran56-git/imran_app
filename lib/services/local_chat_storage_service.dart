@@ -222,7 +222,7 @@ class LocalChatStorageService {
       isDeletedForEveryone: map['isDeletedForEveryone'] == 1,
       deletedForUsers: deletedUsers,
       starredBy: const <String>[],
-      reactions: const <String, dynamic>{},
+      reactions: const <String, String>{},
       replyToMessageId: map['replyToMessageId'],
       replyText: map['replyText'],
       messageCategory: map['messageCategory'] ?? 'general',
