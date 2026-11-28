@@ -1,11 +1,9 @@
 import 'dart:async';
 import 'dart:developer';
 import 'dart:io';
-import 'package:sqflite/sqflite.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
-import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 import '../models/group_model.dart';
 import '../models/message_model.dart';
@@ -17,7 +15,7 @@ class ChatService {
   final FirebaseStorage _storage = FirebaseStorage.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final LocalChatStorageService _localStorage = LocalChatStorageService();
-  final Map<String, DateTime> _recentClientMessages = {};
+  final Map<String, DateTime> _recentClientMessages = <String, DateTime>{};
 
   static const String officialSenderId = 'OFFICIAL_FYBTT_DESK';
   static const String legacyOfficialSenderId = 'fybtt_official';
@@ -546,25 +544,51 @@ class ChatService {
     return message;
   }
 
-  Future<String?> _downloadAndCacheMediaLocally(
-      String url, String messageId) async {
-    if (!url.startsWith('http')) return null;
-    try {
-      final response = await http
-          .get(Uri.parse(url))
-          .timeout(const Duration(seconds: 15));
-      if (response.statusCode == 200) {
-        final dbPath = await getDatabasesPath();
-        final mediaDir = Directory(p.join(dbPath, 'fybtt_media'));
-        if (!await mediaDir.exists()) {
-          await mediaDir.create(recursive: true);
-        }
-        final file = File(p.join(mediaDir.path, '${messageId}_media.bin'));
-        await file.writeAsBytes(response.bodyBytes);
-        return file.path;
+  List<String> extractMediaUrlsFromMessage(MessageModel msg) {
+    final List<String> urls = <String>[];
+    if (msg.mediaUrl != null && msg.mediaUrl!.startsWith('http')) {
+      urls.add(msg.mediaUrl!);
+    }
+    if (msg.mediaUrls != null) {
+      for (final u in msg.mediaUrls!) {
+        if (u.startsWith('http') && !urls.contains(u)) urls.add(u);
       }
-    } catch (_) {}
-    return null;
+    }
+    if (msg.mediaMetaData != null) {
+      for (final key in const ['imageUrls', 'urls', 'mediaUrls']) {
+        final raw = msg.mediaMetaData![key];
+        if (raw is List) {
+          for (final item in raw) {
+            final s = item.toString();
+            if (s.startsWith('http') && !urls.contains(s)) {
+              urls.add(s);
+            }
+          }
+        }
+      }
+      for (final key in const ['imageUrl', 'audioUrl', 'videoUrl', 'fileUrl', 'url']) {
+        final val = msg.mediaMetaData![key]?.toString();
+        if (val != null && val.startsWith('http') && !urls.contains(val)) {
+          urls.add(val);
+        }
+      }
+    }
+    if (msg.content.startsWith('http') && msg.type != 'text') {
+      if (!urls.contains(msg.content)) {
+        urls.add(msg.content);
+      }
+    }
+    return urls;
+  }
+
+  Future<void> deleteFirebaseStorageFilesSafe(List<String> urls) async {
+    for (final url in urls) {
+      if (url.isEmpty || !url.startsWith('http')) continue;
+      try {
+        final ref = _storage.refFromURL(url);
+        await ref.delete();
+      } catch (_) {}
+    }
   }
 
   Future<void> sendMessage({
@@ -589,29 +613,6 @@ class ChatService {
   }) async {
     if (isOfficialChatIdOrReceiver(chatId, receiverId)) {
       throw Exception('FYBTT official channel is read-only.');
-    }
-
-    if (receiverId == 'group') {
-      await sendGroupMessage(
-        groupId: chatId,
-        senderId: senderId,
-        message: message,
-        type: type,
-        replyToMessageId: replyToMessageId,
-        replyToText: replyToText,
-        mediaMetaData: mediaMetaData,
-        messageCategory: messageCategory,
-        pollData: pollData,
-        quizData: quizData,
-        linkPreviewData: linkPreviewData,
-        isForwarded: isForwarded,
-        isScheduled: isScheduled,
-        scheduledAt: scheduledAt,
-        clientMessageId: clientMessageId,
-        caption: caption,
-        mediaUrls: mediaUrls,
-      );
-      return;
     }
 
     try {
@@ -642,7 +643,7 @@ class ChatService {
             (chatData['disappearingDurationHours'] as num?)?.toInt() ?? 0;
       }
 
-      DateTime? expiresAt;
+      DateTime expiresAt = DateTime.now().add(const Duration(days: 7));
       if (disappearingHours > 0) {
         expiresAt = DateTime.now().add(Duration(hours: disappearingHours));
       }
@@ -660,9 +661,9 @@ class ChatService {
         'type': type,
         'status': 'sent',
         'isDeletedForEveryone': false,
-        'deletedForUsers': [],
-        'starredBy': [],
-        'reactions': {},
+        'deletedForUsers': <String>[],
+        'starredBy': <String>[],
+        'reactions': <String, dynamic>{},
         'messageCategory': messageCategory,
         'isPinned': false,
         'isForwarded': isForwarded,
@@ -671,7 +672,7 @@ class ChatService {
         'isScheduled': isScheduled,
         'scheduledAt':
             scheduledAt != null ? Timestamp.fromDate(scheduledAt) : null,
-        'expiresAt': expiresAt != null ? Timestamp.fromDate(expiresAt) : null,
+        'expiresAt': Timestamp.fromDate(expiresAt),
         'clientMessageId': clientMessageId,
       };
 
@@ -704,9 +705,9 @@ class ChatService {
         timestamp: DateTime.now(),
         status: 'sent',
         isDeletedForEveryone: false,
-        deletedForUsers: const [],
-        starredBy: const [],
-        reactions: const {},
+        deletedForUsers: const <String>[],
+        starredBy: const <String>[],
+        reactions: const <String, dynamic>{},
         replyToMessageId: replyToMessageId,
         replyText: replyToText,
         mediaMetaData: mediaMetaData,
@@ -725,7 +726,9 @@ class ChatService {
         quizData: quizData,
         clientMessageId: clientMessageId,
       );
-      await _localStorage.saveMessage(localMsg, correctChatId);
+
+      await _localStorage.saveOutgoingMessageWithPermanentFiles(
+          localMsg, correctChatId);
 
       final batch = _firestore.batch();
       batch.set(messageRef, messageData);
@@ -751,176 +754,6 @@ class ChatService {
 
       final List<String> sortedParticipants = [senderId, receiverId]..sort();
 
-      final Map<String, dynamic>? existingChatData = chatDoc.data();
-      String teacherId = (existingChatData?['teacherId'] as String?) ?? '';
-      String studentId = (existingChatData?['studentId'] as String?) ?? '';
-      String teacherName =
-          (existingChatData?['teacherName'] as String?) ?? '';
-      String studentName =
-          (existingChatData?['studentName'] as String?) ?? '';
-      String teacherImage =
-          (existingChatData?['teacherImage'] as String?) ?? '';
-      String studentImage =
-          (existingChatData?['studentImage'] as String?) ?? '';
-
-      final userResults = await Future.wait([
-        _safeDocData('users', senderId),
-        _safeDocData('users', receiverId),
-      ]);
-      final senderUserData = userResults[0];
-      final receiverUserData = userResults[1];
-
-      final String senderRole =
-          (senderUserData?['role'] ?? senderUserData?['userType'] ?? '')
-              .toString()
-              .trim()
-              .toLowerCase();
-      final String receiverRole =
-          (receiverUserData?['role'] ?? receiverUserData?['userType'] ?? '')
-              .toString()
-              .trim()
-              .toLowerCase();
-
-      final roleDocs = await Future.wait([
-        _safeDocData('teachers', senderId),
-        _safeDocData('teachers', receiverId),
-        _safeDocData('students', senderId),
-        _safeDocData('students', receiverId),
-      ]);
-      final senderTeacherData = roleDocs[0];
-      final receiverTeacherData = roleDocs[1];
-      final senderStudentData = roleDocs[2];
-      final receiverStudentData = roleDocs[3];
-
-      if (senderRole == 'teacher' || receiverRole == 'student') {
-        teacherId = senderId;
-        studentId = receiverId;
-      } else if (receiverRole == 'teacher' || senderRole == 'student') {
-        teacherId = receiverId;
-        studentId = senderId;
-      } else if (senderTeacherData != null && receiverTeacherData == null) {
-        teacherId = senderId;
-        studentId = receiverId;
-      } else if (receiverTeacherData != null && senderTeacherData == null) {
-        teacherId = receiverId;
-        studentId = senderId;
-      } else if (senderStudentData != null && receiverStudentData == null) {
-        teacherId = receiverId;
-        studentId = senderId;
-      } else if (receiverStudentData != null && senderStudentData == null) {
-        teacherId = senderId;
-        studentId = receiverId;
-      } else if (teacherId == senderId || studentId == receiverId) {
-        teacherId = senderId;
-        studentId = receiverId;
-      } else if (teacherId == receiverId || studentId == senderId) {
-        teacherId = receiverId;
-        studentId = senderId;
-      } else if (senderTeacherData != null) {
-        teacherId = senderId;
-        studentId = receiverId;
-      } else if (receiverTeacherData != null) {
-        teacherId = receiverId;
-        studentId = senderId;
-      } else {
-        teacherId = receiverId;
-        studentId = senderId;
-      }
-
-      final List<Map<String, dynamic>?> senderSources = teacherId == senderId
-          ? [senderTeacherData, senderUserData, senderStudentData]
-          : [senderStudentData, senderUserData, senderTeacherData];
-      final List<Map<String, dynamic>?> receiverSources =
-          teacherId == receiverId
-              ? [receiverTeacherData, receiverUserData, receiverStudentData]
-              : [receiverStudentData, receiverUserData, receiverTeacherData];
-
-      final String senderName = _pickNonEmpty(
-        senderSources,
-        const ['fullName', 'name', 'displayName', 'teacherName', 'studentName'],
-        excludeGeneric: true,
-      );
-      final String senderImage = _pickNonEmpty(
-        senderSources,
-        const ['profileImageUrl', 'photoUrl', 'profilePic', 'profileUrl'],
-      );
-      final String receiverName = _pickNonEmpty(
-        receiverSources,
-        const ['fullName', 'name', 'displayName', 'teacherName', 'studentName'],
-        excludeGeneric: true,
-      );
-      final String receiverImage = _pickNonEmpty(
-        receiverSources,
-        const ['profileImageUrl', 'photoUrl', 'profilePic', 'profileUrl'],
-      );
-
-      final existingProfiles =
-          existingChatData?['userProfiles'] as Map<String, dynamic>?;
-      final existingSenderProfile =
-          existingProfiles?[senderId] as Map<String, dynamic>?;
-      final existingReceiverProfile =
-          existingProfiles?[receiverId] as Map<String, dynamic>?;
-
-      final bool senderVerified = _resolveIsVerified(
-        senderSources,
-        fallback: existingSenderProfile?['isVerified'] == true,
-      );
-      final bool receiverVerified = _resolveIsVerified(
-        receiverSources,
-        fallback: existingReceiverProfile?['isVerified'] == true,
-      );
-
-      if (senderImage.isNotEmpty) {
-        unawaited(PermanentAvatarStorage.precacheAvatar(
-          userId: senderId,
-          imageUrl: senderImage,
-        ));
-      }
-      if (receiverImage.isNotEmpty) {
-        unawaited(PermanentAvatarStorage.precacheAvatar(
-          userId: receiverId,
-          imageUrl: receiverImage,
-        ));
-      }
-
-      if (teacherId == senderId) {
-        if (senderName.isNotEmpty) teacherName = senderName;
-        if (senderImage.isNotEmpty) teacherImage = senderImage;
-        if (receiverName.isNotEmpty) studentName = receiverName;
-        if (receiverImage.isNotEmpty) studentImage = receiverImage;
-      } else {
-        if (receiverName.isNotEmpty) teacherName = receiverName;
-        if (receiverImage.isNotEmpty) teacherImage = receiverImage;
-        if (senderName.isNotEmpty) studentName = senderName;
-        if (senderImage.isNotEmpty) studentImage = senderImage;
-      }
-
-      final Map<String, dynamic> userProfiles = {
-        senderId: {
-          if (senderName.isNotEmpty) 'name': senderName,
-          if (senderImage.isNotEmpty) 'image': senderImage,
-          'isVerified': senderVerified,
-        },
-        receiverId: {
-          if (receiverName.isNotEmpty) 'name': receiverName,
-          if (receiverImage.isNotEmpty) 'image': receiverImage,
-          'isVerified': receiverVerified,
-        },
-      };
-
-      final Map<String, dynamic> metadataToMerge = {};
-      if (teacherId.isNotEmpty) metadataToMerge['teacherId'] = teacherId;
-      if (studentId.isNotEmpty) metadataToMerge['studentId'] = studentId;
-      if (teacherName.isNotEmpty) metadataToMerge['teacherName'] = teacherName;
-      if (studentName.isNotEmpty) metadataToMerge['studentName'] = studentName;
-      if (teacherImage.isNotEmpty) {
-        metadataToMerge['teacherImage'] = teacherImage;
-      }
-      if (studentImage.isNotEmpty) {
-        metadataToMerge['studentImage'] = studentImage;
-      }
-      metadataToMerge['userProfiles'] = userProfiles;
-
       final Map<String, dynamic> chatUpdateData = {
         'chatId': correctChatId,
         'lastMessage': previewText,
@@ -932,7 +765,6 @@ class ChatService {
         'unreadCount_$receiverId': currentUnread + 1,
         'participants': sortedParticipants,
         'deletedBy': FieldValue.arrayRemove([senderId, receiverId]),
-        ...metadataToMerge,
       };
 
       batch.set(chatRef, chatUpdateData, SetOptions(merge: true));
@@ -963,256 +795,6 @@ class ChatService {
     }
   }
 
-  Future<void> sendGroupMessage({
-    required String groupId,
-    required String senderId,
-    required String message,
-    required String type,
-    String? replyToMessageId,
-    String? replyToText,
-    Map<String, dynamic>? mediaMetaData,
-    String messageCategory = 'general',
-    Map<String, dynamic>? pollData,
-    Map<String, dynamic>? quizData,
-    Map<String, dynamic>? linkPreviewData,
-    bool isForwarded = false,
-    bool isScheduled = false,
-    DateTime? scheduledAt,
-    String? clientMessageId,
-    String? caption,
-    List<String>? mediaUrls,
-  }) async {
-    try {
-      final String dedupeKey =
-          clientMessageId ?? '${senderId}_${groupId}_${type}_$message';
-      if (_isDuplicateSubmission(dedupeKey)) return;
-
-      final groupRef = _firestore.collection('groups').doc(groupId);
-      final groupSnap = await groupRef.get();
-      if (!groupSnap.exists || groupSnap.data() == null) {
-        throw Exception('Group does not exist.');
-      }
-
-      final group = GroupModel.fromMap(groupSnap.data()!, groupSnap.id);
-
-      if (group.isDismissed) {
-        throw Exception('This group has been dismissed by the teacher.');
-      }
-      if (group.isStudentRemoved(senderId) ||
-          !group.members.contains(senderId)) {
-        throw Exception('You are not an active member of this group.');
-      }
-
-      final bool isTeacherSender = group.isSingleAdmin(senderId);
-
-      if (!isTeacherSender && group.isStudentMuted(senderId)) {
-        throw Exception('Muted by teacher. You cannot send messages.');
-      }
-      if (!isTeacherSender && group.onlyAdminCanPost) {
-        throw Exception('Only the teacher can send messages in this group.');
-      }
-
-      String senderName = isTeacherSender ? group.teacherName : 'Student';
-      String senderProfilePic = isTeacherSender ? group.teacherProfilePic : '';
-
-      if (!isTeacherSender) {
-        final sDoc =
-            await _firestore.collection('students').doc(senderId).get();
-        if (sDoc.exists && sDoc.data() != null) {
-          final sData = sDoc.data()!;
-          senderName =
-              (sData['name'] ?? sData['fullName'] ?? 'Student').toString();
-          senderProfilePic = (sData['profileImageUrl'] ??
-                  sData['profileUrl'] ??
-                  sData['photoUrl'] ??
-                  '')
-              .toString();
-        } else {
-          final uDoc = await _firestore.collection('users').doc(senderId).get();
-          if (uDoc.exists && uDoc.data() != null) {
-            final uData = uDoc.data()!;
-            senderName =
-                (uData['name'] ?? uData['fullName'] ?? 'Student').toString();
-            senderProfilePic =
-                (uData['photoUrl'] ?? uData['profileUrl'] ?? '').toString();
-          }
-        }
-      }
-
-      if (senderProfilePic.trim().isNotEmpty) {
-        unawaited(PermanentAvatarStorage.precacheAvatar(
-          userId: senderId,
-          imageUrl: senderProfilePic.trim(),
-        ));
-      }
-
-      DateTime? expiresAt;
-      if (group.disappearingDurationHours > 0) {
-        expiresAt = DateTime.now()
-            .add(Duration(hours: group.disappearingDurationHours));
-      }
-
-      final messageRef = groupRef.collection('messages').doc();
-
-      final Map<String, dynamic> messageData = {
-        'messageId': messageRef.id,
-        'senderId': senderId,
-        'receiverId': groupId,
-        'content': message,
-        'type': type,
-        'status': 'sent',
-        'timestamp': isScheduled && scheduledAt != null
-            ? Timestamp.fromDate(scheduledAt)
-            : FieldValue.serverTimestamp(),
-        'isRead': false,
-        'isDeletedForEveryone': false,
-        'deletedForUsers': [],
-        'starredBy': [],
-        'reactions': {},
-        'replyToMessageId': replyToMessageId,
-        'replyText': replyToText,
-        'replyToText': replyToText,
-        'mediaMetaData': mediaMetaData,
-        'senderRole': isTeacherSender ? 'teacher' : 'student',
-        'senderName': senderName,
-        'senderProfilePic': senderProfilePic,
-        'isSenderVerified': isTeacherSender ? group.isTeacherVerified : false,
-        'hasSenderGoldenBadge': isTeacherSender ? group.hasGoldenBadge : false,
-        'messageCategory': messageCategory,
-        'isPinned': false,
-        'isForwarded': isForwarded,
-        'deliveredTo': [senderId],
-        'readBy': [senderId],
-        'pollData': pollData,
-        'quizData': quizData,
-        'linkPreviewData': linkPreviewData,
-        'isScheduled': isScheduled,
-        'scheduledAt':
-            scheduledAt != null ? Timestamp.fromDate(scheduledAt) : null,
-        'expiresAt': expiresAt != null ? Timestamp.fromDate(expiresAt) : null,
-        'replyThreadCount': 0,
-        'parentThreadMessageId': replyToMessageId,
-        'clientMessageId': clientMessageId,
-        'reportedBy': [],
-      };
-
-      if (caption != null && caption.trim().isNotEmpty) {
-        messageData['caption'] = caption.trim();
-      }
-      if (mediaUrls != null && mediaUrls.isNotEmpty) {
-        messageData['mediaUrls'] = mediaUrls;
-      }
-
-      final localGroupMsg = MessageModel(
-        messageId: messageRef.id,
-        senderId: senderId,
-        receiverId: groupId,
-        content: message,
-        type: type,
-        timestamp: DateTime.now(),
-        status: 'sent',
-        isDeletedForEveryone: false,
-        deletedForUsers: const [],
-        starredBy: const [],
-        reactions: const {},
-        replyToMessageId: replyToMessageId,
-        replyText: replyToText,
-        mediaMetaData: mediaMetaData,
-        mediaUrl: (type == 'image' ||
-                type == 'video' ||
-                type == 'audio' ||
-                type == 'document' ||
-                type == 'album')
-            ? message
-            : null,
-        mediaUrls: mediaUrls,
-        caption: caption?.trim(),
-        senderRole: isTeacherSender ? 'teacher' : 'student',
-        senderName: senderName,
-        senderProfilePic: senderProfilePic,
-        isSenderVerified: isTeacherSender ? group.isTeacherVerified : false,
-        hasSenderGoldenBadge: isTeacherSender ? group.hasGoldenBadge : false,
-        messageCategory: messageCategory,
-        isPinned: false,
-        pollData: pollData,
-        quizData: quizData,
-        clientMessageId: clientMessageId,
-      );
-      await _localStorage.saveMessage(localGroupMsg, groupId);
-
-      final WriteBatch batch = _firestore.batch();
-      batch.set(messageRef, messageData);
-
-      if (replyToMessageId != null && replyToMessageId.isNotEmpty) {
-        final parentRef =
-            groupRef.collection('messages').doc(replyToMessageId);
-        batch.set(
-            parentRef,
-            {'replyThreadCount': FieldValue.increment(1)},
-            SetOptions(merge: true));
-      }
-
-      final String previewText = _buildMessagePreviewText(
-        message,
-        type,
-        category: messageCategory,
-        caption: caption,
-        mediaUrls: mediaUrls,
-      );
-
-      final Map<String, int> updatedUnreadCounts =
-          Map<String, int>.from(group.unreadCounts);
-      for (final memberId in group.members) {
-        if (memberId == senderId) {
-          updatedUnreadCounts[memberId] = 0;
-        } else {
-          updatedUnreadCounts[memberId] =
-              (updatedUnreadCounts[memberId] ?? 0) + 1;
-        }
-      }
-
-      batch.update(groupRef, {
-        'lastMessage': previewText,
-        'lastMessageTime': FieldValue.serverTimestamp(),
-        'lastMessageTimestamp': FieldValue.serverTimestamp(),
-        'lastSenderId': senderId,
-        'unreadCounts': updatedUnreadCounts,
-      });
-
-      final String publicSenderLabel =
-          isTeacherSender ? group.teacherName : 'Student';
-      for (final memberId in group.members) {
-        if (memberId == senderId) continue;
-        if (group.mutedByUsers.contains(memberId)) continue;
-
-        final notifRef = _firestore.collection('notifications').doc();
-        batch.set(notifRef, {
-          'notificationId': notifRef.id,
-          'senderId': isTeacherSender ? senderId : 'student_hidden',
-          'receiverId': memberId,
-          'groupId': groupId,
-          'title': group.name,
-          'body': '$publicSenderLabel: $previewText',
-          'type': type,
-          'mediaUrl': (mediaUrls != null && mediaUrls.isNotEmpty)
-              ? mediaUrls.first
-              : (type == 'image' || type == 'video')
-                  ? message
-                  : null,
-          'caption': caption?.trim(),
-          'messageCategory': messageCategory,
-          'createdAt': FieldValue.serverTimestamp(),
-          'status': 'pending',
-        });
-      }
-
-      await batch.commit();
-    } catch (e) {
-      _handleError('sendGroupMessage', e);
-      throw Exception('Failed to send group message: $e');
-    }
-  }
-
   Future<void> sendMediaAlbum({
     required String chatRoomId,
     required String senderId,
@@ -1235,11 +817,11 @@ class ChatService {
       return;
     }
 
-    final List<String> uploadedUrls = [];
-    for (final file in files) {
-      final url = await _uploadFileToStorage(file, 'images');
-      uploadedUrls.add(url);
-    }
+    final List<String> localOriginalPaths =
+        files.map((f) => f.path).toList();
+
+    final uploadFutures = files.map((file) => _uploadFileToStorage(file, 'images'));
+    final List<String> uploadedUrls = await Future.wait(uploadFutures);
 
     await sendMessage(
       chatId: chatRoomId,
@@ -1250,18 +832,18 @@ class ChatService {
       mediaUrls: uploadedUrls,
       caption: caption,
       messageCategory: messageCategory,
+      mediaMetaData: {
+        'imageUrls': uploadedUrls,
+        'urls': uploadedUrls,
+        'localFilePaths': localOriginalPaths,
+        'count': uploadedUrls.length,
+      },
     );
   }
 
   Future<void> markAsSeen(String chatId, String currentUserId) async {
     try {
-      final db = await _localStorage.database;
-      await db.update(
-        'local_messages',
-        {'status': 'seen'},
-        where: 'chatRoomId = ? AND receiverId = ?',
-        whereArgs: [chatId, currentUserId],
-      );
+      await _localStorage.markAllMessagesReadLocally(chatId);
 
       final querySnapshot = await _firestore
           .collection('chats')
@@ -1270,21 +852,26 @@ class ChatService {
           .where('receiverId', isEqualTo: currentUserId)
           .get();
 
-      final batch = _firestore.batch();
-      for (var doc in querySnapshot.docs) {
-        batch.delete(doc.reference);
+      if (querySnapshot.docs.isNotEmpty) {
+        for (final doc in querySnapshot.docs) {
+          final data = doc.data();
+          data['messageId'] = doc.id;
+          final msg = MessageModel.fromMap(data);
+          await _localStorage.processAndSaveIncomingMessage(msg, chatId);
+          final mediaUrls = extractMediaUrlsFromMessage(msg);
+          await deleteFirebaseStorageFilesSafe(mediaUrls);
+          await doc.reference.delete().catchError((_) {});
+        }
       }
 
-      batch.set(
-          _firestore.collection('chats').doc(chatId),
-          {
-            'unreadCount': 0,
-            'unreadFor': '',
-            'unreadCount_$currentUserId': 0,
-          },
-          SetOptions(merge: true));
-
-      await batch.commit();
+      await _firestore.collection('chats').doc(chatId).set(
+        {
+          'unreadCount': 0,
+          'unreadFor': '',
+          'unreadCount_$currentUserId': 0,
+        },
+        SetOptions(merge: true),
+      );
     } catch (e) {
       _handleError('markAsSeen', e);
     }
@@ -1294,13 +881,7 @@ class ChatService {
       String groupId, String currentUserId) async {
     if (groupId.trim().isEmpty || currentUserId.trim().isEmpty) return;
     try {
-      final db = await _localStorage.database;
-      await db.update(
-        'local_messages',
-        {'status': 'seen'},
-        where: 'chatRoomId = ? AND senderId != ?',
-        whereArgs: [groupId, currentUserId],
-      );
+      await _localStorage.markAllMessagesReadLocally(groupId);
 
       final groupRef = _firestore.collection('groups').doc(groupId);
       await groupRef.set({
@@ -1314,7 +895,7 @@ class ChatService {
   Future<String> _uploadFileToStorage(File file, String folder) async {
     try {
       final fileName =
-          '${DateTime.now().millisecondsSinceEpoch}_${file.path.split('/').last}';
+          '${DateTime.now().millisecondsSinceEpoch}_${p.basename(file.path)}';
       final ref = _storage.ref().child('chat_attachments/$folder/$fileName');
 
       SettableMetadata? metadata;
@@ -1387,6 +968,10 @@ class ChatService {
       type: 'image',
       caption: caption,
       messageCategory: messageCategory,
+      mediaMetaData: {
+        'imageUrl': url,
+        'localFilePath': file.path,
+      },
     );
   }
 
@@ -1407,6 +992,10 @@ class ChatService {
       type: 'video',
       caption: caption,
       messageCategory: messageCategory,
+      mediaMetaData: {
+        'videoUrl': url,
+        'localFilePath': file.path,
+      },
     );
   }
 
@@ -1425,7 +1014,11 @@ class ChatService {
       receiverId: receiverId,
       message: url,
       type: 'document',
-      mediaMetaData: {'fileName': fileName},
+      mediaMetaData: {
+        'fileName': fileName,
+        'fileUrl': url,
+        'localFilePath': file.path,
+      },
       messageCategory: messageCategory,
     );
   }
@@ -1443,12 +1036,16 @@ class ChatService {
       receiverId: receiverId,
       message: url,
       type: 'audio',
+      mediaMetaData: {
+        'audioUrl': url,
+        'localFilePath': file.path,
+      },
     );
   }
 
   Stream<List<MessageModel>> getMessages(String chatId) {
     if (chatId.trim().isEmpty) {
-      return Stream.value(const []);
+      return Stream.value(const <MessageModel>[]);
     }
 
     late final StreamController<List<MessageModel>> controller;
@@ -1479,45 +1076,23 @@ class ChatService {
             .snapshots(includeMetadataChanges: false)
             .listen((snapshot) async {
           if (snapshot.docs.isNotEmpty) {
-            final List<MessageModel> incomingMessages = [];
-            final List<DocumentReference> docsToDeleteFromCloud = [];
-
             for (final doc in snapshot.docs) {
               final data = doc.data();
               data['messageId'] = doc.id;
               final msg = MessageModel.fromMap(data);
-              incomingMessages.add(msg);
 
               if (_currentUserId.isNotEmpty &&
                   msg.receiverId == _currentUserId) {
-                docsToDeleteFromCloud.add(doc.reference);
-                if (msg.type == 'image' ||
-                    msg.type == 'video' ||
-                    msg.type == 'audio' ||
-                    msg.type == 'document' ||
-                    msg.type == 'album') {
-                  _downloadAndCacheMediaLocally(msg.content, msg.messageId)
-                      .then((localPath) {
-                    if (localPath != null) {
-                      _localStorage.updateLocalMediaPath(
-                        messageId: msg.messageId,
-                        chatRoomId: chatId,
-                        localPath: localPath,
-                      );
-                    }
-                  });
+                await _localStorage.processAndSaveIncomingMessage(msg, chatId);
+                final mediaUrls = extractMediaUrlsFromMessage(msg);
+                await deleteFirebaseStorageFilesSafe(mediaUrls);
+                await doc.reference.delete().catchError((_) {});
+              } else if (msg.senderId == _currentUserId) {
+                final alreadyHas = await _localStorage.hasMessage(msg.messageId);
+                if (!alreadyHas) {
+                  await _localStorage.saveMessage(msg, chatId);
                 }
               }
-            }
-
-            await _localStorage.saveMessagesBatch(incomingMessages, chatId);
-
-            if (docsToDeleteFromCloud.isNotEmpty) {
-              final batch = _firestore.batch();
-              for (final ref in docsToDeleteFromCloud) {
-                batch.delete(ref);
-              }
-              await batch.commit().catchError((_) {});
             }
           }
         }, onError: (e) {
@@ -1538,82 +1113,13 @@ class ChatService {
     String? categoryFilter,
   }) {
     if (groupId.trim().isEmpty) {
-      return Stream.value(const []);
+      return Stream.value(const <MessageModel>[]);
     }
 
-    late final StreamController<List<MessageModel>> controller;
-    StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? firestoreSub;
-    StreamSubscription<List<MessageModel>>? localSub;
-
-    controller = StreamController<List<MessageModel>>(
-      onListen: () {
-        localSub = _localStorage
-            .streamLocalMessages(
-          chatRoomId: groupId,
-          categoryFilter: categoryFilter,
-        )
-            .listen(
-          (messages) {
-            if (!controller.isClosed) {
-              controller.add(messages);
-            }
-          },
-          onError: (Object error, StackTrace stackTrace) {
-            if (!controller.isClosed) {
-              controller.addError(error, stackTrace);
-            }
-          },
-        );
-
-        firestoreSub = _firestore
-            .collection('groups')
-            .doc(groupId)
-            .collection('messages')
-            .snapshots(includeMetadataChanges: false)
-            .listen((snapshot) async {
-          if (snapshot.docs.isNotEmpty) {
-            final List<MessageModel> incomingGroupMessages = [];
-
-            for (final doc in snapshot.docs) {
-              final data = doc.data();
-              data['messageId'] = doc.id;
-              final msg = MessageModel.fromMap(data);
-              incomingGroupMessages.add(msg);
-
-              if (_currentUserId.isNotEmpty &&
-                  msg.senderId != _currentUserId &&
-                  (msg.type == 'image' ||
-                      msg.type == 'video' ||
-                      msg.type == 'audio' ||
-                      msg.type == 'document' ||
-                      msg.type == 'album')) {
-                _downloadAndCacheMediaLocally(msg.content, msg.messageId)
-                    .then((localPath) {
-                  if (localPath != null) {
-                    _localStorage.updateLocalMediaPath(
-                      messageId: msg.messageId,
-                      chatRoomId: groupId,
-                      localPath: localPath,
-                    );
-                  }
-                });
-              }
-            }
-
-            await _localStorage.saveMessagesBatch(
-                incomingGroupMessages, groupId);
-          }
-        }, onError: (e) {
-          _handleError('getGroupMessagesStream (Listener error)', e);
-        });
-      },
-      onCancel: () async {
-        await firestoreSub?.cancel();
-        await localSub?.cancel();
-      },
+    return _localStorage.streamLocalMessages(
+      chatRoomId: groupId,
+      categoryFilter: categoryFilter,
     );
-
-    return controller.stream;
   }
 
   Future<List<MessageModel>> getPaginatedMessages({
@@ -1654,7 +1160,7 @@ class ChatService {
       return list;
     } catch (e) {
       _handleError('getPaginatedMessages', e);
-      return const [];
+      return const <MessageModel>[];
     }
   }
 
@@ -1721,7 +1227,15 @@ class ChatService {
       await _localStorage.deleteMessageForEveryoneLocally(messageId, chatId);
 
       final ref = await _resolveMessageRef(chatId, messageId, isGroup: isGroup);
-      await ref.delete();
+      final snap = await ref.get();
+      if (snap.exists && snap.data() != null) {
+        final data = snap.data() as Map<String, dynamic>;
+        data['messageId'] = snap.id;
+        final msg = MessageModel.fromMap(data);
+        final urls = extractMediaUrlsFromMessage(msg);
+        await deleteFirebaseStorageFilesSafe(urls);
+      }
+      await ref.delete().catchError((_) {});
     } catch (e) {
       _handleError('deleteMessageForEveryone', e);
     }
@@ -1737,7 +1251,7 @@ class ChatService {
       final ref = await _resolveMessageRef(chatId, messageId, isGroup: isGroup);
       await ref.update({
         'deletedForUsers': FieldValue.arrayUnion([userId]),
-      });
+      }).catchError((_) {});
     } catch (e) {
       _handleError('deleteMessageForMe', e);
     }
