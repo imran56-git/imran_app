@@ -1,18 +1,26 @@
+```dart
 import 'dart:async';
+import 'dart:developer';
 import 'dart:io';
 import 'dart:ui';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
+import 'package:path_provider/path_provider.dart';
 import '../../models/group_model.dart';
 import '../../models/message_model.dart';
+import '../../screens/media_preview_editor_screen.dart';
 import '../../services/chat_service.dart';
 import '../../services/group_service.dart';
 import '../../services/media_service.dart';
 import '../../widgets/academic_composer_sheet.dart';
 import '../../widgets/chat_gesture_tutorial_dialog.dart';
 import '../../widgets/chat_input_bar.dart';
+import '../../widgets/media_shortcut_tray.dart';
 import '../../widgets/message_bubble.dart';
 import 'ai_study_assistant_sheet.dart';
 import 'group_info_screen.dart';
@@ -43,6 +51,8 @@ class _GroupChatScreenState extends State<GroupChatScreen>
   final MediaService _mediaService = MediaService();
   final ScrollController _scrollController = ScrollController();
   final TextEditingController _searchController = TextEditingController();
+  final TextEditingController _captionInputController = TextEditingController();
+  final ImagePicker _imagePicker = ImagePicker();
 
   late Stream<List<MessageModel>> _messagesStream;
 
@@ -52,6 +62,11 @@ class _GroupChatScreenState extends State<GroupChatScreen>
   StreamSubscription<GroupModel?>? _groupSubscription;
   GroupModel? _currentGroup;
   List<MessageModel> _latestMessages = [];
+  final List<MessageModel> _pendingMessages = [];
+
+  final List<TrayMediaItem> _stagedTrayItems = [];
+  final Set<String> _selectedTrayIds = {};
+
   late String _activeUserName;
 
   String? _replyToMessageId;
@@ -78,6 +93,7 @@ class _GroupChatScreenState extends State<GroupChatScreen>
   late Animation<double> _bounceAnimation;
 
   final String _backgroundImage = 'assets/images/chat_bg.png';
+  static const Color _whatsappGreen = Color(0xFF00A884);
 
   final List<Map<String, dynamic>> _categories = [
     {'key': 'all', 'label': 'All', 'icon': Icons.all_inbox_rounded},
@@ -346,6 +362,7 @@ class _GroupChatScreenState extends State<GroupChatScreen>
     _scrollController.dispose();
     _showScrollToBottomBtnNotifier.dispose();
     _searchController.dispose();
+    _captionInputController.dispose();
     _chatService.markGroupMessagesAsSeen(widget.groupId, widget.currentUserId);
     super.dispose();
   }
@@ -389,6 +406,273 @@ class _GroupChatScreenState extends State<GroupChatScreen>
     if (_currentGroup != null && _currentGroup!.isDismissed) return false;
     if (_isStudentMuted || _isPostingRestrictedToAdmin) return false;
     return true;
+  }
+
+  Future<void> _pickMultiPhotosForTray() async {
+    if (!_canCurrentUserReply) return;
+    try {
+      final List<XFile> picked = await _imagePicker.pickMultiImage();
+      if (picked.isEmpty) return;
+
+      final List<TrayMediaItem> newItems = [];
+      for (final xFile in picked) {
+        final file = File(xFile.path);
+        final fileName = xFile.name.isNotEmpty
+            ? xFile.name
+            : file.path.split(Platform.pathSeparator).last;
+        newItems.add(
+          TrayMediaItem(
+            id: '${DateTime.now().microsecondsSinceEpoch}_${file.path.hashCode}',
+            file: file,
+            isImage: true,
+            fileName: fileName,
+          ),
+        );
+      }
+
+      setState(() {
+        _stagedTrayItems.addAll(newItems);
+      });
+    } catch (e) {
+      log("Error picking group images: $e");
+    }
+  }
+
+  Future<void> _handleTrayItemTap(TrayMediaItem item, int index) async {
+    final result = await Navigator.push<MediaEditorResult>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => MediaPreviewEditorScreen(
+          file: item.file,
+          initialCaption: item.caption ?? _captionInputController.text,
+          isAlbum: _stagedTrayItems.length > 1,
+          albumCount: _stagedTrayItems.length,
+        ),
+      ),
+    );
+
+    if (result != null && mounted) {
+      setState(() {
+        item.file = result.file;
+        if (result.caption.isNotEmpty) {
+          item.caption = result.caption;
+          _captionInputController.text = result.caption;
+        }
+      });
+
+      if (result.sendImmediately) {
+        _executeSendTrayMedia(specificItems: [item]);
+      }
+    }
+  }
+
+  void _handleTrayItemRemove(TrayMediaItem item, int index) {
+    setState(() {
+      _stagedTrayItems.removeAt(index);
+      _selectedTrayIds.remove(item.id);
+    });
+  }
+
+  void _handleTrayItemToggleSelect(String id) {
+    setState(() {
+      if (_selectedTrayIds.contains(id)) {
+        _selectedTrayIds.remove(id);
+      } else {
+        _selectedTrayIds.add(id);
+      }
+    });
+  }
+
+  void _handleTrayClearSelection() {
+    setState(() {
+      _selectedTrayIds.clear();
+    });
+  }
+
+  void _handleTrayClearAll() {
+    setState(() {
+      _stagedTrayItems.clear();
+      _selectedTrayIds.clear();
+      _captionInputController.clear();
+    });
+  }
+
+  Future<File> _compressSingleImageFile(File file) async {
+    try {
+      final tempDir = await getTemporaryDirectory();
+      final targetPath =
+          '${tempDir.path}/cmp_${DateTime.now().microsecondsSinceEpoch}.jpg';
+      final compressedXFile = await FlutterImageCompress.compressAndGetFile(
+        file.absolute.path,
+        targetPath,
+        quality: 72,
+        minWidth: 1080,
+        minHeight: 1080,
+      );
+      if (compressedXFile != null) {
+        return File(compressedXFile.path);
+      }
+    } catch (_) {}
+    return file;
+  }
+
+  void _executeSendTrayMedia({List<TrayMediaItem>? specificItems}) {
+    if (_stagedTrayItems.isEmpty && (specificItems == null || specificItems.isEmpty)) {
+      return;
+    }
+
+    final List<TrayMediaItem> itemsToSend;
+    if (specificItems != null && specificItems.isNotEmpty) {
+      itemsToSend = List<TrayMediaItem>.from(specificItems);
+      setState(() {
+        _stagedTrayItems.removeWhere((item) => specificItems.any((s) => s.id == item.id));
+        for (final s in specificItems) {
+          _selectedTrayIds.remove(s.id);
+        }
+      });
+    } else if (_selectedTrayIds.isNotEmpty) {
+      itemsToSend = _stagedTrayItems.where((item) => _selectedTrayIds.contains(item.id)).toList();
+      setState(() {
+        _stagedTrayItems.removeWhere((item) => _selectedTrayIds.contains(item.id));
+        _selectedTrayIds.clear();
+      });
+    } else {
+      itemsToSend = List<TrayMediaItem>.from(_stagedTrayItems);
+      setState(() {
+        _stagedTrayItems.clear();
+        _selectedTrayIds.clear();
+      });
+    }
+
+    if (itemsToSend.isEmpty) return;
+
+    final String captionText = _captionInputController.text.trim();
+    _captionInputController.clear();
+
+    final String localPendingId =
+        'optimistic_${DateTime.now().millisecondsSinceEpoch}_${widget.currentUserId}';
+    final List<String> localFilePaths =
+        itemsToSend.map((item) => item.file.path).toList();
+
+    final MessageModel pendingMsg = MessageModel(
+      messageId: localPendingId,
+      senderId: widget.currentUserId,
+      senderName: _activeUserName,
+      senderRole: _isViewerTeacher ? 'teacher' : 'student',
+      receiverId: 'group',
+      content: captionText,
+      type: localFilePaths.length > 1 ? 'album' : 'image',
+      messageCategory:
+          _selectedCategory == 'all' ? 'general' : _selectedCategory,
+      mediaMetaData: {
+        'imageUrls': localFilePaths,
+        'urls': localFilePaths,
+        'count': localFilePaths.length,
+        'isOptimistic': true,
+        'isUploading': true,
+      },
+      timestamp: DateTime.now(),
+      isDeletedForEveryone: false,
+      deletedForUsers: const [],
+      readBy: [widget.currentUserId],
+      replyToMessageId: _replyToMessageId,
+      replyText: _replyToText,
+    );
+
+    setState(() {
+      _pendingMessages.insert(0, pendingMsg);
+      _replyToMessageId = null;
+      _replyToText = null;
+    });
+
+    _scrollToBottom();
+    _performAsyncMediaUpload(pendingMsg, itemsToSend, captionText);
+  }
+
+  Future<void> _performAsyncMediaUpload(
+    MessageModel pendingMsg,
+    List<TrayMediaItem> items,
+    String caption,
+  ) async {
+    try {
+      final uploadFutures = items.map((item) async {
+        final File compressed = await _compressSingleImageFile(item.file);
+        final String storagePath =
+            'groups/${widget.groupId}/images/${DateTime.now().microsecondsSinceEpoch}_${item.fileName}';
+        final storageRef = FirebaseStorage.instance.ref().child(storagePath);
+        final uploadTask = await storageRef.putFile(compressed);
+        return await uploadTask.ref.getDownloadURL();
+      });
+
+      final List<String> remoteUrls = await Future.wait(uploadFutures);
+
+      final docRef = FirebaseFirestore.instance
+          .collection('groups')
+          .doc(widget.groupId)
+          .collection('messages')
+          .doc();
+
+      final Map<String, dynamic> firestorePayload = {
+        'messageId': docRef.id,
+        'senderId': widget.currentUserId,
+        'senderName': _activeUserName,
+        'senderRole': _isViewerTeacher ? 'teacher' : 'student',
+        'content': caption,
+        'type': remoteUrls.length > 1 ? 'album' : 'image',
+        'messageCategory':
+            _selectedCategory == 'all' ? 'general' : _selectedCategory,
+        'mediaMetaData': {
+          'imageUrls': remoteUrls,
+          'urls': remoteUrls,
+          'count': remoteUrls.length,
+        },
+        'timestamp': FieldValue.serverTimestamp(),
+        'isDeletedForEveryone': false,
+        'deletedForUsers': <String>[],
+        'readBy': [widget.currentUserId],
+        'replyToMessageId': pendingMsg.replyToMessageId,
+        'replyText': pendingMsg.replyText,
+      };
+
+      await docRef.set(firestorePayload);
+
+      final String summaryText = caption.isNotEmpty
+          ? caption
+          : (remoteUrls.length > 1
+              ? '📷 ${remoteUrls.length} photos'
+              : '📷 Photo');
+
+      await FirebaseFirestore.instance
+          .collection('groups')
+          .doc(widget.groupId)
+          .set({
+        'lastMessage': summaryText,
+        'lastMessageSender': _activeUserName,
+        'lastMessageTime': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
+      if (mounted) {
+        setState(() {
+          _pendingMessages.removeWhere((m) => m.messageId == pendingMsg.messageId);
+        });
+      }
+    } catch (e) {
+      log("Error uploading group media: $e");
+      if (mounted) {
+        setState(() {
+          final idx = _pendingMessages
+              .indexWhere((m) => m.messageId == pendingMsg.messageId);
+          if (idx != -1) {
+            final oldMeta = Map<String, dynamic>.from(
+                _pendingMessages[idx].mediaMetaData ?? {});
+            oldMeta['isUploading'] = false;
+            oldMeta['hasError'] = true;
+            _pendingMessages[idx] =
+                _pendingMessages[idx].copyWith(mediaMetaData: oldMeta);
+          }
+        });
+      }
+    }
   }
 
   bool _canEditSingleMessage(MessageModel msg) {
@@ -684,13 +968,13 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
                     color: isHovered
-                        ? color.withOpacity(0.28)
-                        : Colors.white.withOpacity(0.08),
+                        ? color.withValues(alpha: 0.28)
+                        : Colors.white.withValues(alpha: 0.08),
                     shape: BoxShape.circle,
                     border: Border.all(
                       color: isHovered
                           ? color
-                          : Colors.white.withOpacity(0.22),
+                          : Colors.white.withValues(alpha: 0.22),
                       width: isHovered ? 1.8 : 1.0,
                     ),
                   ),
@@ -733,15 +1017,15 @@ class _GroupChatScreenState extends State<GroupChatScreen>
               height: 58,
               padding: const EdgeInsets.symmetric(horizontal: 14),
               decoration: BoxDecoration(
-                color: const Color(0xFF0F172A).withOpacity(0.78),
+                color: const Color(0xFF0F172A).withValues(alpha: 0.78),
                 borderRadius: BorderRadius.circular(32),
                 border: Border.all(
-                  color: Colors.white.withOpacity(0.35),
+                  color: Colors.white.withValues(alpha: 0.35),
                   width: 1.2,
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.2),
+                    color: Colors.black.withValues(alpha: 0.2),
                     blurRadius: 14,
                     offset: const Offset(0, 4),
                   ),
@@ -757,7 +1041,7 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                         padding: const EdgeInsets.symmetric(
                             horizontal: 10, vertical: 6),
                         decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.15),
+                          color: Colors.white.withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(20),
                         ),
                         child: Row(
@@ -1177,7 +1461,7 @@ class _GroupChatScreenState extends State<GroupChatScreen>
           border: Border.all(color: Colors.blue.shade100),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.03),
+              color: Colors.black.withValues(alpha: 0.03),
               blurRadius: 8,
             ),
           ],
@@ -1318,7 +1602,7 @@ class _GroupChatScreenState extends State<GroupChatScreen>
           border: Border.all(color: Colors.purple.shade100),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.03),
+              color: Colors.black.withValues(alpha: 0.03),
               blurRadius: 8,
             ),
           ],
@@ -1496,7 +1780,7 @@ class _GroupChatScreenState extends State<GroupChatScreen>
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
               decoration: BoxDecoration(
-                color: Colors.blueAccent.withOpacity(0.12),
+                color: Colors.blueAccent.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(6),
               ),
               child: Text(
@@ -1514,7 +1798,142 @@ class _GroupChatScreenState extends State<GroupChatScreen>
     );
   }
 
+  Widget _buildOptimisticPendingTile(MessageModel message) {
+    return TweenAnimationBuilder<double>(
+      duration: const Duration(milliseconds: 260),
+      curve: Curves.easeOutCubic,
+      tween: Tween<double>(begin: 0.0, end: 1.0),
+      builder: (context, value, child) {
+        return Transform.translate(
+          offset: Offset(0, (1 - value) * 20),
+          child: Opacity(
+            opacity: value,
+            child: child,
+          ),
+        );
+      },
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 2.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            _buildPrivacySafeMessageHeader(message, true),
+            MessageBubble(
+              message: message,
+              isMe: true,
+              chatRoomId: widget.groupId,
+              currentUserId: widget.currentUserId,
+              onReplyPressed: (_) {},
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMediaStagingTraySection() {
+    if (_stagedTrayItems.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor,
+        border: Border(
+          top: BorderSide(
+            color: Theme.of(context).dividerColor.withValues(alpha: 0.15),
+          ),
+        ),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          MediaShortcutTray(
+            items: _stagedTrayItems,
+            selectedIds: _selectedTrayIds,
+            onItemTap: _handleTrayItemTap,
+            onItemRemove: _handleTrayItemRemove,
+            onItemToggleSelect: _handleTrayItemToggleSelect,
+            onClearSelection: _handleTrayClearSelection,
+            onClearAll: _handleTrayClearAll,
+          ),
+          Padding(
+            padding: EdgeInsets.only(
+              left: 12,
+              right: 12,
+              top: 6,
+              bottom: MediaQuery.of(context).padding.bottom + 8,
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(
+                        color: Theme.of(context).dividerColor.withValues(alpha: 0.2),
+                      ),
+                    ),
+                    child: TextField(
+                      controller: _captionInputController,
+                      maxLines: 4,
+                      minLines: 1,
+                      style: const TextStyle(fontSize: 14.5),
+                      decoration: InputDecoration(
+                        hintText: _selectedTrayIds.isNotEmpty
+                            ? 'Add a caption for ${_selectedTrayIds.length} selected...'
+                            : 'Add a caption...',
+                        hintStyle: TextStyle(
+                          color: Theme.of(context).hintColor,
+                          fontSize: 14.5,
+                        ),
+                        border: InputBorder.none,
+                        isDense: true,
+                        contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                GestureDetector(
+                  onTap: () {
+                    HapticFeedback.lightImpact();
+                    _executeSendTrayMedia();
+                  },
+                  child: Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: _whatsappGreen,
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: _whatsappGreen.withValues(alpha: 0.35),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: const Icon(
+                      Icons.send_rounded,
+                      color: Colors.white,
+                      size: 20,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildBottomComposerOrRestrictionBar() {
+    if (_stagedTrayItems.isNotEmpty) {
+      return _buildMediaStagingTraySection();
+    }
+
     if (_currentGroup != null && _currentGroup!.isDismissed) {
       return Container(
         width: double.infinity,
@@ -1545,7 +1964,7 @@ class _GroupChatScreenState extends State<GroupChatScreen>
           color: Colors.white,
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.05),
+              color: Colors.black.withValues(alpha: 0.05),
               blurRadius: 12,
               offset: const Offset(0, -3),
             ),
@@ -1689,8 +2108,8 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                     boxShadow: [
                       BoxShadow(
                         color: _isDragHoveringInput
-                            ? Colors.blueAccent.withOpacity(0.28)
-                            : Colors.black.withOpacity(0.05),
+                            ? Colors.blueAccent.withValues(alpha: 0.28)
+                            : Colors.black.withValues(alpha: 0.05),
                         blurRadius: _isDragHoveringInput ? 18 : 15,
                         offset: const Offset(0, -4),
                       ),
@@ -1821,10 +2240,14 @@ class _GroupChatScreenState extends State<GroupChatScreen>
     final int studentCount = group?.studentCount ?? 0;
 
     return PopScope(
-      canPop: !_isSelectionMode,
+      canPop: !_isSelectionMode && _stagedTrayItems.isEmpty,
       onPopInvokedWithResult: (didPop, result) {
-        if (!didPop && _isSelectionMode) {
-          _clearMessageSelection();
+        if (!didPop) {
+          if (_isSelectionMode) {
+            _clearMessageSelection();
+          } else if (_stagedTrayItems.isNotEmpty) {
+            _handleTrayClearAll();
+          }
         } else if (didPop) {
           _chatService.markGroupMessagesAsSeen(
               widget.groupId, widget.currentUserId);
@@ -1842,6 +2265,8 @@ class _GroupChatScreenState extends State<GroupChatScreen>
             onPressed: () {
               if (_isSelectionMode) {
                 _clearMessageSelection();
+              } else if (_stagedTrayItems.isNotEmpty) {
+                _handleTrayClearAll();
               } else {
                 _chatService.markGroupMessagesAsSeen(
                     widget.groupId, widget.currentUserId);
@@ -1870,7 +2295,7 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
                           border: Border.all(
-                            color: Colors.blueAccent.withOpacity(0.5),
+                            color: Colors.blueAccent.withValues(alpha: 0.5),
                             width: 1.5,
                           ),
                         ),
@@ -1924,7 +2349,7 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
                                 fontSize: 11,
-                                color: Colors.white.withOpacity(0.72),
+                                color: Colors.white.withValues(alpha: 0.72),
                                 fontWeight: FontWeight.w500,
                               ),
                             ),
@@ -1935,6 +2360,13 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                   ),
                 ),
           actions: [
+            if (_canCurrentUserReply)
+              IconButton(
+                icon: const Icon(Icons.add_photo_alternate_rounded,
+                    color: Colors.white, size: 22),
+                tooltip: "Attach Photos",
+                onPressed: _pickMultiPhotosForTray,
+              ),
             IconButton(
               icon: const Icon(Icons.auto_awesome_rounded,
                   color: Colors.amber, size: 21),
@@ -2075,7 +2507,10 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                                     .contains(_searchQuery))
                                 .toList();
 
-                        if (messages.isEmpty) {
+                        final totalRenderCount =
+                            _pendingMessages.length + messages.length;
+
+                        if (totalRenderCount == 0) {
                           return Center(
                             child: Container(
                               padding: const EdgeInsets.symmetric(
@@ -2119,9 +2554,16 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                                   top: _showTopActionBar ? 68 : 12,
                                   bottom: 12,
                                 ),
-                                itemCount: messages.length,
+                                itemCount: totalRenderCount,
                                 itemBuilder: (context, index) {
-                                  final rawMsg = messages[index];
+                                  if (index < _pendingMessages.length) {
+                                    return _buildOptimisticPendingTile(
+                                        _pendingMessages[index]);
+                                  }
+
+                                  final msgIndex =
+                                      index - _pendingMessages.length;
+                                  final rawMsg = messages[msgIndex];
                                   final message =
                                       _resolveMessageWithReplyText(rawMsg);
                                   final bool isMe =
@@ -2130,15 +2572,15 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                                       .contains(message.messageId);
 
                                   final bool showDateHeader =
-                                      index == messages.length - 1 ||
+                                      msgIndex == messages.length - 1 ||
                                           !_isSameCalendarDay(
                                             message.timestamp,
-                                            messages[index + 1].timestamp,
+                                            messages[msgIndex + 1].timestamp,
                                           );
 
                                   final bool showUnreadBanner =
                                       _initialUnreadCount > 0 &&
-                                          index == _initialUnreadCount - 1;
+                                          msgIndex == _initialUnreadCount - 1;
 
                                   return Column(
                                     key: ValueKey('grp_msg_${message.messageId}'),
@@ -2155,7 +2597,7 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                                                 horizontal: 12, vertical: 4),
                                             decoration: BoxDecoration(
                                               color: Colors.blueGrey
-                                                  .withOpacity(0.1),
+                                                  .withValues(alpha: 0.1),
                                               borderRadius:
                                                   BorderRadius.circular(12),
                                             ),
@@ -2213,7 +2655,7 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                                             decoration: BoxDecoration(
                                               color: isSelected
                                                   ? Colors.blueAccent
-                                                      .withOpacity(0.14)
+                                                      .withValues(alpha: 0.14)
                                                   : Colors.transparent,
                                               borderRadius:
                                                   BorderRadius.circular(14),
