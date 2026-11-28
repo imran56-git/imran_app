@@ -1,3 +1,4 @@
+```dart
 import 'dart:async';
 import 'dart:developer';
 import 'dart:io';
@@ -617,6 +618,8 @@ class _GroupChatScreenState extends State<GroupChatScreen>
       status: 'sending',
       isDeletedForEveryone: false,
       deletedForUsers: const <String>[],
+      starredBy: const <String>[],
+      reactions: const <String, String>{},
       readBy: [widget.currentUserId],
       replyToMessageId: _replyToMessageId,
       replyText: _replyToText,
@@ -699,7 +702,7 @@ class _GroupChatScreenState extends State<GroupChatScreen>
         isDeletedForEveryone: false,
         deletedForUsers: const <String>[],
         starredBy: const <String>[],
-        reactions: const <String, dynamic>{},
+        reactions: const <String, String>{},
         replyToMessageId: pendingMsg.replyToMessageId,
         replyText: pendingMsg.replyText,
         mediaMetaData: {
