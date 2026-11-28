@@ -224,7 +224,7 @@ class GroupService {
       isDeletedForEveryone: false,
       deletedForUsers: const <String>[],
       starredBy: const <String>[],
-      reactions: const <String, dynamic>{},
+      reactions: const <String, String>{},
       senderRole: 'teacher',
       senderName: teacherMeta['teacherName'],
       senderProfilePic: teacherMeta['teacherProfilePic'],
@@ -280,6 +280,150 @@ class GroupService {
 
     await batch.commit();
     return docRef.id;
+  }
+
+  Future<void> sendGroupMessage({
+    required String groupId,
+    required String senderId,
+    required String message,
+    required String type,
+    String? senderName,
+    String? senderRole,
+    String? replyToMessageId,
+    String? replyToText,
+    Map<String, dynamic>? mediaMetaData,
+    String messageCategory = 'general',
+    Map<String, dynamic>? pollData,
+    Map<String, dynamic>? quizData,
+    Map<String, dynamic>? linkPreviewData,
+    bool isForwarded = false,
+    bool isScheduled = false,
+    DateTime? scheduledAt,
+    String? clientMessageId,
+    String? caption,
+    List<String>? mediaUrls,
+  }) async {
+    final groupRef = _firestore.collection('groups').doc(groupId);
+    final groupDoc = await groupRef.get();
+    if (!groupDoc.exists || groupDoc.data() == null) return;
+    final groupData = groupDoc.data()!;
+
+    final messageRef = groupRef.collection('messages').doc();
+
+    final Map<String, dynamic> messageData = {
+      'messageId': messageRef.id,
+      'groupId': groupId,
+      'senderId': senderId,
+      'senderName': senderName ?? '',
+      'senderRole': senderRole ?? '',
+      'content': message,
+      'timestamp': isScheduled && scheduledAt != null
+          ? Timestamp.fromDate(scheduledAt)
+          : FieldValue.serverTimestamp(),
+      'type': type,
+      'status': 'sent',
+      'isDeletedForEveryone': false,
+      'deletedForUsers': <String>[],
+      'starredBy': <String>[],
+      'reactions': <String, dynamic>{},
+      'messageCategory': messageCategory,
+      'isPinned': false,
+      'isForwarded': isForwarded,
+      'deliveredTo': [senderId],
+      'readBy': [senderId],
+      'isScheduled': isScheduled,
+      'scheduledAt':
+          scheduledAt != null ? Timestamp.fromDate(scheduledAt) : null,
+      'clientMessageId': clientMessageId,
+    };
+
+    if (caption != null && caption.trim().isNotEmpty) {
+      messageData['caption'] = caption.trim();
+    }
+    if (mediaUrls != null && mediaUrls.isNotEmpty) {
+      messageData['mediaUrls'] = mediaUrls;
+    }
+    if (replyToMessageId != null) {
+      messageData['replyToMessageId'] = replyToMessageId;
+    }
+    if (replyToText != null) {
+      messageData['replyText'] = replyToText;
+      messageData['replyToText'] = replyToText;
+    }
+    if (mediaMetaData != null) messageData['mediaMetaData'] = mediaMetaData;
+    if (pollData != null) messageData['pollData'] = pollData;
+    if (quizData != null) messageData['quizData'] = quizData;
+    if (linkPreviewData != null) {
+      messageData['linkPreviewData'] = linkPreviewData;
+    }
+
+    final localMsg = MessageModel(
+      messageId: messageRef.id,
+      groupId: groupId,
+      senderId: senderId,
+      receiverId: '',
+      senderName: senderName,
+      senderRole: senderRole,
+      content: message,
+      type: type,
+      timestamp: DateTime.now(),
+      status: 'sent',
+      isDeletedForEveryone: false,
+      deletedForUsers: const <String>[],
+      starredBy: const <String>[],
+      reactions: const <String, String>{},
+      replyToMessageId: replyToMessageId,
+      replyText: replyToText,
+      mediaMetaData: mediaMetaData,
+      mediaUrl: (type == 'image' ||
+              type == 'video' ||
+              type == 'audio' ||
+              type == 'document' ||
+              type == 'album')
+          ? message
+          : null,
+      mediaUrls: mediaUrls,
+      caption: caption?.trim(),
+      messageCategory: messageCategory,
+      isPinned: false,
+      pollData: pollData,
+      quizData: quizData,
+      clientMessageId: clientMessageId,
+    );
+
+    await _localStorage.saveOutgoingMessageWithPermanentFiles(
+        localMsg, groupId);
+
+    final batch = _firestore.batch();
+    batch.set(messageRef, messageData);
+
+    String previewText = message;
+    if (type == 'image') previewText = '📷 Photo';
+    if (type == 'video') previewText = '🎥 Video';
+    if (type == 'audio') previewText = '🎵 Audio';
+    if (type == 'document') previewText = '📄 Document';
+    if (caption != null && caption.trim().isNotEmpty) {
+      previewText = '$previewText: ${caption.trim()}';
+    }
+
+    final members = List<String>.from(groupData['members'] ?? []);
+    final Map<String, dynamic> unreadUpdates = {};
+    for (final member in members) {
+      if (member != senderId) {
+        unreadUpdates['unreadCounts.$member'] = FieldValue.increment(1);
+      }
+    }
+
+    final Map<String, dynamic> groupUpdateData = {
+      'lastMessage': previewText,
+      'lastMessageTime': FieldValue.serverTimestamp(),
+      'lastSenderId': senderId,
+      'lastSenderName': senderName ?? '',
+      ...unreadUpdates,
+    };
+
+    batch.update(groupRef, groupUpdateData);
+    await batch.commit();
   }
 
   Future<void> acknowledgeGroupMessageDelivery({
