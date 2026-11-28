@@ -1,3 +1,4 @@
+```dart
 import 'dart:async';
 import 'dart:developer';
 import 'dart:io';
@@ -15,6 +16,7 @@ import '../../models/message_model.dart';
 import '../../screens/media_preview_editor_screen.dart';
 import '../../services/chat_service.dart';
 import '../../services/group_service.dart';
+import '../../services/local_chat_storage_service.dart';
 import '../../services/media_service.dart';
 import '../../widgets/academic_composer_sheet.dart';
 import '../../widgets/chat_gesture_tutorial_dialog.dart';
@@ -48,23 +50,25 @@ class _GroupChatScreenState extends State<GroupChatScreen>
   final ChatService _chatService = ChatService();
   final GroupService _groupService = GroupService();
   final MediaService _mediaService = MediaService();
+  final LocalChatStorageService _localStorage = LocalChatStorageService();
   final ScrollController _scrollController = ScrollController();
   final TextEditingController _searchController = TextEditingController();
   final TextEditingController _captionInputController = TextEditingController();
   final ImagePicker _imagePicker = ImagePicker();
 
   late Stream<List<MessageModel>> _messagesStream;
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _firestoreMessagesSub;
 
   final ValueNotifier<bool> _showScrollToBottomBtnNotifier =
       ValueNotifier<bool>(false);
 
   StreamSubscription<GroupModel?>? _groupSubscription;
   GroupModel? _currentGroup;
-  List<MessageModel> _latestMessages = [];
-  final List<MessageModel> _pendingMessages = [];
+  List<MessageModel> _latestMessages = <MessageModel>[];
+  final List<MessageModel> _pendingMessages = <MessageModel>[];
 
-  final List<TrayMediaItem> _stagedTrayItems = [];
-  final Set<String> _selectedTrayIds = {};
+  final List<TrayMediaItem> _stagedTrayItems = <TrayMediaItem>[];
+  final Set<String> _selectedTrayIds = <String>{};
 
   late String _activeUserName;
 
@@ -83,7 +87,7 @@ class _GroupChatScreenState extends State<GroupChatScreen>
   String? _hoveredTopAction;
   MessageModel? _draggedMessage;
 
-  final Set<String> _selectedMessageIds = {};
+  final Set<String> _selectedMessageIds = <String>{};
 
   bool get _isSelectionMode => _selectedMessageIds.isNotEmpty;
   bool get _showTopActionBar => _isDraggingMessage || _isSelectionMode;
@@ -131,8 +135,8 @@ class _GroupChatScreenState extends State<GroupChatScreen>
 
     _resolveActiveUserName();
 
-    _messagesStream = _chatService.getGroupMessagesStream(
-      widget.groupId,
+    _messagesStream = _localStorage.streamLocalMessages(
+      chatRoomId: widget.groupId,
       categoryFilter: _selectedCategory,
     );
 
@@ -151,6 +155,7 @@ class _GroupChatScreenState extends State<GroupChatScreen>
 
     _scrollController.addListener(_onScrollChanged);
     _listenToGroupRealtimeState();
+    _setupGroupFirestoreSync();
     _chatService.markGroupMessagesAsSeen(widget.groupId, widget.currentUserId);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -160,6 +165,37 @@ class _GroupChatScreenState extends State<GroupChatScreen>
           userId: widget.currentUserId,
           isGroup: true,
         );
+      }
+    });
+  }
+
+  void _setupGroupFirestoreSync() {
+    _firestoreMessagesSub = FirebaseFirestore.instance
+        .collection('groups')
+        .doc(widget.groupId)
+        .collection('messages')
+        .snapshots(includeMetadataChanges: false)
+        .listen((snapshot) async {
+      if (snapshot.docs.isEmpty) return;
+
+      for (final doc in snapshot.docs) {
+        final data = doc.data();
+        data['messageId'] = doc.id;
+        final msg = MessageModel.fromMap(data);
+
+        if (msg.senderId != widget.currentUserId) {
+          await _localStorage.processAndSaveIncomingMessage(msg, widget.groupId);
+          await _groupService.acknowledgeGroupMessageDelivery(
+            groupId: widget.groupId,
+            messageId: msg.messageId,
+            userId: widget.currentUserId,
+          );
+        } else {
+          final bool alreadyHas = await _localStorage.hasMessage(msg.messageId);
+          if (!alreadyHas) {
+            await _localStorage.saveMessage(msg, widget.groupId);
+          }
+        }
       }
     });
   }
@@ -188,8 +224,8 @@ class _GroupChatScreenState extends State<GroupChatScreen>
     if (_selectedCategory == newCategory) return;
     setState(() {
       _selectedCategory = newCategory;
-      _messagesStream = _chatService.getGroupMessagesStream(
-        widget.groupId,
+      _messagesStream = _localStorage.streamLocalMessages(
+        chatRoomId: widget.groupId,
         categoryFilter: _selectedCategory,
       );
     });
@@ -355,6 +391,7 @@ class _GroupChatScreenState extends State<GroupChatScreen>
 
   @override
   void dispose() {
+    _firestoreMessagesSub?.cancel();
     _groupSubscription?.cancel();
     _bounceController.dispose();
     _scrollController.removeListener(_onScrollChanged);
@@ -413,7 +450,7 @@ class _GroupChatScreenState extends State<GroupChatScreen>
       final List<XFile> picked = await _imagePicker.pickMultiImage();
       if (picked.isEmpty) return;
 
-      final List<TrayMediaItem> newItems = [];
+      final List<TrayMediaItem> newItems = <TrayMediaItem>[];
       for (final xFile in picked) {
         final file = File(xFile.path);
         final fileName = xFile.name.isNotEmpty
@@ -515,7 +552,7 @@ class _GroupChatScreenState extends State<GroupChatScreen>
     return file;
   }
 
-  void _executeSendTrayMedia({List<TrayMediaItem>? specificItems}) {
+  void _executeSendTrayMedia({List<TrayMediaItem>? specificItems}) async {
     if (_stagedTrayItems.isEmpty && (specificItems == null || specificItems.isEmpty)) {
       return;
     }
@@ -548,10 +585,15 @@ class _GroupChatScreenState extends State<GroupChatScreen>
     final String captionText = _captionInputController.text.trim();
     _captionInputController.clear();
 
+    final List<String> permanentPaths = <String>[];
+    for (final item in itemsToSend) {
+      final permPath = await _localStorage.copyFileToPermanentStorage(item.file, subFolder: 'sent_group_media');
+      permanentPaths.add(permPath);
+      item.file = File(permPath);
+    }
+
     final String localPendingId =
         'optimistic_${DateTime.now().millisecondsSinceEpoch}_${widget.currentUserId}';
-    final List<String> localFilePaths =
-        itemsToSend.map((item) => item.file.path).toList();
 
     final MessageModel pendingMsg = MessageModel(
       messageId: localPendingId,
@@ -560,19 +602,22 @@ class _GroupChatScreenState extends State<GroupChatScreen>
       senderRole: _isViewerTeacher ? 'teacher' : 'student',
       receiverId: 'group',
       content: captionText,
-      type: localFilePaths.length > 1 ? 'album' : 'image',
+      type: permanentPaths.length > 1 ? 'album' : 'image',
       messageCategory:
           _selectedCategory == 'all' ? 'general' : _selectedCategory,
       mediaMetaData: {
-        'imageUrls': localFilePaths,
-        'urls': localFilePaths,
-        'count': localFilePaths.length,
+        'imageUrls': permanentPaths,
+        'urls': permanentPaths,
+        'localFilePath': permanentPaths.isNotEmpty ? permanentPaths.first : null,
+        'localFilePaths': permanentPaths,
+        'count': permanentPaths.length,
         'isOptimistic': true,
         'isUploading': true,
       },
       timestamp: DateTime.now(),
+      status: 'sending',
       isDeletedForEveryone: false,
-      deletedForUsers: const [],
+      deletedForUsers: const <String>[],
       readBy: [widget.currentUserId],
       replyToMessageId: _replyToMessageId,
       replyText: _replyToText,
@@ -585,12 +630,13 @@ class _GroupChatScreenState extends State<GroupChatScreen>
     });
 
     _scrollToBottom();
-    _performAsyncMediaUpload(pendingMsg, itemsToSend, captionText);
+    _performAsyncMediaUpload(pendingMsg, itemsToSend, permanentPaths, captionText);
   }
 
   Future<void> _performAsyncMediaUpload(
     MessageModel pendingMsg,
     List<TrayMediaItem> items,
+    List<String> permanentLocalPaths,
     String caption,
   ) async {
     try {
@@ -604,6 +650,10 @@ class _GroupChatScreenState extends State<GroupChatScreen>
       });
 
       final List<String> remoteUrls = await Future.wait(uploadFutures);
+
+      final groupDoc = await FirebaseFirestore.instance.collection('groups').doc(widget.groupId).get();
+      final List<String> members = (groupDoc.data()?['members'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? <String>[];
+      final List<String> pendingFor = members.where((uid) => uid != widget.currentUserId).toList();
 
       final docRef = FirebaseFirestore.instance
           .collection('groups')
@@ -631,7 +681,37 @@ class _GroupChatScreenState extends State<GroupChatScreen>
         'readBy': [widget.currentUserId],
         'replyToMessageId': pendingMsg.replyToMessageId,
         'replyText': pendingMsg.replyText,
+        'pendingFor': pendingFor,
+        'expiresAt': Timestamp.fromDate(DateTime.now().add(const Duration(days: 7))),
       };
+
+      final savedLocalMsg = MessageModel(
+        messageId: docRef.id,
+        senderId: widget.currentUserId,
+        senderName: _activeUserName,
+        senderRole: _isViewerTeacher ? 'teacher' : 'student',
+        receiverId: 'group',
+        content: caption,
+        type: remoteUrls.length > 1 ? 'album' : 'image',
+        messageCategory:
+            _selectedCategory == 'all' ? 'general' : _selectedCategory,
+        timestamp: DateTime.now(),
+        status: 'sent',
+        isDeletedForEveryone: false,
+        deletedForUsers: const <String>[],
+        starredBy: const <String>[],
+        reactions: const <String, dynamic>{},
+        replyToMessageId: pendingMsg.replyToMessageId,
+        replyText: pendingMsg.replyText,
+        mediaMetaData: {
+          'imageUrls': permanentLocalPaths,
+          'urls': permanentLocalPaths,
+          'localFilePath': permanentLocalPaths.isNotEmpty ? permanentLocalPaths.first : null,
+          'localFilePaths': permanentLocalPaths,
+          'count': permanentLocalPaths.length,
+        },
+      );
+      await _localStorage.saveMessage(savedLocalMsg, widget.groupId);
 
       await docRef.set(firestorePayload);
 
@@ -708,7 +788,7 @@ class _GroupChatScreenState extends State<GroupChatScreen>
     if (_draggedMessage != null) {
       return [_draggedMessage!];
     }
-    return [];
+    return <MessageModel>[];
   }
 
   void _toggleMessageSelection(MessageModel message) {
@@ -2720,7 +2800,7 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                                                       final nearInput = details
                                                               .globalPosition
                                                               .dy >=
-                                                          replyTriggerLine;
+                                                            replyTriggerLine;
                                                       if (nearInput !=
                                                           _isDragHoveringInput) {
                                                         HapticFeedback
