@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -25,6 +27,15 @@ void main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
+  await FirebaseAppCheck.instance.activate(
+    androidProvider: kReleaseMode
+        ? AndroidProvider.playIntegrity
+        : AndroidProvider.debug,
+    appleProvider: kReleaseMode
+        ? AppleProvider.deviceCheck
+        : AppleProvider.debug,
+  );
+
   FirebaseFirestore.instance.settings = const Settings(
     persistenceEnabled: true,
     cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
@@ -32,7 +43,6 @@ void main() async {
 
   FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
 
-  // Render UI immediately without blocking first frame
   runApp(const FindYourBestTeacherTodayApp());
 
   unawaited(
@@ -147,7 +157,6 @@ class _FindYourBestTeacherTodayAppState
         updateData['fcmToken'] = token;
       }
 
-      // Use .update() on role collections so ghost documents are NEVER created
       await _firestore
           .collection('users')
           .doc(user.uid)
